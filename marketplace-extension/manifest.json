@@ -9,7 +9,7 @@
     "scripting"
   ],
   "host_permissions": [
-    "https://www.facebook.com/*",
+    "https://*.facebook.com/*",
     "https://vehicle-marketplace-s0e4.onrender.com/*"
   ],
   "action": {
@@ -22,7 +22,7 @@
   },
   "content_scripts": [
     {
-      "matches": ["https://www.facebook.com/*"],
+      "matches": ["https://*.facebook.com/marketplace/create*"],
       "js": ["content.js"],
       "run_at": "document_idle"
     }
