@@ -1,0 +1,183 @@
+const API = 'https://vehicle-marketplace-s0e4.onrender.com'
+
+// ── Helpers ──────────────────────────────────────
+const $ = id => document.getElementById(id)
+
+async function apiGet(path, token) {
+  const r = await fetch(`${API}${path}`, {
+    headers: { Authorization: `Bearer ${token}` }
+  })
+  return r.json()
+}
+
+async function apiPost(path, body, token) {
+  const r = await fetch(`${API}${path}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify(body)
+  })
+  return r.json()
+}
+
+function formatPrice(p) {
+  if (!p) return 'N/A'
+  return '$' + Number(p).toLocaleString()
+}
+
+// ── Boot ─────────────────────────────────────────
+chrome.storage.local.get(['token', 'user'], ({ token, user }) => {
+  if (token && user) {
+    showInventoryScreen(token, user)
+  } else {
+    showLoginScreen()
+  }
+})
+
+// ── Login ─────────────────────────────────────────
+function showLoginScreen() {
+  $('login-screen').style.display = 'block'
+  $('inventory-screen').style.display = 'none'
+
+  $('login-btn').addEventListener('click', async () => {
+    const email = $('email').value.trim()
+    const password = $('password').value
+    if (!email || !password) return
+
+    $('login-btn').disabled = true
+    $('login-btn').textContent = 'Signing in...'
+    $('login-error').textContent = ''
+
+    try {
+      const r = await fetch(`${API}/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password })
+      })
+      const data = await r.json()
+
+      if (data.error) {
+        $('login-error').textContent = data.error
+        $('login-btn').disabled = false
+        $('login-btn').textContent = 'Sign In'
+        return
+      }
+
+      chrome.storage.local.set({ token: data.access_token, user: data.user }, () => {
+        showInventoryScreen(data.access_token, data.user)
+      })
+    } catch (e) {
+      $('login-error').textContent = 'Connection error. Try again.'
+      $('login-btn').disabled = false
+      $('login-btn').textContent = 'Sign In'
+    }
+  })
+
+  // Allow Enter key to submit
+  $('password').addEventListener('keydown', e => {
+    if (e.key === 'Enter') $('login-btn').click()
+  })
+}
+
+// ── Inventory Screen ──────────────────────────────
+async function showInventoryScreen(token, user) {
+  $('login-screen').style.display = 'none'
+  $('inventory-screen').style.display = 'block'
+
+  // Load profile
+  const profile = await apiGet('/auth/me', token)
+  $('header-name').textContent = profile.full_name || user.email
+  $('header-dealer').textContent = profile.dealership?.name || ''
+
+  // Load inventory
+  await loadInventory(token)
+
+  // Logout
+  $('logout-btn').addEventListener('click', () => {
+    chrome.storage.local.remove(['token', 'user'], () => {
+      location.reload()
+    })
+  })
+
+  // Refresh
+  $('refresh-btn').addEventListener('click', () => loadInventory(token))
+}
+
+async function loadInventory(token) {
+  $('vehicle-list').innerHTML = '<div class="loading">Loading inventory...</div>'
+
+  try {
+    const [inventory, listings] = await Promise.all([
+      apiGet('/inventory', token),
+      apiGet('/listings', token)
+    ])
+
+    const postedVinSet = new Set(listings.map(l => l.inventory?.vin).filter(Boolean))
+
+    $('stat-total').textContent = inventory.length
+    $('stat-posted').textContent = postedVinSet.size
+    $('stat-remaining').textContent = inventory.length - postedVinSet.size
+
+    if (!inventory.length) {
+      $('vehicle-list').innerHTML = `
+        <div class="empty-state">
+          <div class="icon">🚗</div>
+          <p>No inventory found.<br>Add vehicles in your dashboard.</p>
+        </div>`
+      return
+    }
+
+    $('vehicle-list').innerHTML = inventory.map(v => {
+      const isPosted = postedVinSet.has(v.vin)
+      const img = v.image_urls?.[0]
+      const thumb = img
+        ? `<img class="vehicle-thumb" src="${img}" onerror="this.style.display='none'">`
+        : `<div class="vehicle-thumb-placeholder">🚗</div>`
+
+      return `
+        <div class="vehicle-item" data-id="${v.id}">
+          ${thumb}
+          <div class="vehicle-info">
+            <div class="vehicle-name">${v.year} ${v.make} ${v.model}</div>
+            <div class="vehicle-sub">${v.trim || ''} · ${v.mileage ? v.mileage.toLocaleString() + ' km' : 'N/A'}</div>
+          </div>
+          <div>
+            <div class="vehicle-price">${formatPrice(v.price)}</div>
+            <button class="post-btn ${isPosted ? 'posted' : ''}"
+              data-id="${v.id}"
+              data-vin="${v.vin || ''}"
+              ${isPosted ? 'disabled' : ''}>
+              ${isPosted ? '✓ Posted' : 'Post'}
+            </button>
+          </div>
+        </div>`
+    }).join('')
+
+    // Attach post button listeners
+    document.querySelectorAll('.post-btn:not(.posted)').forEach(btn => {
+      btn.addEventListener('click', () => postVehicle(btn.dataset.id, token))
+    })
+
+  } catch (e) {
+    $('vehicle-list').innerHTML = '<div class="loading">Error loading inventory.</div>'
+  }
+}
+
+// ── Post to Facebook ──────────────────────────────
+async function postVehicle(inventoryId, token) {
+  const btn = document.querySelector(`.post-btn[data-id="${inventoryId}"]`)
+  btn.classList.add('posting')
+  btn.textContent = 'Opening...'
+  btn.disabled = true
+
+  // Fetch full vehicle details
+  const vehicle = await apiGet(`/inventory/${inventoryId}`, token)
+
+  // Store vehicle data for the content script to pick up
+  chrome.storage.local.set({ pendingPost: { vehicle, token } }, () => {
+    // Open Facebook Marketplace create listing page
+    chrome.tabs.create({
+      url: 'https://www.facebook.com/marketplace/create/vehicle'
+    })
+    window.close() // close the popup
+  })
+}
