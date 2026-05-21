@@ -138,3 +138,21 @@ app.get('/debug', requireAuth, async (req, res) => {
     dealership_id: req.profile?.dealership_id
   })
 })
+// Image proxy — serves dealer images with correct CORS headers for drag/drop
+app.get('/proxy-image', async (req, res) => {
+  const { url } = req.query
+  if (!url) return res.status(400).json({ error: 'No URL provided' })
+  try {
+    const response = await fetch(url)
+    const buffer = await response.arrayBuffer()
+    const contentType = response.headers.get('content-type') || 'image/jpeg'
+    res.set({
+      'Content-Type': contentType,
+      'Access-Control-Allow-Origin': '*',
+      'Cache-Control': 'public, max-age=3600'
+    })
+    res.send(Buffer.from(buffer))
+  } catch (e) {
+    res.status(500).json({ error: 'Failed to fetch image' })
+  }
+})

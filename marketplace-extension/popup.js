@@ -12,10 +12,15 @@ async function apiGet(path, token, timeout = 60000) {
       signal: controller.signal
     })
     clearTimeout(timer)
+    if (r.status === 401) {
+      // Token expired — force re-login
+      chrome.storage.local.remove(['token', 'user'])
+      throw new Error('AUTH_EXPIRED — please sign in again')
+    }
     return r.json()
   } catch (e) {
     clearTimeout(timer)
-    if (e.name === 'AbortError') throw new Error('Server waking up — please click Refresh in a moment')
+    if (e.name === 'AbortError') throw new Error('Server waking up — click Refresh in a moment')
     throw e
   }
 }
