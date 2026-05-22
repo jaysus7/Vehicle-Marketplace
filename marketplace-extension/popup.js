@@ -185,15 +185,22 @@ async function postVehicle(inventoryId, token) {
   btn.textContent = 'Opening...'
   btn.disabled = true
 
-  // Fetch full vehicle details
   const vehicle = await apiGet(`/inventory/${inventoryId}`, token)
 
-  // Store vehicle data for the content script to pick up
-  chrome.storage.local.set({ pendingPost: { vehicle, token } }, () => {
-    // Open Facebook Marketplace create listing page
-    chrome.tabs.create({
-      url: 'https://www.facebook.com/marketplace/create/vehicle'
+  // Pre-download all photos immediately so they're ready in Downloads
+  if (vehicle.image_urls?.length) {
+    vehicle.image_urls.forEach((url, i) => {
+      const a = document.createElement('a')
+      a.href = `${API}/proxy-image?url=${encodeURIComponent(url)}`
+      a.download = `${vehicle.year}_${vehicle.make}_${vehicle.model}_photo_${i + 1}.jpg`
+        .replace(/\s+/g, '_')
+      document.body.appendChild(a)
+      setTimeout(() => { a.click(); document.body.removeChild(a) }, i * 400)
     })
-    window.close() // close the popup
+  }
+
+  chrome.storage.local.set({ pendingPost: { vehicle, token } }, () => {
+    chrome.tabs.create({ url: 'https://www.facebook.com/marketplace/create/vehicle' })
+    window.close()
   })
 }

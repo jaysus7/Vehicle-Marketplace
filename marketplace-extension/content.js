@@ -1,4 +1,5 @@
-// content.js
+// content.js — Welland Chev Marketplace Lister
+const API = 'https://vehicle-marketplace-s0e4.onrender.com'
 const DELAY = 600
 const sleep = ms => new Promise(r => setTimeout(r, ms))
 
@@ -38,10 +39,7 @@ async function typeInto(el, value) {
 async function pickDropdown(labelText, value) {
   const trigger = [...document.querySelectorAll('[role="combobox"]')]
     .find(el => el.textContent.trim().toLowerCase().includes(labelText.toLowerCase()))
-  if (!trigger) {
-    console.warn('Dropdown not found:', labelText)
-    return false
-  }
+  if (!trigger) { console.warn('Dropdown not found:', labelText); return false }
   trigger.click()
   await sleep(800)
   const option = await waitFor(() =>
@@ -50,11 +48,7 @@ async function pickDropdown(labelText, value) {
     [...document.querySelectorAll('[role="option"]')]
       .find(el => el.textContent.trim().toLowerCase().includes(value.toString().toLowerCase()))
   , 5000)
-  if (option) {
-    option.click()
-    await sleep(600)
-    return true
-  }
+  if (option) { option.click(); await sleep(600); return true }
   console.warn('Option not found:', labelText, value)
   document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
   await sleep(400)
@@ -67,14 +61,14 @@ function mapColor(color) {
   if (c.includes('black') || c.includes('midnight')) return 'Black'
   if (c.includes('white') || c.includes('ivory') || c.includes('pearl')) return 'White'
   if (c.includes('silver') || c.includes('grey') || c.includes('gray')) return 'Silver'
-  if (c.includes('red') || c.includes('crimson') || c.includes('burgundy')) return 'Red'
-  if (c.includes('blue') || c.includes('navy') || c.includes('cobalt')) return 'Blue'
-  if (c.includes('green') || c.includes('forest') || c.includes('olive')) return 'Green'
-  if (c.includes('brown') || c.includes('bronze') || c.includes('copper')) return 'Brown'
+  if (c.includes('red') || c.includes('crimson')) return 'Red'
+  if (c.includes('blue') || c.includes('navy')) return 'Blue'
+  if (c.includes('green') || c.includes('forest')) return 'Green'
+  if (c.includes('brown') || c.includes('bronze')) return 'Brown'
   if (c.includes('gold') || c.includes('yellow') || c.includes('champagne')) return 'Gold'
   if (c.includes('orange')) return 'Orange'
   if (c.includes('purple') || c.includes('violet')) return 'Purple'
-  if (c.includes('tan') || c.includes('beige') || c.includes('sand')) return 'Tan'
+  if (c.includes('tan') || c.includes('beige')) return 'Tan'
   return 'Other'
 }
 
@@ -93,9 +87,9 @@ function showStatus(message, type = 'info') {
     overlay = document.createElement('div')
     overlay.id = 'wc-status'
     overlay.style.cssText = `
-      position:fixed;bottom:20px;right:220px;background:#1a1a1a;
+      position:fixed;bottom:130px;right:20px;background:#1a1a1a;
       color:#fff;padding:12px 18px;border-radius:10px;font-size:13px;
-      font-family:-apple-system,sans-serif;z-index:999999;
+      font-family:-apple-system,sans-serif;z-index:2147483646;
       border:1px solid #333;max-width:280px;
       box-shadow:0 4px 20px rgba(0,0,0,0.4);
     `
@@ -108,115 +102,128 @@ function showStatus(message, type = 'info') {
   `
 }
 
-const API = 'https://vehicle-marketplace-s0e4.onrender.com'
+function showPhotoStrip(imageUrls) {
+  if (!imageUrls?.length) return
+  document.getElementById('wc-photo-strip')?.remove()
 
-function proxyUrl(url) {
-  return `${API}/proxy-image?url=${encodeURIComponent(url)}`
-}
-
-async function preparePhotosForDrop(imageUrls) {
-  if (!imageUrls?.length) return []
-  const proxied = []
-  for (const url of imageUrls.slice(0, 20)) {
-    try {
-      const res = await fetch(proxyUrl(url))
-      const blob = await res.blob()
-      const objectUrl = URL.createObjectURL(blob)
-      proxied.push({ objectUrl, original: url })
-    } catch (e) {
-      console.warn('Proxy failed for:', url)
-    }
-  }
-  return proxied
-}
-
-function showUploadGuide(proxiedPhotos) {
+  // Highlight upload zone
   const uploadZone = document.querySelector('[aria-label="Add photos"]') ||
     [...document.querySelectorAll('div')].find(el => el.textContent.trim() === 'Add photos')
-
   if (uploadZone) {
     uploadZone.style.outline = '3px dashed #3b82f6'
     uploadZone.style.outlineOffset = '4px'
     uploadZone.style.borderRadius = '8px'
   }
 
-  if (!document.getElementById('wc-style')) {
-    const style = document.createElement('style')
-    style.id = 'wc-style'
-    style.textContent = `
-      @keyframes wc-pulse {
-        0%, 100% { outline-color: #3b82f6; }
-        50% { outline-color: #22c55e; }
-      }
-    `
-    document.head.appendChild(style)
-  }
-
-  if (uploadZone) uploadZone.style.animation = 'wc-pulse 1.5s ease-in-out infinite'
-
-  // Build draggable photo strip
-  document.getElementById('wc-photo-strip')?.remove()
   const strip = document.createElement('div')
   strip.id = 'wc-photo-strip'
   strip.style.cssText = `
-    position:fixed;bottom:0;left:0;right:0;
-    background:#1a1a1a;border-top:1px solid #2a2a2a;
-    padding:10px 16px;z-index:999999;
-    display:flex;align-items:center;gap:10px;
+    position:fixed;bottom:0;left:0;right:0;height:110px;
+    background:#111;border-top:2px solid #3b82f6;
+    padding:10px 16px;z-index:2147483647;
+    display:flex;align-items:center;gap:12px;
     font-family:-apple-system,sans-serif;
-    box-shadow:0 -4px 20px rgba(0,0,0,0.4);
+    box-shadow:0 -4px 24px rgba(0,0,0,0.6);
   `
 
   const label = document.createElement('div')
-  label.style.cssText = 'color:#fff;font-size:12px;font-weight:600;white-space:nowrap;min-width:120px;'
-  label.innerHTML = `📸 Drag photos<br><span style="color:#888;font-weight:400">into upload zone ↑</span>`
+  label.style.cssText = 'color:#fff;font-size:12px;font-weight:700;white-space:nowrap;min-width:110px;line-height:1.6;'
+  label.innerHTML = `📸 ${imageUrls.length} Photo${imageUrls.length > 1 ? 's' : ''}<br><span style="color:#22c55e;font-size:11px;font-weight:400;">Downloaded to Downloads folder</span><br><span style="color:#888;font-size:10px;">Click "Add photos" → select all</span>`
   strip.appendChild(label)
 
-  const photoRow = document.createElement('div')
-  photoRow.style.cssText = 'display:flex;gap:8px;overflow-x:auto;flex:1;'
+  const row = document.createElement('div')
+  row.style.cssText = 'display:flex;gap:8px;overflow-x:auto;flex:1;align-items:center;padding-bottom:4px;'
 
-  proxiedPhotos.forEach(({ objectUrl }, i) => {
+  imageUrls.forEach((url, i) => {
+    const proxySrc = `${API}/proxy-image?url=${encodeURIComponent(url)}`
+    const wrapper = document.createElement('div')
+    wrapper.style.cssText = 'position:relative;flex-shrink:0;'
+
     const img = document.createElement('img')
-    img.src = objectUrl
+    img.src = proxySrc
     img.draggable = true
-    img.title = `Drag photo ${i + 1} into the upload zone`
+    img.title = `Drag photo ${i + 1} to the upload zone`
     img.style.cssText = `
-      height:60px;width:80px;object-fit:cover;border-radius:6px;
-      cursor:grab;border:2px solid #2a2a2a;flex-shrink:0;
+      height:80px;width:110px;object-fit:cover;
+      border-radius:8px;cursor:grab;
+      border:2px solid #2a2a2a;display:block;
+      transition:border-color 0.2s;
     `
 
-    img.addEventListener('dragstart', e => {
-      // Set the image URL as drag data
-      e.dataTransfer.setData('text/uri-list', objectUrl)
-      e.dataTransfer.setData('text/plain', objectUrl)
-      img.style.opacity = '0.5'
-      if (uploadZone) uploadZone.style.outlineColor = '#22c55e'
+    img.addEventListener('mouseenter', () => img.style.borderColor = '#3b82f6')
+    img.addEventListener('mouseleave', () => img.style.borderColor = '#2a2a2a')
+    img.addEventListener('click', async () => {
+      try {
+        // Fetch image through proxy as blob
+        const res = await fetch(`${API}/proxy-image?url=${encodeURIComponent(url)}`)
+        const blob = await res.blob()
+
+        // Copy to clipboard as image
+        await navigator.clipboard.write([
+          new ClipboardItem({ [blob.type]: blob })
+        ])
+
+        // Flash the image to show it's copied
+        img.style.borderColor = '#22c55e'
+        num.textContent = '📋'
+        setTimeout(() => {
+          img.style.borderColor = '#2a2a2a'
+          num.textContent = i + 1
+        }, 1500)
+
+        // Show instruction
+        showStatus('Photo copied! Click the upload zone and press Cmd+V to paste.', 'info')
+      } catch(e) {
+        console.warn('Clipboard copy failed:', e)
+        showStatus('Click "Add photos" and select manually.', 'info')
+      }
     })
 
-    img.addEventListener('dragend', () => {
-      img.style.opacity = '1'
-      if (uploadZone) uploadZone.style.outlineColor = '#3b82f6'
-    })
+    const num = document.createElement('div')
+    num.style.cssText = `
+      position:absolute;top:4px;left:4px;background:rgba(0,0,0,0.7);
+      color:#fff;font-size:10px;padding:2px 5px;border-radius:4px;
+    `
+    num.textContent = i + 1
 
-    photoRow.appendChild(img)
+    wrapper.appendChild(img)
+    wrapper.appendChild(num)
+    row.appendChild(wrapper)
   })
 
-  strip.appendChild(photoRow)
+  strip.appendChild(row)
 
-  const closeBtn = document.createElement('button')
-  closeBtn.textContent = '✕'
-  closeBtn.style.cssText = `
-    background:none;border:1px solid #333;color:#888;
-    padding:6px 10px;border-radius:6px;font-size:13px;
-    cursor:pointer;flex-shrink:0;
+  const close = document.createElement('button')
+  close.textContent = '✕ Close'
+  close.style.cssText = `
+    background:#1a1a1a;border:1px solid #333;color:#888;
+    padding:8px 12px;border-radius:8px;font-size:12px;
+    cursor:pointer;white-space:nowrap;flex-shrink:0;
   `
-  closeBtn.addEventListener('click', () => {
+  close.addEventListener('click', () => {
     strip.remove()
-    if (uploadZone) { uploadZone.style.outline = ''; uploadZone.style.animation = '' }
+    document.getElementById('wc-status')?.remove()
+    if (uploadZone) uploadZone.style.outline = ''
   })
-  strip.appendChild(closeBtn)
-
-  document.body.appendChild(strip)
+  const markPosted = document.createElement('button')
+  markPosted.textContent = '✅ Mark Posted'
+  markPosted.style.cssText = `
+    background:#22c55e;border:none;color:#000;
+    padding:8px 12px;border-radius:8px;font-size:12px;font-weight:700;
+    cursor:pointer;white-space:nowrap;flex-shrink:0;
+  `
+  markPosted.addEventListener('click', () => {
+    chrome.runtime.sendMessage({
+      type: 'LISTING_POSTED',
+      inventory_id: vehicle.id,
+      fb_listing_url: window.location.href
+    })
+    markPosted.textContent = '✅ Posted!'
+    markPosted.disabled = true
+    markPosted.style.background = '#166534'
+    markPosted.style.color = '#4ade80'
+  })
+  strip.insertBefore(markPosted, close)
 }
 
 async function fillListingForm(vehicle) {
@@ -322,16 +329,10 @@ async function fillListingForm(vehicle) {
   }
   await sleep(DELAY)
 
-  showStatus('✅ Form filled! Check the download banner.', 'success')
-  autoDownloadPhotos(vehicle.image_urls || [])
-  showUploadGuide(vehicle.image_urls || [])
+  showStatus('✅ Form filled! Drag photos then click Next.', 'success')
+  showPhotoStrip(vehicle.image_urls || [])
   console.log('✅ Done')
-
-  chrome.runtime.sendMessage({
-    type: 'LISTING_POSTED',
-    inventory_id: vehicle.id,
-    fb_listing_url: window.location.href
-  })
+  // Note: listing is recorded when user clicks Next/Publish on Facebook
 }
 
 if (window.location.href.includes('/marketplace/create/vehicle') ||
