@@ -221,40 +221,40 @@ function showPhotoStrip(imageUrls, vehicleId) {
     uploadBtn.disabled = true
     uploadBtn.style.background = '#1e3a5f'
 
-    const vehicleName = `${imageUrls[0]?.split('/').slice(-2, -1)[0] || 'vehicle'}`
+    // Download all photos using chrome.downloads directly
+    const downloadIds = []
+    for (let i = 0; i < imageUrls.length; i++) {
+      const url = `${API}/proxy-image?url=${encodeURIComponent(imageUrls[i])}`
+      const filename = `WellandChev_Temp/photo_${i + 1}.jpg`
+      await new Promise(resolve => {
+        chrome.downloads.download({ url, filename, saveAs: false }, id => {
+          if (id) downloadIds.push(id)
+          resolve()
+        })
+      })
+      await sleep(200)
+    }
 
-    chrome.runtime.sendMessage({
-      type: 'DOWNLOAD_AND_PICK',
-      imageUrls,
-      vehicleName
-    })
+    uploadBtn.textContent = `✅ ${downloadIds.length} photos in Downloads/WellandChev_Temp`
+    uploadBtn.style.background = '#22c55e'
+    uploadBtn.style.color = '#000'
 
-    // Listen for downloads ready
-    chrome.runtime.onMessage.addListener(function handler(m) {
-      if (m.type !== 'PHOTOS_READY') return
-      chrome.runtime.onMessage.removeListener(handler)
+    // Auto-click Facebook's Add Photos button
+    await sleep(500)
+    const addPhotosBtn = document.querySelector('[aria-label="Add photos"]') ||
+      [...document.querySelectorAll('div[role="button"]')]
+        .find(el => el.textContent.trim() === 'Add photos')
+    if (addPhotosBtn) addPhotosBtn.click()
 
-      uploadBtn.textContent = '✅ Photos Ready — Click "Add photos"'
-      uploadBtn.style.background = '#22c55e'
-      uploadBtn.style.color = '#000'
-
-      // Auto-click the Facebook upload button
-      const addPhotosBtn = document.querySelector('[aria-label="Add photos"]') ||
-        [...document.querySelectorAll('div[role="button"]')]
-          .find(el => el.textContent.trim() === 'Add photos')
-      if (addPhotosBtn) addPhotosBtn.click()
-
-      // Store download IDs for cleanup
-      const dlIds = m.downloadIds
-
-      // After 60 seconds, delete temp files automatically
-      setTimeout(() => {
-        chrome.runtime.sendMessage({ type: 'DELETE_TEMP_PHOTOS', downloadIds: dlIds })
-        uploadBtn.textContent = '🗑 Photos deleted'
-        uploadBtn.style.background = '#1a1a1a'
-        uploadBtn.style.color = '#666'
-      }, 60000)
-    })
+    // Auto-delete after 2 minutes
+    setTimeout(() => {
+      downloadIds.forEach(id => {
+        chrome.downloads.removeFile(id, () => chrome.downloads.erase({ id }))
+      })
+      uploadBtn.textContent = '🗑 Temp photos deleted'
+      uploadBtn.style.background = '#1a1a1a'
+      uploadBtn.style.color = '#666'
+    }, 120000)
   })
 
   strip.appendChild(uploadBtn)
@@ -297,39 +297,92 @@ async function fillListingForm(vehicle) {
       .find(el => el.textContent.trim().toLowerCase() === 'make' ||
                   el.textContent.trim().toLowerCase().startsWith('make'))
   , 10000)
+
   if (makeTrigger) {
     makeTrigger.scrollIntoView({ behavior: 'smooth', block: 'center' })
     await sleep(500)
     makeTrigger.click()
-    await sleep(800)
+    await sleep(1000)
+
+    // After clicking, look for any input that appeared (search box inside dropdown)
+    const searchInput = await waitFor(() =>
+      [...document.querySelectorAll('input')]
+        .find(el => el.offsetParent !== null && el.type !== 'hidden' && el.value === '')
+    , 3000)
+
+    if (searchInput) {
+      const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set
+      if (nativeSetter) nativeSetter.call(searchInput, vehicle.make)
+      searchInput.dispatchEvent(new Event('input', { bubbles: true }))
+      searchInput.dispatchEvent(new Event('change', { bubbles: true }))
+      await sleep(800)
+    }
+
     const makeOption = await waitFor(() =>
       [...document.querySelectorAll('[role="option"]')]
         .find(el => el.textContent.trim().toLowerCase() === vehicle.make.toLowerCase()) ||
       [...document.querySelectorAll('[role="option"]')]
         .find(el => el.textContent.trim().toLowerCase().includes(vehicle.make.toLowerCase()))
     , 5000)
-    if (makeOption) { makeOption.click(); await sleep(600) }
+
+    if (makeOption) {
+      makeOption.click()
+      await sleep(600)
+      console.log('✓ Make selected:', vehicle.make)
+    } else {
+      console.warn('Make option not found:', vehicle.make)
+    }
   }
   await sleep(2000)
 
   showStatus('Selecting model...')
-  await waitFor(() =>
+  const modelTrigger = await waitFor(() =>
     [...document.querySelectorAll('[role="combobox"]')]
-      .find(el => el.textContent.trim().toLowerCase().includes('model')) ||
-    getFormFields().find(f => f.closest('label, div')?.textContent?.includes('Model'))
+      .find(el => el.textContent.trim().toLowerCase() === 'model' ||
+                  el.textContent.trim().toLowerCase().startsWith('model'))
   , 8000)
-  await sleep(800)
-  const modelCombo = [...document.querySelectorAll('[role="combobox"]')]
-    .find(el => el.textContent.trim().toLowerCase().includes('model'))
-  if (modelCombo) {
-    await pickDropdown('Model', vehicle.model)
-  } else {
-    const modelEl = getFormFields().find(f => f.closest('label, div')?.textContent?.includes('Model'))
-    if (modelEl) {
-      await typeInto(modelEl, vehicle.model)
-      await sleep(500)
-      const opt = document.querySelector('[role="option"]')
-      if (opt) { opt.click(); await sleep(400) }
+
+  if (modelTrigger) {
+    modelTrigger.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    await sleep(500)
+    modelTrigger.click()
+    await sleep(1000)
+
+    const searchInput2 = await waitFor(() =>
+      [...document.querySelectorAll('input')]
+        .find(el => el.offsetParent !== null && el.type !== 'hidden' && el.value === '')
+    , 3000)
+
+    if (searchInput2) {
+      const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set
+      if (nativeSetter) nativeSetter.call(searchInput2, vehicle.model)
+      searchInput2.dispatchEvent(new Event('input', { bubbles: true }))
+      searchInput2.dispatchEvent(new Event('change', { bubbles: true }))
+      await sleep(800)
+    }
+
+    const modelOption = await waitFor(() =>
+      [...document.querySelectorAll('[role="option"]')]
+        .find(el => el.textContent.trim().toLowerCase() === vehicle.model.toLowerCase()) ||
+      [...document.querySelectorAll('[role="option"]')]
+        .find(el => el.textContent.trim().toLowerCase().includes(vehicle.model.toLowerCase()))
+    , 5000)
+
+    if (modelOption) {
+      modelOption.click()
+      await sleep(600)
+      console.log('✓ Model selected:', vehicle.model)
+    } else {
+      console.warn('Model option not found:', vehicle.model)
+      // Fall back to text input if it exists
+      const modelTextField = getFormFields()
+        .find(f => f.closest('label, div')?.textContent?.includes('Model'))
+      if (modelTextField) {
+        await typeInto(modelTextField, vehicle.model)
+        await sleep(500)
+        const opt = document.querySelector('[role="option"]')
+        if (opt) { opt.click(); await sleep(400) }
+      }
     }
   }
   await sleep(1000)
