@@ -209,7 +209,55 @@ function showPhotoStrip(imageUrls, vehicleId) {
     markPosted.style.background = '#166534'
     markPosted.style.color = '#4ade80'
   })
-  strip.appendChild(markPosted)
+  const uploadBtn = document.createElement('button')
+  uploadBtn.textContent = '📁 Upload Photos'
+  uploadBtn.style.cssText = `
+    background:#3b82f6;border:none;color:#fff;
+    padding:8px 12px;border-radius:8px;font-size:12px;font-weight:700;
+    cursor:pointer;white-space:nowrap;flex-shrink:0;
+  `
+  uploadBtn.addEventListener('click', async () => {
+    uploadBtn.textContent = '⬇ Downloading...'
+    uploadBtn.disabled = true
+    uploadBtn.style.background = '#1e3a5f'
+
+    const vehicleName = `${imageUrls[0]?.split('/').slice(-2, -1)[0] || 'vehicle'}`
+
+    chrome.runtime.sendMessage({
+      type: 'DOWNLOAD_AND_PICK',
+      imageUrls,
+      vehicleName
+    })
+
+    // Listen for downloads ready
+    chrome.runtime.onMessage.addListener(function handler(m) {
+      if (m.type !== 'PHOTOS_READY') return
+      chrome.runtime.onMessage.removeListener(handler)
+
+      uploadBtn.textContent = '✅ Photos Ready — Click "Add photos"'
+      uploadBtn.style.background = '#22c55e'
+      uploadBtn.style.color = '#000'
+
+      // Auto-click the Facebook upload button
+      const addPhotosBtn = document.querySelector('[aria-label="Add photos"]') ||
+        [...document.querySelectorAll('div[role="button"]')]
+          .find(el => el.textContent.trim() === 'Add photos')
+      if (addPhotosBtn) addPhotosBtn.click()
+
+      // Store download IDs for cleanup
+      const dlIds = m.downloadIds
+
+      // After 60 seconds, delete temp files automatically
+      setTimeout(() => {
+        chrome.runtime.sendMessage({ type: 'DELETE_TEMP_PHOTOS', downloadIds: dlIds })
+        uploadBtn.textContent = '🗑 Photos deleted'
+        uploadBtn.style.background = '#1a1a1a'
+        uploadBtn.style.color = '#666'
+      }, 60000)
+    })
+  })
+
+  strip.appendChild(uploadBtn)
 
   const close = document.createElement('button')
   close.textContent = '✕'
