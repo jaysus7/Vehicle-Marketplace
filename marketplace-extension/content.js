@@ -87,11 +87,12 @@ function mapColor(color) {
 
 function mapBodyStyle(model) {
   const m = model?.toLowerCase() || ''
-  if (['silverado','sierra','ram','f-150','f150','tundra','ranger','colorado','canyon','tacoma','titan','frontier'].some(t => m.includes(t))) return 'Truck'
-  if (['equinox','traverse','tahoe','suburban','blazer','trax','trailblazer','terrain','enclave','acadia','yukon','expedition','explorer','escape','edge','pilot','crv','rav4','highlander','4runner'].some(t => m.includes(t))) return 'SUV'
-  if (['express','transit','odyssey','sienna','caravan'].some(t => m.includes(t))) return 'Minivan'
-  if (['camaro','mustang','corvette','challenger'].some(t => m.includes(t))) return 'Coupe'
-  return 'Sedan'
+  if (['silverado','sierra','ram','f-150','f150','tundra','ranger','colorado','canyon','tacoma','titan','frontier','1500','2500','3500'].some(t => m.includes(t))) return 'Truck'
+  if (['equinox','traverse','tahoe','suburban','blazer','trax','trailblazer','terrain','enclave','acadia','yukon','expedition','explorer','escape','edge','pilot','crv','rav4','highlander','4runner','pathfinder','murano','rogue','cx-5','tucson','santa fe','sportage','sorento','telluride','palisade','atlas','tiguan','forester','outback','ascent'].some(t => m.includes(t))) return 'SUV'
+  if (['express','transit','odyssey','sienna','caravan','grand caravan','pacifica'].some(t => m.includes(t))) return 'Minivan'
+  if (['camaro','mustang','corvette','challenger','charger'].some(t => m.includes(t))) return 'Coupe'
+  if (['bolt','spark','sonic','cruze','malibu','impala','ioniq','leaf','model 3','model s','sentra','corolla','civic','accord','camry','altima','maxima'].some(t => m.includes(t))) return 'Sedan'
+  return 'SUV' // default to SUV since most Welland inventory is trucks/SUVs
 }
 
 function showStatus(message, type = 'info') {
@@ -243,12 +244,24 @@ async function fillListingForm(vehicle) {
   await sleep(DELAY)
 
   showStatus('Selecting make...')
-  await waitFor(() =>
+  const makeTrigger = await waitFor(() =>
     [...document.querySelectorAll('[role="combobox"]')]
-      .find(el => el.textContent.trim().toLowerCase().includes('make'))
-  )
-  await sleep(800)
-  await pickDropdown('Make', vehicle.make)
+      .find(el => el.textContent.trim().toLowerCase() === 'make' ||
+                  el.textContent.trim().toLowerCase().startsWith('make'))
+  , 10000)
+  if (makeTrigger) {
+    makeTrigger.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    await sleep(500)
+    makeTrigger.click()
+    await sleep(800)
+    const makeOption = await waitFor(() =>
+      [...document.querySelectorAll('[role="option"]')]
+        .find(el => el.textContent.trim().toLowerCase() === vehicle.make.toLowerCase()) ||
+      [...document.querySelectorAll('[role="option"]')]
+        .find(el => el.textContent.trim().toLowerCase().includes(vehicle.make.toLowerCase()))
+    , 5000)
+    if (makeOption) { makeOption.click(); await sleep(600) }
+  }
   await sleep(2000)
 
   showStatus('Selecting model...')
