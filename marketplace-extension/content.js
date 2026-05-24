@@ -3,6 +3,29 @@ const API = 'https://vehicle-marketplace-s0e4.onrender.com'
 const DELAY = 600
 const sleep = ms => new Promise(r => setTimeout(r, ms))
 
+// ── Make/Model normalization ──────────────────
+const MAKE_MAP = {
+  'chev': 'Chevrolet', 'chevy': 'Chevrolet', 'gmc': 'GMC',
+  'buick': 'Buick', 'cadillac': 'Cadillac', 'ford': 'Ford',
+  'dodge': 'Dodge', 'ram': 'Ram', 'chrysler': 'Chrysler',
+  'jeep': 'Jeep', 'honda': 'Honda', 'toyota': 'Toyota',
+  'nissan': 'Nissan', 'hyundai': 'Hyundai', 'kia': 'Kia',
+  'volkswagen': 'Volkswagen', 'vw': 'Volkswagen', 'bmw': 'BMW',
+  'mercedes': 'Mercedes-Benz', 'mercedes-benz': 'Mercedes-Benz',
+  'audi': 'Audi', 'lexus': 'Lexus', 'acura': 'Acura',
+  'infiniti': 'Infiniti', 'lincoln': 'Lincoln', 'mazda': 'Mazda',
+  'mitsubishi': 'Mitsubishi', 'subaru': 'Subaru', 'volvo': 'Volvo',
+  'tesla': 'Tesla', 'pontiac': 'Pontiac', 'saturn': 'Saturn',
+  'oldsmobile': 'Oldsmobile'
+}
+
+function normalizeMake(make) {
+  if (!make) return make
+  const key = make.toLowerCase().trim()
+  return MAKE_MAP[key] || make
+}
+
+// ── Utilities ─────────────────────────────────
 async function waitFor(fn, timeout = 10000) {
   const start = Date.now()
   while (Date.now() - start < timeout) {
@@ -36,22 +59,26 @@ async function typeInto(el, value) {
   return true
 }
 
+// Click a combobox and pick an option, with optional search typing
 async function pickDropdown(labelText, value) {
   const trigger = [...document.querySelectorAll('[role="combobox"]')]
     .find(el => el.textContent.trim().toLowerCase().includes(labelText.toLowerCase()))
   if (!trigger) { console.warn('Dropdown not found:', labelText); return false }
 
+  trigger.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  await sleep(300)
   trigger.click()
-  await sleep(800)
+  await sleep(1000)
 
-  // If there's a search input inside the dropdown, type to filter
-  const searchInput = document.querySelector('[role="listbox"] input, [role="combobox"] input:not([type="hidden"])')
+  // Try typing into any search input that appeared
+  const searchInput = [...document.querySelectorAll('input')]
+    .find(el => el.offsetParent !== null && el.type !== 'hidden' &&
+      !el.closest('[aria-hidden="true"]'))
   if (searchInput) {
     const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set
     if (nativeSetter) nativeSetter.call(searchInput, value)
     searchInput.dispatchEvent(new Event('input', { bubbles: true }))
-    searchInput.dispatchEvent(new Event('change', { bubbles: true }))
-    await sleep(600)
+    await sleep(800)
   }
 
   const option = await waitFor(() =>
@@ -71,28 +98,27 @@ async function pickDropdown(labelText, value) {
 function mapColor(color) {
   if (!color) return 'Black'
   const c = color.toLowerCase()
-  if (c.includes('black') || c.includes('midnight')) return 'Black'
-  if (c.includes('white') || c.includes('ivory') || c.includes('pearl')) return 'White'
-  if (c.includes('silver') || c.includes('grey') || c.includes('gray')) return 'Silver'
-  if (c.includes('red') || c.includes('crimson')) return 'Red'
-  if (c.includes('blue') || c.includes('navy')) return 'Blue'
-  if (c.includes('green') || c.includes('forest')) return 'Green'
-  if (c.includes('brown') || c.includes('bronze')) return 'Brown'
-  if (c.includes('gold') || c.includes('yellow') || c.includes('champagne')) return 'Gold'
+  if (c.includes('black') || c.includes('midnight') || c.includes('mosaic')) return 'Black'
+  if (c.includes('white') || c.includes('ivory') || c.includes('pearl') || c.includes('summit')) return 'White'
+  if (c.includes('silver') || c.includes('grey') || c.includes('gray') || c.includes('moonstone') || c.includes('sterling') || c.includes('satin')) return 'Silver'
+  if (c.includes('red') || c.includes('crimson') || c.includes('cherry') || c.includes('cayenne')) return 'Red'
+  if (c.includes('blue') || c.includes('navy') || c.includes('cobalt') || c.includes('pacific') || c.includes('empire')) return 'Blue'
+  if (c.includes('green') || c.includes('forest') || c.includes('sage')) return 'Green'
+  if (c.includes('brown') || c.includes('bronze') || c.includes('copper') || c.includes('sandy ridge')) return 'Brown'
+  if (c.includes('gold') || c.includes('yellow') || c.includes('champagne') || c.includes('harvest')) return 'Gold'
   if (c.includes('orange')) return 'Orange'
   if (c.includes('purple') || c.includes('violet')) return 'Purple'
-  if (c.includes('tan') || c.includes('beige')) return 'Tan'
+  if (c.includes('tan') || c.includes('beige') || c.includes('sand') || c.includes('dune')) return 'Tan'
   return 'Other'
 }
 
 function mapBodyStyle(model) {
   const m = model?.toLowerCase() || ''
   if (['silverado','sierra','ram','f-150','f150','tundra','ranger','colorado','canyon','tacoma','titan','frontier','1500','2500','3500'].some(t => m.includes(t))) return 'Truck'
-  if (['equinox','traverse','tahoe','suburban','blazer','trax','trailblazer','terrain','enclave','acadia','yukon','expedition','explorer','escape','edge','pilot','crv','rav4','highlander','4runner','pathfinder','murano','rogue','cx-5','tucson','santa fe','sportage','sorento','telluride','palisade','atlas','tiguan','forester','outback','ascent'].some(t => m.includes(t))) return 'SUV'
+  if (['equinox','traverse','tahoe','suburban','blazer','trax','trailblazer','terrain','enclave','acadia','yukon','expedition','explorer','escape','edge','pilot','crv','rav4','highlander','4runner','pathfinder','murano','rogue','cx-5','tucson','santa fe','sportage','sorento','telluride','palisade','atlas','tiguan','forester','outback','ascent','envision','encore','envoy','envista'].some(t => m.includes(t))) return 'SUV'
   if (['express','transit','odyssey','sienna','caravan','grand caravan','pacifica'].some(t => m.includes(t))) return 'Minivan'
   if (['camaro','mustang','corvette','challenger','charger'].some(t => m.includes(t))) return 'Coupe'
-  if (['bolt','spark','sonic','cruze','malibu','impala','ioniq','leaf','model 3','model s','sentra','corolla','civic','accord','camry','altima','maxima'].some(t => m.includes(t))) return 'Sedan'
-  return 'SUV' // default to SUV since most Welland inventory is trucks/SUVs
+  return 'Sedan'
 }
 
 function showStatus(message, type = 'info') {
@@ -114,6 +140,42 @@ function showStatus(message, type = 'info') {
     <div style="font-weight:600;margin-bottom:4px">${type === 'success' ? '✅' : '⚙️'} Marketplace Lister</div>
     <div style="color:#aaa">${message}</div>
   `
+}
+
+// ── Photo injection via DataTransfer ─────────
+async function injectPhotosIntoInput(imageUrls) {
+  const fileInput = document.querySelector('input[type="file"][accept*="image"]')
+  if (!fileInput) { console.warn('No file input found'); return false }
+
+  const files = []
+  for (let i = 0; i < Math.min(imageUrls.length, 20); i++) {
+    try {
+      const res = await fetch(`${API}/proxy-image?url=${encodeURIComponent(imageUrls[i])}`)
+      const blob = await res.blob()
+      files.push(new File([blob], `photo_${i + 1}.jpg`, { type: 'image/jpeg' }))
+    } catch(e) {
+      console.warn('Failed to fetch photo', i + 1)
+    }
+  }
+
+  if (!files.length) return false
+
+  const dt = new DataTransfer()
+  files.forEach(f => dt.items.add(f))
+
+  const nativeFileSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'files')
+  if (nativeFileSetter?.set) {
+    nativeFileSetter.set.call(fileInput, dt.files)
+  } else {
+    Object.defineProperty(fileInput, 'files', { value: dt.files, configurable: true })
+  }
+
+  fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+  fileInput.dispatchEvent(new Event('input', { bubbles: true }))
+  await sleep(2000)
+
+  console.log('File input files after injection:', fileInput.files.length)
+  return fileInput.files.length > 0
 }
 
 function showPhotoStrip(imageUrls, vehicleId) {
@@ -141,7 +203,7 @@ function showPhotoStrip(imageUrls, vehicleId) {
 
   const label = document.createElement('div')
   label.style.cssText = 'color:#fff;font-size:12px;font-weight:700;white-space:nowrap;min-width:110px;line-height:1.6;'
-  label.innerHTML = `📸 ${imageUrls.length} Photo${imageUrls.length > 1 ? 's' : ''}<br><span style="color:#22c55e;font-size:11px;font-weight:400;">Click photo to copy</span><br><span style="color:#888;font-size:10px;">or click "Add photos" → select all</span>`
+  label.innerHTML = `📸 ${imageUrls.length} Photos<br><span style="color:#888;font-size:10px;">Click "Upload" or select manually</span>`
   strip.appendChild(label)
 
   const row = document.createElement('div')
@@ -151,39 +213,12 @@ function showPhotoStrip(imageUrls, vehicleId) {
     const proxySrc = `${API}/proxy-image?url=${encodeURIComponent(url)}`
     const wrapper = document.createElement('div')
     wrapper.style.cssText = 'position:relative;flex-shrink:0;'
-
     const img = document.createElement('img')
     img.src = proxySrc
-    img.style.cssText = `
-      height:80px;width:110px;object-fit:cover;
-      border-radius:8px;cursor:pointer;
-      border:2px solid #2a2a2a;display:block;
-      transition:border-color 0.2s;
-    `
-
+    img.style.cssText = `height:80px;width:110px;object-fit:cover;border-radius:8px;border:2px solid #2a2a2a;display:block;`
     const num = document.createElement('div')
-    num.style.cssText = `
-      position:absolute;top:4px;left:4px;background:rgba(0,0,0,0.7);
-      color:#fff;font-size:10px;padding:2px 5px;border-radius:4px;
-    `
+    num.style.cssText = `position:absolute;top:4px;left:4px;background:rgba(0,0,0,0.7);color:#fff;font-size:10px;padding:2px 5px;border-radius:4px;`
     num.textContent = i + 1
-
-    img.addEventListener('mouseenter', () => img.style.borderColor = '#3b82f6')
-    img.addEventListener('mouseleave', () => img.style.borderColor = '#2a2a2a')
-    img.addEventListener('click', async () => {
-      try {
-        const res = await fetch(proxySrc)
-        const blob = await res.blob()
-        await navigator.clipboard.write([new ClipboardItem({ [blob.type]: blob })])
-        img.style.borderColor = '#22c55e'
-        num.textContent = '📋'
-        setTimeout(() => { img.style.borderColor = '#2a2a2a'; num.textContent = i + 1 }, 1500)
-        showStatus('Photo copied! Click upload zone and press Cmd+V.', 'info')
-      } catch(e) {
-        showStatus('Click "Add photos" and select manually.', 'info')
-      }
-    })
-
     wrapper.appendChild(img)
     wrapper.appendChild(num)
     row.appendChild(wrapper)
@@ -191,91 +226,86 @@ function showPhotoStrip(imageUrls, vehicleId) {
 
   strip.appendChild(row)
 
+  // Upload button — tries DataTransfer injection first, falls back to download
+  const uploadBtn = document.createElement('button')
+  uploadBtn.textContent = '📁 Upload Photos'
+  uploadBtn.style.cssText = `background:#3b82f6;border:none;color:#fff;padding:8px 12px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;flex-shrink:0;`
+
+  uploadBtn.addEventListener('click', async () => {
+    uploadBtn.textContent = '⏳ Working...'
+    uploadBtn.disabled = true
+
+    showStatus('Trying to inject photos...', 'info')
+
+    // First try DataTransfer injection
+    const injected = await injectPhotosIntoInput(imageUrls)
+
+    if (injected) {
+      uploadBtn.textContent = '✅ Photos uploaded!'
+      uploadBtn.style.background = '#22c55e'
+      uploadBtn.style.color = '#000'
+      showStatus('✅ Photos injected successfully!', 'success')
+    } else {
+      // Fall back to download
+      showStatus('Downloading photos...', 'info')
+      let downloaded = 0
+      for (let i = 0; i < imageUrls.length; i++) {
+        try {
+          const proxySrc = `${API}/proxy-image?url=${encodeURIComponent(imageUrls[i])}`
+          const res = await fetch(proxySrc)
+          const blob = await res.blob()
+          const objectUrl = URL.createObjectURL(blob)
+          const a = document.createElement('a')
+          a.href = objectUrl
+          a.download = `WellandChev_${String(i + 1).padStart(2, '0')}.jpg`
+          document.body.appendChild(a)
+          a.click()
+          document.body.removeChild(a)
+          setTimeout(() => URL.revokeObjectURL(objectUrl), 5000)
+          downloaded++
+          uploadBtn.textContent = `⬇ ${downloaded}/${imageUrls.length}`
+          await sleep(300)
+        } catch(e) { console.warn('Download failed', i + 1) }
+      }
+      uploadBtn.textContent = `✅ ${downloaded} downloaded — Select in Add Photos`
+      uploadBtn.style.background = '#22c55e'
+      uploadBtn.style.color = '#000'
+      // Click Add Photos
+      await sleep(500)
+      const addBtn = document.querySelector('[aria-label="Add photos"]') ||
+        [...document.querySelectorAll('div[role="button"]')].find(el => el.textContent.trim() === 'Add photos')
+      if (addBtn) addBtn.click()
+    }
+  })
+  strip.appendChild(uploadBtn)
+
   const markPosted = document.createElement('button')
   markPosted.textContent = '✅ Mark Posted'
-  markPosted.style.cssText = `
-    background:#22c55e;border:none;color:#000;
-    padding:8px 12px;border-radius:8px;font-size:12px;font-weight:700;
-    cursor:pointer;white-space:nowrap;flex-shrink:0;
-  `
+  markPosted.style.cssText = `background:#22c55e;border:none;color:#000;padding:8px 12px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;flex-shrink:0;`
   markPosted.addEventListener('click', () => {
-    chrome.runtime.sendMessage({
-      type: 'LISTING_POSTED',
-      inventory_id: vehicleId,
-      fb_listing_url: window.location.href
-    })
+    chrome.runtime.sendMessage({ type: 'LISTING_POSTED', inventory_id: vehicleId, fb_listing_url: window.location.href })
     markPosted.textContent = '✅ Posted!'
     markPosted.disabled = true
     markPosted.style.background = '#166534'
     markPosted.style.color = '#4ade80'
   })
-  const uploadBtn = document.createElement('button')
-  uploadBtn.textContent = '📁 Upload Photos'
-  uploadBtn.style.cssText = `
-    background:#3b82f6;border:none;color:#fff;
-    padding:8px 12px;border-radius:8px;font-size:12px;font-weight:700;
-    cursor:pointer;white-space:nowrap;flex-shrink:0;
-  `
-  uploadBtn.addEventListener('click', async () => {
-    uploadBtn.textContent = '⬇ Downloading...'
-    uploadBtn.disabled = true
-    uploadBtn.style.background = '#1e3a5f'
-
-    let downloaded = 0
-    for (let i = 0; i < imageUrls.length; i++) {
-      try {
-        const proxySrc = `${API}/proxy-image?url=${encodeURIComponent(imageUrls[i])}`
-        const res = await fetch(proxySrc)
-        const blob = await res.blob()
-        const objectUrl = URL.createObjectURL(blob)
-        const a = document.createElement('a')
-        a.href = objectUrl
-        a.download = `WellandChev_photo_${String(i + 1).padStart(2, '0')}.jpg`
-        document.body.appendChild(a)
-        a.click()
-        document.body.removeChild(a)
-        setTimeout(() => URL.revokeObjectURL(objectUrl), 5000)
-        downloaded++
-        uploadBtn.textContent = `⬇ Downloading ${downloaded}/${imageUrls.length}...`
-        await sleep(400)
-      } catch(e) {
-        console.warn('Failed to download photo', i + 1, e)
-      }
-    }
-
-    uploadBtn.textContent = `✅ ${downloaded} photos downloaded — Click "Add photos"`
-    uploadBtn.style.background = '#22c55e'
-    uploadBtn.style.color = '#000'
-
-    // Auto-click Facebook's Add Photos button
-    await sleep(500)
-    const addPhotosBtn = document.querySelector('[aria-label="Add photos"]') ||
-      [...document.querySelectorAll('div[role="button"]')]
-        .find(el => el.textContent.trim() === 'Add photos')
-    if (addPhotosBtn) addPhotosBtn.click()
-  })
-
-  strip.appendChild(uploadBtn)
+  strip.appendChild(markPosted)
 
   const close = document.createElement('button')
   close.textContent = '✕'
-  close.style.cssText = `
-    background:#1a1a1a;border:1px solid #333;color:#888;
-    padding:8px 12px;border-radius:8px;font-size:12px;
-    cursor:pointer;white-space:nowrap;flex-shrink:0;
-  `
+  close.style.cssText = `background:#1a1a1a;border:1px solid #333;color:#888;padding:8px 12px;border-radius:8px;font-size:12px;cursor:pointer;white-space:nowrap;flex-shrink:0;`
   close.addEventListener('click', () => {
     strip.remove()
     document.getElementById('wc-status')?.remove()
     if (uploadZone) uploadZone.style.outline = ''
   })
   strip.appendChild(close)
-
-  document.body.appendChild(strip) // ← THIS was missing before
+  document.body.appendChild(strip)
 }
 
 async function fillListingForm(vehicle) {
-  console.log('🚗 Starting:', vehicle.year, vehicle.make, vehicle.model)
+  const make = normalizeMake(vehicle.make)
+  console.log('🚗 Starting:', vehicle.year, make, vehicle.model)
   showStatus('Starting... please don\'t click anything')
   await sleep(2500)
 
@@ -289,6 +319,7 @@ async function fillListingForm(vehicle) {
   await pickDropdown('Year', String(vehicle.year))
   await sleep(DELAY)
 
+  // ── MAKE — with verification ──
   showStatus('Selecting make...')
   const makeTrigger = await waitFor(() =>
     [...document.querySelectorAll('[role="combobox"]')]
@@ -296,43 +327,49 @@ async function fillListingForm(vehicle) {
                   el.textContent.trim().toLowerCase().startsWith('make'))
   , 10000)
 
+  let makeSelected = false
   if (makeTrigger) {
     makeTrigger.scrollIntoView({ behavior: 'smooth', block: 'center' })
     await sleep(500)
     makeTrigger.click()
     await sleep(1000)
 
-    // After clicking, look for any input that appeared (search box inside dropdown)
-    const searchInput = await waitFor(() =>
-      [...document.querySelectorAll('input')]
-        .find(el => el.offsetParent !== null && el.type !== 'hidden' && el.value === '')
-    , 3000)
-
+    // Type to filter
+    const searchInput = [...document.querySelectorAll('input')]
+      .find(el => el.offsetParent !== null && el.type !== 'hidden' && !el.closest('[aria-hidden="true"]'))
     if (searchInput) {
       const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set
-      if (nativeSetter) nativeSetter.call(searchInput, vehicle.make)
+      if (nativeSetter) nativeSetter.call(searchInput, make)
       searchInput.dispatchEvent(new Event('input', { bubbles: true }))
-      searchInput.dispatchEvent(new Event('change', { bubbles: true }))
       await sleep(800)
     }
 
     const makeOption = await waitFor(() =>
       [...document.querySelectorAll('[role="option"]')]
-        .find(el => el.textContent.trim().toLowerCase() === vehicle.make.toLowerCase()) ||
+        .find(el => el.textContent.trim().toLowerCase() === make.toLowerCase()) ||
       [...document.querySelectorAll('[role="option"]')]
-        .find(el => el.textContent.trim().toLowerCase().includes(vehicle.make.toLowerCase()))
+        .find(el => el.textContent.trim().toLowerCase().includes(make.toLowerCase()))
     , 5000)
 
     if (makeOption) {
       makeOption.click()
-      await sleep(600)
-      console.log('✓ Make selected:', vehicle.make)
-    } else {
-      console.warn('Make option not found:', vehicle.make)
+      await sleep(1000)
+      makeSelected = true
+      console.log('✓ Make selected:', make)
     }
   }
-  await sleep(2000)
 
+  // Verify make is showing in the field
+  await sleep(1200)
+  const makeVerify = [...document.querySelectorAll('[role="combobox"]')]
+    .find(el => el.textContent.trim().toLowerCase().includes(make.toLowerCase()))
+  if (!makeVerify && !makeSelected) {
+    console.warn('Make not verified, retrying...')
+    await pickDropdown('Make', make)
+    await sleep(1500)
+  }
+
+  // ── MODEL — only after make confirmed ──
   showStatus('Selecting model...')
   const modelTrigger = await waitFor(() =>
     [...document.querySelectorAll('[role="combobox"]')]
@@ -346,16 +383,12 @@ async function fillListingForm(vehicle) {
     modelTrigger.click()
     await sleep(1000)
 
-    const searchInput2 = await waitFor(() =>
-      [...document.querySelectorAll('input')]
-        .find(el => el.offsetParent !== null && el.type !== 'hidden' && el.value === '')
-    , 3000)
-
+    const searchInput2 = [...document.querySelectorAll('input')]
+      .find(el => el.offsetParent !== null && el.type !== 'hidden' && !el.closest('[aria-hidden="true"]'))
     if (searchInput2) {
       const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set
       if (nativeSetter) nativeSetter.call(searchInput2, vehicle.model)
       searchInput2.dispatchEvent(new Event('input', { bubbles: true }))
-      searchInput2.dispatchEvent(new Event('change', { bubbles: true }))
       await sleep(800)
     }
 
@@ -371,8 +404,7 @@ async function fillListingForm(vehicle) {
       await sleep(600)
       console.log('✓ Model selected:', vehicle.model)
     } else {
-      console.warn('Model option not found:', vehicle.model)
-      // Fall back to text input if it exists
+      // Text input fallback
       const modelTextField = getFormFields()
         .find(f => f.closest('label, div')?.textContent?.includes('Model'))
       if (modelTextField) {
@@ -438,7 +470,7 @@ async function fillListingForm(vehicle) {
   const descEl = await waitFor(() => document.querySelector('textarea'))
   if (descEl) {
     const desc = vehicle.ai_description || vehicle.description ||
-      `${vehicle.year} ${vehicle.make} ${vehicle.model} ${vehicle.trim || ''}. ` +
+      `${vehicle.year} ${make} ${vehicle.model} ${vehicle.trim || ''}. ` +
       `${vehicle.mileage ? vehicle.mileage.toLocaleString() + ' km. ' : ''}` +
       `${vehicle.exterior_color ? vehicle.exterior_color + ' exterior. ' : ''}` +
       `${vehicle.transmission || 'Automatic'} transmission. ` +
@@ -447,7 +479,7 @@ async function fillListingForm(vehicle) {
   }
   await sleep(DELAY)
 
-  showStatus('✅ Form filled! Add photos then click Next.', 'success')
+  showStatus('✅ Form filled! Click Upload Photos.', 'success')
   showPhotoStrip(vehicle.image_urls || [], vehicle.id)
   console.log('✅ Done')
 }
