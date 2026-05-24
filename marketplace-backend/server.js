@@ -265,9 +265,4 @@ async function postVehicle(inventoryId, token) {
       setTimeout(() => { a.click(); document.body.removeChild(a) }, i * 400)
     })
   }
-
-  chrome.storage.local.set({ pendingPost: { vehicle, token } }, () => {
-    chrome.tabs.create({ url: 'https://www.facebook.com/marketplace/create/vehicle' })
-    window.close()
-  })
 }
