@@ -142,12 +142,12 @@ app.get('/inventory/:id', requireAuth, async (req, res) => {
   }
 });
 
-// Pull mapped marketplace listings
+// GET /listings
 app.get('/listings', requireAuth, async (req, res) => {
   try {
     const { data, error } = await supabase
       .from('listings')
-      .select('*, inventory(vin)')
+      .select('id, dealership_id, inventory_id, fb_listing_id, fb_listing_url') // Clean, unjoined selection
       .eq('dealership_id', req.dealershipId);
 
     if (error) throw error;
