@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Ecosystem Dashboard — MarketplaceSync</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-950 text-slate-100 font-sans antialiased min-h-screen flex flex-col">
+
+  <header class="bg-slate-900 border-b border-slate-800 px-6 py-4 flex flex-wrap justify-between items-center gap-4">
+    <div class="flex items-center space-x-3">
+      <span class="text-xl font-black text-indigo-400">🚗 MarketplaceSync</span>
+      <span class="text-xs bg-slate-800 text-slate-400 border border-slate-700 font-mono px-2 py-0.5 rounded" id="ui-role-pill">Loading...</span>
+    </div>
+    <div class="flex items-center space-x-4">
+      <div class="text-right">
+        <div class="text-sm font-bold text-white" id="ui-profile-name">---</div>
+        <div class="text-xs text-slate-400" id="ui-dealership-name">---</div>
+      </div>
+      <button id="logout-btn" class="bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-1.5 rounded text-xs font-medium border border-slate-700 transition">Sign Out</button>
+    </div>
+  </header>
+
+  <main class="flex-1 max-w-7xl w-full mx-auto p-6 grid md:grid-cols-4 gap-6">
+    
+    <section class="space-y-6 md:col-span-1">
+      <div class="bg-slate-900 border border-slate-800 rounded-lg p-5">
+        <h3 class="text-xs font-bold uppercase tracking-wider text-slate-400 mb-4">Personal Details</h3>
+        <div id="profile-msg" class="hidden mb-3 p-2 bg-emerald-900/50 border border-emerald-700 text-emerald-200 text-xs rounded"></div>
+        <form id="profile-form" class="space-y-3">
+          <div>
+            <label class="block text-[10px] uppercase font-bold text-slate-400 mb-1">Full Name</label>
+            <input type="text" id="prof-name" class="w-full bg-slate-950 border border-slate-800 rounded px-2.5 py-1.5 text-sm text-white focus:outline-none focus:border-indigo-500">
+          </div>
+          <button type="submit" class="w-full bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold py-2 rounded border border-slate-700 transition">Update Identity</button>
+        </form>
+      </div>
+
+      <div class="bg-slate-900 border border-slate-800 rounded-lg p-5">
+        <h3 class="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">Billing & Infrastructure</h3>
+        <p class="text-slate-400 text-xs mb-4 leading-relaxed">Modify credit profiles, pull invoices, or adjust payment frequencies straight via the Stripe interface gateway.</p>
+        <button id="stripe-portal-btn" class="w-full bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold py-2.5 rounded shadow transition flex items-center justify-center space-x-1">
+          <span>💳 Launch Stripe Portal</span>
+        </button>
+      </div>
+    </section>
+
+    <section class="md:col-span-3 space-y-6">
+      
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-4" id="metrics-strip">
+        <div class="bg-slate-900 border border-slate-800 p-4 rounded-lg">
+          <div class="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Fleet In Stock</div>
+          <div class="text-2xl font-black text-white mt-1" id="metric-stock">0</div>
+        </div>
+        <div class="bg-slate-900 border border-slate-800 p-4 rounded-lg">
+          <div class="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Marketplace Listed</div>
+          <div class="text-2xl font-black text-indigo-400 mt-1" id="metric-posted">0</div>
+        </div>
+        <div class="bg-slate-900 border border-slate-800 p-4 rounded-lg">
+          <div class="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Daily Handshakes</div>
+          <div class="text-2xl font-black text-emerald-400 mt-1" id="metric-logins">0</div>
+        </div>
+        <div class="bg-slate-900 border border-slate-800 p-4 rounded-lg">
+          <div class="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Sync Efficiency</div>
+          <div class="text-2xl font-black text-amber-400 mt-1" id="metric-efficiency">0%</div>
+        </div>
+      </div>
+
+      <div id="dealer-view-panel" class="hidden bg-slate-900 border border-slate-800 rounded-lg p-6">
+        <div class="flex justify-between items-center mb-4">
+          <div>
+            <h2 class="text-lg font-bold text-white">Dealership Sales Operations</h2>
+            <p class="text-slate-400 text-xs">Real-time organizational transparency across flooring teams</p>
+          </div>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-left text-xs border-collapse">
+            <thead>
+              <tr class="border-b border-slate-800 text-slate-400 uppercase tracking-wider font-bold">
+                <th class="py-3 px-4">Sales Representative</th>
+                <th class="py-3 px-4">Active Listings Stamped</th>
+                <th class="py-3 px-4">Authentication Hits / Day</th>
+                <th class="py-3 px-4">Operational Status Status</th>
+              </tr>
+            </thead>
+            <tbody id="dealer-team-table-body" class="divide-y divide-slate-800/60 text-slate-200">
+              </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div id="rep-view-panel" class="hidden bg-slate-900 border border-slate-800 rounded-lg p-6">
+        <h2 class="text-lg font-bold text-white mb-2">Your Agent Overview Pipeline</h2>
+        <p class="text-slate-400 text-xs mb-6">Individual distribution efficiency tracking metrics compared to store standards.</p>
+        
+        <div class="grid md:grid-cols-2 gap-6">
+          <div class="bg-slate-950 p-4 rounded border border-slate-800">
+            <h4 class="text-xs uppercase tracking-wider text-slate-400 font-bold mb-2">Marketplace Footprint</h4>
+            <p class="text-sm text-slate-300 leading-relaxed">You are managing <span id="rep-count-text" class="font-bold text-indigo-400">0</span> active postings. Ensure aging physical automotive lots are updated via the Chrome Extension to retain lead routing integrity.</p>
+          </div>
+          <div class="bg-slate-950 p-4 rounded border border-slate-800">
+            <h4 class="text-xs uppercase tracking-wider text-slate-400 font-bold mb-2">Session Continuity</h4>
+            <p class="text-sm text-slate-300 leading-relaxed">Your account verified <span id="rep-login-text" class="font-bold text-emerald-400">0</span> validation check-ins today. Continuous automation token verification ensures data downloads execute smoothly.</p>
+          </div>
+        </div>
+      </div>
+
+    </section>
+  </main>
+
+  <script src="dashboard.js"></script>
+</body>
+</html>
