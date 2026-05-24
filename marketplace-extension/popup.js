@@ -13,7 +13,7 @@ async function apiGet(path, token, timeout = 60000) {
     })
     clearTimeout(timer)
     
-    // ── BILLING & AUTH STATUS INTERCEPTS ──
+    // ── AUTH & BILLING STATUS INTERCEPTS ──
     if (r.status === 401) {
       chrome.storage.local.remove(['token', 'user'])
       throw new Error('AUTH_EXPIRED — please sign in again')
@@ -92,7 +92,6 @@ function showLoginScreen() {
     }
   })
 
-  // Allow Enter key to submit
   $('password').addEventListener('keydown', e => {
     if (e.key === 'Enter') $('login-btn').click()
   })
@@ -103,110 +102,34 @@ async function showInventoryScreen(token, user) {
   $('login-screen').style.display = 'none'
   $('inventory-screen').style.display = 'block'
 
-  // Load profile
-  const profile = await apiGet('/auth/me', token)
-  $('header-name').textContent = profile.full_name || user.email
-  $('header-dealer').textContent = profile.dealership?.name || ''
+  // Set safe fallbacks immediately so UI doesn't look blank while loading
+  $('header-name').textContent = user.email
+  $('header-dealer').textContent = 'Loading profile...'
 
-  // Load inventory
-async function loadInventory(token) {
-  $('vehicle-list').innerHTML = '<div class="loading">Loading inventory...</div>'
+  // Instantly load cars on first launch without waiting for profile responses
+  loadInventory(token)
 
-  try {
-    // Your existing Promise.all calls...
-    const [inventory, listingsRes] = await Promise.all([
-      apiGet('/inventory', token),
-      apiGet('/listings', token)
-    ])
-
-    const listings = Array.isArray(listingsRes) ? listingsRes : []
-    const postedVinSet = new Set(listings.map(l => l.inventory?.vin).filter(Boolean))
-
-    $('stat-total').textContent = inventory.length
-    $('stat-posted').textContent = postedVinSet.size
-    $('stat-remaining').textContent = inventory.length - postedVinSet.size
-
-    if (!inventory.length) {
-      $('vehicle-list').innerHTML = `
-        <div class="empty-state">
-          <div class="icon">🚗</div>
-          <p>No inventory found.<br>Add vehicles in your dashboard.</p>
-        </div>`
-      return
-    }
-
-    $('vehicle-list').innerHTML = inventory.map(v => {
-      // ... Your existing mapping logic stays completely identical
-    }).join('')
-
-    document.querySelectorAll('.post-btn:not(.posted)').forEach(btn => {
-      btn.addEventListener('click', () => postVehicle(btn.dataset.id, token))
+  // Lazy-load profile metadata down-stream to maximize UI speed
+  apiGet('/auth/me', token)
+    .then(profile => {
+      if (profile) {
+        $('header-name').textContent = profile.full_name || user.email
+        $('header-dealer').textContent = profile.dealership?.name || ''
+      }
+    })
+    .catch(err => {
+      console.warn('Non-blocking profile load error:', err.message)
+      if (err.message === 'SUBSCRIPTION_REQUIRED') handleSubscriptionGate(token)
     })
 
-  } catch (e) {
-    // ── NEW CUSTOM BILLING GATEWAY UI INTERCEPT ──
-    if (e.message === 'SUBSCRIPTION_REQUIRED') {
-      $('stat-total').textContent = '0'
-      $('stat-posted').textContent = 'Locked'
-      $('stat-remaining').textContent = 'Locked'
-
-      $('vehicle-list').innerHTML = `
-        <div class="empty-state" style="padding: 24px 12px;">
-          <div class="icon" style="color: #ff4d4d;">💳</div>
-          <p style="font-weight: bold; margin: 4px 0;">Subscription Inactive</p>
-          <p style="font-size: 11px; color: #666; margin-bottom: 14px;">Please activate your dealership plan to access sync features.</p>
-          <button id="ui-manage-billing-btn" style="background: #635bff; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; font-weight: bold; width: 85%; font-size: 12px; transition: background 0.2s;">
-            Manage Account & Billing
-          </button>
-        </div>`
-
-      $('ui-manage-billing-btn').addEventListener('click', async () => {
-        const btn = $('ui-manage-billing-btn')
-        btn.textContent = 'Connecting to Stripe...'
-        btn.disabled = true
-
-        try {
-          // Attempt to pull self-service customer portal link first
-          let r = await fetch(`${API}/billing/portal`, {
-            method: 'POST',
-            headers: { 'Authorization': `Bearer ${token}` }
-          })
-          
-          // If 400 is returned, they have no stripe_customer_id profile yet, roll into checkout creation
-          if (r.status === 400 || !r.ok) {
-            r = await fetch(`${API}/billing/checkout`, {
-              method: 'POST',
-              headers: { 'Authorization': `Bearer ${token}` }
-            })
-          }
-
-          const data = await r.json()
-          if (data.url) {
-            chrome.tabs.create({ url: data.url })
-          } else {
-            btn.textContent = 'Error loading gateway'
-            btn.disabled = false
-          }
-        } catch (err) {
-          btn.textContent = 'Connection Error'
-          btn.disabled = false
-        }
-      })
-      return
-    }
-
-    // Default error handling fallback
-    $('vehicle-list').innerHTML = `<div class="loading">⚠️ ${e.message || 'Error loading inventory.'}<br><br>Click Refresh to try again.</div>`
-  }
-}
-  // Logout
+  // Logout Event Link
   $('logout-btn').addEventListener('click', () => {
     chrome.storage.local.remove(['token', 'user'], () => {
       location.reload()
     })
   })
 
-  // Refresh
+  // Refresh Event Link
   $('refresh-btn').addEventListener('click', () => loadInventory(token))
 }
 
@@ -222,6 +145,7 @@ async function loadInventory(token) {
     const listings = Array.isArray(listingsRes) ? listingsRes : []
     const postedVinSet = new Set(listings.map(l => l.inventory?.vin).filter(Boolean))
 
+    // Populate Counter Elements
     $('stat-total').textContent = inventory.length
     $('stat-posted').textContent = postedVinSet.size
     $('stat-remaining').textContent = inventory.length - postedVinSet.size
@@ -235,6 +159,7 @@ async function loadInventory(token) {
       return
     }
 
+    // FIX: Re-injected the mapping logic to parse arrays straight to DOM rows
     $('vehicle-list').innerHTML = inventory.map(v => {
       const isPosted = postedVinSet.has(v.vin)
       const img = v.image_urls?.[0]
@@ -261,14 +186,66 @@ async function loadInventory(token) {
         </div>`
     }).join('')
 
-    // Attach post button listeners
+    // Reattach post listeners to fresh nodes
     document.querySelectorAll('.post-btn:not(.posted)').forEach(btn => {
       btn.addEventListener('click', () => postVehicle(btn.dataset.id, token))
     })
 
   } catch (e) {
-    $('vehicle-list').innerHTML = `<div class="loading">⚠️ ${e.message || 'Error loading inventory.'}<br><br>Click Refresh to try again.</div>`
+    if (e.message === 'SUBSCRIPTION_REQUIRED') {
+      handleSubscriptionGate(token)
+    } else {
+      $('vehicle-list').innerHTML = `<div class="loading">⚠️ ${e.message || 'Error loading inventory.'}<br><br>Click Refresh to try again.</div>`
+    }
   }
+}
+
+// ── Subscription Gate Handler ─────────────────────
+function handleSubscriptionGate(token) {
+  $('stat-total').textContent = '0'
+  $('stat-posted').textContent = 'Locked'
+  $('stat-remaining').textContent = 'Locked'
+
+  $('vehicle-list').innerHTML = `
+    <div class="empty-state" style="padding: 24px 12px;">
+      <div class="icon" style="color: #ff4d4d; font-size: 24px; margin-bottom: 8px;">💳</div>
+      <p style="font-weight: bold; margin: 4px 0; color: #333;">Subscription Inactive</p>
+      <p style="font-size: 11px; color: #666; margin-bottom: 14px; line-height: 1.4;">Please activate your dealership plan to access sync features.</p>
+      <button id="ui-manage-billing-btn" style="background: #635bff; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; font-weight: bold; width: 85%; font-size: 12px;">
+        Manage Account & Billing
+      </button>
+    </div>`
+
+  $('ui-manage-billing-btn').addEventListener('click', async () => {
+    const btn = $('ui-manage-billing-btn')
+    btn.textContent = 'Connecting to Stripe...'
+    btn.disabled = true
+
+    try {
+      let r = await fetch(`${API}/billing/portal`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` }
+      })
+      
+      if (r.status === 400 || !r.ok) {
+        r = await fetch(`${API}/billing/checkout`, {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${token}` }
+        })
+      }
+
+      const data = await r.json()
+      if (data.url) {
+        chrome.tabs.create({ url: data.url })
+      } else {
+        btn.textContent = 'Error loading gateway'
+        btn.disabled = false
+      }
+    } catch (err) {
+      btn.textContent = 'Connection Error'
+      btn.disabled = false
+    }
+  })
 }
 
 // ── Post to Facebook ──────────────────────────────
@@ -280,13 +257,11 @@ async function postVehicle(inventoryId, token) {
 
   const vehicle = await apiGet(`/inventory/${inventoryId}`, token)
 
-  // Pre-download all photos immediately so they're ready in Downloads
   if (vehicle.image_urls?.length) {
     vehicle.image_urls.forEach((url, i) => {
       const a = document.createElement('a')
       a.href = `${API}/proxy-image?url=${encodeURIComponent(url)}`
-      a.download = `${vehicle.year}_${vehicle.make}_${vehicle.model}_photo_${i + 1}.jpg`
-        .replace(/\s+/g, '_')
+      a.download = `${vehicle.year}_${vehicle.make}_${vehicle.model}_photo_${i + 1}.jpg`.replace(/\s+/g, '_')
       document.body.appendChild(a)
       setTimeout(() => { a.click(); document.body.removeChild(a) }, i * 400)
     })
