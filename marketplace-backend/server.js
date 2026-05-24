@@ -57,6 +57,42 @@ app.post('/billing/portal', requireAuth, async (req, res) => {
   }
 });
 
+switch (event.type) {
+  case 'checkout.session.completed': {
+    const session = event.data.object;
+    // Update status to ACTIVE
+    await supabase
+      .from('dealerships')
+      .update({
+        stripe_customer_id: session.customer,
+        subscription_id: session.subscription,
+        billing_status: 'ACTIVE'
+      })
+      .eq('id', session.client_reference_id);
+    break;
+  }
+
+  case 'customer.subscription.deleted': {
+    const subscription = event.data.object;
+    // Subscription canceled or closed out entirely -> Block access immediately
+    await supabase
+      .from('dealerships')
+      .update({ billing_status: 'INACTIVE' })
+      .eq('subscription_id', subscription.id);
+    break;
+  }
+
+  case 'invoice.payment_failed': {
+    const invoice = event.data.object;
+    // Monthly recurring payment failed -> Set status to past_due (our gate will catch and block it)
+    await supabase
+      .from('dealerships')
+      .update({ billing_status: 'PAST_DUE' })
+      .eq('stripe_customer_id', invoice.customer);
+    break;
+  }
+}
+
 // Initialize Supabase Client
 const supabase = createClient(
   process.env.SUPABASE_URL,
