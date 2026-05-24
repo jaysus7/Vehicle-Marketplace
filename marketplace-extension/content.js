@@ -248,6 +248,7 @@ function showPhotoStrip(imageUrls, vehicleId) {
     } else {
       // Fall back to download
       showStatus('Downloading photos...', 'info')
+      const objectUrls = []
       let downloaded = 0
       for (let i = 0; i < imageUrls.length; i++) {
         try {
@@ -255,26 +256,36 @@ function showPhotoStrip(imageUrls, vehicleId) {
           const res = await fetch(proxySrc)
           const blob = await res.blob()
           const objectUrl = URL.createObjectURL(blob)
+          objectUrls.push(objectUrl)
           const a = document.createElement('a')
           a.href = objectUrl
           a.download = `WellandChev_${String(i + 1).padStart(2, '0')}.jpg`
           document.body.appendChild(a)
           a.click()
           document.body.removeChild(a)
-          setTimeout(() => URL.revokeObjectURL(objectUrl), 5000)
           downloaded++
           uploadBtn.textContent = `⬇ ${downloaded}/${imageUrls.length}`
           await sleep(300)
         } catch(e) { console.warn('Download failed', i + 1) }
       }
+
       uploadBtn.textContent = `✅ ${downloaded} downloaded — Select in Add Photos`
       uploadBtn.style.background = '#22c55e'
       uploadBtn.style.color = '#000'
+
       // Click Add Photos
       await sleep(500)
       const addBtn = document.querySelector('[aria-label="Add photos"]') ||
         [...document.querySelectorAll('div[role="button"]')].find(el => el.textContent.trim() === 'Add photos')
       if (addBtn) addBtn.click()
+
+      // Auto-revoke blob URLs after 3 minutes (frees memory, files already saved to disk)
+      setTimeout(() => {
+        objectUrls.forEach(url => URL.revokeObjectURL(url))
+        uploadBtn.textContent = '🗑 Done — delete files from Downloads manually'
+        uploadBtn.style.background = '#1a1a1a'
+        uploadBtn.style.color = '#666'
+      }, 180000)
     }
   })
   strip.appendChild(uploadBtn)
@@ -312,7 +323,7 @@ async function fillListingForm(vehicle) {
   const bodyStyle = mapBodyStyle(vehicle.model)
 
   showStatus('Selecting vehicle type...')
-  await pickDropdown('Vehicle type', bodyStyle)
+  await pickDropdown('Vehicle type', 'Car/Truck')
   await sleep(DELAY)
 
   showStatus('Selecting year...')
