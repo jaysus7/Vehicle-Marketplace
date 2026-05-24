@@ -157,7 +157,7 @@ app.get('/listings', requireAuth, async (req, res) => {
   }
 });
 
-// Track posting action
+// POST /listings
 app.post('/listings', requireAuth, async (req, res) => {
   const { inventory_id, fb_listing_id, fb_listing_url } = req.body;
 
@@ -170,7 +170,7 @@ app.post('/listings', requireAuth, async (req, res) => {
       .from('listings')
       .insert([
         {
-          dealership_id: req.dealershipId,
+          dealership_id: req.dealershipId, // Ensure this matches your database column name exactly
           inventory_id,
           fb_listing_id,
           fb_listing_url,
