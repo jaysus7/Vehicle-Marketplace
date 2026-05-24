@@ -19,10 +19,52 @@ const MAKE_MAP = {
   'oldsmobile': 'Oldsmobile'
 }
 
-function normalizeMake(make) {
-  if (!make) return make
-  const key = make.toLowerCase().trim()
-  return MAKE_MAP[key] || make
+const MODEL_MAP = {
+  // Chevrolet
+  'silverado 1500': 'Silverado 1500', 'silverado 2500': 'Silverado 2500HD',
+  'silverado 2500hd': 'Silverado 2500HD', 'silverado 3500': 'Silverado 3500HD',
+  'silverado 3500hd': 'Silverado 3500HD', 'silverado': 'Silverado 1500',
+  'equinox': 'Equinox', 'equinox ev': 'Equinox EV',
+  'traverse': 'Traverse', 'tahoe': 'Tahoe', 'suburban': 'Suburban',
+  'blazer': 'Blazer', 'blazer ev': 'Blazer EV',
+  'trax': 'Trax', 'trailblazer': 'Trailblazer',
+  'colorado': 'Colorado', 'express': 'Express',
+  'camaro': 'Camaro', 'corvette': 'Corvette',
+  'malibu': 'Malibu', 'spark': 'Spark', 'sonic': 'Sonic',
+  'bolt ev': 'Bolt EV', 'bolt euv': 'Bolt EUV', 'bolt': 'Bolt EV',
+  'impala': 'Impala', 'cruze': 'Cruze',
+  'orlando': 'Orlando', 'captiva': 'Captiva',
+  // GMC
+  'sierra 1500': 'Sierra 1500', 'sierra 2500': 'Sierra 2500HD',
+  'sierra 2500hd': 'Sierra 2500HD', 'sierra 3500': 'Sierra 3500HD',
+  'sierra 3500hd': 'Sierra 3500HD', 'sierra': 'Sierra 1500',
+  'terrain': 'Terrain', 'acadia': 'Acadia',
+  'yukon': 'Yukon', 'yukon xl': 'Yukon XL',
+  'canyon': 'Canyon', 'envoy': 'Envoy', 'savana': 'Savana',
+  // Buick
+  'enclave': 'Enclave', 'encore': 'Encore', 'encore gx': 'Encore GX',
+  'envision': 'Envision', 'envista': 'Envista',
+  'lacrosse': 'LaCrosse', 'verano': 'Verano', 'regal': 'Regal',
+  'lesabre': 'LeSabre', 'lucerne': 'Lucerne',
+  // Cadillac
+  'escalade': 'Escalade', 'escalade esv': 'Escalade ESV',
+  'xt4': 'XT4', 'xt5': 'XT5', 'xt6': 'XT6',
+  'ct4': 'CT4', 'ct5': 'CT5', 'ct6': 'CT6',
+  'lyriq': 'LYRIQ', 'celestiq': 'CELESTIQ',
+  'srx': 'SRX', 'ats': 'ATS', 'cts': 'CTS', 'xts': 'XTS',
+  'dts': 'DTS', 'sts': 'STS'
+}
+
+function normalizeModel(model) {
+  if (!model) return model
+  const key = model.toLowerCase().trim()
+  // Try exact match first
+  if (MODEL_MAP[key]) return MODEL_MAP[key]
+  // Try partial match
+  for (const [k, v] of Object.entries(MODEL_MAP)) {
+    if (key.includes(k) || k.includes(key)) return v
+  }
+  return model
 }
 
 // ── Utilities ─────────────────────────────────
@@ -316,7 +358,8 @@ function showPhotoStrip(imageUrls, vehicleId) {
 
 async function fillListingForm(vehicle) {
   const make = normalizeMake(vehicle.make)
-  console.log('🚗 Starting:', vehicle.year, make, vehicle.model)
+  const model = normalizeModel(vehicle.model)
+  console.log('🚗 Starting:', vehicle.year, make, model)
   showStatus('Starting... please don\'t click anything')
   await sleep(2500)
 
@@ -481,7 +524,7 @@ async function fillListingForm(vehicle) {
   const descEl = await waitFor(() => document.querySelector('textarea'))
   if (descEl) {
     const desc = vehicle.ai_description || vehicle.description ||
-      `${vehicle.year} ${make} ${vehicle.model} ${vehicle.trim || ''}. ` +
+      `${vehicle.year} ${make} ${model} ${vehicle.trim || ''}. ` +
       `${vehicle.mileage ? vehicle.mileage.toLocaleString() + ' km. ' : ''}` +
       `${vehicle.exterior_color ? vehicle.exterior_color + ' exterior. ' : ''}` +
       `${vehicle.transmission || 'Automatic'} transmission. ` +
