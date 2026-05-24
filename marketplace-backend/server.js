@@ -2,20 +2,117 @@ import express from 'express'
 import cors from 'cors'
 import ws from 'ws'
 import { createClient } from '@supabase/supabase-js'
+import Stripe from 'stripe'
 import 'dotenv/config'
 
+// Initialize single Express server instance
 const app = express()
 const sleep = ms => new Promise(r => setTimeout(r, ms))
 
-app.use(express.json())
-app.use(express.urlencoded({ extended: true }))
-app.use(cors({ origin: '*' }))
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY)
 
+// Initialize Supabase Client
 const supabase = createClient(
   process.env.SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY,
   { realtime: { transport: ws } }
 )
+
+// Enable Cross-Origin Resource Sharing globally
+app.use(cors({ origin: '*' }))
+
+/**
+ * ── 1. STRIPE WEBHOOK ROUTE ───────────────────────────────────────────
+ * This MUST consume the raw buffer stream before global parsers intercept it.
+ */
+app.post('/stripe/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
+  const sig = req.headers['stripe-signature']
+  let event
+
+  try {
+    event = stripe.webhooks.constructEvent(
+      req.body, 
+      sig, 
+      process.env.STRIPE_WEBHOOK_SECRET
+    )
+  } catch (err) {
+    console.error(`❌ Stripe Webhook Signature Verification Failed: ${err.message}`)
+    return res.status(400).send(`Webhook Verification Error: ${err.message}`)
+  }
+
+  const session = event.data.object
+
+  try {
+    switch (event.type) {
+      case 'checkout.session.completed': {
+        const dealershipId = session.client_reference_id
+        const stripeCustomerId = session.customer
+        const subscriptionId = session.subscription
+
+        const subscription = await stripe.subscriptions.retrieve(subscriptionId)
+        const stripePriceId = subscription.items.data[0].price.id
+
+        // Map subscription back to Supabase dealerships metadata table
+        const { error } = await supabase
+          .from('dealerships')
+          .update({
+            stripe_customer_id: stripeCustomerId,
+            subscription_id: subscriptionId,
+            stripe_price_id: stripePriceId,
+            billing_status: 'ACTIVE'
+          })
+          .eq('id', dealershipId)
+
+        if (error) throw error
+        console.log(`✅ Dealership ${dealershipId} successfully set to ACTIVE.`)
+        break
+      }
+        
+      case 'customer.subscription.updated': {
+        const statusMap = {
+          active: 'ACTIVE',
+          trialing: 'TRIALING',
+          past_due: 'PAST_DUE',
+          unpaid: 'INACTIVE',
+          canceled: 'CANCELED'
+        }
+
+        const { error } = await supabase
+          .from('dealerships')
+          .update({
+            billing_status: statusMap[session.status] || 'INACTIVE',
+            stripe_price_id: session.items.data[0].price.id
+          })
+          .eq('subscription_id', session.id)
+
+        if (error) throw error
+        console.log(`🔄 Subscription ${session.id} status synchronized to database.`)
+        break
+      }
+        
+      case 'customer.subscription.deleted': {
+        const { error } = await supabase
+          .from('dealerships')
+          .update({ billing_status: 'CANCELED' })
+          .eq('subscription_id', session.id)
+
+        if (error) throw error
+        console.log(`🛑 Subscription ${session.id} canceled. Access revoked.`)
+        break
+      }
+    }
+  } catch (dbError) {
+    console.error(`❌ Database Synchronization Failure during Webhook processing:`, dbError.message)
+    return res.status(500).json({ error: 'Database update failed' })
+  }
+
+  res.json({ received: true })
+})
+
+// ── 2. GLOBAL ROUTE BODY PARSERS ─────────────────────────────────────
+// Invoked only for endpoints declared downstream of this marker position
+app.use(express.json())
+app.use(express.urlencoded({ extended: true }))
 
 // ============================================
 // AUTH MIDDLEWARE
@@ -30,6 +127,15 @@ async function requireAuth(req, res, next) {
     .select('*, dealerships(*)')
     .eq('id', user.id)
     .single()
+  
+  if (!profile) return res.status(403).json({ error: 'Profile identity could not be verified' })
+  
+  // Multi-tenant Subscription Check Gate
+  const billingStatus = profile.dealerships?.billing_status
+  if (billingStatus !== 'ACTIVE' && billingStatus !== 'TRIALING') {
+    return res.status(402).json({ error: 'Payment Required', detail: 'Dealership subscription is inactive.' })
+  }
+
   req.user = user
   req.profile = profile
   next()
@@ -150,6 +256,25 @@ app.post('/admin/users/invite', requireAuth, async (req, res) => {
 })
 
 // ============================================
+// STRIPE CHECKOUT ROUTE
+// ============================================
+app.post('/billing/checkout', requireAuth, async (req, res) => {
+  try {
+    const session = await stripe.checkout.sessions.create({
+      payment_method_types: ['card'],
+      line_items: [{ price: process.env.STRIPE_PRICE_ID, quantity: 1 }],
+      mode: 'subscription',
+      client_reference_id: req.profile.dealership_id,
+      success_url: `${process.env.FRONTEND_URL}/dashboard?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${process.env.FRONTEND_URL}/billing`,
+    })
+    res.json({ url: session.url })
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+// ============================================
 // IMAGE PROXY
 // ============================================
 app.get('/proxy-image', async (req, res) => {
@@ -231,7 +356,7 @@ app.get('/sync', async (req, res) => {
       if (!v.onweb) { skipped++; continue }
       if (v.nonvehicle) { skipped++; continue }
 
-      await sleep(200) // be respectful to their API
+      await sleep(200)
 
       const imageUrls = await fetchVehiclePhotos(v.stocknumber)
 
@@ -268,7 +393,6 @@ app.get('/sync', async (req, res) => {
       }
     }
 
-    // Mark vehicles no longer in feed as sold
     const feedVins = vehicles.map(v => v.vin).filter(Boolean)
     if (feedVins.length > 0) {
       const { error: soldError } = await supabase
@@ -296,4 +420,6 @@ app.get('/sync', async (req, res) => {
   }
 })
 
-app.listen(3000, () => console.log('API running on port 3000'))
+// Unified entry listener
+const PORT = process.env.PORT || 3000
+app.listen(PORT, () => console.log(`🚀 Automated Unified API running on port ${PORT}`))
