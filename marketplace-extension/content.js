@@ -419,48 +419,132 @@ async function fillListingForm(vehicle) {
   await sleep(1200)
 
   // MODEL
-  showStatus('Selecting model...')
-  const modelTrigger = await waitFor(() =>
-    [...document.querySelectorAll('[role="combobox"]')]
-      .find(el => el.textContent.trim().toLowerCase() === 'model' ||
-                  el.textContent.trim().toLowerCase().startsWith('model'))
-  , 8000)
+showStatus('Selecting model...')
 
-  if (modelTrigger) {
-    modelTrigger.scrollIntoView({ behavior: 'smooth', block: 'center' })
-    await sleep(500)
-    modelTrigger.click()
-    await sleep(1000)
-    const searchInput2 = [...document.querySelectorAll('input')]
-      .find(el => el.offsetParent !== null && el.type !== 'hidden' && !el.closest('[aria-hidden="true"]'))
-    if (searchInput2) {
-      const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set
-      if (nativeSetter) nativeSetter.call(searchInput2, model)
-      searchInput2.dispatchEvent(new Event('input', { bubbles: true }))
-      await sleep(800)
-    }
-    const modelOption = await waitFor(() =>
-      [...document.querySelectorAll('[role="option"]')]
-        .find(el => el.textContent.trim().toLowerCase() === model.toLowerCase()) ||
-      [...document.querySelectorAll('[role="option"]')]
-        .find(el => el.textContent.trim().toLowerCase().includes(model.toLowerCase()))
-    , 5000)
-    if (modelOption) {
-      modelOption.click()
-      await sleep(600)
-      console.log('✓ Model:', model)
-    } else {
-      const modelTextField = getFormFields()
-        .find(f => f.closest('label, div')?.textContent?.includes('Model'))
-      if (modelTextField) {
-        await typeInto(modelTextField, model)
-        await sleep(500)
-        const opt = document.querySelector('[role="option"]')
-        if (opt) { opt.click(); await sleep(400) }
-      }
-    }
+async function selectMarketplaceOption(label, value, timeout = 8000) {
+  const combobox = await waitFor(() =>
+    [...document.querySelectorAll('[role="combobox"]')]
+      .find(el => {
+        const txt = el.textContent.trim().toLowerCase()
+        return txt === label.toLowerCase() || txt.startsWith(label.toLowerCase())
+      }),
+    timeout
+  )
+
+  if (!combobox) {
+    console.warn(`${label} combobox not found`)
+    return false
   }
-  await sleep(1000)
+
+  combobox.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  await sleep(500)
+
+  combobox.click()
+  await sleep(1200)
+
+  const searchInput = await waitFor(() =>
+    [...document.querySelectorAll('input')]
+      .find(el =>
+        el.offsetParent !== null &&
+        el.type !== 'hidden' &&
+        !el.closest('[aria-hidden="true"]')
+      ),
+    4000
+  )
+
+  if (!searchInput) {
+    console.warn(`${label} search input not found`)
+    return false
+  }
+
+  searchInput.focus()
+
+  const nativeSetter =
+    Object.getOwnPropertyDescriptor(
+      window.HTMLInputElement.prototype,
+      'value'
+    )?.set
+
+  if (nativeSetter) {
+    nativeSetter.call(searchInput, value)
+  } else {
+    searchInput.value = value
+  }
+
+  searchInput.dispatchEvent(
+    new Event('input', { bubbles: true })
+  )
+
+  await sleep(1500)
+
+  let options = [...document.querySelectorAll('[role="option"]')]
+    .filter(el => el.offsetParent !== null)
+
+  console.log('MODEL OPTIONS:', options.map(o => o.textContent.trim()))
+
+  // EXACT MATCH FIRST
+  let option = options.find(el =>
+    el.textContent.trim().toLowerCase() === value.toLowerCase()
+  )
+
+  // STARTS WITH SECOND
+  if (!option) {
+    option = options.find(el =>
+      el.textContent.trim().toLowerCase().startsWith(value.toLowerCase())
+    )
+  }
+
+  // CONTAINS LAST
+  if (!option) {
+    option = options.find(el =>
+      el.textContent.trim().toLowerCase().includes(value.toLowerCase())
+    )
+  }
+
+  if (!option) {
+    console.warn(`${label} option not found:`, value)
+
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', {
+        key: 'Escape',
+        bubbles: true
+      })
+    )
+
+    return false
+  }
+
+  option.scrollIntoView({ block: 'center' })
+  await sleep(300)
+
+  option.click()
+
+  await sleep(1200)
+
+  console.log(`✓ ${label}:`, value)
+
+  return true
+}
+
+// wait for Facebook to refresh models after make
+await sleep(2500)
+
+const modelSuccess = await selectMarketplaceOption('Model', model)
+
+if (!modelSuccess) {
+  console.warn('Primary model selection failed:', model)
+
+  // fallback attempt removing trim words
+  const simplifiedModel = model
+    .replace(/1500|2500hd|3500hd|awd|fwd|4wd/gi, '')
+    .trim()
+
+  if (simplifiedModel !== model) {
+    console.log('Trying simplified model:', simplifiedModel)
+
+    await selectMarketplaceOption('Model', simplifiedModel)
+  }
+}
 
   // BODY STYLE
   showStatus('Selecting body style...')
