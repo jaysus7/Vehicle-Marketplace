@@ -37,16 +37,20 @@
     }
     .logout-btn:hover { border-color: #555; color: #fff; }
 
+    /* ── View Controller ── */
+    .view-screen { display: none; }
+    .view-screen.active { display: block; }
+
     /* ── Login Screen ── */
     #login-screen {
       padding: 24px 20px;
     }
-    #login-screen h2 {
+    #login-screen h2, #register-screen h2 {
       font-size: 16px;
       font-weight: 600;
       margin-bottom: 4px;
     }
-    #login-screen p {
+    #login-screen p, #register-screen p {
       font-size: 12px;
       color: #888;
       margin-bottom: 20px;
@@ -93,12 +97,18 @@
       margin-top: 10px;
       text-align: center;
     }
+    .success-msg {
+      color: #22c55e;
+      font-size: 12px;
+      margin-top: 10px;
+      text-align: center;
+    }
 
     /* ── Registration Footnote Section ── */
     .register-container {
       margin-top: 20px;
       padding-top: 16px;
-      border-t: 1px solid #1a1a1a;
+      border-top: 1px solid #1a1a1a;
       text-align: center;
     }
     .register-text {
@@ -124,8 +134,6 @@
     }
 
     /* ── Inventory Screen ── */
-    #inventory-screen { display: none; }
-
     .stats-bar {
       display: flex;
       gap: 1px;
@@ -184,17 +192,6 @@
       background: #1a1a1a;
       flex-shrink: 0;
     }
-    .vehicle-thumb-placeholder {
-      width: 52px;
-      height: 38px;
-      border-radius: 6px;
-      background: #1a1a1a;
-      flex-shrink: 0;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 18px;
-    }
 
     .vehicle-info { flex: 1; min-width: 0; }
     .vehicle-name {
@@ -228,26 +225,6 @@
       flex-shrink: 0;
     }
     .post-btn:hover { background: #22c55e; color: #000; }
-    .post-btn.posted {
-      background: #1a1a1a;
-      border-color: #333;
-      color: #555;
-      cursor: not-allowed;
-    }
-    .post-btn.posting {
-      background: #1a2a3a;
-      border-color: #3b82f6;
-      color: #3b82f6;
-      cursor: wait;
-    }
-
-    .empty-state {
-      padding: 40px 20px;
-      text-align: center;
-      color: #444;
-    }
-    .empty-state .icon { font-size: 32px; margin-bottom: 10px; }
-    .empty-state p { font-size: 13px; }
 
     .loading {
       padding: 40px 20px;
@@ -259,7 +236,7 @@
 </head>
 <body>
 
-  <div id="login-screen">
+  <div id="login-screen" class="view-screen active">
     <h2>Marketplace Lister</h2>
     <p>Sign in with your dealership account</p>
 
@@ -276,14 +253,52 @@
 
     <div class="register-container">
       <div class="register-text">Need a workspace instance for your team?</div>
-      <button type="button" class="btn-secondary" id="register-btn">Register New Dealership</button>
+      <button type="button" class="btn-secondary" id="go-to-register-btn">Register New Dealership</button>
     </div>
   </div>
 
-  <div id="inventory-screen">
+  <div id="register-screen" class="view-screen">
+    <h2>Create Workspace</h2>
+    <p>Configure automated inventory pipeline securely</p>
+
+    <div class="form-group">
+      <label>Full Name</label>
+      <input type="text" id="reg-fullname" placeholder="Jason Massie" />
+    </div>
+    <div class="form-group">
+      <label>Email</label>
+      <input type="email" id="reg-email" placeholder="jason@wellandchev.com" />
+    </div>
+    <div class="form-group">
+      <label>Password</label>
+      <input type="password" id="reg-password" placeholder="••••••••" />
+    </div>
+    <div class="form-group">
+      <label>Dealership Name</label>
+      <input type="text" id="reg-dealername" placeholder="Welland Chev" />
+    </div>
+    <div class="form-group">
+      <label>Website URL</label>
+      <input type="url" id="reg-website" placeholder="https://www.wellandchev.com" />
+    </div>
+    <div class="form-group">
+      <label>Inventory JSON Feed URL</label>
+      <input type="url" id="reg-feed" placeholder="https://yippi.uxauto.agency/feed" />
+    </div>
+    
+    <button class="btn-primary" id="submit-register-btn">Submit & Verify Email</button>
+    <div class="error-msg" id="reg-error"></div>
+    <div class="success-msg" id="reg-success"></div>
+
+    <div class="register-container">
+      <button type="button" class="btn-secondary" id="go-to-login-btn">← Back to Sign In</button>
+    </div>
+  </div>
+
+  <div id="inventory-screen" class="view-screen">
     <div class="header">
       <div>
-        <div class="header h1" id="header-name">Loading...</div>
+        <h1 id="header-name">Loading...</h1>
         <div class="dealer" id="header-dealer"></div>
       </div>
       <button class="logout-btn" id="logout-btn">Sign Out</button>

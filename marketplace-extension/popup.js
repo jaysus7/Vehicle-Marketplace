@@ -1,5 +1,11 @@
 const API = 'https://vehicle-marketplace-x0e4.onrender.com'
+const SUPABASE_URL = 'YOUR_SUPABASE_PROJECT_URL';
+const SUPABASE_KEY = 'YOUR_SUPABASE_ANON_KEY';
 
+// Only initialize if it doesn't already exist
+if (!window.supabase) {
+  window.supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+}
 // ── Helpers ──────────────────────────────────────
 const $ = id => document.getElementById(id)
 
@@ -90,7 +96,15 @@ function showLoginScreen() {
         $('login-btn').textContent = 'Sign In'
         return
       }
+$('register-btn').onclick = () => {
+  $('login-screen').classList.remove('active');
+  document.getElementById('register-screen').classList.add('active');
+};
 
+$('go-to-login-btn').onclick = () => {
+  document.getElementById('register-screen').classList.remove('active');
+  $('login-screen').classList.add('active');
+};
       chrome.storage.local.set({ token: data.access_token, user: data.user }, () => {
         showInventoryScreen(data.access_token, data.user)
       })
@@ -289,3 +303,39 @@ async function postVehicle(inventoryId, token) {
     btn.disabled = false
   }
 }
+$('submit-register-btn').onclick = async () => {
+  const btn = $('submit-register-btn');
+  const errorEl = $('reg-error');
+  const successEl = $('reg-success');
+  
+  // Clear previous state
+  errorEl.textContent = '';
+  successEl.textContent = '';
+  btn.disabled = true;
+  btn.textContent = 'Registering...';
+
+  try {
+    const { data, error } = await supabase.auth.signUp({
+      email: $('reg-email').value.trim(),
+      password: $('reg-password').value,
+      options: {
+        data: {
+          fullName: $('reg-fullname').value.trim(),
+          accountRole: 'DEALER_ADMIN',
+          dealershipName: $('reg-dealername').value.trim(),
+          websiteUrl: $('reg-website').value.trim(),
+          feedUrl: $('reg-feed').value.trim()
+        }
+      }
+    });
+
+    if (error) throw error;
+
+    successEl.textContent = 'Verification email sent! Please check your inbox.';
+    btn.textContent = 'Success!';
+  } catch (err) {
+    errorEl.textContent = err.message;
+    btn.disabled = false;
+    btn.textContent = 'Submit & Verify Email';
+  }
+};
