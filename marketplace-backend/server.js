@@ -30,7 +30,7 @@ const supabase = createClient(
   { realtime: { transport: ws } }
 )
 
-// Method A: Elevated Admin Client (RLS Bypass for secure registrations)
+// Elevated Admin Client (RLS Bypass for secure registrations and profile management)
 const supabaseAdmin = createClient(
   process.env.SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY,
@@ -142,10 +142,19 @@ app.post('/auth/register', async (req, res) => {
     const isDealerAdmin = incomingRole.includes('admin') || incomingRole === 'dealer_admin'
     const targetRole = isDealerAdmin ? 'DEALER_ADMIN' : 'SALES_REP'
 
-    const { data: authData, error: authError } = await supabase.auth.signUp({ email, password })
-    if (authError) return res.status(400).json({ error: authError.message })
-    const userId = authData.user?.id
+    // Uses elevated admin privileges to bypass email confirmations, establishing instant activation
+    const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
+      email,
+      password,
+      email_confirm: true 
+    })
 
+    if (authError) {
+      console.error('Supabase Auth provisioning failed:', authError.message)
+      return res.status(400).json({ error: authError.message })
+    }
+    
+    const userId = authData.user?.id
     let assignedDealershipId = null
 
     if (isDealerAdmin) {
@@ -159,7 +168,10 @@ app.post('/auth/register', async (req, res) => {
         })
         .select().single()
         
-      if (dErr) return res.status(500).json({ error: dErr.message })
+      if (dErr) {
+        console.error('Dealership row creation failure:', dErr.message)
+        return res.status(500).json({ error: dErr.message })
+      }
       assignedDealershipId = dealer.id
     }
 
@@ -169,18 +181,24 @@ app.post('/auth/register', async (req, res) => {
         user_id: userId,
         feed_url: feedUrl,
         feed_type: 'All Inventory'
-      }).catch(() => null)
+      }).catch(err => console.warn('Non-blocking feed connection error:', err.message))
     }
 
-    await supabaseAdmin.from('profiles').upsert({
+    const { error: profileError } = await supabaseAdmin.from('profiles').upsert({
       id: userId,
       full_name: fullName || 'Workspace Member',
       dealership_id: assignedDealershipId,
       role: targetRole
     })
 
+    if (profileError) {
+      console.error('Profile DB metadata sync failure:', profileError.message)
+      return res.status(500).json({ error: profileError.message })
+    }
+
     res.status(201).json({ message: 'Registration successful' })
   } catch (err) {
+    console.error('Global fallback error inside registration runner:', err.message)
     res.status(500).json({ error: err.message })
   }
 })
@@ -200,7 +218,7 @@ app.post('/auth/logout', requireAuth, async (req, res) => {
   res.json({ success: true })
 })
 
-// FULL COMPLETE SYSTEM IDENTITY UPDATES (Handles Email, Passwords, Names, URLs & Dealerships)
+// FULL WORKSPACE IDENTITY MANAGEMENT (Modifies Email, Password, Name, Dealer Name, and Website URL)
 app.put('/profile/update', requireAuth, async (req, res) => {
   const { fullName, email, password, dealershipName, websiteUrl } = req.body
 
@@ -320,7 +338,7 @@ app.patch('/listings/:id/delete', requireAuth, async (req, res) => {
   res.json({ success: true })
 })
 
-// ── 7. MULTI-TIER SUBSCRIPTION BILLING MANAGEMENT ──
+// ── 7. UNIFIED BILLING ENGINE ──
 app.post('/billing/checkout', requireAuth, async (req, res) => {
   const priceId = req.body.priceId || process.env.STRIPE_DEALER_PRICE_ID;
   
@@ -351,7 +369,7 @@ app.post('/billing/checkout', requireAuth, async (req, res) => {
   }
 });
 
-// Clean unified Billing interface routing aliases
+// Explicit route alias so old /billing/portal references still work seamlessly
 app.post('/billing/portal', requireAuth, async (req, res) => {
   res.redirect(307, '/billing/checkout');
 });
