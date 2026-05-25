@@ -6,31 +6,29 @@
   <script src="https://cdn.tailwindcss.com"></script>
 </head>
 <body class="bg-slate-900 text-slate-100 min-h-screen flex items-center justify-center font-sans py-12">
- <div class="grid grid-cols-2 gap-2 mb-4">
-  <label class="cursor-pointer border border-indigo-500 bg-indigo-950/30 p-2.5 rounded text-center block">
-    <input type="radio" name="account_type" value="dealer_admin" checked class="sr-only">
-    <span class="block text-xs font-bold">Dealership Admin</span>
-    <span class="block text-[10px] text-slate-400">Manage entire store feed</span>
-  </label>
-  <label class="cursor-pointer border border-slate-700 bg-slate-950 p-2.5 rounded text-center block">
-    <input type="radio" name="account_type" value="sales_rep" class="sr-only">
-    <span class="block text-xs font-bold">Independent Rep</span>
-    <span class="block text-[10px] text-slate-400">Post personal inventory</span>
-  </label>
-</div>
-    <div class="bg-slate-800 p-8 rounded-lg border border-slate-700 shadow-xl w-full max-w-md mx-4">
+  <div class="bg-slate-800 p-8 rounded-lg border border-slate-700 shadow-xl w-full max-w-md mx-4">
+    
     <div class="text-center mb-6">
       <span class="text-2xl font-black text-indigo-400">🚗 MarketplaceSync</span>
       <p class="text-slate-400 text-xs mt-1">Initialize workspace profile and subscription pipeline</p>
     </div>
 
+    <div class="grid grid-cols-2 gap-2 mb-5">
+      <label id="label-admin" class="cursor-pointer border-2 border-indigo-500 bg-indigo-950/40 p-3 rounded-lg text-center block transition">
+        <input type="radio" name="accountRole" value="dealer_admin" checked class="sr-only" onchange="toggleRoleFields(this.value)">
+        <span class="block text-xs font-bold text-white">Dealership Admin</span>
+        <span class="block text-[10px] text-slate-400 mt-0.5">Manage entire store feed</span>
+      </label>
+      <label id="label-rep" class="cursor-pointer border-2 border-slate-700 bg-slate-950 p-3 rounded-lg text-center block transition">
+        <input type="radio" name="accountRole" value="sales_rep" class="sr-only" onchange="toggleRoleFields(this.value)">
+        <span class="block text-xs font-bold text-white">Independent Rep</span>
+        <span class="block text-[10px] text-slate-400 mt-0.5">Post personal inventory</span>
+      </label>
+    </div>
+
     <div id="error-box" class="hidden mb-4 p-3 bg-red-900/50 border border-red-700 text-red-200 text-xs rounded"></div>
 
     <form id="register-form" class="space-y-3">
-      <div>
-        <label class="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1">Dealership Business Name</label>
-        <input type="text" id="dealer-name" required class="w-full bg-slate-950 border border-slate-700 rounded px-3 py-1.5 text-sm text-white focus:outline-none focus:border-indigo-500" placeholder="e.g. Welland Chev">
-      </div>
       <div>
         <label class="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1">Your Full Name</label>
         <input type="text" id="full-name" required class="w-full bg-slate-950 border border-slate-700 rounded px-3 py-1.5 text-sm text-white focus:outline-none focus:border-indigo-500">
@@ -43,20 +41,36 @@
         <label class="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1">Account Password</label>
         <input type="password" id="password" required class="w-full bg-slate-950 border border-slate-700 rounded px-3 py-1.5 text-sm text-white focus:outline-none focus:border-indigo-500">
       </div>
-      
-      <div>
-        <label class="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1">Dealership Website URL</label>
-        <input type="url" id="website-url" required class="w-full bg-slate-950 border border-slate-700 rounded px-3 py-1.5 text-sm text-white focus:outline-none focus:border-indigo-500" placeholder="https://www.dealership.com">
+
+      <div id="dealership-metadata-fields" class="space-y-3 pt-2 border-t border-slate-700/50">
+        <div>
+          <label class="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1">Dealership Business Name</label>
+          <input type="text" id="dealer-name" class="dealer-req w-full bg-slate-950 border border-slate-700 rounded px-3 py-1.5 text-sm text-white focus:outline-none focus:border-indigo-500" placeholder="e.g. Welland Chev">
+        </div>
+        <div>
+          <label class="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1">Dealership Website URL</label>
+          <input type="url" id="website-url" class="dealer-req w-full bg-slate-950 border border-slate-700 rounded px-3 py-1.5 text-sm text-white focus:outline-none focus:border-indigo-500" placeholder="https://www.dealership.com">
+        </div>
+        
+        <div>
+          <div class="flex justify-between items-center mb-1">
+            <label class="block text-xs font-bold uppercase tracking-wider text-slate-400">Inventory Data Feeds</label>
+            <button type="button" onclick="addFeedRow()" class="text-[10px] text-indigo-400 hover:text-indigo-300 font-bold">+ Add Feed Segment</button>
+          </div>
+          <div id="feed-rows-container" class="space-y-2">
+            <div class="flex gap-2 feed-entry-row">
+              <select class="feed-type bg-slate-950 border border-slate-700 rounded px-2 py-1.5 text-xs text-white focus:outline-none focus:border-indigo-500">
+                <option value="all">All</option>
+                <option value="new">New</option>
+                <option value="used">Used</option>
+                <option value="demo">Demo</option>
+                <option value="fleet">Fleet</option>
+              </select>
+              <input type="url" class="feed-url flex-1 bg-slate-950 border border-slate-700 rounded px-3 py-1.5 text-xs text-white focus:outline-none focus:border-indigo-500" placeholder="https://.../inventory.json" required>
+            </div>
+          </div>
+        </div>
       </div>
-    <div class="flex gap-2 mb-2">
-  <select class="bg-slate-950 border border-slate-700 rounded text-xs p-1.5">
-    <option value="all">All Inventory</option>
-    <option value="new">New</option>
-    <option value="used">Used</option>
-    <option value="demo">Demo</option>
-  </select>
-  <input type="url" placeholder="https://..." class="flex-1 bg-slate-950 border border-slate-700 rounded text-xs p-1.5">
-</div>
 
       <button type="submit" id="submit-btn" class="w-full bg-indigo-600 hover:bg-indigo-500 font-bold py-2.5 rounded text-sm shadow transition mt-4">Provision New Dealership</button>
     </form>
@@ -68,7 +82,50 @@
 
   <script>
     const API = 'https://vehicle-marketplace-s0e4.onrender.com';
-    
+
+    // Toggle styling states and required constraints dynamically based on choice
+    function toggleRoleFields(role) {
+      const adminLabel = document.getElementById('label-admin');
+      const repLabel = document.getElementById('label-rep');
+      const dealerFields = document.getElementById('dealership-metadata-fields');
+      const dealerInputs = document.querySelectorAll('.dealer-req');
+      const submitBtn = document.getElementById('submit-btn');
+
+      if (role === 'dealer_admin') {
+        adminLabel.className = "cursor-pointer border-2 border-indigo-500 bg-indigo-950/40 p-3 rounded-lg text-center block transition";
+        repLabel.className = "cursor-pointer border-2 border-slate-700 bg-slate-950 p-3 rounded-lg text-center block transition";
+        dealerFields.classList.remove('hidden');
+        dealerInputs.forEach(i => i.required = true);
+        submitBtn.textContent = 'Provision New Dealership';
+      } else {
+        adminLabel.className = "cursor-pointer border-2 border-slate-700 bg-slate-950 p-3 rounded-lg text-center block transition";
+        repLabel.className = "cursor-pointer border-2 border-indigo-500 bg-indigo-950/40 p-3 rounded-lg text-center block transition";
+        dealerFields.classList.add('hidden');
+        dealerInputs.forEach(i => i.required = false);
+        submitBtn.textContent = 'Create Sales Representative Account';
+      }
+    }
+
+    // Dynamic Engine adding additional rows if a dealership segments New/Used feeds
+    function addFeedRow() {
+      const container = document.getElementById('feed-rows-container');
+      const row = document.createElement('div');
+      row.className = 'flex gap-2 feed-entry-row animate-fadeIn';
+      row.innerHTML = `
+        <select class="feed-type bg-slate-950 border border-slate-700 rounded px-2 py-1.5 text-xs text-white focus:outline-none focus:border-indigo-500">
+          <option value="all">All</option>
+          <option value="new">New</option>
+          <option value="used">Used</option>
+          <option value="demo">Demo</option>
+          <option value="fleet">Fleet</option>
+        </select>
+        <input type="url" class="feed-url flex-1 bg-slate-950 border border-slate-700 rounded px-3 py-1.5 text-xs text-white focus:outline-none focus:border-indigo-500" placeholder="https://.../inventory.json" required>
+        <button type="button" onclick="this.parentElement.remove()" class="text-red-400 hover:text-red-300 px-1 text-sm">×</button>
+      `;
+      container.appendChild(row);
+    }
+
+    // Capture and submit compiled entity role array mapping downstream
     document.getElementById('register-form').addEventListener('submit', async (e) => {
       e.preventDefault();
       const errBox = document.getElementById('error-box');
@@ -76,32 +133,48 @@
       
       errBox.classList.add('hidden');
       btn.disabled = true; 
-      btn.textContent = 'Provisioning infrastructure...';
+      btn.textContent = 'Processing registration backend handshake...';
+
+      const accountRole = document.querySelector('input[name="accountRole"]:checked').value;
+      
+      // Compile feed arrays dynamically from mapping rows
+      const feeds = [];
+      document.querySelectorAll('.feed-entry-row').forEach(row => {
+        const urlValue = row.querySelector('.feed-url').value.trim();
+        if (urlValue) {
+          feeds.push({
+            type: row.querySelector('.feed-type').value,
+            url: urlValue
+          });
+        }
+      });
+      
+      const payload = {
+        accountRole,
+        fullName: document.getElementById('full-name').value.trim(),
+        email: document.getElementById('email').value.trim(),
+        password: document.getElementById('password').value,
+        dealershipName: accountRole === 'dealer_admin' ? document.getElementById('dealer-name').value.trim() : null,
+        websiteUrl: accountRole === 'dealer_admin' ? document.getElementById('website-url').value.trim() : null,
+        feeds: accountRole === 'dealer_admin' ? feeds : []
+      };
       
       try {
         const res = await fetch(`${API}/auth/register`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            dealershipName: document.getElementById('dealer-name').value.trim(),
-            fullName: document.getElementById('full-name').value.trim(),
-            email: document.getElementById('email').value.trim(),
-            password: document.getElementById('password').value,
-            websiteUrl: document.getElementById('website-url').value.trim(),
-            feedUrl: document.getElementById('feed-url').value.trim()
-          })
+          body: JSON.stringify(payload)
         });
         
         const data = await res.json();
-        if (!res.ok) throw new Error(data.error || 'Failed registration step.');
+        if (!res.ok) throw new Error(data.error || 'Failed setup registration workflow configuration.');
         
-        // Pass validation metadata downstream to frontend router
         window.location.href = 'login.html?registered=true';
       } catch (err) {
         errBox.textContent = err.message;
         errBox.classList.remove('hidden');
         btn.disabled = false; 
-        btn.textContent = 'Provision New Dealership';
+        btn.textContent = accountRole === 'dealer_admin' ? 'Provision New Dealership' : 'Create Sales Representative Account';
       }
     });
   </script>
