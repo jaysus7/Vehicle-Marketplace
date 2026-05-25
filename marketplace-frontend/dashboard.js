@@ -5,8 +5,8 @@ const token = localStorage.getItem('token');
 const userRaw = localStorage.getItem('user');
 
 if (!token || !userRaw) {
-  document.body.innerHTML = '<pre style="color:#fff;background:#000;padding:20px;font-family:monospace">DEBUG: No token or user in localStorage.\ntoken=' + token + '\nuser=' + userRaw + '</pre>';
-  throw new Error('No session');
+  localStorage.clear();
+  window.location.href = 'login.html';
 }
 
 const user = JSON.parse(userRaw);
@@ -31,15 +31,25 @@ async function initializeDashboardEcosystem() {
     }
     
     profileContext = await res.json();
-    
+
     // Render Shared Header Components
     document.getElementById('ui-profile-name').textContent = profileContext.full_name || user.email;
-    document.getElementById('ui-dealership-name').textContent = profileContext.dealerships?.name || 'Independent Store';
+    document.getElementById('ui-dealership-name').textContent = profileContext.dealership?.name || 'Independent Store';
+
+    // Pre-fill profile form
     document.getElementById('prof-name').value = profileContext.full_name || '';
+    document.getElementById('prof-email').value = profileContext.email || user.email || '';
+    document.getElementById('prof-dealername').value = profileContext.dealership?.name || '';
+    document.getElementById('prof-website').value = profileContext.dealership?.website_url || '';
 
     // Route Workspace Rendering Logic based on Account Role
     const role = profileContext.role || 'SALES_REP'; // Standard safe fallback role assignment
     document.getElementById('ui-role-pill').textContent = role;
+
+    // Hide dealer-only profile fields for sales reps
+    if (role !== 'DEALER_ADMIN' && role !== 'OWNER') {
+      document.querySelectorAll('[data-dealer-only]').forEach(el => el.classList.add('hidden'));
+    }
 
     // Load transactional data
     const [fleet, totalListings] = await Promise.all([
@@ -59,19 +69,11 @@ async function initializeDashboardEcosystem() {
 
   } catch (err) {
     if (err.message === 'SUBSCRIPTION_REQUIRED') {
-      // Redirect to portal checkout or lock dashboard components down
       alert('Subscription required to access system. Redirecting to billing...');
       launchStripeLifecycle();
     } else {
-      // DEBUG MODE — show the error instead of redirecting
-      let bodyText = '';
-      try {
-        const debugRes = await fetch(`${API}/auth/me`, { headers: { 'Authorization': `Bearer ${token}` } });
-        bodyText = `\nStatus: ${debugRes.status}\nResponse: ${await debugRes.text()}`;
-      } catch (fetchErr) {
-        bodyText = `\nFetch error: ${fetchErr.message}`;
-      }
-      document.body.innerHTML = `<pre style="color:#fff;background:#000;padding:20px;font-family:monospace;white-space:pre-wrap">DEBUG MODE — bounce-to-login disabled.\n\nCaught error: ${err.message}\nStack: ${err.stack}\n\nToken (first 40 chars): ${token?.slice(0, 40)}...\nUser: ${userRaw}\n${bodyText}</pre>`;
+      localStorage.clear();
+      window.location.href = 'login.html';
     }
   }
 }
@@ -136,28 +138,53 @@ function loadRepPipelineMatrix(listings) {
 }
 
 function setupActionListeners() {
-  // Update Profile Name Identity Form
+  // Collapsible profile panel
+  const toggle = document.getElementById('profile-toggle');
+  const panel = document.getElementById('profile-panel');
+  const chevron = document.getElementById('profile-chevron');
+  toggle?.addEventListener('click', () => {
+    const open = !panel.classList.contains('hidden');
+    panel.classList.toggle('hidden', open);
+    chevron.style.transform = open ? '' : 'rotate(180deg)';
+  });
+
+  // Profile update form (full identity + workspace)
   document.getElementById('profile-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     const msg = document.getElementById('profile-msg');
-    const nameInput = document.getElementById('prof-name').value.trim();
+    const payload = {
+      fullName: document.getElementById('prof-name').value.trim(),
+      email: document.getElementById('prof-email').value.trim(),
+      password: document.getElementById('prof-password').value,
+      dealershipName: document.getElementById('prof-dealername').value.trim(),
+      websiteUrl: document.getElementById('prof-website').value.trim()
+    };
+    // Strip empties so we only send fields the user actually changed
+    Object.keys(payload).forEach(k => { if (!payload[k]) delete payload[k]; });
+
+    const showMsg = (text, kind) => {
+      msg.textContent = text;
+      msg.className = kind === 'ok'
+        ? 'mb-3 p-2 bg-emerald-900/50 border border-emerald-700 text-emerald-200 text-xs rounded'
+        : 'mb-3 p-2 bg-red-900/50 border border-red-700 text-red-200 text-xs rounded';
+      msg.classList.remove('hidden');
+    };
 
     try {
       const res = await fetch(`${API}/profile/update`, {
-        method: 'POST',
+        method: 'PUT',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-        body: JSON.stringify({ full_name: nameInput })
+        body: JSON.stringify(payload)
       });
-      if (!res.ok) throw new Error();
-      
-      msg.textContent = "Identity adjustments successfully applied.";
-      msg.className = "mb-3 p-2 bg-emerald-900/50 border border-emerald-700 text-emerald-200 text-xs rounded shadow";
-      msg.classList.remove('hidden');
-      document.getElementById('ui-profile-name').textContent = nameInput;
-    } catch {
-      msg.textContent = "Failed to modify configuration attributes.";
-      msg.className = "mb-3 p-2 bg-red-900/50 border border-red-700 text-red-200 text-xs rounded shadow";
-      msg.classList.remove('hidden');
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Update failed');
+
+      showMsg('Profile updated successfully.', 'ok');
+      if (payload.fullName) document.getElementById('ui-profile-name').textContent = payload.fullName;
+      if (payload.dealershipName) document.getElementById('ui-dealership-name').textContent = payload.dealershipName;
+      document.getElementById('prof-password').value = '';
+    } catch (err) {
+      showMsg(err.message || 'Failed to update profile.', 'err');
     }
   });
 
@@ -175,7 +202,7 @@ async function launchStripeLifecycle() {
   const btn = document.getElementById('launch-portal-btn');
   if (btn) {
     btn.disabled = true;
-    btn.textContent = "Connecting to financial node...";
+    btn.textContent = "Connecting to billing...";
   }
 
   try {
@@ -191,17 +218,17 @@ async function launchStripeLifecycle() {
       });
     }
 
-    const raw = await res.text();
-    let data;
-    try { data = JSON.parse(raw); } catch { data = { raw }; }
-
+    const data = await res.json();
     if (data.url) {
       window.location.href = data.url;
     } else {
-      document.body.innerHTML = `<pre style="color:#fff;background:#000;padding:20px;font-family:monospace;white-space:pre-wrap">DEBUG: Stripe launch failed.\n\nStatus: ${res.status}\nResponse: ${raw}</pre>`;
+      throw new Error(data.error || 'No billing URL returned');
     }
   } catch (err) {
-    document.body.innerHTML = `<pre style="color:#fff;background:#000;padding:20px;font-family:monospace;white-space:pre-wrap">DEBUG: Stripe launch threw.\n\nError: ${err.message}\nStack: ${err.stack}</pre>`;
+    if (btn) {
+      btn.textContent = "Connection Failure";
+      btn.disabled = false;
+    }
   }
 }
 async function fetchInsights() {

@@ -82,18 +82,7 @@ async function requireAuth(req, res, next) {
       .eq('id', user.id)
       .single()
 
-    if (profileError || !profile) {
-      return res.status(401).json({
-        error: 'Profile not found',
-        debug: {
-          userId: user.id,
-          profileErrorMessage: profileError?.message,
-          profileErrorCode: profileError?.code,
-          profileErrorDetails: profileError?.details,
-          profileErrorHint: profileError?.hint
-        }
-      })
-    }
+    if (profileError || !profile) return res.status(401).json({ error: 'Profile not found' })
 
     // Billing routes need auth but must bypass the subscription gate
     // (otherwise inactive users can't reach checkout to start a subscription)
