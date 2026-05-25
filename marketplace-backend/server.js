@@ -287,11 +287,23 @@ app.patch('/listings/:id/delete', requireAuth, async (req, res) => {
 
 // ── 7. MULTI-TIER SUBSCRIPTION BILLING MANAGEMENT ──
 app.post('/billing/checkout', requireAuth, async (req, res) => {
-  const { priceId } = req.body
-  const validPrices = [process.env.STRIPE_DEALER_PRICE_ID, process.env.STRIPE_SOLO_PRICE_ID]
-  if (!validPrices.includes(priceId)) return res.status(400).json({ error: 'Invalid price identifier selection' })
-
+  const priceId = req.body.priceId || process.env.STRIPE_DEALER_PRICE_ID;
+  
   try {
+    // If user already has a customer ID, attempt to send them straight to a configuration portal
+    if (req.profile.dealerships?.stripe_customer_id) {
+      try {
+        const portalSession = await stripe.billingPortal.sessions.create({
+          customer: req.profile.dealerships.stripe_customer_id,
+          return_url: `${process.env.FRONTEND_URL}/dashboard`,
+        });
+        return res.json({ url: portalSession.url });
+      } catch (portalErr) {
+        console.warn('Portal initialization bypassed, falling back to fresh checkout instance:', portalErr.message);
+      }
+    }
+
+    // Fallback: Establish standard checkout path workflow
     const session = await stripe.checkout.sessions.create({
       payment_method_types: ['card'],
       line_items: [{ price: priceId, quantity: 1 }],
@@ -299,21 +311,17 @@ app.post('/billing/checkout', requireAuth, async (req, res) => {
       client_reference_id: req.dealershipId,
       success_url: `${process.env.FRONTEND_URL}/dashboard`,
       cancel_url: `${process.env.FRONTEND_URL}/upgrade`,
-    })
-    res.json({ url: session.url })
+    });
+    res.json({ url: session.url });
   } catch (err) {
-    res.status(500).json({ error: err.message })
+    res.status(500).json({ error: err.message });
   }
-})
+});
 
-app.get('/dealership/team-insights', requireAuth, async (req, res) => {
-  if (req.profile.role !== 'DEALER_ADMIN') return res.status(403).json({ error: 'Admins only' })
-  const { data } = await supabaseAdmin
-    .from('profiles')
-    .select('full_name, id')
-    .eq('dealership_id', req.dealershipId)
-  res.json(data)
-})
+// Alias the route explicitly so your extension's initial fetch to /billing/portal cleanly resolves
+app.post('/billing/portal', requireAuth, async (req, res) => {
+  res.redirect(307, '/billing/checkout');
+});
 
 // ── 8. BROWSER DOWNLOAD PHOTO PROXY LAYER ──
 app.get('/proxy-image', async (req, res) => {

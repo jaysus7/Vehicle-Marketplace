@@ -1,4 +1,4 @@
-const API = 'https://vehicle-marketplace-s0e4.onrender.com'
+const API = 'https://vehicle-marketplace-x0e4.onrender.com'
 
 // ── Helpers ──────────────────────────────────────
 const $ = id => document.getElementById(id)
@@ -67,7 +67,7 @@ function showLoginScreen() {
   $('inventory-screen').style.display = 'none'
 
   // Handle Extension Direct Login Flow
-  $('login-btn').addEventListener('click', async () => {
+  $('login-btn').onclick = async () => {
     const email = $('email').value.trim()
     const password = $('password').value
     if (!email || !password) return
@@ -99,12 +99,12 @@ function showLoginScreen() {
       $('login-btn').disabled = false
       $('login-btn').textContent = 'Sign In'
     }
-  })
+  }
 
   // Link out to hosted Render Registration flow via Chrome Tab API
-  $('register-btn').addEventListener('click', () => {
+  $('register-btn').onclick = () => {
     chrome.tabs.create({ url: 'https://vehicle-marketplace-frontend-stts.onrender.com/register.html' })
-  })
+  }
 }
 
 // ── Inventory Screen ──────────────────────────────
@@ -112,14 +112,11 @@ async function showInventoryScreen(token, user) {
   $('login-screen').style.display = 'none'
   $('inventory-screen').style.display = 'block'
 
-  // Set safe fallbacks immediately so UI doesn't look blank while loading
   $('header-name').textContent = user.email
   $('header-dealer').textContent = 'Loading profile...'
 
-  // Instantly load cars on first launch without waiting for profile responses
   loadInventory(token)
 
-  // Lazy-load profile metadata down-stream to maximize UI speed
   apiGet('/auth/me', token)
     .then(profile => {
       if (profile) {
@@ -132,15 +129,13 @@ async function showInventoryScreen(token, user) {
       if (err.message === 'SUBSCRIPTION_REQUIRED') handleSubscriptionGate(token)
     })
 
-  // Logout Event Link
-  $('logout-btn').addEventListener('click', () => {
+  $('logout-btn').onclick = () => {
     chrome.storage.local.remove(['token', 'user'], () => {
       location.reload()
     })
-  })
+  }
 
-  // Refresh Event Link
-  $('refresh-btn').addEventListener('click', () => loadInventory(token))
+  $('refresh-btn').onclick = () => loadInventory(token)
 }
 
 async function loadInventory(token) {
@@ -152,12 +147,10 @@ async function loadInventory(token) {
       apiGet('/listings', token)
     ])
 
-    // Robust parsing layer handles both raw arrays and database payload structural fallbacks
     const listings = Array.isArray(listingsRes) 
       ? listingsRes 
       : (listingsRes && Array.isArray(listingsRes.data) ? listingsRes.data : [])
     
-    // Track explicit internal inventory IDs to decouple from VIN availability
     const postedIdSet = new Set(
       listings.map(l => {
         if (!l) return null
@@ -165,7 +158,6 @@ async function loadInventory(token) {
       }).filter(Boolean)
     )
 
-    // Populate Counter Elements using robust identifier sets
     $('stat-total').textContent = inventory.length
     $('stat-posted').textContent = postedIdSet.size
     $('stat-remaining').textContent = inventory.length - postedIdSet.size
@@ -179,7 +171,6 @@ async function loadInventory(token) {
       return
     }
 
-    // Mapping layer updates arrays straight to DOM layout nodes
     $('vehicle-list').innerHTML = inventory.map(v => {
       const isPosted = postedIdSet.has(v.id)
       const img = v.image_urls?.[0]
@@ -206,9 +197,8 @@ async function loadInventory(token) {
         </div>`
     }).join('')
 
-    // Reattach structural interaction listeners
     document.querySelectorAll('.post-btn:not(.posted)').forEach(btn => {
-      btn.addEventListener('click', () => postVehicle(btn.dataset.id, token))
+      btn.onclick = () => postVehicle(btn.dataset.id, token)
     })
 
   } catch (e) {
@@ -236,7 +226,7 @@ function handleSubscriptionGate(token) {
       </button>
     </div>`
 
-  $('ui-manage-billing-btn').addEventListener('click', async () => {
+  $('ui-manage-billing-btn').onclick = async () => {
     const btn = $('ui-manage-billing-btn')
     btn.textContent = 'Connecting to Stripe...'
     btn.disabled = true
@@ -244,13 +234,13 @@ function handleSubscriptionGate(token) {
     try {
       let r = await fetch(`${API}/billing/portal`, {
         method: 'POST',
-        headers: { 'Authorization': `Bearer ${token}` }
+        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }
       })
       
       if (r.status === 400 || !r.ok) {
         r = await fetch(`${API}/billing/checkout`, {
           method: 'POST',
-          headers: { 'Authorization': `Bearer ${token}` }
+          headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }
         })
       }
 
@@ -265,7 +255,7 @@ function handleSubscriptionGate(token) {
       btn.textContent = 'Connection Error'
       btn.disabled = false
     }
-  })
+  }
 }
 
 // ── Post to Facebook ──────────────────────────────
@@ -275,20 +265,27 @@ async function postVehicle(inventoryId, token) {
   btn.textContent = 'Opening...'
   btn.disabled = true
 
-  const vehicle = await apiGet(`/inventory/${inventoryId}`, token)
+  try {
+    const vehicle = await apiGet(`/inventory/${inventoryId}`, token)
 
-  if (vehicle.image_urls?.length) {
-    vehicle.image_urls.forEach((url, i) => {
-      const a = document.createElement('a')
-      a.href = `${API}/proxy-image?url=${encodeURIComponent(url)}`
-      a.download = `${vehicle.year}_${vehicle.make}_${vehicle.model}_photo_${i + 1}.jpg`.replace(/\s+/g, '_')
-      document.body.appendChild(a)
-      setTimeout(() => { a.click(); document.body.removeChild(a) }, i * 400)
+    if (vehicle.image_urls?.length) {
+      vehicle.image_urls.forEach((url, i) => {
+        const a = document.createElement('a')
+        a.href = `${API}/proxy-image?url=${encodeURIComponent(url)}`
+        a.download = `${vehicle.year}_${vehicle.make}_${vehicle.model}_photo_${i + 1}.jpg`.replace(/\s+/g, '_')
+        document.body.appendChild(a)
+        setTimeout(() => { a.click(); document.body.removeChild(a) }, i * 400)
+      })
+    }
+
+    chrome.storage.local.set({ pendingPost: { vehicle, token } }, () => {
+      chrome.tabs.create({ url: 'https://www.facebook.com/marketplace/create/vehicle' })
+      window.close()
     })
+  } catch (err) {
+    console.error('Failed to prepare vehicle data for posting sequence:', err.message)
+    btn.classList.remove('posting')
+    btn.textContent = 'Post'
+    btn.disabled = false
   }
-
-  chrome.storage.local.set({ pendingPost: { vehicle, token } }, () => {
-    chrome.tabs.create({ url: 'https://www.facebook.com/marketplace/create/vehicle' })
-    window.close()
-  })
 }
