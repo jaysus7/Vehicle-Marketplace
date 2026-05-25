@@ -151,14 +151,20 @@ app.post('/auth/register', async (req, res) => {
           id: createdUserId,
           dealership_id: createdDealershipId,
           full_name: fullName,
-          role: 'DEALER_ADMIN'
+          role: 'DEALER_ADMIN',
+          account_role: accountRole
         })
       if (profileError) throw profileError
 
       if (Array.isArray(feeds) && feeds.length > 0) {
         const feedRows = feeds
           .filter(f => f && f.url)
-          .map(f => ({ dealership_id: createdDealershipId, feed_url: f.url }))
+          .map(f => ({
+            dealership_id: createdDealershipId,
+            user_id: createdUserId,
+            feed_url: f.url,
+            feed_type: f.type || 'all'
+          }))
         if (feedRows.length > 0) {
           const { error: feedError } = await supabaseAdmin.from('inventory_feeds').insert(feedRows)
           if (feedError) throw feedError
@@ -171,7 +177,8 @@ app.post('/auth/register', async (req, res) => {
           id: createdUserId,
           dealership_id: null,
           full_name: fullName,
-          role: 'SALES_REP'
+          role: 'SALES_REP',
+          account_role: accountRole
         })
       if (profileError) throw profileError
     }
