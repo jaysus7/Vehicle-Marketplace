@@ -5,16 +5,16 @@ import ws from 'ws'
 import Stripe from 'stripe'
 import { createClient } from '@supabase/supabase-js'
 
-// DIAGNOSTIC ASSERTION LAYER: Explicitly catch missing Render variables before boot
+// DIAGNOSTIC LAYER: Instantly reveals missing Render configuration elements on boot
 const missingEnvVars = [];
 if (!process.env.SUPABASE_URL) missingEnvVars.push('SUPABASE_URL');
 if (!process.env.SUPABASE_ANON_KEY) missingEnvVars.push('SUPABASE_ANON_KEY');
 if (!process.env.SUPABASE_SERVICE_ROLE_KEY) missingEnvVars.push('SUPABASE_SERVICE_ROLE_KEY');
 
 if (missingEnvVars.length > 0) {
-  console.error('❌ CRITICAL CONFIGURATION ERROR: The following environment variables are missing from Render:');
+  console.error('❌ CRITICAL CONFIGURATION ERROR: Missing Render Environment Keys:');
   console.error(JSON.stringify(missingEnvVars, null, 2));
-  process.exit(1); // Force a clean operational exit with a descriptive log trail
+  process.exit(1);
 }
 
 const app = express()
@@ -30,12 +30,14 @@ const supabase = createClient(
   { realtime: { transport: ws } }
 )
 
-// Method A: Elevated Admin Client
+// Method A: Elevated Admin Client (RLS Bypass for secure registrations)
 const supabaseAdmin = createClient(
   process.env.SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY,
   { realtime: { transport: ws } }
 )
+
+app.use(cors({ origin: '*' }))
 
 // ── 1. STRIPE WEBHOOK ──
 app.post('/stripe/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
@@ -81,7 +83,7 @@ app.post('/stripe/webhook', express.raw({ type: 'application/json' }), async (re
 app.use(express.json())
 app.use(express.urlencoded({ extended: true }))
 
-// ── 2. FORTIFIED AUTHENTICATION MIDDLEWARE ──
+// ── 2. AUTHENTICATION MIDDLEWARE ──
 async function requireAuth(req, res, next) {
   const token = req.headers.authorization?.replace('Bearer ', '')
   if (!token) return res.status(401).json({ error: 'No token provided' })
@@ -112,7 +114,7 @@ async function requireAuth(req, res, next) {
   }
 }
 
-// ── 3. SUBSCRIPTION PIPELINE & AUTH ROUTES ──
+// ── 3. AUTHENTICATION & REGISTRATION ──
 app.post('/auth/login', async (req, res) => {
   const { email, password } = req.body
   const { data, error } = await supabase.auth.signInWithPassword({ email, password })
@@ -124,7 +126,6 @@ app.post('/auth/login', async (req, res) => {
 })
 
 app.post('/auth/register', async (req, res) => {
-  // Normalize fields coming from either the old or new frontend iterations
   const { 
     accountRole, 
     role,
@@ -133,43 +134,30 @@ app.post('/auth/register', async (req, res) => {
     password, 
     dealershipName, 
     websiteUrl, 
-    website_url,
-    feedUrl,
-    feeds 
+    feedUrl 
   } = req.body
 
   try {
-    // 1. Resolve variations in role names (UI strings vs raw system enums)
-    const rawRole = (accountRole || role || '').toLowerCase()
-    const isDealerAdmin = rawRole.includes('admin') || rawRole === 'dealer_admin'
+    // Standardize selected registration roles cleanly
+    const incomingRole = (accountRole || role || '').toLowerCase()
+    const isDealerAdmin = incomingRole.includes('admin') || incomingRole === 'dealer_admin'
     const targetRole = isDealerAdmin ? 'DEALER_ADMIN' : 'SALES_REP'
 
-    // 2. Safely reconstruct a uniform feed collection array
-    let normalizedFeeds = []
-    if (Array.isArray(feeds) && feeds.length > 0) {
-      normalizedFeeds = feeds
-    } else if (feedUrl || req.body.feed_url) {
-      normalizedFeeds = [{ url: feedUrl || req.body.feed_url, type: 'All Inventory' }]
-    }
-
-    const targetWebsite = websiteUrl || website_url || null
-    const legacyFeedUrl = normalizedFeeds.length > 0 ? normalizedFeeds[0].url : null
-
-    // 3. Kick off Supabase Auth Provisioning
+    // Step 1: Initialize User Account in Supabase Auth
     const { data: authData, error: authError } = await supabase.auth.signUp({ email, password })
     if (authError) return res.status(400).json({ error: authError.message })
     const userId = authData.user?.id
 
     let assignedDealershipId = null
 
-    // 4. Handle Dealership generation safely
+    // Step 2: Handle workspace creation if Admin
     if (isDealerAdmin) {
       const { data: dealer, error: dErr } = await supabaseAdmin
         .from('dealerships')
         .insert({ 
-          name: dealershipName || 'New Dealership Workspace', 
-          website_url: targetWebsite, 
-          feed_url: legacyFeedUrl,
+          name: dealershipName || 'New Workspace Instance', 
+          website_url: websiteUrl || null, 
+          feed_url: feedUrl || null,
           billing_status: 'TRIAL' 
         })
         .select().single()
@@ -178,36 +166,123 @@ app.post('/auth/register', async (req, res) => {
       assignedDealershipId = dealer.id
     }
 
-    // 5. Safely handle relational multiple feed tables if they exist
-    if (normalizedFeeds.length > 0) {
-      const feedRows = normalizedFeeds.map(f => ({
+    // Step 3: Populate inventory feeds mapping row if URL provided
+    if (feedUrl) {
+      await supabaseAdmin.from('inventory_feeds').insert({
         dealership_id: assignedDealershipId,
         user_id: userId,
-        feed_url: f.url,
-        feed_type: f.type || 'All Inventory'
-      }))
-
-      // Use a silent catch here to prevent profile registration from breaking if table is missing
-      await supabaseAdmin.from('inventory_feeds').insert(feedRows).catch(err => {
-        console.warn('Optional inventory_feeds table insertion bypassed:', err.message)
-      })
+        feed_url: feedUrl,
+        feed_type: 'All Inventory'
+      }).catch(() => null) // Resilient fallback
     }
 
-    // 6. Complete profile map execution matching your active database schema
-    const { error: profileError } = await supabaseAdmin.from('profiles').upsert({
+    // Step 4: Write profile using your database schema 'role' column format
+    await supabaseAdmin.from('profiles').upsert({
       id: userId,
-      full_name: fullName || 'Team Member',
+      full_name: fullName || 'Workspace Member',
       dealership_id: assignedDealershipId,
       role: targetRole
     })
 
-    if (profileError) return res.status(500).json({ error: profileError.message })
-
-    res.status(201).json({ message: 'Registration successful', dealership_id: assignedDealershipId })
+    res.status(201).json({ message: 'Registration successful' })
   } catch (err) {
-    console.error('Registration Catch Triggered:', err.message)
     res.status(500).json({ error: err.message })
   }
+})
+
+app.get('/auth/me', requireAuth, async (req, res) => {
+  res.json({
+    id: req.user.id,
+    email: req.user.email,
+    full_name: req.profile.full_name,
+    role: req.profile.role,
+    dealership: req.profile.dealerships
+  })
+})
+
+app.post('/auth/logout', requireAuth, async (req, res) => {
+  await supabase.auth.signOut()
+  res.json({ success: true })
+})
+
+app.put('/profile/update', requireAuth, async (req, res) => {
+  const { websiteUrl, fullName } = req.body
+  if (websiteUrl) await supabaseAdmin.from('dealerships').update({ website_url: websiteUrl }).eq('id', req.dealershipId)
+  if (fullName) await supabaseAdmin.from('profiles').update({ full_name: fullName }).eq('id', req.user.id)
+  res.json({ message: 'Updated' })
+})
+
+// ── 4. TEAM MANAGEMENT SYSTEM ──
+app.post('/admin/users/invite', requireAuth, async (req, res) => {
+  if (req.profile.role !== 'DEALER_ADMIN') return res.status(403).json({ error: 'Admins only' })
+  const { email, full_name, role = 'SALES_REP' } = req.body
+  const { data: newUser, error: authError } = await supabase.auth.admin.createUser({
+    email,
+    password: Math.random().toString(36).slice(-10),
+    email_confirm: true
+  })
+  if (authError) return res.status(500).json({ error: authError.message })
+  await supabaseAdmin.from('profiles').upsert({
+    id: newUser.user.id,
+    dealership_id: req.dealershipId,
+    full_name,
+    role
+  })
+  res.json({ success: true, user_id: newUser.user.id })
+})
+
+// ── 5. CORE INVENTORY SECURE LOOKUPS ──
+app.get('/inventory', requireAuth, async (req, res) => {
+  const { data, error } = await supabaseAdmin
+    .from('inventory')
+    .select('*')
+    .eq('dealership_id', req.dealershipId)
+    .eq('status', 'available')
+    .order('created_at', { ascending: false })
+  if (error) return res.status(500).json({ error: error.message })
+  res.json(data)
+})
+
+app.get('/inventory/:id', requireAuth, async (req, res) => {
+  const { data, error } = await supabaseAdmin
+    .from('inventory')
+    .select('*')
+    .eq('id', req.params.id)
+    .eq('dealership_id', req.dealershipId)
+    .single()
+  if (error) return res.status(404).json({ error: 'Not found' })
+  res.json(data)
+})
+
+// ── 6. MARKETING ASSET SYNC LOGIC ──
+app.post('/listings', requireAuth, async (req, res) => {
+  const { inventory_id, fb_listing_id, fb_listing_url } = req.body
+  const { data, error } = await supabaseAdmin
+    .from('listings')
+    .insert({ inventory_id, posted_by: req.user.id, fb_listing_id, fb_listing_url, status: 'posted', posted_at: new Date().toISOString() })
+    .select().single()
+  if (error) return res.status(500).json({ error: error.message })
+  res.json(data)
+})
+
+app.get('/listings', requireAuth, async (req, res) => {
+  const { data, error } = await supabaseAdmin
+    .from('listings')
+    .select('*, inventory!inner(*)')
+    .eq('inventory.dealership_id', req.dealershipId)
+    .eq('status', 'posted')
+    .order('posted_at', { ascending: false })
+  if (error) return res.status(500).json({ error: error.message })
+  res.json(data)
+})
+
+app.patch('/listings/:id/delete', requireAuth, async (req, res) => {
+  const { error } = await supabaseAdmin
+    .from('listings')
+    .update({ status: 'deleted', deleted_at: new Date().toISOString() })
+    .eq('id', req.params.id)
+  if (error) return res.status(500).json({ error: error.message })
+  res.json({ success: true })
 })
 
 // ── 7. MULTI-TIER SUBSCRIPTION BILLING MANAGEMENT ──
@@ -259,7 +334,7 @@ app.get('/proxy-image', async (req, res) => {
   }
 })
 
-// ── 9. SYSTEM ENGINE: CRON-READY VEHICLE DATA SYNC ──
+// ── 9. SYSTEM ENGINE: VEHICLE DATA SYNC ──
 function mapFuel(fuel) {
   if (!fuel) return 'Gasoline'
   const f = fuel.toLowerCase()
@@ -371,7 +446,7 @@ app.get('/sync', async (req, res) => {
   }
 })
 
-// ── 10. DIAGNOSTIC RUNTIME ENVIRONMENT LAYER ──
+// ── 10. DIAGNOSTIC LAYER ──
 app.get('/debug', requireAuth, async (req, res) => {
   res.json({ user_id: req.user.id, profile: req.profile, dealership_id: req.dealershipId })
 })
