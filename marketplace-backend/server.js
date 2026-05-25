@@ -249,7 +249,7 @@ app.put('/profile/update', requireAuth, async (req, res) => {
 app.post('/admin/users/invite', requireAuth, async (req, res) => {
   if (req.profile.role !== 'DEALER_ADMIN') return res.status(403).json({ error: 'Admins only' })
   const { email, full_name, role = 'SALES_REP' } = req.body
-  const { data: newUser, error: authError } = await supabase.auth.admin.createUser({
+  const { data: newUser, error: authError } = await supabaseAdmin.auth.admin.createUser({
     email,
     password: Math.random().toString(36).slice(-10),
     email_confirm: true
