@@ -95,10 +95,13 @@ async function requireAuth(req, res, next) {
       })
     }
 
-    // Strict Billing Gate Enforcement
-    const status = profile.dealerships?.billing_status
-    if (status === 'INACTIVE' || status === 'PAST_DUE') {
-      return res.status(402).json({ error: 'SUBSCRIPTION_REQUIRED' })
+    // Billing routes need auth but must bypass the subscription gate
+    // (otherwise inactive users can't reach checkout to start a subscription)
+    if (!req.path.startsWith('/billing')) {
+      const status = profile.dealerships?.billing_status
+      if (status === 'INACTIVE' || status === 'PAST_DUE') {
+        return res.status(402).json({ error: 'SUBSCRIPTION_REQUIRED' })
+      }
     }
 
     req.user = user
