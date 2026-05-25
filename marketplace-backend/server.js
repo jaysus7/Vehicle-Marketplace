@@ -386,4 +386,17 @@ app.get('/debug', requireAuth, async (req, res) => {
   res.json({ user_id: req.user.id, profile: req.profile, dealership_id: req.dealershipId })
 })
 
+import { createClient } from '@supabase/supabase-js'
+
+// Use the SERVICE_ROLE key on your isolated server to bypass RLS restrictions
+const supabaseAdmin = createClient(
+  process.env.SUPABASE_URL, 
+  process.env.SUPABASE_SERVICE_ROLE_KEY // <-- Not the anon key!
+)
+
+// When processing /auth/register, use this admin client to write to dealerships
+const { data, error } = await supabaseAdmin
+  .from('dealerships')
+  .insert([{ name: payload.dealershipName, website: payload.websiteUrl }])
+
 app.listen(PORT, () => console.log(`🚀 Automated marketplace sync ecosystem operational on port ${PORT}`))
