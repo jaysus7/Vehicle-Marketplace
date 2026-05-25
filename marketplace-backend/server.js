@@ -459,4 +459,10 @@ app.get('/debug', requireAuth, async (req, res) => {
   res.json({ user_id: req.user.id, profile: req.profile, dealership_id: req.dealershipId })
 })
 
+app.use((err, req, res, next) => {
+  console.error('Unhandled Express error:', { path: req.path, method: req.method, message: err.message, stack: err.stack })
+  if (res.headersSent) return next(err)
+  res.status(500).json({ error: err.message, path: req.path, stack: err.stack })
+})
+
 app.listen(PORT, '0.0.0.0', () => console.log(`🚀 Secure Marketplace engine live on port ${PORT}`))
