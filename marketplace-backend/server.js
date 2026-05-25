@@ -308,7 +308,8 @@ app.patch('/listings/:id/delete', requireAuth, async (req, res) => {
 
 // ── 8. UNIFIED BILLING ENGINE ──
 app.post('/billing/checkout', requireAuth, async (req, res) => {
-  const priceId = req.body.priceId || process.env.STRIPE_DEALER_PRICE_ID
+  const priceId = req.body?.priceId || process.env.STRIPE_DEALER_PRICE_ID
+  if (!priceId) return res.status(500).json({ error: 'STRIPE_DEALER_PRICE_ID env var not set on Render' })
   try {
     if (req.profile.dealerships?.stripe_customer_id) {
       try {
