@@ -76,13 +76,24 @@ async function requireAuth(req, res, next) {
     const { data: { user }, error } = await supabase.auth.getUser(token)
     if (error || !user) return res.status(401).json({ error: 'AUTH_EXPIRED — please sign in again' })
 
-    const { data: profile } = await supabaseAdmin
+    const { data: profile, error: profileError } = await supabaseAdmin
       .from('profiles')
       .select('*, dealerships(*)')
       .eq('id', user.id)
       .single()
 
-    if (!profile) return res.status(401).json({ error: 'Profile not found' })
+    if (profileError || !profile) {
+      return res.status(401).json({
+        error: 'Profile not found',
+        debug: {
+          userId: user.id,
+          profileErrorMessage: profileError?.message,
+          profileErrorCode: profileError?.code,
+          profileErrorDetails: profileError?.details,
+          profileErrorHint: profileError?.hint
+        }
+      })
+    }
 
     // Strict Billing Gate Enforcement
     const status = profile.dealerships?.billing_status
