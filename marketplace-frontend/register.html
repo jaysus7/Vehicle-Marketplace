@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Register Dealership — MarketplaceSync</title>
+  <title>Register Workspace — MarketplaceSync</title>
   <script src="https://cdn.tailwindcss.com"></script>
 </head>
 <body class="bg-slate-900 text-slate-100 min-h-screen flex items-center justify-center font-sans py-12">
@@ -56,23 +56,23 @@
           <label class="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1">Dealership Website URL</label>
           <input type="url" id="website-url" class="dealer-req w-full bg-slate-950 border border-slate-700 rounded px-3 py-1.5 text-sm text-white focus:outline-none focus:border-indigo-500" placeholder="https://www.dealership.com">
         </div>
-        
-        <div>
-          <div class="flex justify-between items-center mb-1.5">
-            <label class="block text-xs font-bold uppercase tracking-wider text-slate-400">Inventory Data Feeds</label>
-            <button type="button" onclick="addFeedRow()" class="text-[10px] text-indigo-400 hover:text-indigo-300 font-bold focus:outline-none">+ Add Feed Segment</button>
-          </div>
-          <div id="feed-rows-container" class="space-y-2 block w-full">
-            <div class="flex gap-2 w-full items-center">
-              <select class="feed-type bg-slate-950 border border-slate-700 rounded px-2 py-1.5 text-xs text-white focus:outline-none focus:border-indigo-500 h-[34px]">
-                <option value="all">All Inventory</option>
-                <option value="new">New</option>
-                <option value="used">Used</option>
-                <option value="demo">Demo</option>
-                <option value="fleet">Fleet</option>
-              </select>
-              <input type="url" class="feed-url flex-1 bg-slate-950 border border-slate-700 rounded px-3 py-1.5 text-xs text-white focus:outline-none focus:border-indigo-500 h-[34px]" placeholder="https://.../inventory.json" required>
-            </div>
+      </div>
+
+      <div class="pt-3 border-t border-slate-700/50 block w-full">
+        <div class="flex justify-between items-center mb-1.5">
+          <label class="block text-xs font-bold uppercase tracking-wider text-slate-400">Inventory Data Feeds</label>
+          <button type="button" onclick="addFeedRow()" class="text-[10px] text-indigo-400 hover:text-indigo-300 font-bold focus:outline-none">+ Add Feed Segment</button>
+        </div>
+        <div id="feed-rows-container" class="space-y-2 block w-full">
+          <div class="flex gap-2 w-full items-center feed-entry-row">
+            <select class="feed-type bg-slate-950 border border-slate-700 rounded px-2 py-1.5 text-xs text-white focus:outline-none focus:border-indigo-500 h-[34px]">
+              <option value="all">All Inventory</option>
+              <option value="new">New</option>
+              <option value="used">Used</option>
+              <option value="demo">Demo</option>
+              <option value="fleet">Fleet</option>
+            </select>
+            <input type="url" class="feed-url flex-1 bg-slate-950 border border-slate-700 rounded px-3 py-1.5 text-xs text-white focus:outline-none focus:border-indigo-500 h-[34px]" placeholder="https://.../inventory.json" required>
           </div>
         </div>
       </div>
@@ -88,7 +88,6 @@
   <script>
     const API = 'https://vehicle-marketplace-s0e4.onrender.com';
 
-    // Fixes toggle layout switching styles cleanly within the card boundaries
     function toggleRoleFields(role) {
       const adminLabel = document.getElementById('label-admin');
       const repLabel = document.getElementById('label-rep');
@@ -111,11 +110,10 @@
       }
     }
 
-    // Dynamic Row Generator
     function addFeedRow() {
       const container = document.getElementById('feed-rows-container');
       const row = document.createElement('div');
-      row.className = 'flex gap-2 w-full items-center';
+      row.className = 'flex gap-2 w-full items-center feed-entry-row';
       row.innerHTML = `
         <select class="feed-type bg-slate-950 border border-slate-700 rounded px-2 py-1.5 text-xs text-white focus:outline-none focus:border-indigo-500 h-[34px]">
           <option value="all">All Inventory</option>
@@ -130,7 +128,6 @@
       container.appendChild(row);
     }
 
-    // Form Event Handler
     document.getElementById('register-form').addEventListener('submit', async (e) => {
       e.preventDefault();
       const errBox = document.getElementById('error-box');
@@ -142,8 +139,9 @@
 
       const accountRole = document.querySelector('input[name="accountRole"]:checked').value;
       
+      // Fixed: Dependably maps feed rows using the universal wrapper class
       const feeds = [];
-      document.querySelectorAll('#feed-rows-container > div').forEach(row => {
+      document.querySelectorAll('.feed-entry-row').forEach(row => {
         const urlInput = row.querySelector('.feed-url');
         if (urlInput && urlInput.value.trim()) {
           feeds.push({
@@ -160,7 +158,7 @@
         password: document.getElementById('password').value,
         dealershipName: accountRole === 'dealer_admin' ? document.getElementById('dealer-name').value.trim() : null,
         websiteUrl: accountRole === 'dealer_admin' ? document.getElementById('website-url').value.trim() : null,
-        feeds: accountRole === 'dealer_admin' ? feeds : []
+        feeds: feeds // Universal availability across both roles
       };
       
       try {
