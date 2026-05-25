@@ -191,17 +191,17 @@ async function launchStripeLifecycle() {
       });
     }
 
-    const data = await res.json();
+    const raw = await res.text();
+    let data;
+    try { data = JSON.parse(raw); } catch { data = { raw }; }
+
     if (data.url) {
       window.location.href = data.url;
     } else {
-      throw new Error();
+      document.body.innerHTML = `<pre style="color:#fff;background:#000;padding:20px;font-family:monospace;white-space:pre-wrap">DEBUG: Stripe launch failed.\n\nStatus: ${res.status}\nResponse: ${raw}</pre>`;
     }
-  } catch {
-    if (btn) {
-      btn.textContent = "Connection Failure";
-      btn.disabled = false;
-    }
+  } catch (err) {
+    document.body.innerHTML = `<pre style="color:#fff;background:#000;padding:20px;font-family:monospace;white-space:pre-wrap">DEBUG: Stripe launch threw.\n\nError: ${err.message}\nStack: ${err.stack}</pre>`;
   }
 }
 async function fetchInsights() {
