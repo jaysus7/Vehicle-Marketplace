@@ -66,6 +66,7 @@ function showLoginScreen() {
   $('login-screen').style.display = 'block'
   $('inventory-screen').style.display = 'none'
 
+  // Handle Extension Direct Login Flow
   $('login-btn').addEventListener('click', async () => {
     const email = $('email').value.trim()
     const password = $('password').value
@@ -99,19 +100,11 @@ function showLoginScreen() {
       $('login-btn').textContent = 'Sign In'
     }
   })
-  
-  // Robust parsing layer to handle both raw arrays and nested database payloads
-    const listings = Array.isArray(listingsRes) 
-      ? listingsRes 
-      : (listingsRes && Array.isArray(listingsRes.data) ? listingsRes.data : [])
-    
-    // Defensive extraction fallback for 'inventory_id', 'vehicle_id', or nested objects
-    const postedIdSet = new Set(
-      listings.map(l => {
-        if (!l) return null;
-        return l.inventory_id || l.vehicle_id || (l.inventory && l.inventory.id);
-      }).filter(Boolean)
-    )
+
+  // Link out to hosted Render Registration flow via Chrome Tab API
+  $('register-btn').addEventListener('click', () => {
+    chrome.tabs.create({ url: 'https://vehicle-marketplace-frontend-stts.onrender.com/register.html' })
+  })
 }
 
 // ── Inventory Screen ──────────────────────────────
@@ -159,10 +152,18 @@ async function loadInventory(token) {
       apiGet('/listings', token)
     ])
 
-    const listings = Array.isArray(listingsRes) ? listingsRes : []
+    // Robust parsing layer handles both raw arrays and database payload structural fallbacks
+    const listings = Array.isArray(listingsRes) 
+      ? listingsRes 
+      : (listingsRes && Array.isArray(listingsRes.data) ? listingsRes.data : [])
     
-    // ── FIXED: Track explicit internal inventory IDs to decouple from VIN availability ──
-    const postedIdSet = new Set(listings.map(l => l.inventory_id).filter(Boolean))
+    // Track explicit internal inventory IDs to decouple from VIN availability
+    const postedIdSet = new Set(
+      listings.map(l => {
+        if (!l) return null
+        return l.inventory_id || l.vehicle_id || (l.inventory && l.inventory.id)
+      }).filter(Boolean)
+    )
 
     // Populate Counter Elements using robust identifier sets
     $('stat-total').textContent = inventory.length
@@ -180,7 +181,6 @@ async function loadInventory(token) {
 
     // Mapping layer updates arrays straight to DOM layout nodes
     $('vehicle-list').innerHTML = inventory.map(v => {
-      // ── FIXED: Check intersection list using relational ID keys ──
       const isPosted = postedIdSet.has(v.id)
       const img = v.image_urls?.[0]
       const thumb = img
@@ -229,9 +229,9 @@ function handleSubscriptionGate(token) {
   $('vehicle-list').innerHTML = `
     <div class="empty-state" style="padding: 24px 12px;">
       <div class="icon" style="color: #ff4d4d; font-size: 24px; margin-bottom: 8px;">💳</div>
-      <p style="font-weight: bold; margin: 4px 0; color: #333;">Subscription Inactive</p>
-      <p style="font-size: 11px; color: #666; margin-bottom: 14px; line-height: 1.4;">Please activate your dealership plan to access sync features.</p>
-      <button id="ui-manage-billing-btn" style="background: #635bff; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; font-weight: bold; width: 85%; font-size: 12px;">
+      <p style="font-weight: bold; margin: 4px 0; color: #fff;">Subscription Inactive</p>
+      <p style="font-size: 11px; color: #888; margin-bottom: 14px; line-height: 1.4;">Please activate your dealership plan to access sync features.</p>
+      <button id="ui-manage-billing-btn" style="background: #3b82f6; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; font-weight: bold; width: 85%; font-size: 12px;">
         Manage Account & Billing
       </button>
     </div>`

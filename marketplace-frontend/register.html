@@ -6,7 +6,19 @@
   <script src="https://cdn.tailwindcss.com"></script>
 </head>
 <body class="bg-slate-900 text-slate-100 min-h-screen flex items-center justify-center font-sans py-12">
-  <div class="bg-slate-800 p-8 rounded-lg border border-slate-700 shadow-xl w-full max-w-md mx-4">
+ <div class="grid grid-cols-2 gap-2 mb-4">
+  <label class="cursor-pointer border border-indigo-500 bg-indigo-950/30 p-2.5 rounded text-center block">
+    <input type="radio" name="account_type" value="dealer_admin" checked class="sr-only">
+    <span class="block text-xs font-bold">Dealership Admin</span>
+    <span class="block text-[10px] text-slate-400">Manage entire store feed</span>
+  </label>
+  <label class="cursor-pointer border border-slate-700 bg-slate-950 p-2.5 rounded text-center block">
+    <input type="radio" name="account_type" value="sales_rep" class="sr-only">
+    <span class="block text-xs font-bold">Independent Rep</span>
+    <span class="block text-[10px] text-slate-400">Post personal inventory</span>
+  </label>
+</div>
+    <div class="bg-slate-800 p-8 rounded-lg border border-slate-700 shadow-xl w-full max-w-md mx-4">
     <div class="text-center mb-6">
       <span class="text-2xl font-black text-indigo-400">🚗 MarketplaceSync</span>
       <p class="text-slate-400 text-xs mt-1">Initialize workspace profile and subscription pipeline</p>
@@ -36,10 +48,15 @@
         <label class="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1">Dealership Website URL</label>
         <input type="url" id="website-url" required class="w-full bg-slate-950 border border-slate-700 rounded px-3 py-1.5 text-sm text-white focus:outline-none focus:border-indigo-500" placeholder="https://www.dealership.com">
       </div>
-      <div>
-        <label class="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1">Inventory JSON Feed URL</label>
-        <input type="url" id="feed-url" required class="w-full bg-slate-950 border border-slate-700 rounded px-3 py-1.5 text-sm text-white focus:outline-none focus:border-indigo-500" placeholder="https://www.dealership.com/data/inventory.json">
-      </div>
+    <div class="flex gap-2 mb-2">
+  <select class="bg-slate-950 border border-slate-700 rounded text-xs p-1.5">
+    <option value="all">All Inventory</option>
+    <option value="new">New</option>
+    <option value="used">Used</option>
+    <option value="demo">Demo</option>
+  </select>
+  <input type="url" placeholder="https://..." class="flex-1 bg-slate-950 border border-slate-700 rounded text-xs p-1.5">
+</div>
 
       <button type="submit" id="submit-btn" class="w-full bg-indigo-600 hover:bg-indigo-500 font-bold py-2.5 rounded text-sm shadow transition mt-4">Provision New Dealership</button>
     </form>
