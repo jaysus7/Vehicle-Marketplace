@@ -5,27 +5,37 @@ import ws from 'ws'
 import Stripe from 'stripe'
 import { createClient } from '@supabase/supabase-js'
 
+// DIAGNOSTIC ASSERTION LAYER: Explicitly catch missing Render variables before boot
+const missingEnvVars = [];
+if (!process.env.SUPABASE_URL) missingEnvVars.push('SUPABASE_URL');
+if (!process.env.SUPABASE_ANON_KEY) missingEnvVars.push('SUPABASE_ANON_KEY');
+if (!process.env.SUPABASE_SERVICE_ROLE_KEY) missingEnvVars.push('SUPABASE_SERVICE_ROLE_KEY');
+
+if (missingEnvVars.length > 0) {
+  console.error('❌ CRITICAL CONFIGURATION ERROR: The following environment variables are missing from Render:');
+  console.error(JSON.stringify(missingEnvVars, null, 2));
+  process.exit(1); // Force a clean operational exit with a descriptive log trail
+}
+
 const app = express()
 const PORT = process.env.PORT || 10000
 const sleep = ms => new Promise(r => setTimeout(r, ms))
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY)
 
-// Standard Public Client (Used for standard user auth validations)
+// Standard Public Client
 const supabase = createClient(
   process.env.SUPABASE_URL,
   process.env.SUPABASE_ANON_KEY,
   { realtime: { transport: ws } }
 )
 
-// Method A: Elevated Admin Client (Used exclusively on registration to bypass RLS)
+// Method A: Elevated Admin Client
 const supabaseAdmin = createClient(
   process.env.SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY,
   { realtime: { transport: ws } }
 )
-
-app.use(cors({ origin: '*' }))
 
 // ── 1. STRIPE WEBHOOK ──
 app.post('/stripe/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
