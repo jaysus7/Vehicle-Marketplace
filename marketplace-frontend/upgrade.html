@@ -1,29 +1,99 @@
 <!DOCTYPE html>
-<html>
-<body>
-  <h1>Choose Your Plan</h1>
-  <div id="plans">
-    <button onclick="handleUpgrade('DEALER')">Dealer Pro - $199/mo</button>
-    <button onclick="handleUpgrade('SOLO')">Solo Sales - $49/mo</button>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Choose a plan · MarketSync</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen flex items-center justify-center font-sans p-6">
+
+  <div class="max-w-4xl w-full">
+    <div class="text-center mb-10">
+      <a href="index.html" class="inline-flex items-center gap-2.5 mb-6">
+        <span class="w-1.5 h-6 bg-indigo-500 rounded-sm"></span>
+        <span class="text-2xl font-black tracking-tight text-white">Market<span class="text-indigo-400">Sync</span></span>
+      </a>
+      <h1 class="text-3xl md:text-4xl font-extrabold tracking-tight text-white mb-3">Choose your plan</h1>
+      <p class="text-sm text-slate-400">7 days free on either plan. Cancel anytime.</p>
+    </div>
+
+    <div id="error-box" class="hidden mb-4 p-3 bg-red-900/50 border border-red-700 text-red-200 text-xs rounded text-center"></div>
+
+    <div class="grid md:grid-cols-2 gap-6">
+      <!-- SOLO -->
+      <div class="bg-slate-900 border border-slate-800 rounded-lg p-8 flex flex-col">
+        <div class="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">Solo Sales Rep</div>
+        <h3 class="text-2xl font-bold text-white mb-1">$49 <span class="text-sm font-medium text-slate-500">/ month</span></h3>
+        <p class="text-xs text-slate-500 mb-6">For independent reps working solo or across multiple dealers.</p>
+        <ul class="space-y-2 text-sm text-slate-300 mb-8 flex-1">
+          <li class="flex items-start gap-2"><span class="text-emerald-400">✓</span> Personal inventory sync</li>
+          <li class="flex items-start gap-2"><span class="text-emerald-400">✓</span> Chrome extension auto-poster</li>
+          <li class="flex items-start gap-2"><span class="text-emerald-400">✓</span> Mark sold + listing tracking</li>
+          <li class="flex items-start gap-2"><span class="text-emerald-400">✓</span> Personal performance dashboard</li>
+        </ul>
+        <button onclick="handleUpgrade('SOLO', this)" class="w-full bg-slate-800 hover:bg-slate-700 border border-slate-700 text-white font-bold py-3 rounded transition">Start 7-day free trial</button>
+      </div>
+
+      <!-- DEALER -->
+      <div class="bg-slate-900 border border-indigo-600 rounded-lg p-8 flex flex-col relative">
+        <span class="absolute -top-3 right-6 bg-indigo-500 text-white text-[10px] font-bold uppercase tracking-wider px-3 py-1 rounded-full">Most popular</span>
+        <div class="text-xs font-bold uppercase tracking-wider text-indigo-400 mb-2">Dealer Pro</div>
+        <h3 class="text-2xl font-bold text-white mb-1">$199 <span class="text-sm font-medium text-slate-500">/ month</span></h3>
+        <p class="text-xs text-slate-500 mb-6">Full team: dealership admin + unlimited sales reps on one plan.</p>
+        <ul class="space-y-2 text-sm text-slate-300 mb-8 flex-1">
+          <li class="flex items-start gap-2"><span class="text-emerald-400">✓</span> Everything in Solo</li>
+          <li class="flex items-start gap-2"><span class="text-emerald-400">✓</span> Invite + manage unlimited sales reps</li>
+          <li class="flex items-start gap-2"><span class="text-emerald-400">✓</span> Team performance insights + drill-downs</li>
+          <li class="flex items-start gap-2"><span class="text-emerald-400">✓</span> Multiple inventory feeds (new / used / demo)</li>
+          <li class="flex items-start gap-2"><span class="text-emerald-400">✓</span> Reps don't pay — billed once at the dealership level</li>
+        </ul>
+        <button onclick="handleUpgrade('DEALER', this)" class="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-3 rounded transition">Start 7-day free trial</button>
+      </div>
+    </div>
+
+    <p class="text-xs text-slate-500 text-center mt-8">
+      Already have an account? <a href="login.html" class="text-indigo-400 hover:underline">Sign in</a>
+    </p>
   </div>
 
   <script>
-    const API = 'https://your-backend-api.onrender.com';
+    const API = 'https://vehicle-marketplace-s0e4.onrender.com';
 
-    async function handleUpgrade(type) {
-      const priceId = type === 'DEALER' ? '{{STRIPE_DEALER_PRICE_ID}}' : '{{STRIPE_SOLO_PRICE_ID}}';
-      
-      const res = await fetch(`${API}/billing/checkout`, {
-        method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        },
-        body: JSON.stringify({ priceId: type === 'DEALER' ? 'price_dealer_id_here' : 'price_solo_id_here' })
-      });
-      
-      const data = await res.json();
-      if (data.url) window.location.href = data.url;
+    async function handleUpgrade(type, btn) {
+      const errBox = document.getElementById('error-box');
+      errBox.classList.add('hidden');
+      const originalText = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = 'Connecting to billing...';
+
+      const token = localStorage.getItem('token');
+      if (!token) {
+        window.location.href = `register.html?plan=${type}`;
+        return;
+      }
+
+      try {
+        const res = await fetch(`${API}/billing/checkout`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify({})
+        });
+        const data = await res.json();
+        if (data.url) {
+          window.location.href = data.url;
+          return;
+        }
+        throw new Error(data.error || 'Could not start checkout');
+      } catch (err) {
+        errBox.textContent = err.message;
+        errBox.classList.remove('hidden');
+        btn.disabled = false;
+        btn.textContent = originalText;
+      }
     }
   </script>
 </body>

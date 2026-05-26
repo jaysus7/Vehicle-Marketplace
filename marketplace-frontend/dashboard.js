@@ -34,7 +34,10 @@ async function initializeDashboardEcosystem() {
 
     // Render Shared Header Components
     document.getElementById('ui-profile-name').textContent = profileContext.full_name || user.email;
-    document.getElementById('ui-dealership-name').textContent = profileContext.dealership?.name || 'Independent Store';
+    const isPersonalDealership = profileContext.dealership?.is_personal === true;
+    document.getElementById('ui-dealership-name').textContent = isPersonalDealership
+      ? 'Independent'
+      : (profileContext.dealership?.name || 'Independent');
 
     // Pre-fill profile form
     document.getElementById('prof-name').value = profileContext.full_name || '';
@@ -44,7 +47,9 @@ async function initializeDashboardEcosystem() {
 
     // Route Workspace Rendering Logic based on Account Role
     const role = profileContext.role || 'SALES_REP'; // Standard safe fallback role assignment
-    document.getElementById('ui-role-pill').textContent = role;
+    const isPersonalForPill = profileContext.dealership?.is_personal === true;
+    const rolePillLabel = (role === 'SALES_REP' && isPersonalForPill) ? 'SOLO_REP' : role;
+    document.getElementById('ui-role-pill').textContent = rolePillLabel;
 
     // Hide dealer-only profile fields for sales reps
     if (role !== 'DEALER_ADMIN' && role !== 'OWNER') {
@@ -61,9 +66,12 @@ async function initializeDashboardEcosystem() {
 
     const isAdmin = role === 'DEALER_ADMIN' || role === 'OWNER';
     const inDealership = !!profileContext.dealership?.id;
-    const isDealerRep = role === 'SALES_REP' && inDealership;
+    const isPersonal = profileContext.dealership?.is_personal === true;
+    const isSolo = role === 'SALES_REP' && (isPersonal || !inDealership);
+    const isDealerRep = role === 'SALES_REP' && inDealership && !isPersonal;
+    const canManageFeeds = isAdmin || isSolo;
 
-    // Feeds + Catalog visible to everyone in a dealership (reps see read-only)
+    // Feeds + Catalog visible to anyone with a dealership (team or personal)
     if (inDealership) {
       document.getElementById('feeds-panel').classList.remove('hidden');
       document.getElementById('catalog-panel').classList.remove('hidden');
@@ -71,8 +79,8 @@ async function initializeDashboardEcosystem() {
       loadInventoryCatalog();
     }
 
-    if (!isAdmin) {
-      // Hide admin-only controls (Sync Now button, Add Feed form)
+    if (!canManageFeeds) {
+      // Dealer reps see feeds read-only — hide add/sync controls
       document.querySelectorAll('[data-admin-only]').forEach(el => el.classList.add('hidden'));
     }
 
@@ -383,7 +391,12 @@ async function syncNow() {
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Sync failed');
-    showSyncStatus(`Synced ${data.processed} of ${data.total_in_feeds} vehicles (${data.skipped} skipped).`, 'ok');
+    const dupNote = data.duplicates_merged > 0 ? ` · ${data.duplicates_merged} duplicate VINs merged` : '';
+    const skipNote = data.skipped > 0 ? ` · ${data.skipped} skipped (sale-pending / offline)` : '';
+    showSyncStatus(
+      `Synced ${data.unique_vehicles} unique vehicles (${data.available_after_sync} available)${dupNote}${skipNote}.`,
+      'ok'
+    );
     // Refresh insights + catalog after a sync
     loadInsights();
     loadInventoryCatalog();

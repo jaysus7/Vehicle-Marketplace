@@ -117,37 +117,83 @@ async function typeInto(el, value) {
 }
 
 async function pickDropdown(labelText, value) {
-  const trigger = [...document.querySelectorAll('[role="combobox"]')]
-    .find(el => el.textContent.trim().toLowerCase().includes(labelText.toLowerCase()));
-  if (!trigger) { console.warn('Dropdown not found:', labelText); return false; }
+  const lower = labelText.toLowerCase();
+
+  // Find the dropdown using multiple strategies (FB keeps moving things around)
+  const trigger = await waitFor(() => {
+    // 1. Exact aria-label match (most reliable when present)
+    const byAria = document.querySelector(`[role="combobox"][aria-label="${labelText}" i]`);
+    if (byAria) return byAria;
+
+    // 2. Combobox whose own text content is exactly the label (placeholder state)
+    const comboboxes = [...document.querySelectorAll('[role="combobox"]')];
+    const exact = comboboxes.find(el => el.textContent.trim().toLowerCase() === lower);
+    if (exact) return exact;
+
+    // 3. Label-element pattern: a label/span with text "Year" near a combobox
+    const labels = [...document.querySelectorAll('label, span')];
+    for (const lbl of labels) {
+      if (lbl.textContent.trim().toLowerCase() === lower) {
+        const combo = lbl.querySelector('[role="combobox"]')
+          || lbl.parentElement?.querySelector('[role="combobox"]')
+          || lbl.closest('label')?.querySelector('[role="combobox"]');
+        if (combo) return combo;
+      }
+    }
+
+    // 4. Loose fallback — combobox text starts with label but isn't enormous
+    return comboboxes.find(el => {
+      const txt = el.textContent.trim().toLowerCase();
+      return txt.startsWith(lower) && txt.length < lower.length + 30;
+    });
+  }, 10000);
+
+  if (!trigger) {
+    console.warn(`❌ Dropdown not found: ${labelText}`);
+    return false;
+  }
 
   trigger.scrollIntoView({ behavior: 'smooth', block: 'center' });
-  await sleep(400);
+  await sleep(500);
   trigger.click();
-  await sleep(1200); // Wait for async overlay creation
+  await sleep(1500); // Wait for FB's dropdown overlay to mount
 
-  const searchInput = [...document.querySelectorAll('input')]
-    .find(el => el.offsetParent !== null && el.type !== 'hidden' && !el.closest('[aria-hidden="true"]'));
+  // Find search input INSIDE the freshly opened dropdown (must be empty/fresh)
+  const searchInput = await waitFor(() => {
+    return [...document.querySelectorAll('input')].find(el =>
+      el.offsetParent !== null
+      && el.type !== 'hidden'
+      && !el.closest('[aria-hidden="true"]')
+      && !el.value
+    );
+  }, 4000);
+
   if (searchInput) {
+    searchInput.click();
+    searchInput.focus();
+    await sleep(300);
     const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
     if (nativeSetter) nativeSetter.call(searchInput, value);
+    else searchInput.value = value;
     searchInput.dispatchEvent(new Event('input', { bubbles: true }));
-    await sleep(1000);
+    searchInput.dispatchEvent(new Event('change', { bubbles: true }));
+    await sleep(1200);
   }
 
   const option = await waitFor(() => {
     const targets = [...document.querySelectorAll('[role="option"]')];
-    return targets.find(el => el.textContent.trim().toLowerCase() === value.toString().toLowerCase()) ||
-           targets.find(el => el.textContent.trim().toLowerCase().includes(value.toString().toLowerCase()));
+    return targets.find(el => el.textContent.trim().toLowerCase() === value.toString().toLowerCase())
+        || targets.find(el => el.textContent.trim().toLowerCase().includes(value.toString().toLowerCase()));
   }, 6000);
 
-  if (option) { 
-    option.click(); 
-    await sleep(800); 
-    return true; 
+  if (option) {
+    option.click();
+    await sleep(800);
+    console.log(`✓ ${labelText} set:`, value);
+    return true;
   }
-  
-  console.warn('Option fallback configuration triggered for:', labelText, value);
+
+  console.warn(`❌ Option not found for ${labelText}:`, value);
   document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
   await sleep(400);
   return false;
@@ -325,6 +371,15 @@ function showPhotoStrip(imageUrls, vehicleId) {
   markPosted.textContent = '✅ Mark Posted';
   markPosted.style.cssText = 'background:#22c55e;border:none;color:#000;padding:8px 12px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;flex-shrink:0;';
   markPosted.addEventListener('click', () => {
+    // If still on /create/ URL, the rep hasn't actually published yet — the captured URL would be useless.
+    if (window.location.href.includes('/marketplace/create/')) {
+      const proceed = confirm(
+        'You appear to still be on the Marketplace "Create Listing" page.\n\n' +
+        'For best results, click "Publish" on Facebook first, wait for the listing page to load, then click Mark Posted here.\n\n' +
+        'Mark posted anyway?'
+      );
+      if (!proceed) return;
+    }
     markPosted.textContent = 'Saving...';
     markPosted.disabled = true;
     chrome.runtime.sendMessage(
@@ -383,34 +438,8 @@ async function fillListingForm(vehicle) {
 
   // MAKE
   showStatus('Selecting make...');
-  const makeTrigger = await waitFor(() =>
-    [...document.querySelectorAll('[role="combobox"]')]
-      .find(el => el.textContent.trim().toLowerCase() === 'make' ||
-                  el.textContent.trim().toLowerCase().startsWith('make'))
-  , 10000);
-
-  if (makeTrigger) {
-    makeTrigger.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    await sleep(500);
-    makeTrigger.click();
-    await sleep(1200);
-    const searchInput = [...document.querySelectorAll('input')]
-      .find(el => el.offsetParent !== null && el.type !== 'hidden' && !el.closest('[aria-hidden="true"]'));
-    if (searchInput) {
-      const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
-      if (nativeSetter) nativeSetter.call(searchInput, make);
-      searchInput.dispatchEvent(new Event('input', { bubbles: true }));
-      await sleep(1000);
-    }
-    const makeOption = await waitFor(() =>
-      [...document.querySelectorAll('[role="option"]')]
-        .find(el => el.textContent.trim().toLowerCase() === make.toLowerCase()) ||
-      [...document.querySelectorAll('[role="option"]')]
-        .find(el => el.textContent.trim().toLowerCase().includes(make.toLowerCase()))
-    , 5000);
-    if (makeOption) { makeOption.click(); await sleep(1000); console.log('✓ Make set:', make); }
-  }
-  await sleep(1500); // Extended delay for contingent model payload updates
+  await pickDropdown('Make', make);
+  await sleep(2000); // Let Facebook commit Make before Model field activates
 
   // MODEL — FB renders this AFTER Make commits. Wait longer + use multiple selector strategies
   // (aria-label, parent label text, then textContent) since textContent alone is fragile.

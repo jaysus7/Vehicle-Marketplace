@@ -106,11 +106,15 @@ async function requireAuth(req, res, next) {
     // Billing routes need auth but must bypass the subscription gate
     // (otherwise inactive users can't reach checkout to start a subscription)
     if (!req.path.startsWith('/billing')) {
-      // Dealer admins + dealer reps are gated by the dealership's status.
-      // Solo reps (no dealership) are gated by their own profile.billing_status.
-      const status = profile.dealership_id
-        ? profile.dealerships?.billing_status
-        : profile.billing_status
+      // Solo reps own a personal dealership, but their billing lives on the profile.
+      // Real team dealerships use dealership.billing_status. Standalone users
+      // (no dealership at all) also use profile.billing_status.
+      const isPersonal = profile.dealerships?.is_personal === true
+      const useProfileBilling = !profile.dealership_id || isPersonal
+
+      const status = useProfileBilling
+        ? profile.billing_status
+        : profile.dealerships?.billing_status
 
       if (status === 'INACTIVE' || status === 'PAST_DUE') {
         return res.status(402).json({ error: 'SUBSCRIPTION_REQUIRED' })
@@ -203,11 +207,26 @@ app.post('/auth/register', async (req, res) => {
         }
       }
     } else {
+      // Auto-create a personal "dealership" container so solo reps get their own
+      // inventory pool, feeds, catalog, and sync — without affecting any team's data.
+      const { data: personalDealership, error: personalErr } = await supabaseAdmin
+        .from('dealerships')
+        .insert({
+          name: `${fullName} — Personal`,
+          website_url: null,
+          billing_status: null,        // billing lives on the profile for solo reps
+          is_personal: true
+        })
+        .select()
+        .single()
+      if (personalErr) throw personalErr
+      createdDealershipId = personalDealership.id
+
       const { error: profileError } = await supabaseAdmin
         .from('profiles')
         .insert({
           id: createdUserId,
-          dealership_id: null,
+          dealership_id: createdDealershipId,
           full_name: fullName,
           role: 'SALES_REP',
           account_role: accountRole,
@@ -230,6 +249,35 @@ app.post('/auth/register', async (req, res) => {
 
 app.post('/auth/logout', requireAuth, async (req, res) => {
   await supabase.auth.signOut()
+  res.json({ success: true })
+})
+
+app.post('/auth/forgot-password', async (req, res) => {
+  const { email } = req.body || {}
+  if (!email) return res.status(400).json({ error: 'email required' })
+  // Always respond success to avoid leaking which addresses are registered
+  try {
+    await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: `${process.env.FRONTEND_URL}/reset-password.html`
+    })
+  } catch (e) {
+    console.warn('resetPasswordForEmail failed:', e.message)
+  }
+  res.json({ success: true })
+})
+
+app.post('/auth/reset-password', async (req, res) => {
+  const token = req.headers.authorization?.replace('Bearer ', '')
+  if (!token) return res.status(401).json({ error: 'No token provided' })
+  const { password } = req.body || {}
+  if (!password || password.length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters' })
+
+  const { data: { user }, error: userErr } = await supabase.auth.getUser(token)
+  if (userErr || !user) return res.status(401).json({ error: 'Invalid recovery session' })
+
+  const { error: updateErr } = await supabaseAdmin.auth.admin.updateUserById(user.id, { password })
+  if (updateErr) return res.status(500).json({ error: updateErr.message })
+
   res.json({ success: true })
 })
 
@@ -362,59 +410,71 @@ app.get('/dashboard/insights', requireAuth, async (req, res) => {
   const isAdmin = req.profile.role === 'DEALER_ADMIN' || req.profile.role === 'OWNER'
   const now = new Date()
   const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString()
-  // Start of this week (Monday 00:00 local UTC)
-  const day = now.getUTCDay() || 7   // Sun=0 -> 7 so Monday=1
+  const day = now.getUTCDay() || 7
   const startOfWeek = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - (day - 1))).toISOString()
 
-  try {
-    // Inventory synced — dealership-wide, any status (the actual "synced" count)
-    let inventorySynced = 0
-    if (req.dealershipId) {
-      const { count } = await supabaseAdmin
-        .from('inventory')
-        .select('id', { count: 'exact', head: true })
-        .eq('dealership_id', req.dealershipId)
-      inventorySynced = count || 0
-    }
+  // Wrap each query independently so one failure can't blank the whole strip.
+  let inventorySynced = 0, listingsPosted = 0, soldThisMonth = 0, activeDaysThisWeek = 0
+  const warnings = {}
 
-    // Listings posted — admin sees dealership-wide, rep sees personal
-    let listingsPosted = 0
-    let soldThisMonth = 0
+  try {
+    if (req.dealershipId) {
+      const { count, error } = await supabaseAdmin
+        .from('inventory').select('id', { count: 'exact', head: true })
+        .eq('dealership_id', req.dealershipId)
+      if (error) warnings.inventory = error.message
+      else inventorySynced = count || 0
+    }
+  } catch (e) { warnings.inventory = e.message }
+
+  try {
     if (isAdmin && req.dealershipId) {
-      const { data: allListings } = await supabaseAdmin
+      const { data, error } = await supabaseAdmin
         .from('listings')
         .select('id, status, deleted_at, inventory!inner(dealership_id)')
         .eq('inventory.dealership_id', req.dealershipId)
-      listingsPosted = allListings?.length || 0
-      soldThisMonth = (allListings || []).filter(l => l.status === 'sold' && l.deleted_at && l.deleted_at >= thirtyDaysAgo).length
+      if (error) warnings.listings = error.message
+      else {
+        listingsPosted = data?.length || 0
+        soldThisMonth = (data || []).filter(l => l.status === 'sold' && l.deleted_at && l.deleted_at >= thirtyDaysAgo).length
+      }
     } else {
-      const { count: total } = await supabaseAdmin
+      const { count: total, error: totalErr } = await supabaseAdmin
         .from('listings').select('id', { count: 'exact', head: true }).eq('posted_by', req.user.id)
-      const { count: sold } = await supabaseAdmin
+      if (totalErr) warnings.listings = totalErr.message
+      else listingsPosted = total || 0
+
+      const { count: sold, error: soldErr } = await supabaseAdmin
         .from('listings').select('id', { count: 'exact', head: true })
         .eq('posted_by', req.user.id).eq('status', 'sold').gte('deleted_at', thirtyDaysAgo)
-      listingsPosted = total || 0
-      soldThisMonth = sold || 0
+      if (soldErr) warnings.sold = soldErr.message
+      else soldThisMonth = sold || 0
     }
+  } catch (e) { warnings.listings = e.message }
 
-    // Personal activity — distinct days logged in this week
-    const { data: weekLogins } = await supabaseAdmin
+  try {
+    const { data, error } = await supabaseAdmin
       .from('logins')
       .select('created_at')
       .eq('user_id', req.user.id)
       .gte('created_at', startOfWeek)
-    const distinctDays = new Set((weekLogins || []).map(l => l.created_at.slice(0, 10)))
+    if (error) warnings.logins = error.message
+    else {
+      const distinctDays = new Set((data || []).map(l => l.created_at.slice(0, 10)))
+      activeDaysThisWeek = distinctDays.size
+    }
+  } catch (e) { warnings.logins = e.message }
 
-    res.json({
-      inventory_synced: inventorySynced,
-      listings_posted: listingsPosted,
-      sold_this_month: soldThisMonth,
-      active_days_this_week: distinctDays.size,
-      scope: isAdmin ? 'dealership' : 'personal'
-    })
-  } catch (e) {
-    res.status(500).json({ error: e.message })
-  }
+  if (Object.keys(warnings).length) console.warn('Insights partial:', { user: req.user.id, role: req.profile.role, warnings })
+
+  res.json({
+    inventory_synced: inventorySynced,
+    listings_posted: listingsPosted,
+    sold_this_month: soldThisMonth,
+    active_days_this_week: activeDaysThisWeek,
+    scope: isAdmin ? 'dealership' : 'personal',
+    warnings: Object.keys(warnings).length ? warnings : undefined
+  })
 })
 
 // Admin drill-down — stats for a specific rep in this dealership
@@ -446,12 +506,17 @@ app.get('/dealership/team/:userId/stats', requireAuth, async (req, res) => {
 })
 
 async function buildUserStats(userId) {
-  // Counts
   const countOf = async (status) => {
-    let q = supabaseAdmin.from('listings').select('id', { count: 'exact', head: true }).eq('posted_by', userId)
-    if (status) q = q.eq('status', status)
-    const { count } = await q
-    return count || 0
+    try {
+      let q = supabaseAdmin.from('listings').select('id', { count: 'exact', head: true }).eq('posted_by', userId)
+      if (status) q = q.eq('status', status)
+      const { count, error } = await q
+      if (error) { console.warn(`countOf(${status || 'all'}) failed:`, error.message); return 0 }
+      return count || 0
+    } catch (e) {
+      console.warn(`countOf(${status || 'all'}) threw:`, e.message)
+      return 0
+    }
   }
   const [total, active, sold, deleted] = await Promise.all([
     countOf(null),
@@ -460,13 +525,19 @@ async function buildUserStats(userId) {
     countOf('deleted')
   ])
 
-  // Most recent listings (up to 10)
-  const { data: recent } = await supabaseAdmin
-    .from('listings')
-    .select('id, status, posted_at, fb_listing_url, inventory!inner(id, year, make, model, trim, price, image_urls)')
-    .eq('posted_by', userId)
-    .order('posted_at', { ascending: false })
-    .limit(10)
+  let recent = []
+  try {
+    const { data, error } = await supabaseAdmin
+      .from('listings')
+      .select('id, status, posted_at, fb_listing_url, inventory!inner(id, year, make, model, trim, price, image_urls)')
+      .eq('posted_by', userId)
+      .order('posted_at', { ascending: false })
+      .limit(10)
+    if (error) console.warn('Recent listings failed:', error.message)
+    else recent = data || []
+  } catch (e) {
+    console.warn('Recent listings threw:', e.message)
+  }
 
   return {
     totals: { total, active, sold, deleted },
@@ -573,12 +644,14 @@ app.post('/listings/:id/sold', requireAuth, async (req, res) => {
 
 // ── 8. UNIFIED BILLING ENGINE ──
 app.post('/billing/checkout', requireAuth, async (req, res) => {
-  // Dealer reps don't have their own billing — they're covered by the dealer's subscription.
-  if (req.profile.role === 'SALES_REP' && req.dealershipId) {
+  const isPersonal = req.profile.dealerships?.is_personal === true
+  // Solo rep = either no dealership, or a personal one. Either way bills on the profile.
+  const isSolo = !req.dealershipId || isPersonal
+
+  // Dealer reps (real team rep — not personal dealership) don't pay individually.
+  if (req.profile.role === 'SALES_REP' && req.dealershipId && !isPersonal) {
     return res.status(403).json({ error: 'Sales reps under a dealership do not manage billing — your subscription is tied to the dealership account.' })
   }
-
-  const isSolo = !req.dealershipId
   const priceId = req.body?.priceId || (isSolo ? process.env.STRIPE_SOLO_PRICE_ID : process.env.STRIPE_DEALER_PRICE_ID)
   if (!priceId) return res.status(500).json({ error: `Missing Stripe price ID env var (${isSolo ? 'STRIPE_SOLO_PRICE_ID' : 'STRIPE_DEALER_PRICE_ID'})` })
 
@@ -607,7 +680,7 @@ app.post('/billing/checkout', requireAuth, async (req, res) => {
       mode: 'subscription',
       client_reference_id: clientRefId,
       metadata,
-      subscription_data: { metadata },
+      subscription_data: { metadata, trial_period_days: 7 },
       success_url: `${process.env.FRONTEND_URL}/dashboard`,
       cancel_url: `${process.env.FRONTEND_URL}/dashboard`
     })
@@ -722,8 +795,9 @@ async function runInventorySync(dealershipId) {
   const { data: feeds } = await supabaseAdmin.from('inventory_feeds').select('feed_url, feed_type').eq('dealership_id', dealershipId)
   if (!feeds || feeds.length === 0) return { success: false, error: 'No inventory feeds configured for this dealership.' }
 
-  let totalInserted = 0, totalSkipped = 0, totalVehiclesFound = 0
+  let totalAttempts = 0, totalSkipped = 0, totalVehiclesFound = 0
   const feedVins = []
+  const uniqueVins = new Set()  // distinct VINs we actually upserted
 
   // Dedupe by URL — if the dealer has multiple feeds (new/used/demo) pointing at the same JSON,
   // we only need to fetch the JSON once and apply each filter against the cached vehicles list.
@@ -769,8 +843,12 @@ async function runInventorySync(dealershipId) {
           last_synced_at: new Date().toISOString()
         }
         const { error } = await supabaseAdmin.from('inventory').upsert(record, { onConflict: 'vin' })
-        if (error) totalSkipped++
-        else totalInserted++
+        if (error) {
+          totalSkipped++
+        } else {
+          totalAttempts++
+          if (v.vin) uniqueVins.add(v.vin)
+        }
       }
     } catch (feedErr) {
       console.error(feedErr.message)
@@ -781,7 +859,23 @@ async function runInventorySync(dealershipId) {
     await supabaseAdmin.from('inventory').update({ status: 'sold' }).eq('dealership_id', dealershipId).eq('status', 'available').not('vin', 'in', `(${feedVins.map(v => `"${v}"`).join(',')})`)
   }
 
-  return { success: true, total_in_feeds: totalVehiclesFound, processed: totalInserted, skipped: totalSkipped, synced_at: new Date().toISOString() }
+  // Count current available inventory after sync so the dashboard sees the truth
+  const { count: availableCount } = await supabaseAdmin
+    .from('inventory')
+    .select('id', { count: 'exact', head: true })
+    .eq('dealership_id', dealershipId)
+    .eq('status', 'available')
+
+  return {
+    success: true,
+    total_in_feeds: totalVehiclesFound,
+    unique_vehicles: uniqueVins.size,
+    available_after_sync: availableCount || 0,
+    attempts: totalAttempts,
+    duplicates_merged: Math.max(0, totalAttempts - uniqueVins.size),
+    skipped: totalSkipped,
+    synced_at: new Date().toISOString()
+  }
 }
 
 // Secret-protected sync (for cron / external triggers)
@@ -817,7 +911,11 @@ app.get('/inventory-feeds', requireAuth, async (req, res) => {
 })
 
 app.post('/inventory-feeds', requireAuth, async (req, res) => {
-  if (req.profile.role !== 'DEALER_ADMIN' && req.profile.role !== 'OWNER') return res.status(403).json({ error: 'Admins only' })
+  // Admins manage team feeds; solo reps manage their personal dealership's feeds.
+  const canManage = req.profile.role === 'DEALER_ADMIN'
+    || req.profile.role === 'OWNER'
+    || req.profile.dealerships?.is_personal === true
+  if (!canManage) return res.status(403).json({ error: 'Only dealer admins or solo reps can manage feeds' })
   if (!req.dealershipId) return res.status(400).json({ error: 'No dealership associated with this account' })
 
   const { feed_url: rawUrl, feed_type: requestedType } = req.body || {}
@@ -859,7 +957,10 @@ app.post('/inventory-feeds', requireAuth, async (req, res) => {
 })
 
 app.delete('/inventory-feeds/:id', requireAuth, async (req, res) => {
-  if (req.profile.role !== 'DEALER_ADMIN' && req.profile.role !== 'OWNER') return res.status(403).json({ error: 'Admins only' })
+  const canManage = req.profile.role === 'DEALER_ADMIN'
+    || req.profile.role === 'OWNER'
+    || req.profile.dealerships?.is_personal === true
+  if (!canManage) return res.status(403).json({ error: 'Only dealer admins or solo reps can manage feeds' })
   const { data: feed } = await supabaseAdmin
     .from('inventory_feeds')
     .select('id, dealership_id')

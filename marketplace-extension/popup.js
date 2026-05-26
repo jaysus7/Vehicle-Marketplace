@@ -112,12 +112,16 @@ async function loadInventory(token) {
       ? listingsRes
       : (listingsRes && Array.isArray(listingsRes.data) ? listingsRes.data : [])
 
-    // Map inventory_id -> { listingId, vehicle } so posted vehicles stay visible
+    // Map inventory_id -> { listingId, vehicle, fbUrl } so posted vehicles stay visible
     // even after their inventory status changes (e.g. dealer feed dropped them).
     const postedMap = new Map()
     for (const l of listings) {
       const invId = l?.inventory_id || l?.inventory?.id
-      if (invId && l?.id) postedMap.set(invId, { listingId: l.id, vehicle: l.inventory || null })
+      if (invId && l?.id) postedMap.set(invId, {
+        listingId: l.id,
+        vehicle: l.inventory || null,
+        fbUrl: l.fb_listing_url || null
+      })
     }
 
     // Merged display list: all currently-available inventory + any posted vehicles
@@ -144,7 +148,25 @@ async function loadInventory(token) {
       return
     }
 
-    $('vehicle-list').innerHTML = displayList.map(v => {
+    // "Needs FB cleanup" — vehicles posted on FB but no longer in stock here.
+    // Build the banner first so it appears above the list.
+    const cleanupNeeded = displayList.filter(v => v._outOfStock && postedMap.has(v.id))
+    let cleanupBanner = ''
+    if (cleanupNeeded.length > 0) {
+      cleanupBanner = `
+        <div id="cleanup-banner" style="background:#3a1a1a;border:1px solid #ef4444;border-radius:8px;padding:12px;margin:10px 12px;">
+          <div style="display:flex;align-items:flex-start;gap:8px;margin-bottom:10px;">
+            <span style="font-size:18px;line-height:1;">⚠️</span>
+            <div style="flex:1;">
+              <div style="font-size:13px;font-weight:700;color:#fff;">${cleanupNeeded.length} sold ${cleanupNeeded.length === 1 ? 'listing needs' : 'listings need'} FB cleanup</div>
+              <div style="font-size:11px;color:#fca5a5;margin-top:2px;line-height:1.4;">These vehicles are no longer in your inventory but may still be live on Facebook Marketplace.</div>
+            </div>
+          </div>
+          <button id="cleanup-fb-open-all" style="background:#ef4444;color:#fff;border:none;padding:8px 12px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;width:100%;">Open ${cleanupNeeded.length === 1 ? 'listing' : 'all'} on Facebook</button>
+        </div>`
+    }
+
+    $('vehicle-list').innerHTML = cleanupBanner + displayList.map(v => {
       const entry = postedMap.get(v.id)
       const listingId = entry?.listingId
       const isPosted = !!listingId
@@ -154,6 +176,10 @@ async function loadInventory(token) {
         : `<div class="vehicle-thumb-placeholder" style="width:52px;height:38px;border-radius:6px;background:#1a1a1a;display:flex;align-items:center;justify-content:center;flex-shrink:0;">🚗</div>`
 
       const vehName = `${v.year} ${v.make} ${v.model}`
+      const fbUrl = entry?.fbUrl || ''
+      const openFbBtn = (isPosted && v._outOfStock)
+        ? `<button class="open-fb-btn" data-fb-url="${fbUrl}" style="background:#1e3a5f;border:1px solid #3b82f6;color:#93c5fd;padding:5px 10px;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap;flex-shrink:0;margin-bottom:4px;">Open on FB</button>`
+        : ''
       const actionBtn = isPosted
         ? `<button class="sold-btn" data-listing-id="${listingId}" data-vehicle-name="${vehName}" style="background:#3a1a1a;border:1px solid #ef4444;color:#ef4444;padding:5px 10px;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap;flex-shrink:0;">Mark Sold</button>`
         : `<button class="post-btn" data-id="${v.id}">Post</button>`
@@ -172,9 +198,10 @@ async function loadInventory(token) {
             <div class="vehicle-name">${vehName}</div>
             <div class="vehicle-sub">${v.trim || ''} · ${v.mileage ? v.mileage.toLocaleString() + ' km' : 'N/A'}</div>
           </div>
-          <div>
+          <div style="display:flex;flex-direction:column;align-items:flex-end;gap:2px;">
             ${tagLine}
             <div class="vehicle-price">${formatPrice(v.price)}</div>
+            ${openFbBtn}
             ${actionBtn}
           </div>
         </div>`
@@ -185,6 +212,23 @@ async function loadInventory(token) {
     })
     document.querySelectorAll('.sold-btn').forEach(btn => {
       btn.addEventListener('click', () => markSold(btn.dataset.listingId, btn.dataset.vehicleName, token))
+    })
+    document.getElementById('cleanup-fb-open-all')?.addEventListener('click', () => {
+      // Open each affected FB listing — fall back to user's marketplace selling page if URL missing/invalid
+      const isValidListingUrl = url => url && /facebook\.com\/marketplace\/item\//.test(url)
+      cleanupNeeded.forEach(v => {
+        const entry = postedMap.get(v.id)
+        const url = isValidListingUrl(entry?.fbUrl) ? entry.fbUrl : 'https://www.facebook.com/marketplace/you/selling'
+        chrome.tabs.create({ url, active: false })
+      })
+    })
+    document.querySelectorAll('.open-fb-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const url = btn.dataset.fbUrl && /facebook\.com\/marketplace\/item\//.test(btn.dataset.fbUrl)
+          ? btn.dataset.fbUrl
+          : 'https://www.facebook.com/marketplace/you/selling'
+        chrome.tabs.create({ url })
+      })
     })
   } catch (e) {
     if (e.message === 'SUBSCRIPTION_REQUIRED') {
