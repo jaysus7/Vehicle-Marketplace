@@ -61,6 +61,7 @@ async function initializeDashboardEcosystem() {
 
     const isAdmin = role === 'DEALER_ADMIN' || role === 'OWNER';
     const inDealership = !!profileContext.dealership?.id;
+    const isDealerRep = role === 'SALES_REP' && inDealership;
 
     // Feeds + Catalog visible to everyone in a dealership (reps see read-only)
     if (inDealership) {
@@ -73,6 +74,12 @@ async function initializeDashboardEcosystem() {
     if (!isAdmin) {
       // Hide admin-only controls (Sync Now button, Add Feed form)
       document.querySelectorAll('[data-admin-only]').forEach(el => el.classList.add('hidden'));
+    }
+
+    // Billing card: only for users who actually have their own subscription.
+    // Dealer reps are covered by the dealer's plan, so hide it for them.
+    if (isDealerRep) {
+      document.getElementById('billing-card')?.classList.add('hidden');
     }
 
     if (isAdmin) {

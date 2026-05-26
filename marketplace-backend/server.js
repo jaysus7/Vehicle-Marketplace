@@ -40,22 +40,41 @@ app.post('/stripe/webhook', express.raw({ type: 'application/json' }), async (re
     case 'checkout.session.completed': {
       const session = event.data.object
       const sub = await stripe.subscriptions.retrieve(session.subscription)
-      await supabaseAdmin.from('dealerships').update({
+      const meta = session.metadata || {}
+      const billing = {
         stripe_customer_id: session.customer,
         subscription_id: session.subscription,
         stripe_price_id: sub.items.data[0].price.id,
         billing_status: 'ACTIVE'
-      }).eq('id', session.client_reference_id)
+      }
+      if (meta.type === 'solo_rep' && meta.user_id) {
+        await supabaseAdmin.from('profiles').update(billing).eq('id', meta.user_id)
+      } else {
+        // Default: dealership. Either via metadata.dealership_id or legacy client_reference_id
+        await supabaseAdmin.from('dealerships').update(billing).eq('id', meta.dealership_id || session.client_reference_id)
+      }
       break;
     }
     case 'customer.subscription.deleted': {
-      await supabaseAdmin.from('dealerships').update({ billing_status: 'INACTIVE' }).eq('subscription_id', event.data.object.id)
+      const subId = event.data.object.id
+      // Try profile first (solo rep), fall back to dealership
+      const { data: prof } = await supabaseAdmin.from('profiles').select('id').eq('subscription_id', subId).maybeSingle()
+      if (prof) {
+        await supabaseAdmin.from('profiles').update({ billing_status: 'INACTIVE' }).eq('id', prof.id)
+      } else {
+        await supabaseAdmin.from('dealerships').update({ billing_status: 'INACTIVE' }).eq('subscription_id', subId)
+      }
       break;
     }
     case 'invoice.payment_failed': {
       const invoice = event.data.object
-      if (invoice.subscription) {
-        await supabaseAdmin.from('dealerships').update({ billing_status: 'PAST_DUE' }).eq('stripe_customer_id', invoice.customer)
+      if (invoice.subscription && invoice.customer) {
+        const { data: prof } = await supabaseAdmin.from('profiles').select('id').eq('stripe_customer_id', invoice.customer).maybeSingle()
+        if (prof) {
+          await supabaseAdmin.from('profiles').update({ billing_status: 'PAST_DUE' }).eq('id', prof.id)
+        } else {
+          await supabaseAdmin.from('dealerships').update({ billing_status: 'PAST_DUE' }).eq('stripe_customer_id', invoice.customer)
+        }
       }
       break;
     }
@@ -87,7 +106,12 @@ async function requireAuth(req, res, next) {
     // Billing routes need auth but must bypass the subscription gate
     // (otherwise inactive users can't reach checkout to start a subscription)
     if (!req.path.startsWith('/billing')) {
-      const status = profile.dealerships?.billing_status
+      // Dealer admins + dealer reps are gated by the dealership's status.
+      // Solo reps (no dealership) are gated by their own profile.billing_status.
+      const status = profile.dealership_id
+        ? profile.dealerships?.billing_status
+        : profile.billing_status
+
       if (status === 'INACTIVE' || status === 'PAST_DUE') {
         return res.status(402).json({ error: 'SUBSCRIPTION_REQUIRED' })
       }
@@ -549,12 +573,29 @@ app.post('/listings/:id/sold', requireAuth, async (req, res) => {
 
 // ── 8. UNIFIED BILLING ENGINE ──
 app.post('/billing/checkout', requireAuth, async (req, res) => {
-  const priceId = req.body?.priceId || process.env.STRIPE_DEALER_PRICE_ID
-  if (!priceId) return res.status(500).json({ error: 'STRIPE_DEALER_PRICE_ID env var not set on Render' })
+  // Dealer reps don't have their own billing — they're covered by the dealer's subscription.
+  if (req.profile.role === 'SALES_REP' && req.dealershipId) {
+    return res.status(403).json({ error: 'Sales reps under a dealership do not manage billing — your subscription is tied to the dealership account.' })
+  }
+
+  const isSolo = !req.dealershipId
+  const priceId = req.body?.priceId || (isSolo ? process.env.STRIPE_SOLO_PRICE_ID : process.env.STRIPE_DEALER_PRICE_ID)
+  if (!priceId) return res.status(500).json({ error: `Missing Stripe price ID env var (${isSolo ? 'STRIPE_SOLO_PRICE_ID' : 'STRIPE_DEALER_PRICE_ID'})` })
+
+  const existingCustomerId = isSolo
+    ? req.profile.stripe_customer_id
+    : req.profile.dealerships?.stripe_customer_id
+
+  const metadata = isSolo
+    ? { type: 'solo_rep', user_id: req.user.id }
+    : { type: 'dealership', dealership_id: req.dealershipId }
+
+  const clientRefId = isSolo ? req.user.id : req.dealershipId
+
   try {
-    if (req.profile.dealerships?.stripe_customer_id) {
+    if (existingCustomerId) {
       try {
-        const portalSession = await stripe.billingPortal.sessions.create({ customer: req.profile.dealerships.stripe_customer_id, return_url: `${process.env.FRONTEND_URL}/dashboard` })
+        const portalSession = await stripe.billingPortal.sessions.create({ customer: existingCustomerId, return_url: `${process.env.FRONTEND_URL}/dashboard` })
         return res.json({ url: portalSession.url })
       } catch (portalErr) {
         console.warn('Portal initialization bypassed:', portalErr.message)
@@ -564,7 +605,9 @@ app.post('/billing/checkout', requireAuth, async (req, res) => {
       payment_method_types: ['card'],
       line_items: [{ price: priceId, quantity: 1 }],
       mode: 'subscription',
-      client_reference_id: req.dealershipId,
+      client_reference_id: clientRefId,
+      metadata,
+      subscription_data: { metadata },
       success_url: `${process.env.FRONTEND_URL}/dashboard`,
       cancel_url: `${process.env.FRONTEND_URL}/dashboard`
     })
