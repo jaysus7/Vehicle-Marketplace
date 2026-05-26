@@ -102,7 +102,11 @@ async function fetchMetrics(path) {
 async function loadInsights() {
   try {
     const res = await fetch(`${API}/dashboard/insights`, { headers: { 'Authorization': `Bearer ${token}` } });
-    if (!res.ok) return;
+    if (!res.ok) {
+      const body = await res.text();
+      console.error(`Insights endpoint failed: ${res.status}`, body);
+      return;
+    }
     const data = await res.json();
     document.getElementById('metric-synced').textContent = data.inventory_synced;
     document.getElementById('metric-listings').textContent = data.listings_posted;
@@ -111,7 +115,7 @@ async function loadInsights() {
     document.getElementById('metric-listings-scope').textContent =
       data.scope === 'dealership' ? 'team total · lifetime' : 'your posts · lifetime';
   } catch (e) {
-    // Leave the "—" placeholders if insights fail
+    console.error('Insights load threw:', e);
   }
 }
 
