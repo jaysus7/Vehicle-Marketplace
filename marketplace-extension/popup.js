@@ -234,18 +234,8 @@ async function postVehicle(inventoryId, token) {
     let poster = null
     try { poster = await apiGet('/auth/me', token) } catch {}
 
-    if (vehicle.image_urls?.length) {
-      vehicle.image_urls.forEach((url, i) => {
-        const a = document.createElement('a')
-        a.href = `${API}/proxy-image?url=${encodeURIComponent(url)}`
-        a.download = `${vehicle.year}_${vehicle.make}_${vehicle.model}_photo_${i + 1}.jpg`.replace(/\s+/g, '_')
-        document.body.appendChild(a)
-        setTimeout(() => {
-          a.click()
-          document.body.removeChild(a)
-        }, i * 400)
-      })
-    }
+    // Photos are injected on the FB page by content.js (with a download fallback if injection fails).
+    // No need to pre-download here.
 
     chrome.storage.local.set({ pendingPost: { vehicle, token, poster } }, () => {
       chrome.tabs.create({ url: 'https://www.facebook.com/marketplace/create/vehicle' })

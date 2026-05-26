@@ -396,59 +396,82 @@ async function fillListingForm(vehicle) {
   }
   await sleep(1500); // Extended delay for contingent model payload updates
 
-  // MODEL (Hardened React State Sync Block)
-  showStatus('Selecting model (waiting for sync)...');
-  await sleep(1500); // Give Facebook's React state time to clear background requests
+  // MODEL — FB renders this AFTER Make commits. Wait longer + use multiple selector strategies
+  // (aria-label, parent label text, then textContent) since textContent alone is fragile.
+  showStatus('Selecting model (waiting for Facebook to mount field)...');
+  await sleep(2500); // Longer wait — Make must finish committing before Model becomes interactive
 
-  const modelTrigger = await waitFor(() =>
-    [...document.querySelectorAll('[role="combobox"]')]
-      .find(el => {
-        const txt = el.textContent.trim().toLowerCase();
-        return txt === 'model' || txt.startsWith('model');
-      })
-  , 10000);
+  const findModelTrigger = () => {
+    // 1. Explicit aria-label (most reliable when present)
+    const byAria = document.querySelector('[role="combobox"][aria-label="Model" i], [role="combobox"][aria-label="Vehicle model" i]');
+    if (byAria) return byAria;
 
-  if (modelTrigger) {
+    // 2. Label-element pattern: a <label>/<span> with text "Model" near the combobox
+    const labels = [...document.querySelectorAll('label, span')];
+    for (const lbl of labels) {
+      const text = lbl.textContent.trim().toLowerCase();
+      if (text === 'model' || text === 'vehicle model') {
+        const combo = lbl.querySelector('[role="combobox"]')
+          || lbl.parentElement?.querySelector('[role="combobox"]')
+          || lbl.closest('label')?.querySelector('[role="combobox"]');
+        if (combo) return combo;
+      }
+    }
+
+    // 3. Combobox whose own text equals "Model" (placeholder state). Use strict equality only —
+    //    Make combobox now shows its value, so it won't match.
+    return [...document.querySelectorAll('[role="combobox"]')].find(el => {
+      const txt = el.textContent.trim().toLowerCase();
+      return txt === 'model' || txt === 'vehicle model';
+    });
+  };
+
+  const modelTrigger = await waitFor(findModelTrigger, 15000);
+
+  if (!modelTrigger) {
+    console.error('❌ Model dropdown not found after 15s. Fill manually.');
+    showStatus('Could not find Model field — fill manually.', 'info');
+  } else {
     modelTrigger.scrollIntoView({ behavior: 'smooth', block: 'center' });
     await sleep(600);
     modelTrigger.click();
-    await sleep(1500); // Explicitly wait for dropdown DOM insertion
+    await sleep(2000); // Wait for FB to mount the dropdown overlay
 
-    // Query active text input inside the unhidden container
-    const searchInput2 = [...document.querySelectorAll('input')]
-      .find(el => el.offsetParent !== null && el.type !== 'hidden' && !el.closest('[aria-hidden="true"]'));
-    
+    // Wait for the search input INSIDE the overlay (only matches empty inputs)
+    const searchInput2 = await waitFor(() =>
+      [...document.querySelectorAll('input')]
+        .find(el => el.offsetParent !== null
+                  && el.type !== 'hidden'
+                  && !el.closest('[aria-hidden="true"]')
+                  && !el.value)
+    , 5000);
+
     if (searchInput2) {
       searchInput2.click();
       searchInput2.focus();
-      
+      await sleep(300);
       const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
-      if (nativeSetter) {
-        nativeSetter.call(searchInput2, model);
-      } else {
-        searchInput2.value = model;
-      }
-      
-      // Dispatch explicit input chain to kick React lifecycle methods
+      if (nativeSetter) nativeSetter.call(searchInput2, model);
+      else searchInput2.value = model;
       searchInput2.dispatchEvent(new Event('input', { bubbles: true }));
       searchInput2.dispatchEvent(new Event('change', { bubbles: true }));
-      await sleep(1200); // Critical delay: let filtering happen
+      await sleep(1500);
+    } else {
+      console.warn('Model: no search input found in dropdown overlay');
     }
 
-    // Attempt option resolution
-    let modelOption = await waitFor(() => {
+    const modelOption = await waitFor(() => {
       const targets = [...document.querySelectorAll('[role="option"]')];
-      return targets.find(el => el.textContent.trim().toLowerCase() === model.toLowerCase()) ||
-             targets.find(el => el.textContent.trim().toLowerCase().includes(model.toLowerCase()));
+      return targets.find(el => el.textContent.trim().toLowerCase() === model.toLowerCase())
+          || targets.find(el => el.textContent.trim().toLowerCase().includes(model.toLowerCase()));
     }, 6000);
 
     if (modelOption) {
       modelOption.click();
       await sleep(1000);
-      console.log('✓ Model successfully updated:', model);
+      console.log('✓ Model selected:', model);
     } else {
-      // Emergency fallback: If list options fail to filter, look for a standard text box replacement
-      console.warn('Dropdown option missed. Attempting text field extraction fallback.');
+      console.warn('Model dropdown opened but no matching option found. Trying free-text fallback.');
       const modelTextField = getFormFields().find(f => f.closest('label, div')?.textContent?.includes('Model'));
       if (modelTextField) {
         await typeInto(modelTextField, model);
@@ -457,8 +480,6 @@ async function fillListingForm(vehicle) {
         if (opt) { opt.click(); await sleep(500); }
       }
     }
-  } else {
-    console.error('Fatal: Model dropdown trigger element could not be recovered from DOM.');
   }
   await sleep(1000);
   
