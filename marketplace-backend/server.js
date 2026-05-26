@@ -385,6 +385,32 @@ app.patch('/listings/:id/delete', requireAuth, async (req, res) => {
   res.json({ success: true })
 })
 
+app.post('/listings/:id/sold', requireAuth, async (req, res) => {
+  // Verify the listing belongs to a vehicle in this dealership
+  const { data: listing, error: lookupErr } = await supabaseAdmin
+    .from('listings')
+    .select('id, inventory_id, inventory!inner(dealership_id)')
+    .eq('id', req.params.id)
+    .single()
+  if (lookupErr || !listing) return res.status(404).json({ error: 'Listing not found' })
+  if (listing.inventory.dealership_id !== req.dealershipId) return res.status(403).json({ error: 'Not your dealership' })
+
+  const now = new Date().toISOString()
+  const { error: listingErr } = await supabaseAdmin
+    .from('listings')
+    .update({ status: 'sold', deleted_at: now })
+    .eq('id', req.params.id)
+  if (listingErr) return res.status(500).json({ error: listingErr.message })
+
+  const { error: invErr } = await supabaseAdmin
+    .from('inventory')
+    .update({ status: 'sold' })
+    .eq('id', listing.inventory_id)
+  if (invErr) return res.status(500).json({ error: invErr.message })
+
+  res.json({ success: true })
+})
+
 // ── 8. UNIFIED BILLING ENGINE ──
 app.post('/billing/checkout', requireAuth, async (req, res) => {
   const priceId = req.body?.priceId || process.env.STRIPE_DEALER_PRICE_ID
