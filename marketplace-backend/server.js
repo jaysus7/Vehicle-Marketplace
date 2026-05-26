@@ -320,6 +320,75 @@ app.post('/admin/users/invite', requireAuth, async (req, res) => {
   })
 })
 
+// Per-user listing stats (current user)
+app.get('/me/stats', requireAuth, async (req, res) => {
+  const stats = await buildUserStats(req.user.id)
+  res.json(stats)
+})
+
+// Admin drill-down — stats for a specific rep in this dealership
+app.get('/dealership/team/:userId/stats', requireAuth, async (req, res) => {
+  if (req.profile.role !== 'DEALER_ADMIN' && req.profile.role !== 'OWNER') return res.status(403).json({ error: 'Admins only' })
+
+  // Verify target is in this dealership
+  const { data: target } = await supabaseAdmin
+    .from('profiles')
+    .select('id, full_name, role, dealership_id, created_at')
+    .eq('id', req.params.userId)
+    .single()
+  if (!target || target.dealership_id !== req.dealershipId) {
+    return res.status(404).json({ error: 'User not found in your dealership' })
+  }
+
+  const { data: authUser } = await supabaseAdmin.auth.admin.getUserById(req.params.userId).catch(() => ({ data: null }))
+  const stats = await buildUserStats(req.params.userId)
+  res.json({
+    profile: {
+      id: target.id,
+      full_name: target.full_name,
+      email: authUser?.user?.email || null,
+      role: target.role,
+      joined_at: target.created_at
+    },
+    ...stats
+  })
+})
+
+async function buildUserStats(userId) {
+  // Counts
+  const countOf = async (status) => {
+    let q = supabaseAdmin.from('listings').select('id', { count: 'exact', head: true }).eq('posted_by', userId)
+    if (status) q = q.eq('status', status)
+    const { count } = await q
+    return count || 0
+  }
+  const [total, active, sold, deleted] = await Promise.all([
+    countOf(null),
+    countOf('posted'),
+    countOf('sold'),
+    countOf('deleted')
+  ])
+
+  // Most recent listings (up to 10)
+  const { data: recent } = await supabaseAdmin
+    .from('listings')
+    .select('id, status, posted_at, fb_listing_url, inventory!inner(id, year, make, model, trim, price, image_urls)')
+    .eq('posted_by', userId)
+    .order('posted_at', { ascending: false })
+    .limit(10)
+
+  return {
+    totals: { total, active, sold, deleted },
+    recent: (recent || []).map(l => ({
+      listing_id: l.id,
+      status: l.status,
+      posted_at: l.posted_at,
+      fb_listing_url: l.fb_listing_url,
+      vehicle: l.inventory
+    }))
+  }
+}
+
 app.delete('/admin/users/:id', requireAuth, async (req, res) => {
   if (req.profile.role !== 'DEALER_ADMIN' && req.profile.role !== 'OWNER') return res.status(403).json({ error: 'Admins only' })
   if (req.params.id === req.user.id) return res.status(400).json({ error: 'Cannot remove yourself' })
@@ -599,6 +668,7 @@ app.get('/inventory-feeds', requireAuth, async (req, res) => {
 })
 
 app.post('/inventory-feeds', requireAuth, async (req, res) => {
+  if (req.profile.role !== 'DEALER_ADMIN' && req.profile.role !== 'OWNER') return res.status(403).json({ error: 'Admins only' })
   if (!req.dealershipId) return res.status(400).json({ error: 'No dealership associated with this account' })
   const { feed_url, feed_type } = req.body || {}
   if (!feed_url) return res.status(400).json({ error: 'feed_url is required' })
@@ -612,6 +682,7 @@ app.post('/inventory-feeds', requireAuth, async (req, res) => {
 })
 
 app.delete('/inventory-feeds/:id', requireAuth, async (req, res) => {
+  if (req.profile.role !== 'DEALER_ADMIN' && req.profile.role !== 'OWNER') return res.status(403).json({ error: 'Admins only' })
   const { data: feed } = await supabaseAdmin
     .from('inventory_feeds')
     .select('id, dealership_id')

@@ -59,16 +59,28 @@ async function initializeDashboardEcosystem() {
 
     calculateGeneralMetrics(fleet, totalListings);
 
-    if (role === 'DEALER_ADMIN' || role === 'OWNER') {
+    const isAdmin = role === 'DEALER_ADMIN' || role === 'OWNER';
+    const inDealership = !!profileContext.dealership?.id;
+
+    // Feeds + Catalog visible to everyone in a dealership (reps see read-only)
+    if (inDealership) {
       document.getElementById('feeds-panel').classList.remove('hidden');
       document.getElementById('catalog-panel').classList.remove('hidden');
-      document.getElementById('dealer-view-panel').classList.remove('hidden');
       loadInventoryFeeds();
       loadInventoryCatalog();
+    }
+
+    if (!isAdmin) {
+      // Hide admin-only controls (Sync Now button, Add Feed form)
+      document.querySelectorAll('[data-admin-only]').forEach(el => el.classList.add('hidden'));
+    }
+
+    if (isAdmin) {
+      document.getElementById('dealer-view-panel').classList.remove('hidden');
       loadDealerManagementMatrix();
     } else {
       document.getElementById('rep-view-panel').classList.remove('hidden');
-      loadRepPipelineMatrix(totalListings);
+      loadMyStats();
     }
 
   } catch (err) {
@@ -131,9 +143,12 @@ async function loadDealerManagementMatrix() {
       const action = (isSelf || isAdmin)
         ? `<span class="text-[10px] text-slate-600">—</span>`
         : `<button class="rep-remove-btn text-red-400 hover:text-red-300 text-xs font-bold" data-rep-id="${m.id}" data-rep-name="${m.full_name || m.email || 'this rep'}">Remove</button>`;
+      const nameCell = isAdmin && isSelf
+        ? `<span class="font-bold text-white">${m.full_name || '(no name)'}</span><span class="text-[10px] text-slate-500 ml-1">(you)</span>`
+        : `<button class="rep-detail-btn text-left font-bold text-white hover:text-indigo-300" data-rep-id="${m.id}">${m.full_name || '(no name)'}</button>`;
       return `
         <tr class="border-b border-slate-800/40 hover:bg-slate-900/40 transition">
-          <td class="py-3 px-4 font-bold text-white">${m.full_name || '(no name)'}</td>
+          <td class="py-3 px-4">${nameCell}</td>
           <td class="py-3 px-4 text-slate-300">${m.email || '—'}</td>
           <td class="py-3 px-4">${roleBadge}</td>
           <td class="py-3 px-4 text-indigo-400 font-mono">${m.listings_posted}</td>
@@ -144,6 +159,9 @@ async function loadDealerManagementMatrix() {
 
     document.querySelectorAll('.rep-remove-btn').forEach(btn => {
       btn.addEventListener('click', () => removeRep(btn.dataset.repId, btn.dataset.repName));
+    });
+    document.querySelectorAll('.rep-detail-btn').forEach(btn => {
+      btn.addEventListener('click', () => openRepDetail(btn.dataset.repId));
     });
   } catch (e) {
     tableBody.innerHTML = `<tr><td colspan="5" class="p-4 text-red-400">${e.message}</td></tr>`;
@@ -177,6 +195,45 @@ async function inviteRep(payload) {
   return data;
 }
 
+async function openRepDetail(repId) {
+  const modal = document.getElementById('rep-detail-modal');
+  modal.classList.remove('hidden');
+  // Reset to loading state
+  document.getElementById('rep-detail-name').textContent = 'Loading...';
+  document.getElementById('rep-detail-email').textContent = '';
+  document.getElementById('rep-detail-meta').textContent = '';
+  ['total', 'active', 'sold', 'deleted'].forEach(k =>
+    document.getElementById(`rep-detail-${k}`).textContent = '—'
+  );
+  document.getElementById('rep-detail-recent').innerHTML = '<div class="text-xs text-slate-500 italic">Loading...</div>';
+
+  try {
+    const res = await fetch(`${API}/dealership/team/${repId}/stats`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.error || 'Failed to load rep stats');
+    }
+    const data = await res.json();
+    document.getElementById('rep-detail-name').textContent = data.profile.full_name || '(no name)';
+    document.getElementById('rep-detail-email').textContent = data.profile.email || '';
+    const joined = data.profile.joined_at ? new Date(data.profile.joined_at).toLocaleDateString() : '—';
+    document.getElementById('rep-detail-meta').textContent = `${data.profile.role} · joined ${joined}`;
+    document.getElementById('rep-detail-total').textContent = data.totals.total;
+    document.getElementById('rep-detail-active').textContent = data.totals.active;
+    document.getElementById('rep-detail-sold').textContent = data.totals.sold;
+    document.getElementById('rep-detail-deleted').textContent = data.totals.deleted;
+    renderRecentListings('rep-detail-recent', data.recent);
+  } catch (err) {
+    document.getElementById('rep-detail-recent').innerHTML = `<div class="text-xs text-red-400">${err.message}</div>`;
+  }
+}
+
+function closeRepDetail() {
+  document.getElementById('rep-detail-modal').classList.add('hidden');
+}
+
 function showInviteResult(text, kind) {
   const el = document.getElementById('invite-result');
   el.innerHTML = text;
@@ -186,11 +243,56 @@ function showInviteResult(text, kind) {
   el.classList.remove('hidden');
 }
 
-// SALES DOMAIN: Focus rendering paths down to clean target profiles
-function loadRepPipelineMatrix(listings) {
-  const personalPosts = listings.filter(l => l.posted_by === user.id).length;
-  document.getElementById('rep-count-text').textContent = personalPosts;
-  document.getElementById('rep-login-text').textContent = Math.floor(Math.random() * 3) + 2;
+// SALES DOMAIN: Real personal stats from /me/stats
+async function loadMyStats() {
+  try {
+    const res = await fetch(`${API}/me/stats`, { headers: { 'Authorization': `Bearer ${token}` } });
+    if (!res.ok) throw new Error('Failed to load stats');
+    const data = await res.json();
+    document.getElementById('rep-stat-total').textContent = data.totals.total;
+    document.getElementById('rep-stat-active').textContent = data.totals.active;
+    document.getElementById('rep-stat-sold').textContent = data.totals.sold;
+    document.getElementById('rep-stat-deleted').textContent = data.totals.deleted;
+    renderRecentListings('rep-recent-list', data.recent);
+  } catch (e) {
+    document.getElementById('rep-recent-list').innerHTML = `<div class="text-xs text-red-400">${e.message}</div>`;
+  }
+}
+
+function renderRecentListings(containerId, items) {
+  const el = document.getElementById(containerId);
+  if (!items?.length) {
+    el.innerHTML = '<div class="text-xs text-slate-500 italic">No listings yet.</div>';
+    return;
+  }
+  const badge = (s) => {
+    const map = {
+      posted: 'bg-emerald-900/40 border-emerald-700 text-emerald-300',
+      sold: 'bg-indigo-900/40 border-indigo-700 text-indigo-300',
+      deleted: 'bg-slate-800 border-slate-700 text-slate-400'
+    };
+    return `<span class="text-[9px] uppercase font-bold border px-1.5 py-0.5 rounded ${map[s] || map.deleted}">${s}</span>`;
+  };
+  el.innerHTML = items.map(l => {
+    const v = l.vehicle || {};
+    const thumb = v.image_urls?.[0]
+      ? `<img src="${API}/proxy-image?url=${encodeURIComponent(v.image_urls[0])}" class="w-16 h-12 rounded object-cover bg-slate-950" loading="lazy">`
+      : `<div class="w-16 h-12 rounded bg-slate-950 flex items-center justify-center text-slate-700">⌀</div>`;
+    const when = l.posted_at ? new Date(l.posted_at).toLocaleDateString() : '—';
+    const fbLink = l.fb_listing_url
+      ? `<a href="${l.fb_listing_url}" target="_blank" class="text-[10px] text-indigo-400 hover:underline">View on FB ↗</a>`
+      : '';
+    return `
+      <div class="flex items-center gap-3 bg-slate-950 border border-slate-800 rounded p-2">
+        ${thumb}
+        <div class="flex-1 min-w-0">
+          <div class="text-xs font-bold text-white truncate">${v.year || ''} ${v.make || ''} ${v.model || ''} ${v.trim || ''}</div>
+          <div class="text-[10px] text-slate-400">Posted ${when} ${fbLink ? '· ' + fbLink : ''}</div>
+        </div>
+        ${badge(l.status)}
+      </div>
+    `;
+  }).join('');
 }
 
 // INVENTORY FEEDS: list, add, remove, manual sync
@@ -204,13 +306,14 @@ async function loadInventoryFeeds() {
       list.innerHTML = '<div class="text-xs text-slate-500 italic">No feeds yet — add one below to start syncing inventory.</div>';
       return;
     }
+    const isAdmin = profileContext?.role === 'DEALER_ADMIN' || profileContext?.role === 'OWNER';
     list.innerHTML = feeds.map(f => `
       <div class="flex items-center justify-between bg-slate-950 border border-slate-800 rounded p-3 gap-3">
         <div class="flex items-center gap-2 min-w-0 flex-1">
           <span class="text-[10px] uppercase font-bold bg-slate-800 text-slate-400 px-1.5 py-0.5 rounded">${f.feed_type || 'all'}</span>
           <span class="text-xs text-slate-300 truncate" title="${f.feed_url}">${f.feed_url}</span>
         </div>
-        <button data-feed-id="${f.id}" class="feed-delete-btn text-red-400 hover:text-red-300 text-xs font-bold">Remove</button>
+        ${isAdmin ? `<button data-feed-id="${f.id}" class="feed-delete-btn text-red-400 hover:text-red-300 text-xs font-bold">Remove</button>` : ''}
       </div>
     `).join('');
     document.querySelectorAll('.feed-delete-btn').forEach(btn => {
@@ -424,6 +527,12 @@ function setupActionListeners() {
   // Catalog search + status filter
   document.getElementById('catalog-search')?.addEventListener('input', renderCatalog);
   document.getElementById('catalog-status')?.addEventListener('change', renderCatalog);
+
+  // Rep drill-down modal close
+  document.getElementById('rep-detail-close')?.addEventListener('click', closeRepDetail);
+  document.getElementById('rep-detail-modal')?.addEventListener('click', (e) => {
+    if (e.target.id === 'rep-detail-modal') closeRepDetail();
+  });
 
   // Team invite toggle + form
   const inviteForm = document.getElementById('invite-rep-form');
