@@ -1,4 +1,4 @@
-// content.js — Welland Chev Marketplace Lister
+// content.js — MarketSync
 const API = 'https://vehicle-marketplace-s0e4.onrender.com';
 const DELAY = 800; // Increased to mitigate UI render bottlenecks
 const sleep = ms => new Promise(r => setTimeout(r, ms));
