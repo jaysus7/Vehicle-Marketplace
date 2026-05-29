@@ -338,13 +338,19 @@ app.get('/dealership/team', requireAuth, async (req, res) => {
     .order('created_at', { ascending: true })
   if (error) return res.status(500).json({ error: error.message })
 
-  // Stitch in auth emails, listing counts, and recent login activity
+  // Stitch in auth emails, listing counts, sold count, conversion, and recent login activity
   const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()
   const enriched = await Promise.all(members.map(async (m) => {
     const { data: authUser } = await supabaseAdmin.auth.admin.getUserById(m.id).catch(() => ({ data: null }))
     const { count: listingsCount } = await supabaseAdmin
       .from('listings').select('id', { count: 'exact', head: true })
       .eq('posted_by', m.id).eq('status', 'posted')
+    const { count: soldCount } = await supabaseAdmin
+      .from('listings').select('id', { count: 'exact', head: true })
+      .eq('posted_by', m.id).eq('status', 'sold')
+    const { count: totalCount } = await supabaseAdmin
+      .from('listings').select('id', { count: 'exact', head: true })
+      .eq('posted_by', m.id)
     const { count: loginsCount } = await supabaseAdmin
       .from('logins').select('id', { count: 'exact', head: true })
       .eq('user_id', m.id).gte('created_at', thirtyDaysAgo)
@@ -355,6 +361,8 @@ app.get('/dealership/team', requireAuth, async (req, res) => {
       account_role: m.account_role,
       email: authUser?.user?.email || null,
       listings_posted: listingsCount || 0,
+      listings_sold: soldCount || 0,
+      conversion_rate: (totalCount || 0) > 0 ? Math.round(((soldCount || 0) / (totalCount || 0)) * 100) : 0,
       logins_30d: loginsCount || 0,
       created_at: m.created_at
     }
@@ -396,6 +404,101 @@ app.post('/admin/users/invite', requireAuth, async (req, res) => {
     user_id: newUser.user.id,
     email,
     temp_password: tempPassword
+  })
+})
+
+// Team leaderboard + aggregate insights — dealer admin only
+app.get('/dealership/leaderboard', requireAuth, async (req, res) => {
+  if (req.profile.role !== 'DEALER_ADMIN' && req.profile.role !== 'OWNER') return res.status(403).json({ error: 'Admins only' })
+  if (!req.dealershipId) return res.json({ members: [] })
+
+  const fourteenDaysAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString()
+
+  const { data: members } = await supabaseAdmin
+    .from('profiles').select('id, full_name, role').eq('dealership_id', req.dealershipId)
+  if (!members?.length) return res.json({ members: [] })
+
+  const rows = await Promise.all(members.map(async (m) => {
+    const { count: posted } = await supabaseAdmin
+      .from('listings').select('id', { count: 'exact', head: true })
+      .eq('posted_by', m.id).eq('status', 'posted')
+    const { count: sold } = await supabaseAdmin
+      .from('listings').select('id', { count: 'exact', head: true })
+      .eq('posted_by', m.id).eq('status', 'sold')
+    const { count: total } = await supabaseAdmin
+      .from('listings').select('id', { count: 'exact', head: true })
+      .eq('posted_by', m.id)
+    const { count: recentLogins } = await supabaseAdmin
+      .from('logins').select('id', { count: 'exact', head: true })
+      .eq('user_id', m.id).gte('created_at', fourteenDaysAgo)
+    return {
+      id: m.id,
+      name: m.full_name,
+      role: m.role,
+      total_listings: total || 0,
+      active_listings: posted || 0,
+      sold_listings: sold || 0,
+      recent_logins: recentLogins || 0,
+      conversion_rate: (total || 0) > 0 ? Math.round(((sold || 0) / (total || 0)) * 100) : 0
+    }
+  }))
+
+  const totalListings = rows.reduce((s, r) => s + r.total_listings, 0)
+  const totalSold = rows.reduce((s, r) => s + r.sold_listings, 0)
+  const topLister = [...rows].sort((a, b) => b.total_listings - a.total_listings)[0] || null
+  const mostActive = [...rows].sort((a, b) => b.recent_logins - a.recent_logins)[0] || null
+  const inactiveCount = rows.filter(r => r.recent_logins === 0).length
+
+  res.json({
+    members: rows,
+    top_lister: topLister,
+    most_active: mostActive,
+    avg_listings_per_user: members.length ? Math.round((totalListings / members.length) * 10) / 10 : 0,
+    inactive_count: inactiveCount,
+    total_members: members.length,
+    team_conversion_rate: totalListings > 0 ? Math.round((totalSold / totalListings) * 100) : 0
+  })
+})
+
+// Time-series data for charts — dealer admin only
+app.get('/dealership/charts', requireAuth, async (req, res) => {
+  if (req.profile.role !== 'DEALER_ADMIN' && req.profile.role !== 'OWNER') return res.status(403).json({ error: 'Admins only' })
+  if (!req.dealershipId) return res.json({ daily: [], by_rep: [] })
+
+  const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()
+
+  const { data: members } = await supabaseAdmin
+    .from('profiles').select('id, full_name').eq('dealership_id', req.dealershipId)
+  if (!members?.length) return res.json({ daily: [], by_rep: [] })
+  const memberIds = members.map(m => m.id)
+
+  // Listings over last 30 days (for the time-series chart)
+  const { data: recentListings } = await supabaseAdmin
+    .from('listings').select('posted_at, posted_by')
+    .in('posted_by', memberIds)
+    .gte('posted_at', thirtyDaysAgo)
+
+  const dayBuckets = new Map()
+  for (let i = 29; i >= 0; i--) {
+    const d = new Date(Date.now() - i * 24 * 60 * 60 * 1000)
+    dayBuckets.set(d.toISOString().slice(0, 10), 0)
+  }
+  for (const l of recentListings || []) {
+    const key = (l.posted_at || '').slice(0, 10)
+    if (dayBuckets.has(key)) dayBuckets.set(key, dayBuckets.get(key) + 1)
+  }
+
+  // Per-rep all-time
+  const { data: allListings } = await supabaseAdmin
+    .from('listings').select('posted_by').in('posted_by', memberIds)
+  const repTotals = new Map(members.map(m => [m.id, { name: m.full_name, count: 0 }]))
+  for (const l of allListings || []) {
+    if (repTotals.has(l.posted_by)) repTotals.get(l.posted_by).count++
+  }
+
+  res.json({
+    daily: [...dayBuckets.entries()].map(([date, count]) => ({ date, count })),
+    by_rep: [...repTotals.values()].sort((a, b) => b.count - a.count)
   })
 })
 
@@ -456,7 +559,7 @@ app.get('/dashboard/insights', requireAuth, async (req, res) => {
 
           const { count: sold } = await supabaseAdmin
             .from('listings').select('id', { count: 'exact', head: true })
-            .in('posted_by', memberIds).eq('status', 'sold').gte('deleted_at', thirtyDaysAgo)
+            .in('posted_by', memberIds).eq('status', 'sold')
           soldThisMonth = sold || 0
         }
 
@@ -481,7 +584,7 @@ app.get('/dashboard/insights', requireAuth, async (req, res) => {
 
       const { count: sold, error: soldErr } = await supabaseAdmin
         .from('listings').select('id', { count: 'exact', head: true })
-        .eq('posted_by', req.user.id).eq('status', 'sold').gte('deleted_at', thirtyDaysAgo)
+        .eq('posted_by', req.user.id).eq('status', 'sold')
       if (soldErr) warnings.sold = soldErr.message
       else soldThisMonth = sold || 0
     }

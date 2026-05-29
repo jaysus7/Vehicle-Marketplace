@@ -119,6 +119,11 @@ async function typeInto(el, value) {
 async function pickDropdown(labelText, value) {
   const lower = labelText.toLowerCase();
 
+  // Ensure any previously-open overlay is dismissed so we don't accidentally
+  // type into the prior step's still-visible search input.
+  document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  await sleep(400);
+
   // Find the dropdown using multiple strategies (FB keeps moving things around)
   const trigger = await waitFor(() => {
     // 1. Exact aria-label match (most reliable when present)
@@ -158,8 +163,15 @@ async function pickDropdown(labelText, value) {
   trigger.click();
   await sleep(1500); // Wait for FB's dropdown overlay to mount
 
-  // Find search input INSIDE the freshly opened dropdown (must be empty/fresh)
+  // Find search input INSIDE a dropdown/overlay container (anchored — not just any visible empty input on page)
   const searchInput = await waitFor(() => {
+    const containers = [...document.querySelectorAll('[role="dialog"], [role="listbox"], [role="menu"]')];
+    for (const c of containers) {
+      if (c.closest('[aria-hidden="true"]')) continue;
+      const input = c.querySelector('input:not([type="hidden"])');
+      if (input && !input.value && input.offsetParent !== null) return input;
+    }
+    // Fallback: any empty visible input (older FB DOMs)
     return [...document.querySelectorAll('input')].find(el =>
       el.offsetParent !== null
       && el.type !== 'hidden'
@@ -371,15 +383,8 @@ function showPhotoStrip(imageUrls, vehicleId) {
   markPosted.textContent = '✅ Mark Posted';
   markPosted.style.cssText = 'background:#22c55e;border:none;color:#000;padding:8px 12px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;flex-shrink:0;';
   markPosted.addEventListener('click', () => {
-    // If still on /create/ URL, the rep hasn't actually published yet — the captured URL would be useless.
-    if (window.location.href.includes('/marketplace/create/')) {
-      const proceed = confirm(
-        'You appear to still be on the Marketplace "Create Listing" page.\n\n' +
-        'For best results, click "Publish" on Facebook first, wait for the listing page to load, then click Mark Posted here.\n\n' +
-        'Mark posted anyway?'
-      );
-      if (!proceed) return;
-    }
+    // No confirmation popup — auto-detection handles the "post on FB first" case via the
+    // URL watcher in the create-page bootstrap. This button is a manual backup.
     markPosted.textContent = 'Saving...';
     markPosted.disabled = true;
     chrome.runtime.sendMessage(
@@ -513,7 +518,10 @@ async function fillListingForm(vehicle) {
 
     if (modelOption) {
       modelOption.click();
-      await sleep(1000);
+      await sleep(1200);
+      // Force any leftover overlay to close before Body Style runs
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+      await sleep(400);
       console.log('✓ Model selected:', model);
     } else {
       console.warn('Model dropdown opened but no matching option found. Trying free-text fallback.');
@@ -566,7 +574,8 @@ async function fillListingForm(vehicle) {
   await pickDropdown('Transmission', vehicle.transmission || 'Automatic');
   await sleep(DELAY);
 
-  // MILEAGE
+  // MILEAGE — Facebook rejects 0-km new vehicles in some categories.
+  // Floor at 300 so listings always validate; use feed value if it's higher.
   showStatus('Filling mileage...');
   const mileageEl = await waitFor(() =>
     getFormFields().find(f =>
@@ -574,7 +583,8 @@ async function fillListingForm(vehicle) {
       f.closest('label, div')?.textContent?.includes('Kilometers')
     )
   );
-  if (mileageEl) await typeInto(mileageEl, String(vehicle.mileage || 0));
+  const finalMileage = Math.max(300, Number(vehicle.mileage) || 0);
+  if (mileageEl) await typeInto(mileageEl, String(finalMileage));
   await sleep(DELAY);
 
   // PRICE
@@ -631,6 +641,29 @@ if (window.location.href.includes('/marketplace/create/vehicle') ||
     // Attach poster profile so fillListingForm can stamp rep contact info
     const vehicleWithPoster = { ...pendingPost.vehicle, poster: pendingPost.poster || null };
     setTimeout(() => fillListingForm(vehicleWithPoster), 2500);
+
+    // Watch for the URL to change to /marketplace/item/... — that means FB published the listing
+    // and we can auto-mark posted without the user needing to click anything.
+    let autoMarkFired = false;
+    const startUrl = window.location.href;
+    const watcher = setInterval(() => {
+      if (autoMarkFired) { clearInterval(watcher); return; }
+      const href = window.location.href;
+      if (href !== startUrl && href.includes('/marketplace/item/')) {
+        autoMarkFired = true;
+        clearInterval(watcher);
+        const vehicleId = pendingPost.vehicle.id;
+        chrome.runtime.sendMessage(
+          { type: 'LISTING_POSTED', inventory_id: vehicleId, fb_listing_url: href },
+          (response) => {
+            if (response?.success) showStatus('✅ MarketSync: listing auto-saved to dashboard.', 'success');
+            else console.warn('Auto-mark posted failed:', response);
+          }
+        );
+      }
+    }, 1000);
+    // Stop watching after 15 min (user probably gave up or closed tab)
+    setTimeout(() => clearInterval(watcher), 15 * 60 * 1000);
   });
 }
 

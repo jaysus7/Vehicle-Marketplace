@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Dashboard · MarketSync</title>
   <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 </head>
 <body class="bg-slate-950 text-slate-100 font-sans antialiased min-h-screen flex flex-col">
 
@@ -101,7 +102,7 @@
         <div class="bg-slate-900 border border-slate-800 p-4 rounded-lg">
           <div class="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Sold via Marketplace</div>
           <div class="text-2xl font-black text-emerald-400 mt-1" id="metric-sold">—</div>
-          <div class="text-[10px] text-slate-500 mt-0.5">last 30 days</div>
+          <div class="text-[10px] text-slate-500 mt-0.5">lifetime</div>
         </div>
         <div class="bg-slate-900 border border-slate-800 p-4 rounded-lg">
           <div class="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Active Days</div>
@@ -158,6 +159,56 @@
         </div>
       </div>
 
+      <div id="leaderboard-panel" class="hidden bg-slate-900 border border-slate-800 rounded-lg p-6">
+        <div class="mb-4">
+          <h2 class="text-lg font-bold text-white">Team Insights</h2>
+          <p class="text-slate-400 text-xs">Leaderboard, activity, and posting performance.</p>
+        </div>
+
+        <div class="grid grid-cols-2 md:grid-cols-5 gap-3 mb-6">
+          <div class="bg-slate-950 border border-slate-800 rounded p-3">
+            <div class="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Top Lister</div>
+            <div class="text-sm font-bold text-white mt-1 truncate" id="lb-top-name">—</div>
+            <div class="text-[10px] text-indigo-400 mt-0.5" id="lb-top-count">— listings</div>
+          </div>
+          <div class="bg-slate-950 border border-slate-800 rounded p-3">
+            <div class="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Most Active</div>
+            <div class="text-sm font-bold text-white mt-1 truncate" id="lb-active-name">—</div>
+            <div class="text-[10px] text-emerald-400 mt-0.5" id="lb-active-count">— logins / 14d</div>
+          </div>
+          <div class="bg-slate-950 border border-slate-800 rounded p-3">
+            <div class="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Avg Listings / Rep</div>
+            <div class="text-2xl font-black text-white mt-1" id="lb-avg">—</div>
+            <div class="text-[10px] text-slate-500 mt-0.5">across team</div>
+          </div>
+          <div class="bg-slate-950 border border-slate-800 rounded p-3">
+            <div class="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Inactive Reps</div>
+            <div class="text-2xl font-black text-amber-400 mt-1" id="lb-inactive">—</div>
+            <div class="text-[10px] text-slate-500 mt-0.5">no login in 14d</div>
+          </div>
+          <div class="bg-slate-950 border border-slate-800 rounded p-3">
+            <div class="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Team Conversion</div>
+            <div class="text-2xl font-black text-indigo-400 mt-1"><span id="lb-conv">—</span>%</div>
+            <div class="text-[10px] text-slate-500 mt-0.5">sold / posted</div>
+          </div>
+        </div>
+
+        <div class="grid md:grid-cols-2 gap-4">
+          <div class="bg-slate-950 border border-slate-800 rounded p-3">
+            <div class="text-xs font-bold text-slate-300 mb-2">Listings posted (last 30 days)</div>
+            <div class="relative h-48">
+              <canvas id="chart-listings-daily"></canvas>
+            </div>
+          </div>
+          <div class="bg-slate-950 border border-slate-800 rounded p-3">
+            <div class="text-xs font-bold text-slate-300 mb-2">Listings by rep (lifetime)</div>
+            <div class="relative h-48">
+              <canvas id="chart-listings-by-rep"></canvas>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <div id="dealer-view-panel" class="hidden bg-slate-900 border border-slate-800 rounded-lg p-6">
         <div class="flex justify-between items-start mb-4 gap-4 flex-wrap">
           <div>
@@ -191,12 +242,14 @@
                 <th class="py-3 px-4">Email</th>
                 <th class="py-3 px-4">Role</th>
                 <th class="py-3 px-4">Listings</th>
+                <th class="py-3 px-4">Sold</th>
+                <th class="py-3 px-4">Conv.</th>
                 <th class="py-3 px-4">Logins (30d)</th>
                 <th class="py-3 px-4 text-right">Action</th>
               </tr>
             </thead>
             <tbody id="dealer-team-table-body" class="divide-y divide-slate-800/60 text-slate-200">
-              <tr><td colspan="5" class="p-4 text-slate-500 italic">Loading team...</td></tr>
+              <tr><td colspan="8" class="p-4 text-slate-500 italic">Loading team...</td></tr>
             </tbody>
           </table>
         </div>

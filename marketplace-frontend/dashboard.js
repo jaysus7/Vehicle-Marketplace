@@ -91,7 +91,10 @@ async function initializeDashboardEcosystem() {
     }
 
     if (isAdmin) {
+      document.getElementById('leaderboard-panel').classList.remove('hidden');
       document.getElementById('dealer-view-panel').classList.remove('hidden');
+      loadLeaderboard();
+      loadCharts();
       loadDealerManagementMatrix();
     } else {
       document.getElementById('rep-view-panel').classList.remove('hidden');
@@ -146,7 +149,7 @@ async function loadInsights() {
 // DEALER DOMAIN: Real team roster from /dealership/team
 async function loadDealerManagementMatrix() {
   const tableBody = document.getElementById('dealer-team-table-body');
-  tableBody.innerHTML = `<tr><td colspan="6" class="p-4 text-slate-500 italic">Loading team...</td></tr>`;
+  tableBody.innerHTML = `<tr><td colspan="8" class="p-4 text-slate-500 italic">Loading team...</td></tr>`;
 
   try {
     const res = await fetch(`${API}/dealership/team`, {
@@ -159,7 +162,7 @@ async function loadDealerManagementMatrix() {
     const team = await res.json();
 
     if (!team.length) {
-      tableBody.innerHTML = `<tr><td colspan="6" class="p-4 text-slate-500 italic">No team members yet. Click "Invite Rep" to add one.</td></tr>`;
+      tableBody.innerHTML = `<tr><td colspan="8" class="p-4 text-slate-500 italic">No team members yet. Click "Invite Rep" to add one.</td></tr>`;
       return;
     }
 
@@ -181,7 +184,9 @@ async function loadDealerManagementMatrix() {
           <td class="py-3 px-4 text-slate-300">${m.email || '—'}</td>
           <td class="py-3 px-4">${roleBadge}</td>
           <td class="py-3 px-4 text-indigo-400 font-mono">${m.listings_posted}</td>
-          <td class="py-3 px-4 text-emerald-400 font-mono">${m.logins_30d ?? 0}</td>
+          <td class="py-3 px-4 text-emerald-400 font-mono">${m.listings_sold ?? 0}</td>
+          <td class="py-3 px-4 text-amber-400 font-mono">${m.conversion_rate ?? 0}%</td>
+          <td class="py-3 px-4 text-slate-300 font-mono">${m.logins_30d ?? 0}</td>
           <td class="py-3 px-4 text-right">${action}</td>
         </tr>
       `;
@@ -194,7 +199,7 @@ async function loadDealerManagementMatrix() {
       btn.addEventListener('click', () => openRepDetail(btn.dataset.repId));
     });
   } catch (e) {
-    tableBody.innerHTML = `<tr><td colspan="5" class="p-4 text-red-400">${e.message}</td></tr>`;
+    tableBody.innerHTML = `<tr><td colspan="8" class="p-4 text-red-400">${e.message}</td></tr>`;
   }
 }
 
@@ -287,6 +292,95 @@ async function loadMyStats() {
   } catch (e) {
     document.getElementById('rep-recent-list').innerHTML = `<div class="text-xs text-red-400">${e.message}</div>`;
   }
+}
+
+// LEADERBOARD: top lister / most active / averages / inactive count
+async function loadLeaderboard() {
+  try {
+    const res = await fetch(`${API}/dealership/leaderboard`, { headers: { 'Authorization': `Bearer ${token}` } });
+    if (!res.ok) return;
+    const data = await res.json();
+    const setText = (id, text) => { const el = document.getElementById(id); if (el) el.textContent = text; };
+    setText('lb-top-name', data.top_lister?.name || '—');
+    setText('lb-top-count', data.top_lister ? `${data.top_lister.total_listings} listings` : '— listings');
+    setText('lb-active-name', data.most_active?.name || '—');
+    setText('lb-active-count', data.most_active ? `${data.most_active.recent_logins} logins / 14d` : '— logins');
+    setText('lb-avg', data.avg_listings_per_user ?? '—');
+    setText('lb-inactive', data.inactive_count ?? '—');
+    setText('lb-conv', data.team_conversion_rate ?? '—');
+  } catch (e) {
+    console.warn('Leaderboard failed:', e.message);
+  }
+}
+
+// CHARTS: listings over time + listings by rep (Chart.js)
+async function loadCharts() {
+  try {
+    const res = await fetch(`${API}/dealership/charts`, { headers: { 'Authorization': `Bearer ${token}` } });
+    if (!res.ok) return;
+    const data = await res.json();
+    renderDailyChart(data.daily || []);
+    renderByRepChart(data.by_rep || []);
+  } catch (e) {
+    console.warn('Charts failed:', e.message);
+  }
+}
+
+let __dailyChart = null;
+let __byRepChart = null;
+
+function renderDailyChart(daily) {
+  const ctx = document.getElementById('chart-listings-daily');
+  if (!ctx || typeof Chart === 'undefined') return;
+  if (__dailyChart) __dailyChart.destroy();
+  __dailyChart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: daily.map(d => d.date.slice(5)),  // MM-DD
+      datasets: [{
+        label: 'Listings',
+        data: daily.map(d => d.count),
+        borderColor: '#6366f1',
+        backgroundColor: 'rgba(99,102,241,0.15)',
+        fill: true,
+        tension: 0.3,
+        pointRadius: 2,
+        pointHoverRadius: 5
+      }]
+    },
+    options: chartCommonOptions()
+  });
+}
+
+function renderByRepChart(byRep) {
+  const ctx = document.getElementById('chart-listings-by-rep');
+  if (!ctx || typeof Chart === 'undefined') return;
+  if (__byRepChart) __byRepChart.destroy();
+  __byRepChart = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: byRep.map(r => r.name),
+      datasets: [{
+        label: 'Listings',
+        data: byRep.map(r => r.count),
+        backgroundColor: '#10b981',
+        borderRadius: 4
+      }]
+    },
+    options: chartCommonOptions()
+  });
+}
+
+function chartCommonOptions() {
+  return {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: { legend: { display: false } },
+    scales: {
+      x: { ticks: { color: '#94a3b8', font: { size: 10 } }, grid: { color: 'rgba(148,163,184,0.08)' } },
+      y: { ticks: { color: '#94a3b8', font: { size: 10 }, precision: 0 }, grid: { color: 'rgba(148,163,184,0.08)' }, beginAtZero: true }
+    }
+  };
 }
 
 function renderRecentListings(containerId, items) {
