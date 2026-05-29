@@ -123,12 +123,21 @@ async function loadInsights() {
       return;
     }
     const data = await res.json();
-    document.getElementById('metric-synced').textContent = data.inventory_synced;
+    document.getElementById('metric-synced').textContent = data.inventory_available ?? data.inventory_synced;
+    document.getElementById('metric-synced-total').textContent = data.inventory_synced;
     document.getElementById('metric-listings').textContent = data.listings_posted;
     document.getElementById('metric-sold').textContent = data.sold_this_month;
     document.getElementById('metric-active-days').textContent = `${data.active_days_this_week}/7`;
     document.getElementById('metric-listings-scope').textContent =
       data.scope === 'dealership' ? 'team total · lifetime' : 'your posts · lifetime';
+    // Admin-only: show admin vs reps breakdown under Listings Posted
+    if (data.scope === 'dealership') {
+      const bd = document.getElementById('metric-listings-breakdown');
+      bd?.classList.remove('hidden');
+      bd?.classList.add('grid');
+      document.getElementById('metric-listings-admin').textContent = data.listings_by_admin ?? 0;
+      document.getElementById('metric-listings-reps').textContent = data.listings_by_reps ?? 0;
+    }
   } catch (e) {
     console.error('Insights load threw:', e);
   }

@@ -633,3 +633,63 @@ if (window.location.href.includes('/marketplace/create/vehicle') ||
     setTimeout(() => fillListingForm(vehicleWithPoster), 2500);
   });
 }
+
+// ── FB-side sold detection ───────────────────────────────────────────────────
+// When user visits one of their own listing pages and FB shows "Sold", auto-mark
+// the corresponding listing as sold in MarketSync. Idempotent server-side.
+if (window.location.href.includes('/marketplace/item/')) {
+  let alreadyReported = false;
+
+  const checkSold = async () => {
+    if (alreadyReported) return;
+    const isSold = detectFbSoldBadge();
+    if (!isSold) return;
+
+    alreadyReported = true;
+    const { token } = await new Promise(r => chrome.storage.local.get(['token'], r));
+    if (!token) return;
+
+    try {
+      const r = await fetch(`${API}/listings/sync-fb-sold`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ fb_listing_url: window.location.href })
+      });
+      const data = await r.json().catch(() => ({}));
+      if (data.matched) {
+        showStatus('✅ MarketSync: synced sold status from Facebook.', 'success');
+      }
+    } catch (e) {
+      console.warn('FB sold sync failed:', e.message);
+    }
+  };
+
+  // Try a few times — FB renders the badge after initial paint
+  setTimeout(checkSold, 2500);
+  setTimeout(checkSold, 6000);
+  setTimeout(checkSold, 12000);
+
+  // Also watch for the badge appearing later (e.g. user just clicked Mark as sold)
+  const observer = new MutationObserver(() => { if (!alreadyReported) checkSold(); });
+  observer.observe(document.body, { childList: true, subtree: true });
+  // Stop observing after 60s to avoid leaks
+  setTimeout(() => observer.disconnect(), 60000);
+}
+
+function detectFbSoldBadge() {
+  // Strategy 1: explicit "Sold" pill near the title area
+  const main = document.querySelector('[role="main"]') || document.body;
+  const candidates = [...main.querySelectorAll('span, div')];
+  for (const el of candidates) {
+    const text = el.textContent.trim();
+    // Must be exactly "Sold" and have no children (a leaf span/div is the badge)
+    if (text === 'Sold' && el.children.length === 0) {
+      // Make sure it's visible (not in an aria-hidden tree, not zero-size)
+      const rect = el.getBoundingClientRect();
+      if (rect.width > 0 && rect.height > 0 && !el.closest('[aria-hidden="true"]')) {
+        return true;
+      }
+    }
+  }
+  return false;
+}

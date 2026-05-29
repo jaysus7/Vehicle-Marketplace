@@ -417,26 +417,61 @@ app.get('/dashboard/insights', requireAuth, async (req, res) => {
   let inventorySynced = 0, listingsPosted = 0, soldThisMonth = 0, activeDaysThisWeek = 0
   const warnings = {}
 
+  let inventoryAvailable = 0
   try {
     if (req.dealershipId) {
       const { count, error } = await supabaseAdmin
         .from('inventory').select('id', { count: 'exact', head: true })
         .eq('dealership_id', req.dealershipId)
-      if (error) warnings.inventory = error.message
+      if (error) warnings.inventory_total = error.message
       else inventorySynced = count || 0
+
+      const { count: avail, error: availErr } = await supabaseAdmin
+        .from('inventory').select('id', { count: 'exact', head: true })
+        .eq('dealership_id', req.dealershipId)
+        .eq('status', 'available')
+      if (availErr) warnings.inventory_available = availErr.message
+      else inventoryAvailable = avail || 0
     }
   } catch (e) { warnings.inventory = e.message }
 
+  // Breakdown: for admins we surface separate counts for their own posts vs reps' posts.
+  let listingsByAdmin = 0, listingsByReps = 0
   try {
     if (isAdmin && req.dealershipId) {
-      const { data, error } = await supabaseAdmin
-        .from('listings')
-        .select('id, status, deleted_at, inventory!inner(dealership_id)')
-        .eq('inventory.dealership_id', req.dealershipId)
-      if (error) warnings.listings = error.message
+      // Get team members (avoiding inventory!inner — too fragile)
+      const { data: members, error: memErr } = await supabaseAdmin
+        .from('profiles').select('id, role').eq('dealership_id', req.dealershipId)
+      if (memErr) warnings.listings = memErr.message
       else {
-        listingsPosted = data?.length || 0
-        soldThisMonth = (data || []).filter(l => l.status === 'sold' && l.deleted_at && l.deleted_at >= thirtyDaysAgo).length
+        const memberIds = (members || []).map(m => m.id)
+        const adminIds = (members || []).filter(m => m.role === 'DEALER_ADMIN' || m.role === 'OWNER').map(m => m.id)
+        const repIds = (members || []).filter(m => m.role === 'SALES_REP').map(m => m.id)
+
+        if (memberIds.length) {
+          const { count: total } = await supabaseAdmin
+            .from('listings').select('id', { count: 'exact', head: true })
+            .in('posted_by', memberIds)
+          listingsPosted = total || 0
+
+          const { count: sold } = await supabaseAdmin
+            .from('listings').select('id', { count: 'exact', head: true })
+            .in('posted_by', memberIds).eq('status', 'sold').gte('deleted_at', thirtyDaysAgo)
+          soldThisMonth = sold || 0
+        }
+
+        if (adminIds.length) {
+          const { count } = await supabaseAdmin
+            .from('listings').select('id', { count: 'exact', head: true })
+            .in('posted_by', adminIds)
+          listingsByAdmin = count || 0
+        }
+        if (repIds.length) {
+          const { count } = await supabaseAdmin
+            .from('listings').select('id', { count: 'exact', head: true })
+            .in('posted_by', repIds)
+          listingsByReps = count || 0
+        }
       }
     } else {
       const { count: total, error: totalErr } = await supabaseAdmin
@@ -468,8 +503,11 @@ app.get('/dashboard/insights', requireAuth, async (req, res) => {
   if (Object.keys(warnings).length) console.warn('Insights partial:', { user: req.user.id, role: req.profile.role, warnings })
 
   res.json({
+    inventory_available: inventoryAvailable,
     inventory_synced: inventorySynced,
     listings_posted: listingsPosted,
+    listings_by_admin: listingsByAdmin,
+    listings_by_reps: listingsByReps,
     sold_this_month: soldThisMonth,
     active_days_this_week: activeDaysThisWeek,
     scope: isAdmin ? 'dealership' : 'personal',
@@ -614,6 +652,30 @@ app.patch('/listings/:id/delete', requireAuth, async (req, res) => {
   const { error } = await supabaseAdmin.from('listings').update({ status: 'deleted', deleted_at: new Date().toISOString() }).eq('id', req.params.id)
   if (error) return res.status(500).json({ error: error.message })
   res.json({ success: true })
+})
+
+// Called by the extension's content script when it detects a "Sold" badge on a
+// FB Marketplace listing page the user owns. Idempotent — safe to call multiple times.
+app.post('/listings/sync-fb-sold', requireAuth, async (req, res) => {
+  const { fb_listing_url } = req.body || {}
+  if (!fb_listing_url) return res.status(400).json({ error: 'fb_listing_url required' })
+
+  // Match by URL prefix so trailing query params/fragments don't break the lookup
+  const normalizedUrl = fb_listing_url.split('?')[0].split('#')[0]
+
+  const { data: candidates } = await supabaseAdmin
+    .from('listings')
+    .select('id, inventory_id, status, fb_listing_url, inventory!inner(dealership_id)')
+    .eq('status', 'posted')
+    .ilike('fb_listing_url', `${normalizedUrl}%`)
+
+  const listing = (candidates || []).find(l => l.inventory.dealership_id === req.dealershipId)
+  if (!listing) return res.json({ success: false, matched: false })
+
+  const now = new Date().toISOString()
+  await supabaseAdmin.from('listings').update({ status: 'sold', deleted_at: now }).eq('id', listing.id)
+  await supabaseAdmin.from('inventory').update({ status: 'sold' }).eq('id', listing.inventory_id)
+  res.json({ success: true, matched: true, listing_id: listing.id })
 })
 
 app.post('/listings/:id/sold', requireAuth, async (req, res) => {
@@ -1008,6 +1070,53 @@ app.post('/inventory/sync', requireAuth, async (req, res) => {
 app.get('/debug', requireAuth, async (req, res) => {
   res.json({ user_id: req.user.id, profile: req.profile, dealership_id: req.dealershipId })
 })
+
+// ── 12. SCHEDULED INVENTORY SYNC (replaces external n8n cron) ──
+// Iterates every dealership with at least one feed and runs the standard sync.
+async function syncAllDealerships(triggerLabel = 'scheduled') {
+  const startedAt = new Date().toISOString()
+  console.log(`[sync-all:${triggerLabel}] started at ${startedAt}`)
+
+  const { data: dealerships, error } = await supabaseAdmin
+    .from('dealerships').select('id, name')
+  if (error) {
+    console.error(`[sync-all:${triggerLabel}] failed to list dealerships:`, error.message)
+    return { success: false, error: error.message }
+  }
+
+  const results = []
+  for (const d of dealerships || []) {
+    try {
+      const r = await runInventorySync(d.id)
+      console.log(`[sync-all:${triggerLabel}] ${d.name} (${d.id}):`,
+        r.success ? `${r.unique_vehicles} unique, ${r.skipped} skipped` : r.error)
+      results.push({ dealership_id: d.id, ...r })
+    } catch (e) {
+      console.error(`[sync-all:${triggerLabel}] ${d.id} threw:`, e.message)
+      results.push({ dealership_id: d.id, success: false, error: e.message })
+    }
+  }
+
+  console.log(`[sync-all:${triggerLabel}] finished. ${results.length} dealership(s) processed.`)
+  return { success: true, started_at: startedAt, finished_at: new Date().toISOString(), results }
+}
+
+// External-trigger endpoint (use this if you prefer Render Cron Jobs or cron-job.org)
+app.post('/cron/sync-all', async (req, res) => {
+  const secret = req.headers['x-cron-secret'] || req.query.secret
+  if (secret !== process.env.SYNC_SECRET) return res.status(401).json({ error: 'Unauthorized' })
+  const result = await syncAllDealerships('manual')
+  res.json(result)
+})
+
+// In-process schedule — fires every SYNC_INTERVAL_HOURS (default 6) for as long as the service is up.
+const SYNC_INTERVAL_HOURS = Number(process.env.SYNC_INTERVAL_HOURS || 6)
+if (SYNC_INTERVAL_HOURS > 0) {
+  // Initial run 60s after boot (lets the service settle), then every N hours
+  setTimeout(() => syncAllDealerships('boot'), 60 * 1000)
+  setInterval(() => syncAllDealerships('interval'), SYNC_INTERVAL_HOURS * 60 * 60 * 1000)
+  console.log(`📅 Scheduled inventory sync every ${SYNC_INTERVAL_HOURS}h (set SYNC_INTERVAL_HOURS=0 to disable)`)
+}
 
 app.use((err, req, res, next) => {
   console.error('Unhandled Express error:', { path: req.path, method: req.method, message: err.message, stack: err.stack })

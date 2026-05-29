@@ -79,14 +79,24 @@
       
       <div class="grid grid-cols-2 md:grid-cols-4 gap-4" id="metrics-strip">
         <div class="bg-slate-900 border border-slate-800 p-4 rounded-lg">
-          <div class="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Inventory Synced</div>
+          <div class="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Available Inventory</div>
           <div class="text-2xl font-black text-white mt-1" id="metric-synced">—</div>
-          <div class="text-[10px] text-slate-500 mt-0.5">total vehicles</div>
+          <div class="text-[10px] text-slate-500 mt-0.5"><span id="metric-synced-total">—</span> total synced</div>
         </div>
         <div class="bg-slate-900 border border-slate-800 p-4 rounded-lg">
           <div class="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Listings Posted</div>
           <div class="text-2xl font-black text-indigo-400 mt-1" id="metric-listings">—</div>
           <div class="text-[10px] text-slate-500 mt-0.5" id="metric-listings-scope">lifetime</div>
+          <div class="hidden mt-2 pt-2 border-t border-slate-800/60 grid grid-cols-2 gap-2" id="metric-listings-breakdown">
+            <div>
+              <div class="text-[9px] uppercase font-bold text-slate-500 tracking-wider">Admin</div>
+              <div class="text-sm font-bold text-white" id="metric-listings-admin">0</div>
+            </div>
+            <div>
+              <div class="text-[9px] uppercase font-bold text-slate-500 tracking-wider">Sales reps</div>
+              <div class="text-sm font-bold text-white" id="metric-listings-reps">0</div>
+            </div>
+          </div>
         </div>
         <div class="bg-slate-900 border border-slate-800 p-4 rounded-lg">
           <div class="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Sold via Marketplace</div>
