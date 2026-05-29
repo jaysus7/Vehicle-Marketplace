@@ -12,6 +12,11 @@ if (!token || !userRaw) {
 const user = JSON.parse(userRaw);
 let profileContext = null;
 
+// Page permission flags (set after profile loads, read by switchPage to mirror panels into Insights)
+let __canSeeLeaderboard = false;
+let __canSeeTeamInsights = false;
+let __canSeeSalesTeam = false;
+
 // Run Engine Boot Lifecycle
 document.addEventListener('DOMContentLoaded', () => {
   initializeDashboardEcosystem();
@@ -103,6 +108,11 @@ async function initializeDashboardEcosystem() {
       loadLeaderboard();
     }
 
+    // Set permission flags used by switchPage to mirror panels into Insights
+    __canSeeLeaderboard = inDealership && !isPersonal;
+    __canSeeTeamInsights = isAdmin;
+    __canSeeSalesTeam = isAdmin;
+
     // Wire up the sidebar nav
     document.querySelectorAll('#dashboard-nav .nav-item').forEach(btn => {
       btn.addEventListener('click', () => switchPage(btn.dataset.page));
@@ -130,8 +140,11 @@ async function initializeDashboardEcosystem() {
   }
 }
 
-// Sidebar nav page switcher — toggles which data-page-content section is visible
+// Sidebar nav page switcher — also moves panels INTO Insights so it acts as an overview.
+// Each panel exists in only one DOM location at a time (no duplication, no ID clashes).
 function switchPage(pageId) {
+  arrangePanelsForPage(pageId);
+
   document.querySelectorAll('[data-page-content]').forEach(el => {
     el.classList.toggle('hidden', el.dataset.pageContent !== pageId);
   });
@@ -144,6 +157,30 @@ function switchPage(pageId) {
     btn.classList.toggle('text-slate-700', !active);
     btn.classList.toggle('dark:text-slate-300', !active);
   });
+}
+
+function arrangePanelsForPage(pageId) {
+  const lb = document.getElementById('leaderboard-panel');
+  const ti = document.getElementById('team-insights-panel');
+  const st = document.getElementById('dealer-view-panel');
+
+  const lbWrap = document.querySelector('[data-page-content="leaderboard"]');
+  const tiWrap = document.querySelector('[data-page-content="team-insights"]');
+  const stWrap = document.querySelector('[data-page-content="sales-team"]');
+
+  // Always return panels to their dedicated wrappers first.
+  if (lb && lbWrap) lbWrap.appendChild(lb);
+  if (ti && tiWrap) tiWrap.appendChild(ti);
+  if (st && stWrap) stWrap.appendChild(st);
+
+  // On Insights, mirror panels INTO the first insights wrapper (the one with the metrics strip).
+  if (pageId === 'insights') {
+    const insights = document.querySelector('[data-page-content="insights"]');
+    if (!insights) return;
+    if (__canSeeLeaderboard && lb) insights.appendChild(lb);
+    if (__canSeeTeamInsights && ti) insights.appendChild(ti);
+    if (__canSeeSalesTeam && st) insights.appendChild(st);
+  }
 }
 
 async function fetchMetrics(path) {
