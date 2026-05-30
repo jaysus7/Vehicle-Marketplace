@@ -1008,24 +1008,410 @@ async function fetchVehiclePhotos(stocknumber) {
   }
 }
 
-// Resolve any dealer-provided URL (public page or direct JSON) into a fetchable JSON feed URL
-// and infer the inventory subset from path keywords.
+
+// ── FEED PROBE ENDPOINT ──────────────────────────────────────────────────────
+// Replaces the single-platform normalizeFeedUrl with a multi-platform detector.
+// Also adds POST /feeds/probe so the dashboard/extension can discover feed URLs
+// before committing them to the DB.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Known field shapes per platform so we can validate a response is actually
+// vehicle inventory and not some other JSON blob.
+const PLATFORM_PROBES = [
+  // ── LeadBox (WordPress-based, Canadian — your current platform) ───────────
+  {
+    platform: 'leadbox',
+    label: 'LeadBox',
+    buildUrls: (origin) => [
+      `${origin}/wp-content/uploads/data/inventory.json`
+    ],
+    validate: (data) => Array.isArray(data?.vehicles) && data.vehicles.length > 0,
+    extract: (data) => data.vehicles,
+    mapVehicle: (v) => ({
+      vin: v.vin,
+      year: v.year,
+      make: v.make,
+      model: v.model,
+      trim: v.trim,
+      price: v.saleprice || v.price,
+      mileage: v.mileage,
+      condition: v.condition,
+      stocknumber: v.stocknumber,
+      exteriorcolor: v.exteriorcolor,
+    })
+  },
+
+  // ── EDealer (Canadian — Honda, Nissan, Hyundai in Ontario) ────────────────
+  {
+    platform: 'edealer',
+    label: 'EDealer',
+    buildUrls: (origin) => [
+      `${origin}/api/inventory/getall`,
+      `${origin}/api/vehicles`,
+      `${origin}/Inventory/GetInventory`
+    ],
+    validate: (data) => {
+      if (Array.isArray(data) && data[0]?.VIN) return true
+      if (Array.isArray(data?.vehicles) && data.vehicles[0]?.VIN) return true
+      if (Array.isArray(data?.Vehicles) && data.Vehicles[0]?.VIN) return true
+      return false
+    },
+    extract: (data) => Array.isArray(data) ? data : (data?.vehicles || data?.Vehicles || []),
+    mapVehicle: (v) => ({
+      vin: v.VIN || v.vin,
+      year: v.Year || v.year,
+      make: v.Make || v.make,
+      model: v.Model || v.model,
+      trim: v.Trim || v.trim,
+      price: v.Price || v.ListPrice || v.price,
+      mileage: v.Mileage || v.mileage,
+      condition: v.IsNew ? 'New' : 'Used',
+      stocknumber: v.StockNumber || v.stocknumber,
+      exteriorcolor: v.ExteriorColour || v.ExteriorColor || v.exteriorcolor,
+    })
+  },
+
+  // ── Dealer Inspire / Cars.com (WP REST API) ───────────────────────────────
+  {
+    platform: 'dealer_inspire',
+    label: 'Dealer Inspire',
+    buildUrls: (origin) => [
+      `${origin}/wp-json/di-wp/v2/inventory`,
+      `${origin}/wp-json/inventory/v1/vehicles`
+    ],
+    validate: (data) => Array.isArray(data) && data[0]?.vin,
+    extract: (data) => data,
+    mapVehicle: (v) => ({
+      vin: v.vin,
+      year: v.year,
+      make: v.make,
+      model: v.model,
+      trim: v.trim,
+      price: v.price || v.final_price,
+      mileage: v.mileage || v.odometer,
+      condition: v.type,
+      stocknumber: v.stock_number || v.stock,
+      exteriorcolor: v.exterior_color,
+    })
+  },
+
+  // ── Dealer.com / Cox Automotive ───────────────────────────────────────────
+  {
+    platform: 'dealer_com',
+    label: 'Dealer.com',
+    buildUrls: (origin) => [
+      `${origin}/apis/widget/INVENTORY_LISTING_DEFAULT_AUTO_ALL:inventory-data-bus1/getInventory?limit=10`,
+      `${origin}/apis/widget/INVENTORY_LISTING_DEFAULT_AUTO_ALL:inventory-data-bus1/getInventory`
+    ],
+    validate: (data) => Array.isArray(data?.inventory) && data.inventory.length > 0,
+    extract: (data) => data.inventory,
+    mapVehicle: (v) => ({
+      vin: v.vin,
+      year: v.modelYear || v.year,
+      make: v.make,
+      model: v.model,
+      trim: v.trim,
+      price: v.pricing?.advertised || v.finalPrice || v.price,
+      mileage: v.odometer || v.mileage,
+      condition: v.type,
+      stocknumber: v.stockNumber || v.stock,
+      exteriorcolor: v.exteriorColor,
+    })
+  },
+
+  // ── Sincro / DealerOn (Toyota & Lexus Canada default) ────────────────────
+  {
+    platform: 'sincro',
+    label: 'Sincro / DealerOn',
+    buildUrls: (origin) => [
+      `${origin}/api/inventory/vehicles`,
+      `${origin}/api/vehicles`,
+      `${origin}/inventory/api/vehicles`
+    ],
+    validate: (data) => {
+      if (Array.isArray(data?.vehicles) && data.vehicles[0]?.vin) return true
+      if (Array.isArray(data?.data) && data.data[0]?.vin) return true
+      return false
+    },
+    extract: (data) => data?.vehicles || data?.data || [],
+    mapVehicle: (v) => ({
+      vin: v.vin,
+      year: v.year || v.modelYear,
+      make: v.make,
+      model: v.model,
+      trim: v.trim,
+      price: v.price || v.sellingPrice,
+      mileage: v.mileage || v.odometer,
+      condition: v.newOrUsed || v.condition,
+      stocknumber: v.stockNumber || v.stock,
+      exteriorcolor: v.exteriorColor || v.color,
+    })
+  },
+
+  // ── CDK Global ────────────────────────────────────────────────────────────
+  {
+    platform: 'cdk',
+    label: 'CDK Global',
+    buildUrls: (origin) => [
+      `${origin}/inventory/api/vehicles?pageSize=10`,
+      `${origin}/api/cdk/inventory`
+    ],
+    validate: (data) => Array.isArray(data?.vehicles || data?.results) && (data?.vehicles || data?.results)?.[0]?.vin,
+    extract: (data) => data?.vehicles || data?.results || [],
+    mapVehicle: (v) => ({
+      vin: v.vin,
+      year: v.modelYear || v.year,
+      make: v.make,
+      model: v.model,
+      trim: v.trim,
+      price: v.internetPrice || v.price,
+      mileage: v.mileage,
+      condition: v.type,
+      stocknumber: v.stockNumber,
+      exteriorcolor: v.exteriorColor,
+    })
+  },
+
+  // ── Strathcom (Canadian — Alberta/Ontario) ────────────────────────────────
+  {
+    platform: 'strathcom',
+    label: 'Strathcom',
+    buildUrls: (origin) => [
+      `${origin}/wp-content/uploads/data/inventory.json`,
+      `${origin}/vehicle-inventory/feeds/all.json`
+    ],
+    validate: (data) => Array.isArray(data?.vehicles) && data.vehicles.length > 0,
+    extract: (data) => data.vehicles,
+    mapVehicle: (v) => ({
+      vin: v.vin,
+      year: v.year,
+      make: v.make,
+      model: v.model,
+      trim: v.trim,
+      price: v.price || v.saleprice,
+      mileage: v.mileage,
+      condition: v.condition,
+      stocknumber: v.stocknumber,
+      exteriorcolor: v.exteriorcolor,
+    })
+  },
+
+  // ── Vicimus / Glovebox (Canadian) ─────────────────────────────────────────
+  {
+    platform: 'vicimus',
+    label: 'Vicimus / Glovebox',
+    buildUrls: (origin) => [
+      `${origin}/api/inventory`,
+      `${origin}/glovebox/api/inventory/vehicles`
+    ],
+    validate: (data) => Array.isArray(data?.data || data) && (data?.data || data)?.[0]?.vin,
+    extract: (data) => data?.data || data || [],
+    mapVehicle: (v) => ({
+      vin: v.vin,
+      year: v.year,
+      make: v.make,
+      model: v.model,
+      trim: v.trim,
+      price: v.price,
+      mileage: v.odometer || v.mileage,
+      condition: v.condition,
+      stocknumber: v.stockNumber || v.stock,
+      exteriorcolor: v.exteriorColour || v.exteriorColor,
+    })
+  },
+
+  // ── SM360 (Canadian market) ───────────────────────────────────────────────
+  {
+    platform: 'sm360',
+    label: 'SM360',
+    buildUrls: (origin) => [
+      `${origin}/api/inventory/list`,
+      `${origin}/fr/api/vehicles`,
+      `${origin}/en/api/vehicles`
+    ],
+    validate: (data) => Array.isArray(data?.vehicles || data?.results || data),
+    extract: (data) => data?.vehicles || data?.results || (Array.isArray(data) ? data : []),
+    mapVehicle: (v) => ({
+      vin: v.vin || v.Vin,
+      year: v.year || v.Year,
+      make: v.make || v.Make,
+      model: v.model || v.Model,
+      trim: v.trim || v.Trim,
+      price: v.price || v.Price,
+      mileage: v.mileage || v.Mileage,
+      condition: v.condition || v.Condition,
+      stocknumber: v.stockNumber || v.StockNumber,
+      exteriorcolor: v.exteriorColor || v.ExteriorColor,
+    })
+  },
+
+  // ── DealerFire / Solera (common in US, some Canadian) ────────────────────
+  {
+    platform: 'dealerfire',
+    label: 'DealerFire',
+    buildUrls: (origin) => [
+      `${origin}/ws/getData.php?type=inventory`,
+      `${origin}/inventory.json`
+    ],
+    validate: (data) => Array.isArray(data?.vehicles || data) && (data?.vehicles || data)?.[0]?.vin,
+    extract: (data) => data?.vehicles || (Array.isArray(data) ? data : []),
+    mapVehicle: (v) => ({
+      vin: v.vin,
+      year: v.year,
+      make: v.make,
+      model: v.model,
+      trim: v.trim,
+      price: v.price,
+      mileage: v.mileage,
+      condition: v.condition,
+      stocknumber: v.stock,
+      exteriorcolor: v.color,
+    })
+  },
+]
+
+// ── Helper: probe a single URL with a timeout ─────────────────────────────
+async function probeUrl(url, timeoutMs = 8000) {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
+  try {
+    const res = await fetch(url, {
+      signal: controller.signal,
+      headers: { 'Accept': 'application/json', 'User-Agent': 'MarketSync-FeedProbe/1.0' }
+    })
+    clearTimeout(timer)
+    if (!res.ok) return { ok: false, status: res.status }
+    const contentType = res.headers.get('content-type') || ''
+    if (!contentType.includes('json')) return { ok: false, status: res.status, reason: 'non-json response' }
+    const data = await res.json()
+    return { ok: true, data }
+  } catch (e) {
+    clearTimeout(timer)
+    return { ok: false, reason: e.name === 'AbortError' ? 'timeout' : e.message }
+  }
+}
+
+// ── Core: try all platforms against a given dealer URL ────────────────────
+async function detectFeedPlatform(dealerUrl) {
+  let origin
+  try {
+    origin = new URL(dealerUrl.trim()).origin
+  } catch {
+    return { success: false, error: 'Invalid URL' }
+  }
+
+  const attempts = []
+
+  for (const platform of PLATFORM_PROBES) {
+    const urls = platform.buildUrls(origin)
+    for (const url of urls) {
+      const result = await probeUrl(url)
+      attempts.push({ platform: platform.platform, label: platform.label, url, ...result })
+
+      if (result.ok && platform.validate(result.data)) {
+        const vehicles = platform.extract(result.data)
+        const sample = vehicles.slice(0, 3).map(platform.mapVehicle)
+        return {
+          success: true,
+          platform: platform.platform,
+          platform_label: platform.label,
+          feed_url: url,
+          vehicle_count: vehicles.length,
+          sample_vehicles: sample,
+          attempts,
+        }
+      }
+    }
+  }
+
+  return {
+    success: false,
+    error: 'No known inventory feed found for this dealer URL. Try pasting the direct JSON feed URL instead.',
+    attempts,
+  }
+}
+
+// ── POST /feeds/probe ─────────────────────────────────────────────────────
+// Body: { url: "https://somedealer.ca/vehicles/new/" }
+// No auth required — safe because it only reads public URLs.
+// Returns: platform name, resolved feed URL, vehicle count, 3-vehicle sample.
+app.post('/feeds/probe', async (req, res) => {
+  const { url } = req.body || {}
+  if (!url) return res.status(400).json({ error: 'url is required' })
+
+  try {
+    const result = await detectFeedPlatform(url)
+    res.json(result)
+  } catch (e) {
+    res.status(500).json({ error: e.message })
+  }
+})
+
+// ── Updated normalizeFeedUrl: platform-aware ──────────────────────────────
+// Used by POST /inventory-feeds when the user pastes a dealer URL.
+// Returns { jsonUrl, detectedType } or null.
 function normalizeFeedUrl(input) {
   if (!input) return null
   let url
   try { url = new URL(input.trim()) } catch { return null }
 
   const path = url.pathname.toLowerCase()
+
+  // Detect inventory type from URL path
   let detectedType = null
-  if (path.includes('/new-inventory')) detectedType = 'new'
-  else if (path.includes('/used-inventory')) detectedType = 'used'
-  else if (path.includes('/demo-inventory')) detectedType = 'demo'
+  if (path.includes('new-inventory') || path.includes('/new/') || path.includes('/new?')) detectedType = 'new'
+  else if (path.includes('used-inventory') || path.includes('/used/') || path.includes('/used?')) detectedType = 'used'
+  else if (path.includes('demo-inventory') || path.includes('/demo/')) detectedType = 'demo'
   else if (path.includes('/fleet')) detectedType = 'fleet'
 
+  // If it's already a .json URL, use it directly
   if (path.endsWith('.json')) return { jsonUrl: url.toString(), detectedType }
 
-  // LeadBox convention — every LBX dealer site exposes the full inventory here
-  return { jsonUrl: `${url.origin}/wp-content/uploads/data/inventory.json`, detectedType }
+  const origin = url.origin
+  const host = url.hostname.toLowerCase()
+
+  // EDealer
+  if (host.includes('edealer')) {
+    return { jsonUrl: `${origin}/api/inventory/getall`, detectedType }
+  }
+
+  // Dealer Inspire (Cars.com)
+  if (host.includes('dealerinspire') || host.includes('di-uploads')) {
+    return { jsonUrl: `${origin}/wp-json/di-wp/v2/inventory`, detectedType }
+  }
+
+  // Dealer.com (Cox)
+  if (host.includes('dealer.com')) {
+    return { jsonUrl: `${origin}/apis/widget/INVENTORY_LISTING_DEFAULT_AUTO_ALL:inventory-data-bus1/getInventory`, detectedType }
+  }
+
+  // Sincro / DealerOn (Toyota/Lexus Canada)
+  if (host.includes('sincro') || host.includes('dealeron')) {
+    return { jsonUrl: `${origin}/api/inventory/vehicles`, detectedType }
+  }
+
+  // Vicimus
+  if (host.includes('vicimus') || host.includes('glovebox')) {
+    return { jsonUrl: `${origin}/api/inventory`, detectedType }
+  }
+
+  // SM360
+  if (host.includes('sm360')) {
+    return { jsonUrl: `${origin}/api/inventory/list`, detectedType }
+  }
+
+  // CDK
+  if (host.includes('cdk') || host.includes('cobalt')) {
+    return { jsonUrl: `${origin}/inventory/api/vehicles`, detectedType }
+  }
+
+  // DealerFire
+  if (host.includes('dealerfire') || host.includes('solera')) {
+    return { jsonUrl: `${origin}/ws/getData.php?type=inventory`, detectedType }
+  }
+
+  // LeadBox / default fallback (WordPress wp-content path)
+  return { jsonUrl: `${origin}/wp-content/uploads/data/inventory.json`, detectedType }
 }
 
 function matchesFeedType(v, feedType) {
