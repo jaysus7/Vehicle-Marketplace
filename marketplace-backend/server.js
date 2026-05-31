@@ -1571,39 +1571,59 @@ app.post('/inventory-feeds', requireAuth, async (req, res) => {
   const { feed_url: rawUrl, feed_type: requestedType } = req.body || {}
   if (!rawUrl) return res.status(400).json({ error: 'feed_url is required' })
 
-  const normalized = normalizeFeedUrl(rawUrl)
-  if (!normalized) return res.status(400).json({ error: 'Invalid URL' })
+  // Allow inventory-type detection from the original URL (e.g. /vehicles/new/, /used-inventory/)
+  const typeHint = normalizeFeedUrl(rawUrl)
+  if (!typeHint) return res.status(400).json({ error: 'Invalid URL' })
 
-  // Probe the resolved JSON URL so we fail fast on a bad URL
-  try {
-    const probe = await fetch(normalized.jsonUrl, { method: 'GET' })
-    if (!probe.ok) {
-      return res.status(400).json({
-        error: `Could not find an inventory feed at ${normalized.jsonUrl}. If your dealer doesn't use LeadBox, paste the direct JSON feed URL instead.`
-      })
+  // If the user pasted a direct .json URL, trust it. Otherwise probe every known platform.
+  let workingUrl = null
+  let detectedPlatform = null
+  let attempts = []
+
+  if (typeHint.jsonUrl && typeHint.jsonUrl.toLowerCase().includes('.json')) {
+    // Direct JSON URL — single probe
+    try {
+      const r = await fetch(typeHint.jsonUrl)
+      const text = await r.text()
+      const data = JSON.parse(text)
+      // Accept ANY plausible shape (will be parsed at sync time)
+      if (r.ok) workingUrl = typeHint.jsonUrl
+      attempts.push({ url: typeHint.jsonUrl, status: r.status, ok: r.ok })
+    } catch (e) {
+      attempts.push({ url: typeHint.jsonUrl, error: e.message })
     }
-    const probeData = await probe.json().catch(() => null)
-    if (!probeData || !Array.isArray(probeData.vehicles)) {
-      return res.status(400).json({ error: `URL responded but didn't contain a "vehicles" array. Resolved URL: ${normalized.jsonUrl}` })
+  } else {
+    // Public dealer URL — try every known platform via the central probe
+    const detection = await detectFeedPlatform(rawUrl)
+    attempts = detection.attempts || []
+    if (detection.success) {
+      workingUrl = detection.feed_url
+      detectedPlatform = detection.platform_label
     }
-  } catch (e) {
-    return res.status(400).json({ error: `Could not reach ${normalized.jsonUrl}: ${e.message}` })
   }
 
-  const feedType = requestedType && requestedType !== 'all' ? requestedType : (normalized.detectedType || 'all')
+  if (!workingUrl) {
+    return res.status(400).json({
+      error: `Could not find a working inventory feed at this dealer site. We tried ${attempts.length} known platform paths. If your dealer uses a different system, paste the direct JSON feed URL instead.`,
+      attempted: attempts.slice(0, 8).map(a => `${a.url} → ${a.status || a.error || 'no data'}`)
+    })
+  }
+
+  const feedType = requestedType && requestedType !== 'all' ? requestedType : (typeHint.detectedType || 'all')
 
   const { data, error } = await supabaseAdmin
     .from('inventory_feeds')
     .insert({
       dealership_id: req.dealershipId,
       user_id: req.user.id,
-      feed_url: normalized.jsonUrl,
+      feed_url: workingUrl,
       feed_type: feedType
     })
     .select()
     .single()
   if (error) return res.status(500).json({ error: error.message })
-  res.json(data)
+  console.log(`✓ Added feed: ${detectedPlatform || 'direct'} → ${workingUrl}`)
+  res.json({ ...data, platform: detectedPlatform })
 })
 
 app.delete('/inventory-feeds/:id', requireAuth, async (req, res) => {
