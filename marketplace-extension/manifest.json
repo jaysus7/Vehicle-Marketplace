@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "MarketSync",
-  "version": "1.3",
+  "version": "1.4",
   "description": "Post dealership inventory to Facebook Marketplace in seconds. Auto-sync, auto-fill, auto-track.",
   "permissions": [
     "storage",

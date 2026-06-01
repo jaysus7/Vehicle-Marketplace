@@ -957,19 +957,30 @@ function renderCatalog() {
       : `<div class="w-full h-32 rounded bg-slate-50 dark:bg-slate-950 flex items-center justify-center text-slate-700 text-2xl">⌀</div>`;
     const price = v.price ? `$${Number(v.price).toLocaleString()}` : '—';
     const mileage = v.mileage ? `${Number(v.mileage).toLocaleString()} km` : 'New';
+    // Card is a clickable link to the vehicle's page on the dealer site (when we have one)
+    const tag = v.source_url ? 'a' : 'div';
+    const linkAttrs = v.source_url
+      ? `href="${v.source_url}" target="_blank" rel="noopener" title="Open on dealer site ↗"`
+      : '';
+    const externalIcon = v.source_url
+      ? `<svg class="w-3 h-3 text-slate-400 dark:text-slate-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/></svg>`
+      : '';
     return `
-      <div class="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded p-3 flex flex-col gap-2">
+      <${tag} ${linkAttrs} class="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded p-3 flex flex-col gap-2 ${v.source_url ? 'hover:border-indigo-400 dark:hover:border-indigo-500 transition no-underline' : ''}">
         ${img}
         <div class="flex items-center justify-between gap-2">
           <span class="text-xs font-bold text-slate-900 dark:text-white truncate flex-1" title="${v.year} ${v.make} ${v.model} ${v.trim || ''}">${v.year} ${v.make} ${v.model}</span>
           ${statusBadge(v.status)}
         </div>
-        <div class="text-[11px] text-slate-500 dark:text-slate-400 truncate">${v.trim || ''} ${v.exterior_color ? '· ' + v.exterior_color : ''}</div>
+        <div class="text-[11px] text-slate-500 dark:text-slate-400 truncate flex items-center gap-1">
+          <span class="truncate">${v.trim || ''} ${v.exterior_color ? '· ' + v.exterior_color : ''}</span>
+          ${externalIcon}
+        </div>
         <div class="flex items-center justify-between text-xs">
           <span class="font-bold text-indigo-600 dark:text-indigo-400">${price}</span>
           <span class="text-slate-500">${mileage}</span>
         </div>
-      </div>
+      </${tag}>
     `;
   }).join('');
 }

@@ -804,7 +804,7 @@ app.get('/inventory', requireAuth, async (req, res) => {
 app.get('/inventory/all', requireAuth, async (req, res) => {
   const { data, error } = await supabaseAdmin
     .from('inventory')
-    .select('id, vin, year, make, model, trim, price, mileage, exterior_color, status, image_urls, last_synced_at')
+    .select('id, vin, year, make, model, trim, price, mileage, exterior_color, status, image_urls, source_url, last_synced_at')
     .eq('dealership_id', req.dealershipId)
     .order('created_at', { ascending: false })
   if (error) return res.status(500).json({ error: error.message })
@@ -1357,6 +1357,46 @@ async function probeUrlHtml(url, timeoutMs = 12000) {
   }
 }
 
+// Extract ALL unique full-res inventory image URLs from a single page of HTML.
+// Used for detail pages which contain ~10-30 photos of one vehicle.
+function extractEDealerImagesFromPage(html) {
+  const re = /https:\/\/media\.edealer\.ca\/w_1920[^"'\s]*\/inventory\/[A-Z0-9]+\.webp/g
+  const seen = new Set()
+  let m
+  while ((m = re.exec(html)) !== null) seen.add(m[0])
+  return [...seen]
+}
+
+// Find vehicle detail-page anchors in EDealer listing HTML (one per vehicle, in document order)
+function extractEDealerDetailUrls(html, origin) {
+  const re = /href="(\/inventory\/[a-zA-Z0-9-]+vdp\/?)"/g
+  const out = []
+  const seen = new Set()
+  let m
+  while ((m = re.exec(html)) !== null) {
+    const path = m[1].endsWith('/') ? m[1] : m[1] + '/'
+    if (!seen.has(path)) { seen.add(path); out.push(`${origin}${path}`) }
+  }
+  return out
+}
+
+// Fetch detail pages concurrently in batches, extract per-vehicle photos. Order preserved.
+async function fetchEDealerDetailImageGroups(detailUrls, concurrency = 4) {
+  const results = new Array(detailUrls.length).fill([])
+  for (let i = 0; i < detailUrls.length; i += concurrency) {
+    const batch = detailUrls.slice(i, i + concurrency)
+    const batchResults = await Promise.all(batch.map(async (url) => {
+      try {
+        const r = await fetch(url, { headers: { 'User-Agent': 'MarketSync-Sync/1.0' } })
+        if (!r.ok) return []
+        return extractEDealerImagesFromPage(await r.text())
+      } catch { return [] }
+    }))
+    batchResults.forEach((imgs, idx) => { results[i + idx] = imgs })
+  }
+  return results
+}
+
 // Extract per-vehicle image galleries from EDealer-style inventory HTML.
 // EDealer renders one `w_400` thumbnail per vehicle followed by N `w_1920` full-res
 // images of that vehicle, then the next thumbnail marks the next vehicle.
@@ -1612,9 +1652,21 @@ async function runInventorySync(dealershipId) {
           }
           blocks.forEach(walk)
           const cars = extractCarsFromJsonLd(flat)
-          // Extract per-vehicle photo galleries from the HTML (JSON-LD's `image` field
-          // is usually a placeholder; real photos live in <img> tags grouped by vehicle).
-          const imageGroups = extractEDealerImageGroups(html)
+          // Two image sources, in order of quality:
+          //   1. Detail pages (per-vehicle pages have 10-30 photos each — best)
+          //   2. Listing-page HTML carousel (fallback when detail fetch fails)
+          // We fetch detail pages concurrently in batches of 4 to avoid hammering the dealer.
+          const origin = new URL(feed.feed_url).origin
+          const detailUrls = extractEDealerDetailUrls(html, origin)
+          let imageGroups = []
+          if (detailUrls.length === cars.length && detailUrls.length > 0) {
+            // Same count → detail anchors align 1:1 with JSON-LD cars by document order
+            console.log(`[sync] Fetching ${detailUrls.length} detail pages for per-vehicle photos`)
+            imageGroups = await fetchEDealerDetailImageGroups(detailUrls)
+          } else {
+            // Fallback: extract photo galleries from the listing HTML
+            imageGroups = extractEDealerImageGroups(html)
+          }
           // Normalize Schema.org Car shape into a flatter LeadBox-compatible object so the
           // rest of this loop can read it uniformly. Index into imageGroups by position.
           vehicles = cars.map((c, i) => ({
@@ -1646,7 +1698,9 @@ async function runInventorySync(dealershipId) {
               const img = Array.isArray(c.image) ? c.image[0] : c.image
               if (!img || (typeof img === 'string' && img.includes('coming.png'))) return []
               return [img]
-            })()
+            })(),
+            // Detail page URL for "View on dealer site" links — falls back to listing page
+            _detail_url: detailUrls[i] || feed.feed_url
           }))
         }
         jsonCache.set(feed.feed_url, vehicles)
@@ -1686,9 +1740,10 @@ async function runInventorySync(dealershipId) {
           fuel_type: mapFuel(v.fueltype),
           description: buildDescription(v),
           image_urls: imageUrls,
-          source_url: feed.feed_url.includes('/wp-content')
-            ? `${feed.feed_url.split('/wp-content')[0]}/inventory/${v.stocknumber || ''}`
-            : feed.feed_url,
+          source_url: v._detail_url    // JSON-LD path (EDealer) — proper detail URL
+            || (feed.feed_url.includes('/wp-content')
+                  ? `${feed.feed_url.split('/wp-content')[0]}/inventory/${v.stocknumber || ''}`
+                  : feed.feed_url),
           status: v.salepending ? 'pending' : 'available',
           last_synced_at: new Date().toISOString()
         }
