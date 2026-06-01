@@ -1357,6 +1357,88 @@ async function probeUrlHtml(url, timeoutMs = 12000) {
   }
 }
 
+// Parse one EDealer vehicle detail page into a vehicle record.
+// EDealer detail pages don't carry per-vehicle JSON-LD (the Car node is on the listing
+// page), so we extract from <title>, <meta description>, and body content via regex.
+function parseEDealerDetailPage(html, url) {
+  const titleMatch = html.match(/<title>([^<]+)<\/title>/i)
+  const title = titleMatch ? titleMatch[1].trim() : ''
+
+  // Title shape: "New 2026 GMC Yukon 4WD 4dr Denali for Sale in St. Catharines, ON | John Bear..."
+  const condMatch = title.match(/^(New|Used|Demo|Pre-Owned|Certified Pre-Owned)\b/i)
+  const condition = condMatch ? condMatch[1] : null
+  const ymmMatch = title.match(/^(?:New|Used|Demo|Pre-Owned|Certified Pre-Owned)?\s*(\d{4})\s+(\S+)\s+(.+?)\s+for Sale/i)
+  const year = ymmMatch ? parseInt(ymmMatch[1]) : null
+  const make = ymmMatch ? ymmMatch[2] : null
+  const model = ymmMatch ? ymmMatch[3] : null
+
+  // Meta description: "Learn more about this New 2026 GMC Yukon ..., 9162-26 available now ... for $120,082"
+  const metaMatch = html.match(/<meta\s+name="description"[^>]*content="([^"]+)"/i)
+  const metaDesc = metaMatch ? metaMatch[1] : ''
+  const stockMatch = metaDesc.match(/,\s*([A-Z0-9-]{3,20})\s+available/i)
+  const stocknumber = stockMatch ? stockMatch[1] : null
+  const priceMatch = metaDesc.match(/\$([\d,]+)/)
+  const price = priceMatch ? parseInt(priceMatch[1].replace(/,/g, '')) : 0
+
+  // First valid VIN in page body — typically the primary vehicle (similar vehicles below)
+  const vinMatch = html.match(/[A-HJ-NPR-Z0-9]{17}/)
+  const vin = vinMatch ? vinMatch[0] : null
+
+  // First km/miles count on the page
+  const mileageMatch = html.match(/(\d{1,3}(?:,\d{3})*)\s*km\b/i)
+  const mileage = mileageMatch ? parseInt(mileageMatch[1].replace(/,/g, '')) : 0
+
+  // All unique full-res inventory images for this vehicle
+  const imageRe = /https:\/\/media\.edealer\.ca\/w_1920[^"'\s]*\/inventory\/[A-Z0-9]+\.webp/g
+  const seen = new Set()
+  const image_urls = []
+  let m
+  while ((m = imageRe.exec(html)) !== null) {
+    if (!seen.has(m[0])) { seen.add(m[0]); image_urls.push(m[0]) }
+  }
+
+  // Only return if we got the essentials (VIN + year + make)
+  if (!vin || !year || !make) return null
+
+  return {
+    vin, year, make, model, price, mileage, stocknumber, condition,
+    onweb: true, salepending: false, image_urls,
+    _detail_url: url
+  }
+}
+
+// Fetch + parse all vehicles via the EDealer inventory sitemap (works on all EDealer dealer sites).
+// Returns full inventory regardless of pagination — solves the infinite-scroll limitation.
+async function fetchEDealerInventoryFromSitemap(origin) {
+  try {
+    const r = await fetch(`${origin}/inventory-listing-sitemap.xml`, { headers: { 'User-Agent': 'MarketSync-Sync/1.0' } })
+    if (!r.ok) return null
+    const xml = await r.text()
+    const urls = [...xml.matchAll(/<loc>([^<]+\/inventory\/[^<]+vdp\/?)<\/loc>/g)].map(m => m[1])
+    if (!urls.length) return null
+    console.log(`[sync] EDealer sitemap: ${urls.length} detail URLs to fetch`)
+
+    const vehicles = []
+    const CONCURRENCY = 6
+    for (let i = 0; i < urls.length; i += CONCURRENCY) {
+      const batch = urls.slice(i, i + CONCURRENCY)
+      const results = await Promise.all(batch.map(async (url) => {
+        try {
+          const res = await fetch(url, { headers: { 'User-Agent': 'MarketSync-Sync/1.0' } })
+          if (!res.ok) return null
+          return parseEDealerDetailPage(await res.text(), url)
+        } catch { return null }
+      }))
+      vehicles.push(...results.filter(Boolean))
+    }
+    console.log(`[sync] EDealer sitemap: extracted ${vehicles.length} valid vehicles`)
+    return vehicles
+  } catch (e) {
+    console.warn('[sync] EDealer sitemap fetch failed:', e.message)
+    return null
+  }
+}
+
 // Extract ALL unique full-res inventory image URLs from a single page of HTML.
 // Used for detail pages which contain ~10-30 photos of one vehicle.
 function extractEDealerImagesFromPage(html) {
@@ -1652,11 +1734,23 @@ async function runInventorySync(dealershipId) {
           }
           blocks.forEach(walk)
           const cars = extractCarsFromJsonLd(flat)
+          const origin = new URL(feed.feed_url).origin
+
+          // BEST PATH: try the EDealer inventory sitemap — full inventory, no pagination limit.
+          // This solves the "12 of 80 vehicles" problem on any EDealer site.
+          const sitemapVehicles = await fetchEDealerInventoryFromSitemap(origin)
+          if (sitemapVehicles && sitemapVehicles.length > cars.length) {
+            console.log(`[sync] Using sitemap walker (${sitemapVehicles.length}) instead of listing JSON-LD (${cars.length})`)
+            vehicles = sitemapVehicles
+            jsonCache.set(feed.feed_url, vehicles)
+            totalVehiclesFound += vehicles.length
+            // Skip the listing-JSON-LD path entirely — sitemap data is complete
+          } else {
+          // FALLBACK: listing-page JSON-LD + per-detail-page photo enrichment
           // Two image sources, in order of quality:
           //   1. Detail pages (per-vehicle pages have 10-30 photos each — best)
           //   2. Listing-page HTML carousel (fallback when detail fetch fails)
           // We fetch detail pages concurrently in batches of 4 to avoid hammering the dealer.
-          const origin = new URL(feed.feed_url).origin
           const detailUrls = extractEDealerDetailUrls(html, origin)
           let imageGroups = []
           if (detailUrls.length === cars.length && detailUrls.length > 0) {
@@ -1702,10 +1796,11 @@ async function runInventorySync(dealershipId) {
             // Detail page URL for "View on dealer site" links — falls back to listing page
             _detail_url: detailUrls[i] || feed.feed_url
           }))
-        }
-        jsonCache.set(feed.feed_url, vehicles)
-      }
-      totalVehiclesFound += vehicles.length
+          jsonCache.set(feed.feed_url, vehicles)
+          totalVehiclesFound += vehicles.length
+        }     // end fallback (no sitemap)
+        }   // end else (sitemap didn't outperform listing JSON-LD)
+      }   // end if (!jsonCache.has(feed.feed_url))
 
       // Capture every VIN from the raw feed — independent of feed_type filter — for auto-sold.
       // A vehicle still on the dealer's site should never get auto-marked sold, even if it
