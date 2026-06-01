@@ -750,8 +750,7 @@ async function buildUserStats(userId) {
   try {
     const { data, error } = await supabaseAdmin
       .from('listings')
-      .select('id, status, posted_at, fb_listing_url, inventory!inner(id, year, make, model, trim, price, image_urls)')
-      .eq('posted_by', userId)
+.select('id, status, posted_at, fb_listing_url, inventory!listings_inventory_id_fkey(id, year, make, model, trim, price, image_urls)')      .eq('posted_by', userId)
       .order('posted_at', { ascending: false })
       .limit(10)
     if (error) console.warn('Recent listings failed:', error.message)
