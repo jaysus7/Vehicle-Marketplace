@@ -1899,6 +1899,8 @@ async function runInventorySync(dealershipId) {
       console.error(feedErr.message)
     }
   }
+console.log(`[sync] allRawVins captured: ${allRawVins.size} of ${totalVehiclesFound} vehicles`)
+if (allRawVins.size > 0) {
 
   if (allRawVins.size > 0) {
     const vinList = [...allRawVins]
@@ -1916,7 +1918,11 @@ async function runInventorySync(dealershipId) {
       .eq('status', 'sold')
       .in('vin', vinList)
   }
-
+update inventory 
+set status = 'available'
+where dealership_id = 'YOUR_DEALERSHIP_ID'
+and status = 'sold'
+and last_synced_at > now() - interval '2 hours';
   // Count current available inventory after sync so the dashboard sees the truth
   const { count: availableCount } = await supabaseAdmin
     .from('inventory')
