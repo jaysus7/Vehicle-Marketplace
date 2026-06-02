@@ -1410,41 +1410,80 @@ function parseEDealerDetailPage(html, url) {
 // Returns full inventory regardless of pagination — solves the infinite-scroll limitation.
 async function fetchEDealerInventoryFromSitemap(origin) {
   try {
-    // Resolve the real origin after any www/non-www redirects
-    // fetch() follows redirects by default but the origin variable still holds
-    // the pre-redirect value — we need the final URL's origin instead.
-    const sitemapUrl = `${origin}/inventory-listing-sitemap.xml`
-    const r = await fetch(sitemapUrl, {
-      headers: { 'User-Agent': 'Mozilla/5.0 MarketSync-Sync/1.0' },
-      redirect: 'follow'
-    })
-    if (!r.ok) return null
-
-    // Use the final URL's origin (post-redirect) for all subsequent requests
-    const resolvedOrigin = new URL(r.url).origin
-
-    const xml = await r.text()
-    const urls = [...xml.matchAll(/<loc>([^<]+vdp\/?)<\/loc>/g)].map(m => m[1])
-    if (!urls.length) return null
-
-    console.log(`[sync] EDealer sitemap: ${urls.length} detail URLs to fetch`)
-
     const vehicles = []
-    const CONCURRENCY = 3
-    for (let i = 0; i < urls.length; i += CONCURRENCY) {
-      const batch = urls.slice(i, i + CONCURRENCY)
-      const results = await Promise.all(batch.map(async (url) => {
-        try {
-          const res = await fetch(url, {
-            headers: { 'User-Agent': 'Mozilla/5.0 MarketSync-Sync/1.0' },
-            redirect: 'follow'
+    let page = 1
+    let consecutiveEmpty = 0
+
+    while (consecutiveEmpty < 2) {
+      const url = `${origin}/inventory/?page=${page}`
+      const r = await fetch(url, {
+        headers: { 'User-Agent': 'Mozilla/5.0 MarketSync-Sync/1.0' },
+        redirect: 'follow'
+      })
+      if (!r.ok) break
+      const html = await r.text()
+
+      // Extract JSON-LD Car nodes from this listing page
+      const blocks = []
+      const re = /<script[^>]+type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi
+      let m
+      while ((m = re.exec(html)) !== null) {
+        try { blocks.push(JSON.parse(m[1])) } catch {}
+      }
+      const flat = []
+      const walk = (n) => {
+        if (!n) return
+        if (Array.isArray(n)) { n.forEach(walk); return }
+        if (Array.isArray(n['@graph'])) { n['@graph'].forEach(walk); return }
+        flat.push(n)
+      }
+      blocks.forEach(walk)
+      const cars = extractCarsFromJsonLd(flat)
+
+      if (cars.length === 0) {
+        consecutiveEmpty++
+      } else {
+        consecutiveEmpty = 0
+        // Also extract detail URLs for photo enrichment
+        const detailUrls = extractEDealerDetailUrls(html, new URL(r.url).origin)
+        const imageGroups = cars.length === detailUrls.length && detailUrls.length > 0
+          ? await fetchEDealerDetailImageGroups(detailUrls, 3)
+          : extractEDealerImageGroups(html)
+
+        for (let i = 0; i < cars.length; i++) {
+          const c = cars[i]
+          const img = Array.isArray(c.image) ? c.image[0] : c.image
+          vehicles.push({
+            vin: c.vehicleIdentificationNumber,
+            year: c.vehicleModelDate,
+            make: c.brand?.name || c.manufacturer?.name || c.brand,
+            model: c.model,
+            trim: (() => {
+              const cfg = typeof c.vehicleConfiguration === 'string' ? c.vehicleConfiguration : ''
+              const parts = cfg.split(' ')
+              return parts.length > 1 ? parts.slice(0, -1).join(' ') : null
+            })(),
+            price: c.offers?.price,
+            mileage: c.mileageFromOdometer?.value,
+            exteriorcolor: c.color,
+            interiorcolor: c.vehicleInteriorColor,
+            transmission: c.vehicleTransmission,
+            fueltype: c.vehicleEngine?.fuelType,
+            bodystyle: c.bodyType,
+            condition: (c.itemCondition || '').includes('NewCondition') ? 'New'
+                     : (c.itemCondition || '').includes('UsedCondition') ? 'Used' : null,
+            stocknumber: c.sku || c.productID,
+            onweb: true,
+            salepending: false,
+            image_urls: imageGroups[i]?.length ? imageGroups[i]
+              : (img && !img.includes('coming.png') ? [img] : []),
+            _detail_url: detailUrls[i] || url
           })
-          if (!res.ok) return null
-          const html = await res.text()
-          return parseEDealerDetailPage(html, url)
-        } catch { return null }
-      }))
-      vehicles.push(...results.filter(Boolean))
+        }
+        console.log(`[sync] EDealer page ${page}: ${cars.length} vehicles`)
+      }
+      page++
+      await sleep(500) // be polite between pages
     }
 
     console.log(`[sync] EDealer sitemap: extracted ${vehicles.length} valid vehicles`)
@@ -1454,7 +1493,6 @@ async function fetchEDealerInventoryFromSitemap(origin) {
     return null
   }
 }
-
 // Find vehicle detail-page anchors in EDealer listing HTML (one per vehicle, in document order)
 function extractEDealerDetailUrls(html, origin) {
   const re = /href="(\/inventory\/[a-zA-Z0-9-]+vdp\/?)"/g
