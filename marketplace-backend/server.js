@@ -1918,11 +1918,26 @@ if (allRawVins.size > 0) {
       .eq('status', 'sold')
       .in('vin', vinList)
   }
-update inventory 
-set status = 'available'
-where dealership_id = 'YOUR_DEALERSHIP_ID'
-and status = 'sold'
-and last_synced_at > now() - interval '2 hours';
+if (allRawVins.size > 0) {
+  // Only auto-mark sold if we captured VINs for at least 80% of vehicles
+  // Guards against incomplete syncs wrongly marking good inventory as sold
+  const captureRate = allRawVins.size / Math.max(totalVehiclesFound, 1)
+  if (captureRate < 0.8) {
+    console.warn(`[sync] VIN capture rate too low (${Math.round(captureRate * 100)}%) — skipping auto-sold to avoid false positives`)
+  } else {
+    const vinList = [...allRawVins]
+    await supabaseAdmin.from('inventory')
+      .update({ status: 'sold' })
+      .eq('dealership_id', dealershipId)
+      .eq('status', 'available')
+      .not('vin', 'in', `(${vinList.map(v => `"${v}"`).join(',')})`)
+    await supabaseAdmin.from('inventory')
+      .update({ status: 'available' })
+      .eq('dealership_id', dealershipId)
+      .eq('status', 'sold')
+      .in('vin', vinList)
+  }
+}
   // Count current available inventory after sync so the dashboard sees the truth
   const { count: availableCount } = await supabaseAdmin
     .from('inventory')
