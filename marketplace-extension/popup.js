@@ -104,9 +104,9 @@ async function loadInventory(token) {
 
   try {
     const [inventory, listingsRes] = await Promise.all([
-      apiGet('/inventory', token),
-      apiGet('/listings', token)
-    ])
+  apiGet('/inventory', token),
+  apiGet('/listings', token).catch(() => [])
+])
 
     const listings = Array.isArray(listingsRes)
       ? listingsRes

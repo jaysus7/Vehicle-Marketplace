@@ -580,11 +580,12 @@ app.post('/listings', requireAuth, async (req, res) => {
   res.json(data)
 })
 
-app.get('/listings', requireAuth, async (req, res) => {
-  const { data, error } = await supabaseAdmin.from('listings').select('*, inventory!inner(*)').eq('inventory.dealership_id', req.dealershipId).eq('status', 'posted').order('posted_at', { ascending: false })
-  if (error) return res.status(500).json({ error: error.message })
-  res.json(data)
-})
+const { data, error } = await supabaseAdmin
+  .from('listings')
+  .select('*, inventory!listings_inventory_id_fkey(*)')
+  .eq('inventory.dealership_id', req.dealershipId)
+  .eq('status', 'posted')
+  .order('posted_at', { ascending: false })
 
 app.patch('/listings/:id/delete', requireAuth, async (req, res) => {
   const { error } = await supabaseAdmin.from('listings').update({ status: 'deleted', deleted_at: new Date().toISOString() }).eq('id', req.params.id)
@@ -1166,6 +1167,7 @@ async function runInventorySync(dealershipId) {
             } else {
               imageGroups = extractEDealerImageGroups(html)
             }
+
             vehicles = cars.map((c, i) => ({
               vin: c.vehicleIdentificationNumber,
               year: c.vehicleModelDate,
@@ -1214,8 +1216,7 @@ async function runInventorySync(dealershipId) {
           exterior_color: v.exteriorcolor || null, interior_color: v.interiorcolor || null,
           transmission: v.transmission || null, fuel_type: mapFuel(v.fueltype),
           description: buildDescription(v), image_urls: imageUrls,
-          source_url: v._detail_url || (feed.feed_url.includes('/wp-content') ? `${feed.feed_url.split('/wp-content')[0]}/inventory/${v.stocknumber || ''}` : feed.feed_url),
-          status: v.salepending ? 'pending' : 'available',
+source_url: v._detail_url || (feed.feed_url.includes('/wp-content') ? feed.feed_url.split('/wp-content')[0] : feed.feed_url),          status: v.salepending ? 'pending' : 'available',
           last_synced_at: new Date().toISOString()
         }
         const { error } = await supabaseAdmin.from('inventory').upsert(record, { onConflict: 'vin' })
@@ -1226,26 +1227,32 @@ async function runInventorySync(dealershipId) {
     }
   }
 
-  // Auto-sold logic — only run if VIN capture rate is high enough to be trustworthy
-  console.log(`[sync] allRawVins captured: ${allRawVins.size} of ${totalVehiclesFound} vehicles`)
-  if (allRawVins.size > 0) {
-    const captureRate = allRawVins.size / Math.max(totalVehiclesFound, 1)
-    if (captureRate < 0.8) {
-      console.warn(`[sync] VIN capture rate too low (${Math.round(captureRate * 100)}%) — skipping auto-sold to avoid false positives`)
-    } else {
-      const vinList = [...allRawVins]
-      await supabaseAdmin.from('inventory')
-        .update({ status: 'sold' })
-        .eq('dealership_id', dealershipId)
-        .eq('status', 'available')
-        .not('vin', 'in', `(${vinList.map(v => `"${v}"`).join(',')})`)
-      await supabaseAdmin.from('inventory')
-        .update({ status: 'available' })
-        .eq('dealership_id', dealershipId)
-        .eq('status', 'sold')
-        .in('vin', vinList)
-    }
+// Auto-sold logic — only run if VIN capture rate is high enough to be trustworthy
+console.log(`[sync] allRawVins captured: ${allRawVins.size} of ${totalVehiclesFound} vehicles`)
+
+if (allRawVins.size > 0) {
+  const captureRate = allRawVins.size / Math.max(totalVehiclesFound, 1)
+  if (captureRate < 0.8) {
+    console.warn(`[sync] VIN capture rate too low (${Math.round(captureRate * 100)}%) — skipping auto-sold`)
+  } else {
+    
+    // Also fetch VINs currently in DB that we successfully upserted this run
+    // so we never accidentally mark something sold that we just synced
+    const vinList = [...new Set([...allRawVins, ...uniqueVins])]
+    
+    await supabaseAdmin.from('inventory')
+      .update({ status: 'sold' })
+      .eq('dealership_id', dealershipId)
+      .eq('status', 'available')
+      .not('vin', 'in', `(${vinList.map(v => `"${v}"`).join(',')})`)
+    
+    await supabaseAdmin.from('inventory')
+      .update({ status: 'available' })
+      .eq('dealership_id', dealershipId)
+      .eq('status', 'sold')
+      .in('vin', vinList)
   }
+}
 
   const { count: availableCount } = await supabaseAdmin
     .from('inventory').select('id', { count: 'exact', head: true })
