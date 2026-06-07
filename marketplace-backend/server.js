@@ -5,14 +5,15 @@ import ws from 'ws'
 import Stripe from 'stripe'
 import { createClient } from '@supabase/supabase-js'
 
-const missingEnvVars = []
-if (!process.env.SUPABASE_URL) missingEnvVars.push('SUPABASE_URL')
-if (!process.env.SUPABASE_ANON_KEY) missingEnvVars.push('SUPABASE_ANON_KEY')
-if (!process.env.SUPABASE_SERVICE_ROLE_KEY) missingEnvVars.push('SUPABASE_SERVICE_ROLE_KEY')
+const missingEnvVars = [];
+if (!process.env.SUPABASE_URL) missingEnvVars.push('SUPABASE_URL');
+if (!process.env.SUPABASE_ANON_KEY) missingEnvVars.push('SUPABASE_ANON_KEY');
+if (!process.env.SUPABASE_SERVICE_ROLE_KEY) missingEnvVars.push('SUPABASE_SERVICE_ROLE_KEY');
+
 if (missingEnvVars.length > 0) {
-  console.error('❌ CRITICAL CONFIGURATION ERROR: Missing Render Environment Keys:')
-  console.error(JSON.stringify(missingEnvVars, null, 2))
-  process.exit(1)
+  console.error('❌ CRITICAL CONFIGURATION ERROR: Missing Render Environment Keys:');
+  console.error(JSON.stringify(missingEnvVars, null, 2));
+  process.exit(1);
 }
 
 const app = express()
@@ -51,7 +52,7 @@ app.post('/stripe/webhook', express.raw({ type: 'application/json' }), async (re
       } else {
         await supabaseAdmin.from('dealerships').update(billing).eq('id', meta.dealership_id || session.client_reference_id)
       }
-      break
+      break;
     }
     case 'customer.subscription.deleted': {
       const subId = event.data.object.id
@@ -61,7 +62,7 @@ app.post('/stripe/webhook', express.raw({ type: 'application/json' }), async (re
       } else {
         await supabaseAdmin.from('dealerships').update({ billing_status: 'INACTIVE' }).eq('subscription_id', subId)
       }
-      break
+      break;
     }
     case 'invoice.payment_failed': {
       const invoice = event.data.object
@@ -73,7 +74,7 @@ app.post('/stripe/webhook', express.raw({ type: 'application/json' }), async (re
           await supabaseAdmin.from('dealerships').update({ billing_status: 'PAST_DUE' }).eq('stripe_customer_id', invoice.customer)
         }
       }
-      break
+      break;
     }
   }
   res.json({ received: true })
@@ -86,6 +87,7 @@ app.use(express.urlencoded({ extended: true }))
 async function requireAuth(req, res, next) {
   const token = req.headers.authorization?.replace('Bearer ', '')
   if (!token) return res.status(401).json({ error: 'No token provided' })
+
   try {
     const { data: { user }, error } = await supabase.auth.getUser(token)
     if (error || !user) return res.status(401).json({ error: 'AUTH_EXPIRED — please sign in again' })
@@ -95,12 +97,16 @@ async function requireAuth(req, res, next) {
       .select('*, dealerships(*)')
       .eq('id', user.id)
       .single()
+
     if (profileError || !profile) return res.status(401).json({ error: 'Profile not found' })
 
     if (!req.path.startsWith('/billing')) {
       const isPersonal = profile.dealerships?.is_personal === true
       const useProfileBilling = !profile.dealership_id || isPersonal
-      const status = useProfileBilling ? profile.billing_status : profile.dealerships?.billing_status
+      const status = useProfileBilling
+        ? profile.billing_status
+        : profile.dealerships?.billing_status
+
       if (status === 'INACTIVE' || status === 'PAST_DUE') {
         return res.status(402).json({ error: 'SUBSCRIPTION_REQUIRED' })
       }
@@ -131,6 +137,7 @@ app.post('/auth/login', async (req, res) => {
 
 app.post('/auth/register', async (req, res) => {
   const { accountRole, fullName, email, password, dealershipName, websiteUrl, feeds } = req.body
+
   if (!email || !password || !fullName || !accountRole) {
     return res.status(400).json({ error: 'Missing required registration fields' })
   }
@@ -140,30 +147,50 @@ app.post('/auth/register', async (req, res) => {
 
   let createdUserId = null
   let createdDealershipId = null
+
   try {
-    const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({ email, password, email_confirm: true })
+    const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
+      email,
+      password,
+      email_confirm: true
+    })
     if (authError) throw authError
     createdUserId = authData.user.id
 
     if (accountRole === 'dealer_admin') {
       const { data: dealership, error: dealerError } = await supabaseAdmin
         .from('dealerships')
-        .insert({ name: dealershipName, website_url: websiteUrl || null, billing_status: 'INACTIVE' })
-        .select().single()
+        .insert({
+          name: dealershipName,
+          website_url: websiteUrl || null,
+          billing_status: 'INACTIVE'
+        })
+        .select()
+        .single()
       if (dealerError) throw dealerError
       createdDealershipId = dealership.id
 
-      const { error: profileError } = await supabaseAdmin.from('profiles').insert({
-        id: createdUserId, dealership_id: createdDealershipId, full_name: fullName,
-        role: 'DEALER_ADMIN', account_role: accountRole, price_tier: 'DEALER'
-      })
+      const { error: profileError } = await supabaseAdmin
+        .from('profiles')
+        .insert({
+          id: createdUserId,
+          dealership_id: createdDealershipId,
+          full_name: fullName,
+          role: 'DEALER_ADMIN',
+          account_role: accountRole,
+          price_tier: 'DEALER'
+        })
       if (profileError) throw profileError
 
       if (Array.isArray(feeds) && feeds.length > 0) {
-        const feedRows = feeds.filter(f => f && f.url).map(f => ({
-          dealership_id: createdDealershipId, user_id: createdUserId,
-          feed_url: f.url, feed_type: f.type || 'all'
-        }))
+        const feedRows = feeds
+          .filter(f => f && f.url)
+          .map(f => ({
+            dealership_id: createdDealershipId,
+            user_id: createdUserId,
+            feed_url: f.url,
+            feed_type: f.type || 'all'
+          }))
         if (feedRows.length > 0) {
           const { error: feedError } = await supabaseAdmin.from('inventory_feeds').insert(feedRows)
           if (feedError) throw feedError
@@ -172,22 +199,38 @@ app.post('/auth/register', async (req, res) => {
     } else {
       const { data: personalDealership, error: personalErr } = await supabaseAdmin
         .from('dealerships')
-        .insert({ name: `${fullName} — Personal`, website_url: null, billing_status: null, is_personal: true })
-        .select().single()
+        .insert({
+          name: `${fullName} — Personal`,
+          website_url: null,
+          billing_status: null,
+          is_personal: true
+        })
+        .select()
+        .single()
       if (personalErr) throw personalErr
       createdDealershipId = personalDealership.id
 
-      const { error: profileError } = await supabaseAdmin.from('profiles').insert({
-        id: createdUserId, dealership_id: createdDealershipId, full_name: fullName,
-        role: 'SALES_REP', account_role: accountRole, price_tier: 'SOLO_INDIVIDUAL'
-      })
+      const { error: profileError } = await supabaseAdmin
+        .from('profiles')
+        .insert({
+          id: createdUserId,
+          dealership_id: createdDealershipId,
+          full_name: fullName,
+          role: 'SALES_REP',
+          account_role: accountRole,
+          price_tier: 'SOLO_INDIVIDUAL'
+        })
       if (profileError) throw profileError
     }
 
     res.json({ success: true, user_id: createdUserId })
   } catch (err) {
-    if (createdDealershipId) await supabaseAdmin.from('dealerships').delete().eq('id', createdDealershipId)
-    if (createdUserId) await supabaseAdmin.auth.admin.deleteUser(createdUserId)
+    if (createdDealershipId) {
+      await supabaseAdmin.from('dealerships').delete().eq('id', createdDealershipId)
+    }
+    if (createdUserId) {
+      await supabaseAdmin.auth.admin.deleteUser(createdUserId)
+    }
     res.status(400).json({ error: err.message || 'Registration failed' })
   }
 })
@@ -197,11 +240,28 @@ app.post('/auth/logout', requireAuth, async (req, res) => {
   res.json({ success: true })
 })
 
+app.post('/support', async (req, res) => {
+  const { name, email, subject, message } = req.body || {}
+  if (!name || !email || !message) return res.status(400).json({ error: 'name, email, and message are required' })
+
+  const { error } = await supabaseAdmin
+    .from('support_requests')
+    .insert({ name, email, subject: subject || null, message })
+  if (error) {
+    console.error('Support insert failed:', error.message)
+    return res.status(500).json({ error: 'Could not submit your request. Please try again.' })
+  }
+  console.log('📩 Support request:', { name, email, subject })
+  res.json({ success: true })
+})
+
 app.post('/auth/forgot-password', async (req, res) => {
   const { email } = req.body || {}
   if (!email) return res.status(400).json({ error: 'email required' })
   try {
-    await supabase.auth.resetPasswordForEmail(email, { redirectTo: `${process.env.FRONTEND_URL}/reset-password.html` })
+    await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: `${process.env.FRONTEND_URL}/reset-password.html`
+    })
   } catch (e) {
     console.warn('resetPasswordForEmail failed:', e.message)
   }
@@ -213,51 +273,60 @@ app.post('/auth/reset-password', async (req, res) => {
   if (!token) return res.status(401).json({ error: 'No token provided' })
   const { password } = req.body || {}
   if (!password || password.length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters' })
+
   const { data: { user }, error: userErr } = await supabase.auth.getUser(token)
   if (userErr || !user) return res.status(401).json({ error: 'Invalid recovery session' })
+
   const { error: updateErr } = await supabaseAdmin.auth.admin.updateUserById(user.id, { password })
   if (updateErr) return res.status(500).json({ error: updateErr.message })
+
   res.json({ success: true })
 })
 
 app.get('/auth/me', requireAuth, async (req, res) => {
-  res.json({ id: req.user.id, email: req.user.email, full_name: req.profile.full_name, role: req.profile.role, dealership: req.profile.dealerships })
+  res.json({
+    id: req.user.id,
+    email: req.user.email,
+    full_name: req.profile.full_name,
+    role: req.profile.role,
+    dealership: req.profile.dealerships
+  })
 })
 
-app.post('/support', async (req, res) => {
-  const { name, email, subject, message } = req.body || {}
-  if (!name || !email || !message) return res.status(400).json({ error: 'name, email, and message are required' })
-  const { error } = await supabaseAdmin.from('support_requests').insert({ name, email, subject: subject || null, message })
-  if (error) {
-    console.error('Support insert failed:', error.message)
-    return res.status(500).json({ error: 'Could not submit your request. Please try again.' })
-  }
-  console.log('📩 Support request:', { name, email, subject })
-  res.json({ success: true })
-})
-
-// ── 4. PROFILE MANAGEMENT ──
+// ── 4. PROFILE ──
 app.put('/profile/update', requireAuth, async (req, res) => {
   const { fullName, email, password, dealershipName, websiteUrl } = req.body
+
   try {
     const authUpdates = {}
     if (email) authUpdates.email = email
     if (password) authUpdates.password = password
+
     if (Object.keys(authUpdates).length > 0) {
       const { error: authError } = await supabaseAdmin.auth.admin.updateUserById(req.user.id, authUpdates)
       if (authError) throw authError
     }
+
     if (fullName) {
-      const { error: profileError } = await supabaseAdmin.from('profiles').update({ full_name: fullName }).eq('id', req.user.id)
+      const { error: profileError } = await supabaseAdmin
+        .from('profiles')
+        .update({ full_name: fullName })
+        .eq('id', req.user.id)
       if (profileError) throw profileError
     }
+
     if (req.dealershipId && (dealershipName || websiteUrl)) {
       const dealerUpdates = {}
       if (dealershipName) dealerUpdates.name = dealershipName
       if (websiteUrl) dealerUpdates.website_url = websiteUrl
-      const { error: dealerError } = await supabaseAdmin.from('dealerships').update(dealerUpdates).eq('id', req.dealershipId)
+
+      const { error: dealerError } = await supabaseAdmin
+        .from('dealerships')
+        .update(dealerUpdates)
+        .eq('id', req.dealershipId)
       if (dealerError) throw dealerError
     }
+
     res.json({ message: 'Workspace identity updated successfully' })
   } catch (err) {
     res.status(400).json({ error: err.message })
@@ -266,7 +335,9 @@ app.put('/profile/update', requireAuth, async (req, res) => {
 
 // ── 5. TEAM MANAGEMENT ──
 app.get('/dealership/team', requireAuth, async (req, res) => {
-  if (req.profile.role !== 'DEALER_ADMIN' && req.profile.role !== 'OWNER') return res.status(403).json({ error: 'Admins only' })
+  if (req.profile.role !== 'DEALER_ADMIN' && req.profile.role !== 'OWNER') {
+    return res.status(403).json({ error: 'Admins only' })
+  }
   if (!req.dealershipId) return res.json([])
 
   const { data: members, error } = await supabaseAdmin
@@ -279,37 +350,73 @@ app.get('/dealership/team', requireAuth, async (req, res) => {
   const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()
   const enriched = await Promise.all(members.map(async (m) => {
     const { data: authUser } = await supabaseAdmin.auth.admin.getUserById(m.id).catch(() => ({ data: null }))
-    const { count: listingsCount } = await supabaseAdmin.from('listings').select('id', { count: 'exact', head: true }).eq('posted_by', m.id).eq('status', 'posted')
-    const { count: soldCount } = await supabaseAdmin.from('listings').select('id', { count: 'exact', head: true }).eq('posted_by', m.id).eq('status', 'sold')
-    const { count: totalCount } = await supabaseAdmin.from('listings').select('id', { count: 'exact', head: true }).eq('posted_by', m.id)
-    const { count: loginsCount } = await supabaseAdmin.from('logins').select('id', { count: 'exact', head: true }).eq('user_id', m.id).gte('created_at', thirtyDaysAgo)
+    const { count: listingsCount } = await supabaseAdmin
+      .from('listings').select('id', { count: 'exact', head: true })
+      .eq('posted_by', m.id).eq('status', 'posted')
+    const { count: soldCount } = await supabaseAdmin
+      .from('listings').select('id', { count: 'exact', head: true })
+      .eq('posted_by', m.id).eq('status', 'sold')
+    const { count: totalCount } = await supabaseAdmin
+      .from('listings').select('id', { count: 'exact', head: true })
+      .eq('posted_by', m.id)
+    const { count: loginsCount } = await supabaseAdmin
+      .from('logins').select('id', { count: 'exact', head: true })
+      .eq('user_id', m.id).gte('created_at', thirtyDaysAgo)
     return {
-      id: m.id, full_name: m.full_name, role: m.role, account_role: m.account_role,
+      id: m.id,
+      full_name: m.full_name,
+      role: m.role,
+      account_role: m.account_role,
       email: authUser?.user?.email || null,
-      listings_posted: listingsCount || 0, listings_sold: soldCount || 0,
-      conversion_rate: (totalCount || 0) > 0 ? Math.round(((soldCount || 0) / (totalCount || 0)) * 100) : 0,
-      logins_30d: loginsCount || 0, created_at: m.created_at
+      listings_posted: listingsCount || 0,
+      listings_sold: soldCount || 0,
+      conversion_rate: (totalCount || 0) > 0
+        ? Math.round(((soldCount || 0) / (totalCount || 0)) * 100)
+        : 0,
+      logins_30d: loginsCount || 0,
+      created_at: m.created_at
     }
   }))
+
   res.json(enriched)
 })
 
 app.post('/admin/users/invite', requireAuth, async (req, res) => {
-  if (req.profile.role !== 'DEALER_ADMIN' && req.profile.role !== 'OWNER') return res.status(403).json({ error: 'Admins only' })
+  if (req.profile.role !== 'DEALER_ADMIN' && req.profile.role !== 'OWNER') {
+    return res.status(403).json({ error: 'Admins only' })
+  }
   if (!req.dealershipId) return res.status(400).json({ error: 'No dealership associated with this admin account' })
+
   const { email, full_name, password } = req.body || {}
   if (!email || !full_name) return res.status(400).json({ error: 'email and full_name required' })
+
   const tempPassword = password || Math.random().toString(36).slice(-12)
-  const { data: newUser, error: authError } = await supabaseAdmin.auth.admin.createUser({ email, password: tempPassword, email_confirm: true })
+
+  const { data: newUser, error: authError } = await supabaseAdmin.auth.admin.createUser({
+    email,
+    password: tempPassword,
+    email_confirm: true
+  })
   if (authError) return res.status(500).json({ error: authError.message })
+
   const { error: profileError } = await supabaseAdmin.from('profiles').insert({
-    id: newUser.user.id, dealership_id: req.dealershipId, full_name, role: 'SALES_REP', account_role: 'sales_rep'
+    id: newUser.user.id,
+    dealership_id: req.dealershipId,
+    full_name,
+    role: 'SALES_REP',
+    account_role: 'sales_rep'
   })
   if (profileError) {
     await supabaseAdmin.auth.admin.deleteUser(newUser.user.id)
     return res.status(500).json({ error: profileError.message })
   }
-  res.json({ success: true, user_id: newUser.user.id, email, temp_password: tempPassword })
+
+  res.json({
+    success: true,
+    user_id: newUser.user.id,
+    email,
+    temp_password: tempPassword
+  })
 })
 
 app.get('/dealership/leaderboard', requireAuth, async (req, res) => {
@@ -317,33 +424,59 @@ app.get('/dealership/leaderboard', requireAuth, async (req, res) => {
   if (req.profile.dealerships?.is_personal === true) return res.json({ ranking: [], total_members: 0 })
 
   const fourteenDaysAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString()
-  const { data: members } = await supabaseAdmin.from('profiles').select('id, full_name, role').eq('dealership_id', req.dealershipId)
+
+  const { data: members } = await supabaseAdmin
+    .from('profiles').select('id, full_name, role').eq('dealership_id', req.dealershipId)
   if (!members?.length) return res.json({ ranking: [], total_members: 0 })
 
   const rows = await Promise.all(members.map(async (m) => {
-    const { count: posted } = await supabaseAdmin.from('listings').select('id', { count: 'exact', head: true }).eq('posted_by', m.id).eq('status', 'posted')
-    const { count: sold } = await supabaseAdmin.from('listings').select('id', { count: 'exact', head: true }).eq('posted_by', m.id).eq('status', 'sold')
-    const { count: total } = await supabaseAdmin.from('listings').select('id', { count: 'exact', head: true }).eq('posted_by', m.id)
-    const { count: recentLogins } = await supabaseAdmin.from('logins').select('id', { count: 'exact', head: true }).eq('user_id', m.id).gte('created_at', fourteenDaysAgo)
+    const { count: posted } = await supabaseAdmin
+      .from('listings').select('id', { count: 'exact', head: true })
+      .eq('posted_by', m.id).eq('status', 'posted')
+    const { count: sold } = await supabaseAdmin
+      .from('listings').select('id', { count: 'exact', head: true })
+      .eq('posted_by', m.id).eq('status', 'sold')
+    const { count: total } = await supabaseAdmin
+      .from('listings').select('id', { count: 'exact', head: true })
+      .eq('posted_by', m.id)
+    const { count: recentLogins } = await supabaseAdmin
+      .from('logins').select('id', { count: 'exact', head: true })
+      .eq('user_id', m.id).gte('created_at', fourteenDaysAgo)
     return {
-      id: m.id, name: m.full_name, role: m.role,
-      total_listings: total || 0, active_listings: posted || 0, sold_listings: sold || 0,
+      id: m.id,
+      name: m.full_name,
+      role: m.role,
+      total_listings: total || 0,
+      active_listings: posted || 0,
+      sold_listings: sold || 0,
       recent_logins: recentLogins || 0,
-      conversion_rate: (total || 0) > 0 ? Math.round(((sold || 0) / (total || 0)) * 100) : 0
+      conversion_rate: (total || 0) > 0
+        ? Math.round(((sold || 0) / (total || 0)) * 100)
+        : 0
     }
   }))
 
-  const ranking = rows.slice().sort((a, b) =>
-    b.total_listings - a.total_listings || b.sold_listings - a.sold_listings ||
-    b.recent_logins - a.recent_logins || a.name.localeCompare(b.name)
-  ).map((r, i) => ({ ...r, rank: i + 1 }))
+  const ranking = rows
+    .slice()
+    .sort((a, b) =>
+      b.total_listings - a.total_listings
+      || b.sold_listings - a.sold_listings
+      || b.recent_logins - a.recent_logins
+      || a.name.localeCompare(b.name)
+    )
+    .map((r, i) => ({ ...r, rank: i + 1 }))
 
   const totalListings = rows.reduce((s, r) => s + r.total_listings, 0)
   const totalSold = rows.reduce((s, r) => s + r.sold_listings, 0)
+
   res.json({
-    ranking, total_members: members.length,
-    team_total_listings: totalListings, team_total_sold: totalSold,
-    team_conversion_rate: totalListings > 0 ? Math.round((totalSold / totalListings) * 100) : 0
+    ranking,
+    total_members: members.length,
+    team_total_listings: totalListings,
+    team_total_sold: totalSold,
+    team_conversion_rate: totalListings > 0
+      ? Math.round((totalSold / totalListings) * 100)
+      : 0
   })
 })
 
@@ -351,7 +484,8 @@ app.get('/dealership/activity', requireAuth, async (req, res) => {
   if (!req.dealershipId) return res.json({ events: [] })
   if (req.profile.dealerships?.is_personal === true) return res.json({ events: [] })
 
-  const { data: members } = await supabaseAdmin.from('profiles').select('id, full_name').eq('dealership_id', req.dealershipId)
+  const { data: members } = await supabaseAdmin
+    .from('profiles').select('id, full_name').eq('dealership_id', req.dealershipId)
   if (!members?.length) return res.json({ events: [] })
 
   const memberMap = new Map(members.map(m => [m.id, m.full_name]))
@@ -359,7 +493,7 @@ app.get('/dealership/activity', requireAuth, async (req, res) => {
 
   const { data: listings } = await supabaseAdmin
     .from('listings')
-    .select('id, status, posted_at, deleted_at, posted_by, inventory!inner(year, make, model)')
+    .select('id, status, posted_at, deleted_at, posted_by, inventory!listings_inventory_id_fkey(year, make, model)')
     .in('posted_by', memberIds)
     .order('posted_at', { ascending: false })
     .limit(50)
@@ -368,25 +502,36 @@ app.get('/dealership/activity', requireAuth, async (req, res) => {
   for (const l of listings || []) {
     const vehicle = `${l.inventory?.year || ''} ${l.inventory?.make || ''} ${l.inventory?.model || ''}`.trim()
     const userName = memberMap.get(l.posted_by) || 'Unknown'
-    if (l.posted_at) events.push({ type: 'posted', user_name: userName, vehicle, timestamp: l.posted_at, points: 100 })
-    if (l.status === 'sold' && l.deleted_at) events.push({ type: 'sold', user_name: userName, vehicle, timestamp: l.deleted_at, points: 500 })
+    if (l.posted_at) {
+      events.push({ type: 'posted', user_name: userName, vehicle, timestamp: l.posted_at, points: 100 })
+    }
+    if (l.status === 'sold' && l.deleted_at) {
+      events.push({ type: 'sold', user_name: userName, vehicle, timestamp: l.deleted_at, points: 500 })
+    }
   }
   events.sort((a, b) => (b.timestamp || '').localeCompare(a.timestamp || ''))
   res.json({ events: events.slice(0, 25) })
 })
 
 app.get('/dealership/charts', requireAuth, async (req, res) => {
-  if (req.profile.role !== 'DEALER_ADMIN' && req.profile.role !== 'OWNER') return res.status(403).json({ error: 'Admins only' })
+  if (req.profile.role !== 'DEALER_ADMIN' && req.profile.role !== 'OWNER') {
+    return res.status(403).json({ error: 'Admins only' })
+  }
   if (!req.dealershipId) return res.json({ daily: [], by_rep: [] })
 
   const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()
   const fourteenDaysAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString()
 
-  const { data: members } = await supabaseAdmin.from('profiles').select('id, full_name').eq('dealership_id', req.dealershipId)
+  const { data: members } = await supabaseAdmin
+    .from('profiles').select('id, full_name').eq('dealership_id', req.dealershipId)
   if (!members?.length) return res.json({ daily: [], by_rep: [] })
   const memberIds = members.map(m => m.id)
 
-  const { data: recentListings } = await supabaseAdmin.from('listings').select('posted_at, posted_by').in('posted_by', memberIds).gte('posted_at', thirtyDaysAgo)
+  const { data: recentListings } = await supabaseAdmin
+    .from('listings').select('posted_at, posted_by')
+    .in('posted_by', memberIds)
+    .gte('posted_at', thirtyDaysAgo)
+
   const dayBuckets = new Map()
   for (let i = 29; i >= 0; i--) {
     const d = new Date(Date.now() - i * 24 * 60 * 60 * 1000)
@@ -397,7 +542,8 @@ app.get('/dealership/charts', requireAuth, async (req, res) => {
     if (dayBuckets.has(key)) dayBuckets.set(key, dayBuckets.get(key) + 1)
   }
 
-  const { data: allListings } = await supabaseAdmin.from('listings').select('posted_by, status').in('posted_by', memberIds)
+  const { data: allListings } = await supabaseAdmin
+    .from('listings').select('posted_by, status').in('posted_by', memberIds)
   const repTotals = new Map(members.map(m => [m.id, { id: m.id, name: m.full_name, count: 0, sold: 0 }]))
   for (const l of allListings || []) {
     const entry = repTotals.get(l.posted_by)
@@ -406,7 +552,9 @@ app.get('/dealership/charts', requireAuth, async (req, res) => {
     if (l.status === 'sold') entry.sold++
   }
 
-  const { data: logins14 } = await supabaseAdmin.from('logins').select('user_id, created_at').in('user_id', memberIds).gte('created_at', fourteenDaysAgo)
+  const { data: logins14 } = await supabaseAdmin
+    .from('logins').select('user_id, created_at')
+    .in('user_id', memberIds).gte('created_at', fourteenDaysAgo)
   const activeDaysByRep = new Map(members.map(m => [m.id, new Set()]))
   for (const l of logins14 || []) {
     const day = (l.created_at || '').slice(0, 10)
@@ -414,12 +562,18 @@ app.get('/dealership/charts', requireAuth, async (req, res) => {
   }
 
   const by_rep = [...repTotals.values()].sort((a, b) => b.count - a.count)
-  const sold_by_rep = [...repTotals.values()].map(r => ({ name: r.name, count: r.sold })).sort((a, b) => b.count - a.count)
-  const active_days_by_rep = [...repTotals.values()].map(r => ({ name: r.name, count: activeDaysByRep.get(r.id)?.size || 0 })).sort((a, b) => b.count - a.count)
+  const sold_by_rep = [...repTotals.values()]
+    .map(r => ({ name: r.name, count: r.sold }))
+    .sort((a, b) => b.count - a.count)
+  const active_days_by_rep = [...repTotals.values()]
+    .map(r => ({ name: r.name, count: activeDaysByRep.get(r.id)?.size || 0 }))
+    .sort((a, b) => b.count - a.count)
 
   res.json({
     daily: [...dayBuckets.entries()].map(([date, count]) => ({ date, count })),
-    by_rep, sold_by_rep, active_days_by_rep
+    by_rep,
+    sold_by_rep,
+    active_days_by_rep
   })
 })
 
@@ -432,19 +586,26 @@ app.get('/dashboard/insights', requireAuth, async (req, res) => {
   const isAdmin = req.profile.role === 'DEALER_ADMIN' || req.profile.role === 'OWNER'
   const now = new Date()
   const day = now.getUTCDay() || 7
-  const startOfWeek = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - (day - 1))).toISOString()
+  const startOfWeek = new Date(Date.UTC(
+    now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - (day - 1)
+  )).toISOString()
 
-  let inventorySynced = 0, inventoryAvailable = 0, listingsPosted = 0, soldThisMonth = 0, activeDaysThisWeek = 0
-  let listingsByAdmin = 0, listingsByReps = 0
+  let inventorySynced = 0, inventoryAvailable = 0, listingsPosted = 0
+  let soldThisMonth = 0, activeDaysThisWeek = 0, listingsByAdmin = 0, listingsByReps = 0
   const warnings = {}
 
   try {
     if (req.dealershipId) {
-      const { count, error } = await supabaseAdmin.from('inventory').select('id', { count: 'exact', head: true }).eq('dealership_id', req.dealershipId)
+      const { count, error } = await supabaseAdmin
+        .from('inventory').select('id', { count: 'exact', head: true })
+        .eq('dealership_id', req.dealershipId)
       if (error) warnings.inventory_total = error.message
       else inventorySynced = count || 0
 
-      const { count: avail, error: availErr } = await supabaseAdmin.from('inventory').select('id', { count: 'exact', head: true }).eq('dealership_id', req.dealershipId).eq('status', 'available')
+      const { count: avail, error: availErr } = await supabaseAdmin
+        .from('inventory').select('id', { count: 'exact', head: true })
+        .eq('dealership_id', req.dealershipId)
+        .eq('status', 'available')
       if (availErr) warnings.inventory_available = availErr.message
       else inventoryAvailable = avail || 0
     }
@@ -452,39 +613,64 @@ app.get('/dashboard/insights', requireAuth, async (req, res) => {
 
   try {
     if (isAdmin && req.dealershipId) {
-      const { data: members, error: memErr } = await supabaseAdmin.from('profiles').select('id, role').eq('dealership_id', req.dealershipId)
-      if (memErr) warnings.listings = memErr.message
-      else {
+      const { data: members, error: memErr } = await supabaseAdmin
+        .from('profiles').select('id, role').eq('dealership_id', req.dealershipId)
+      if (memErr) {
+        warnings.listings = memErr.message
+      } else {
         const memberIds = (members || []).map(m => m.id)
-        const adminIds = (members || []).filter(m => m.role === 'DEALER_ADMIN' || m.role === 'OWNER').map(m => m.id)
-        const repIds = (members || []).filter(m => m.role === 'SALES_REP').map(m => m.id)
+        const adminIds = (members || [])
+          .filter(m => m.role === 'DEALER_ADMIN' || m.role === 'OWNER')
+          .map(m => m.id)
+        const repIds = (members || [])
+          .filter(m => m.role === 'SALES_REP')
+          .map(m => m.id)
+
         if (memberIds.length) {
-          const { count: total } = await supabaseAdmin.from('listings').select('id', { count: 'exact', head: true }).in('posted_by', memberIds)
+          const { count: total } = await supabaseAdmin
+            .from('listings').select('id', { count: 'exact', head: true })
+            .in('posted_by', memberIds)
           listingsPosted = total || 0
-          const { count: sold } = await supabaseAdmin.from('listings').select('id', { count: 'exact', head: true }).in('posted_by', memberIds).eq('status', 'sold')
+
+          const { count: sold } = await supabaseAdmin
+            .from('listings').select('id', { count: 'exact', head: true })
+            .in('posted_by', memberIds).eq('status', 'sold')
           soldThisMonth = sold || 0
         }
         if (adminIds.length) {
-          const { count } = await supabaseAdmin.from('listings').select('id', { count: 'exact', head: true }).in('posted_by', adminIds)
+          const { count } = await supabaseAdmin
+            .from('listings').select('id', { count: 'exact', head: true })
+            .in('posted_by', adminIds)
           listingsByAdmin = count || 0
         }
         if (repIds.length) {
-          const { count } = await supabaseAdmin.from('listings').select('id', { count: 'exact', head: true }).in('posted_by', repIds)
+          const { count } = await supabaseAdmin
+            .from('listings').select('id', { count: 'exact', head: true })
+            .in('posted_by', repIds)
           listingsByReps = count || 0
         }
       }
     } else {
-      const { count: total, error: totalErr } = await supabaseAdmin.from('listings').select('id', { count: 'exact', head: true }).eq('posted_by', req.user.id)
+      const { count: total, error: totalErr } = await supabaseAdmin
+        .from('listings').select('id', { count: 'exact', head: true })
+        .eq('posted_by', req.user.id)
       if (totalErr) warnings.listings = totalErr.message
       else listingsPosted = total || 0
-      const { count: sold, error: soldErr } = await supabaseAdmin.from('listings').select('id', { count: 'exact', head: true }).eq('posted_by', req.user.id).eq('status', 'sold')
+
+      const { count: sold, error: soldErr } = await supabaseAdmin
+        .from('listings').select('id', { count: 'exact', head: true })
+        .eq('posted_by', req.user.id).eq('status', 'sold')
       if (soldErr) warnings.sold = soldErr.message
       else soldThisMonth = sold || 0
     }
   } catch (e) { warnings.listings = e.message }
 
   try {
-    const { data, error } = await supabaseAdmin.from('logins').select('created_at').eq('user_id', req.user.id).gte('created_at', startOfWeek)
+    const { data, error } = await supabaseAdmin
+      .from('logins')
+      .select('created_at')
+      .eq('user_id', req.user.id)
+      .gte('created_at', startOfWeek)
     if (error) warnings.logins = error.message
     else {
       const distinctDays = new Set((data || []).map(l => l.created_at.slice(0, 10)))
@@ -492,37 +678,78 @@ app.get('/dashboard/insights', requireAuth, async (req, res) => {
     }
   } catch (e) { warnings.logins = e.message }
 
-  if (Object.keys(warnings).length) console.warn('Insights partial:', { user: req.user.id, role: req.profile.role, warnings })
+  if (Object.keys(warnings).length) {
+    console.warn('Insights partial:', { user: req.user.id, role: req.profile.role, warnings })
+  }
 
   res.json({
-    inventory_available: inventoryAvailable, inventory_synced: inventorySynced,
-    listings_posted: listingsPosted, listings_by_admin: listingsByAdmin, listings_by_reps: listingsByReps,
-    sold_this_month: soldThisMonth, active_days_this_week: activeDaysThisWeek,
+    inventory_available: inventoryAvailable,
+    inventory_synced: inventorySynced,
+    listings_posted: listingsPosted,
+    listings_by_admin: listingsByAdmin,
+    listings_by_reps: listingsByReps,
+    sold_this_month: soldThisMonth,
+    active_days_this_week: activeDaysThisWeek,
     scope: isAdmin ? 'dealership' : 'personal',
     warnings: Object.keys(warnings).length ? warnings : undefined
   })
 })
 
 app.get('/dealership/team/:userId/stats', requireAuth, async (req, res) => {
-  if (req.profile.role !== 'DEALER_ADMIN' && req.profile.role !== 'OWNER') return res.status(403).json({ error: 'Admins only' })
-  const { data: target } = await supabaseAdmin.from('profiles').select('id, full_name, role, dealership_id, created_at').eq('id', req.params.userId).single()
-  if (!target || target.dealership_id !== req.dealershipId) return res.status(404).json({ error: 'User not found in your dealership' })
-  const { data: authUser } = await supabaseAdmin.auth.admin.getUserById(req.params.userId).catch(() => ({ data: null }))
+  if (req.profile.role !== 'DEALER_ADMIN' && req.profile.role !== 'OWNER') {
+    return res.status(403).json({ error: 'Admins only' })
+  }
+
+  const { data: target } = await supabaseAdmin
+    .from('profiles')
+    .select('id, full_name, role, dealership_id, created_at')
+    .eq('id', req.params.userId)
+    .single()
+  if (!target || target.dealership_id !== req.dealershipId) {
+    return res.status(404).json({ error: 'User not found in your dealership' })
+  }
+
+  const { data: authUser } = await supabaseAdmin.auth.admin
+    .getUserById(req.params.userId).catch(() => ({ data: null }))
   const stats = await buildUserStats(req.params.userId)
-  res.json({ profile: { id: target.id, full_name: target.full_name, email: authUser?.user?.email || null, role: target.role, joined_at: target.created_at }, ...stats })
+  res.json({
+    profile: {
+      id: target.id,
+      full_name: target.full_name,
+      email: authUser?.user?.email || null,
+      role: target.role,
+      joined_at: target.created_at
+    },
+    ...stats
+  })
 })
 
 async function buildUserStats(userId) {
   const countOf = async (status) => {
     try {
-      let q = supabaseAdmin.from('listings').select('id', { count: 'exact', head: true }).eq('posted_by', userId)
+      let q = supabaseAdmin
+        .from('listings')
+        .select('id', { count: 'exact', head: true })
+        .eq('posted_by', userId)
       if (status) q = q.eq('status', status)
       const { count, error } = await q
-      if (error) { console.warn(`countOf(${status || 'all'}) failed:`, error.message); return 0 }
+      if (error) {
+        console.warn(`countOf(${status || 'all'}) failed:`, error.message)
+        return 0
+      }
       return count || 0
-    } catch (e) { console.warn(`countOf(${status || 'all'}) threw:`, e.message); return 0 }
+    } catch (e) {
+      console.warn(`countOf(${status || 'all'}) threw:`, e.message)
+      return 0
+    }
   }
-  const [total, active, sold, deleted] = await Promise.all([countOf(null), countOf('posted'), countOf('sold'), countOf('deleted')])
+
+  const [total, active, sold, deleted] = await Promise.all([
+    countOf(null),
+    countOf('posted'),
+    countOf('sold'),
+    countOf('deleted')
+  ])
 
   let recent = []
   try {
@@ -534,40 +761,74 @@ async function buildUserStats(userId) {
       .limit(10)
     if (error) console.warn('Recent listings failed:', error.message)
     else recent = data || []
-  } catch (e) { console.warn('Recent listings threw:', e.message) }
+  } catch (e) {
+    console.warn('Recent listings threw:', e.message)
+  }
 
   return {
     totals: { total, active, sold, deleted },
-    recent: (recent || []).map(l => ({ listing_id: l.id, status: l.status, posted_at: l.posted_at, fb_listing_url: l.fb_listing_url, vehicle: l.inventory }))
+    recent: (recent || []).map(l => ({
+      listing_id: l.id,
+      status: l.status,
+      posted_at: l.posted_at,
+      fb_listing_url: l.fb_listing_url,
+      vehicle: l.inventory
+    }))
   }
 }
 
 app.delete('/admin/users/:id', requireAuth, async (req, res) => {
-  if (req.profile.role !== 'DEALER_ADMIN' && req.profile.role !== 'OWNER') return res.status(403).json({ error: 'Admins only' })
+  if (req.profile.role !== 'DEALER_ADMIN' && req.profile.role !== 'OWNER') {
+    return res.status(403).json({ error: 'Admins only' })
+  }
   if (req.params.id === req.user.id) return res.status(400).json({ error: 'Cannot remove yourself' })
-  const { data: target } = await supabaseAdmin.from('profiles').select('id, dealership_id, role').eq('id', req.params.id).single()
-  if (!target || target.dealership_id !== req.dealershipId) return res.status(404).json({ error: 'User not found in your dealership' })
-  if (target.role === 'DEALER_ADMIN' || target.role === 'OWNER') return res.status(403).json({ error: 'Cannot remove an admin/owner from the dashboard' })
+
+  const { data: target } = await supabaseAdmin
+    .from('profiles')
+    .select('id, dealership_id, role')
+    .eq('id', req.params.id)
+    .single()
+  if (!target || target.dealership_id !== req.dealershipId) {
+    return res.status(404).json({ error: 'User not found in your dealership' })
+  }
+  if (target.role === 'DEALER_ADMIN' || target.role === 'OWNER') {
+    return res.status(403).json({ error: 'Cannot remove an admin/owner from the dashboard' })
+  }
+
   await supabaseAdmin.from('profiles').delete().eq('id', req.params.id)
   await supabaseAdmin.auth.admin.deleteUser(req.params.id)
   res.json({ success: true })
 })
 
-// ── 6. INVENTORY LOOKUPS ──
+// ── 6. INVENTORY ──
 app.get('/inventory', requireAuth, async (req, res) => {
-  const { data, error } = await supabaseAdmin.from('inventory').select('*').eq('dealership_id', req.dealershipId).eq('status', 'available').order('created_at', { ascending: false })
+  const { data, error } = await supabaseAdmin
+    .from('inventory')
+    .select('*')
+    .eq('dealership_id', req.dealershipId)
+    .eq('status', 'available')
+    .order('created_at', { ascending: false })
   if (error) return res.status(500).json({ error: error.message })
   res.json(data)
 })
 
 app.get('/inventory/all', requireAuth, async (req, res) => {
-  const { data, error } = await supabaseAdmin.from('inventory').select('id, vin, year, make, model, trim, price, mileage, exterior_color, status, image_urls, source_url, last_synced_at').eq('dealership_id', req.dealershipId).order('created_at', { ascending: false })
+  const { data, error } = await supabaseAdmin
+    .from('inventory')
+    .select('id, vin, year, make, model, trim, price, mileage, exterior_color, status, image_urls, source_url, last_synced_at')
+    .eq('dealership_id', req.dealershipId)
+    .order('created_at', { ascending: false })
   if (error) return res.status(500).json({ error: error.message })
   res.json(data)
 })
 
 app.get('/inventory/:id', requireAuth, async (req, res) => {
-  const { data, error } = await supabaseAdmin.from('inventory').select('*').eq('id', req.params.id).eq('dealership_id', req.dealershipId).single()
+  const { data, error } = await supabaseAdmin
+    .from('inventory')
+    .select('*')
+    .eq('id', req.params.id)
+    .eq('dealership_id', req.dealershipId)
+    .single()
   if (error) return res.status(404).json({ error: 'Not found' })
   res.json(data)
 })
@@ -575,20 +836,40 @@ app.get('/inventory/:id', requireAuth, async (req, res) => {
 // ── 7. LISTINGS ──
 app.post('/listings', requireAuth, async (req, res) => {
   const { inventory_id, fb_listing_id, fb_listing_url } = req.body
-  const { data, error } = await supabaseAdmin.from('listings').insert({ inventory_id, posted_by: req.user.id, fb_listing_id, fb_listing_url, status: 'posted', posted_at: new Date().toISOString() }).select().single()
+  const { data, error } = await supabaseAdmin
+    .from('listings')
+    .insert({
+      inventory_id,
+      posted_by: req.user.id,
+      fb_listing_id,
+      fb_listing_url,
+      status: 'posted',
+      posted_at: new Date().toISOString()
+    })
+    .select()
+    .single()
   if (error) return res.status(500).json({ error: error.message })
   res.json(data)
 })
 
-const { data, error } = await supabaseAdmin
-  .from('listings')
-  .select('*, inventory!listings_inventory_id_fkey(*)')
-  .eq('inventory.dealership_id', req.dealershipId)
-  .eq('status', 'posted')
-  .order('posted_at', { ascending: false })
+// ── FIX: use explicit FK hint + JS-side dealership filter to avoid ambiguous join ──
+app.get('/listings', requireAuth, async (req, res) => {
+  const { data, error } = await supabaseAdmin
+    .from('listings')
+    .select('*, inventory!listings_inventory_id_fkey(*)')
+    .eq('status', 'posted')
+    .order('posted_at', { ascending: false })
+  if (error) return res.status(500).json({ error: error.message })
+  // Filter to this dealership only
+  const filtered = (data || []).filter(l => l.inventory?.dealership_id === req.dealershipId)
+  res.json(filtered)
+})
 
 app.patch('/listings/:id/delete', requireAuth, async (req, res) => {
-  const { error } = await supabaseAdmin.from('listings').update({ status: 'deleted', deleted_at: new Date().toISOString() }).eq('id', req.params.id)
+  const { error } = await supabaseAdmin
+    .from('listings')
+    .update({ status: 'deleted', deleted_at: new Date().toISOString() })
+    .eq('id', req.params.id)
   if (error) return res.status(500).json({ error: error.message })
   res.json({ success: true })
 })
@@ -596,10 +877,18 @@ app.patch('/listings/:id/delete', requireAuth, async (req, res) => {
 app.post('/listings/sync-fb-sold', requireAuth, async (req, res) => {
   const { fb_listing_url } = req.body || {}
   if (!fb_listing_url) return res.status(400).json({ error: 'fb_listing_url required' })
+
   const normalizedUrl = fb_listing_url.split('?')[0].split('#')[0]
-  const { data: candidates } = await supabaseAdmin.from('listings').select('id, inventory_id, status, fb_listing_url, inventory!inner(dealership_id)').eq('status', 'posted').ilike('fb_listing_url', `${normalizedUrl}%`)
-  const listing = (candidates || []).find(l => l.inventory.dealership_id === req.dealershipId)
+
+  const { data: candidates } = await supabaseAdmin
+    .from('listings')
+    .select('id, inventory_id, status, fb_listing_url, inventory!listings_inventory_id_fkey(dealership_id)')
+    .eq('status', 'posted')
+    .ilike('fb_listing_url', `${normalizedUrl}%`)
+
+  const listing = (candidates || []).find(l => l.inventory?.dealership_id === req.dealershipId)
   if (!listing) return res.json({ success: false, matched: false })
+
   const now = new Date().toISOString()
   await supabaseAdmin.from('listings').update({ status: 'sold', deleted_at: now }).eq('id', listing.id)
   await supabaseAdmin.from('inventory').update({ status: 'sold' }).eq('id', listing.inventory_id)
@@ -607,14 +896,29 @@ app.post('/listings/sync-fb-sold', requireAuth, async (req, res) => {
 })
 
 app.post('/listings/:id/sold', requireAuth, async (req, res) => {
-  const { data: listing, error: lookupErr } = await supabaseAdmin.from('listings').select('id, inventory_id, inventory!inner(dealership_id)').eq('id', req.params.id).single()
+  const { data: listing, error: lookupErr } = await supabaseAdmin
+    .from('listings')
+    .select('id, inventory_id, inventory!listings_inventory_id_fkey(dealership_id)')
+    .eq('id', req.params.id)
+    .single()
   if (lookupErr || !listing) return res.status(404).json({ error: 'Listing not found' })
-  if (listing.inventory.dealership_id !== req.dealershipId) return res.status(403).json({ error: 'Not your dealership' })
+  if (listing.inventory?.dealership_id !== req.dealershipId) {
+    return res.status(403).json({ error: 'Not your dealership' })
+  }
+
   const now = new Date().toISOString()
-  const { error: listingErr } = await supabaseAdmin.from('listings').update({ status: 'sold', deleted_at: now }).eq('id', req.params.id)
+  const { error: listingErr } = await supabaseAdmin
+    .from('listings')
+    .update({ status: 'sold', deleted_at: now })
+    .eq('id', req.params.id)
   if (listingErr) return res.status(500).json({ error: listingErr.message })
-  const { error: invErr } = await supabaseAdmin.from('inventory').update({ status: 'sold' }).eq('id', listing.inventory_id)
+
+  const { error: invErr } = await supabaseAdmin
+    .from('inventory')
+    .update({ status: 'sold' })
+    .eq('id', listing.inventory_id)
   if (invErr) return res.status(500).json({ error: invErr.message })
+
   res.json({ success: true })
 })
 
@@ -622,20 +926,37 @@ app.post('/listings/:id/sold', requireAuth, async (req, res) => {
 app.post('/billing/checkout', requireAuth, async (req, res) => {
   const isPersonal = req.profile.dealerships?.is_personal === true
   const isSolo = !req.dealershipId || isPersonal
+
   if (req.profile.role === 'SALES_REP' && req.dealershipId && !isPersonal) {
     return res.status(403).json({ error: 'Sales reps under a dealership do not manage billing.' })
   }
-  const priceId = req.body?.priceId || (isSolo ? process.env.STRIPE_SOLO_PRICE_ID : process.env.STRIPE_DEALER_PRICE_ID)
-  if (!priceId) return res.status(500).json({ error: `Missing Stripe price ID env var` })
-  const existingCustomerId = isSolo ? req.profile.stripe_customer_id : req.profile.dealerships?.stripe_customer_id
-  const metadata = isSolo ? { type: 'solo_rep', user_id: req.user.id } : { type: 'dealership', dealership_id: req.dealershipId }
+
+  const priceId = req.body?.priceId || (isSolo
+    ? process.env.STRIPE_SOLO_PRICE_ID
+    : process.env.STRIPE_DEALER_PRICE_ID)
+  if (!priceId) return res.status(500).json({ error: 'Missing Stripe price ID env var' })
+
+  const existingCustomerId = isSolo
+    ? req.profile.stripe_customer_id
+    : req.profile.dealerships?.stripe_customer_id
+
+  const metadata = isSolo
+    ? { type: 'solo_rep', user_id: req.user.id }
+    : { type: 'dealership', dealership_id: req.dealershipId }
+
   const clientRefId = isSolo ? req.user.id : req.dealershipId
+
   try {
     if (existingCustomerId) {
       try {
-        const portalSession = await stripe.billingPortal.sessions.create({ customer: existingCustomerId, return_url: `${process.env.FRONTEND_URL}/dashboard.html` })
+        const portalSession = await stripe.billingPortal.sessions.create({
+          customer: existingCustomerId,
+          return_url: `${process.env.FRONTEND_URL}/dashboard.html`
+        })
         return res.json({ url: portalSession.url })
-      } catch (portalErr) { console.warn('Portal initialization bypassed:', portalErr.message) }
+      } catch (portalErr) {
+        console.warn('Portal initialization bypassed:', portalErr.message)
+      }
     }
     const session = await stripe.checkout.sessions.create({
       payment_method_types: ['card'],
@@ -648,7 +969,9 @@ app.post('/billing/checkout', requireAuth, async (req, res) => {
       cancel_url: `${process.env.FRONTEND_URL}/dashboard.html`
     })
     res.json({ url: session.url })
-  } catch (err) { res.status(500).json({ error: err.message }) }
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
 })
 
 app.post('/billing/portal', requireAuth, async (req, res) => {
@@ -663,9 +986,15 @@ app.get('/proxy-image', async (req, res) => {
     const response = await fetch(url)
     const buffer = await response.arrayBuffer()
     const contentType = response.headers.get('content-type') || 'image/jpeg'
-    res.set({ 'Content-Type': contentType, 'Access-Control-Allow-Origin': '*', 'Cache-Control': 'public, max-age=3600' })
+    res.set({
+      'Content-Type': contentType,
+      'Access-Control-Allow-Origin': '*',
+      'Cache-Control': 'public, max-age=3600'
+    })
     res.send(Buffer.from(buffer))
-  } catch (e) { res.status(500).json({ error: 'Failed to fetch image' }) }
+  } catch (e) {
+    res.status(500).json({ error: 'Failed to fetch image' })
+  }
 })
 
 // ── 10. SYNC ENGINE ──
@@ -680,27 +1009,34 @@ function mapFuel(fuel) {
 
 function buildDescription(vehicle) {
   const features = vehicle.searchablesarray?.slice(0, 15).join(' • ') || ''
+
   const tags = []
   if (vehicle.condition) tags.push(vehicle.condition.toUpperCase())
   if (vehicle.certified) tags.push('CERTIFIED PRE-OWNED')
   if (vehicle.demo) tags.push('DEMO')
   if (vehicle.salepending) tags.push('SALE PENDING')
+
   const headline = `${vehicle.year} ${vehicle.make} ${vehicle.model} ${vehicle.trim || ''}`.trim()
   const tagLine = tags.length ? tags.join(' • ') : null
+
   const specs = [
     vehicle.mileage ? `${Number(vehicle.mileage).toLocaleString()} km` : null,
     vehicle.exteriorcolor ? `${vehicle.exteriorcolor} exterior` : null,
     vehicle.interiorcolor ? `${vehicle.interiorcolor} interior` : null,
-    vehicle.bodystyle || null, vehicle.engine || null, vehicle.drivetrain || null,
+    vehicle.bodystyle || null,
+    vehicle.engine || null,
+    vehicle.drivetrain || null,
     vehicle.transmission ? `${vehicle.transmission} transmission` : null,
     vehicle.fueltype ? `${vehicle.fueltype} fuel` : null
   ].filter(Boolean)
+
   const sections = [
     tagLine ? `${tagLine}\n${headline}` : headline,
     specs.length ? specs.join(' • ') : null,
     features ? `FEATURES:\n${features}` : null,
     `Stock #${vehicle.stocknumber}`
   ].filter(Boolean)
+
   return sections.join('\n\n')
 }
 
@@ -710,20 +1046,32 @@ async function fetchVehiclePhotos(stocknumber) {
     const data = await res.json()
     if (data.result !== 'Success' || !data.records?.length) return []
     return (data.records[0].images || []).map(img => img.url).filter(Boolean)
-  } catch (e) { return [] }
+  } catch (e) {
+    return []
+  }
 }
 
 const PLATFORM_PROBES = [
   {
-    platform: 'leadbox', label: 'LeadBox',
+    platform: 'leadbox',
+    label: 'LeadBox',
     buildUrls: (origin) => [`${origin}/wp-content/uploads/data/inventory.json`],
     validate: (data) => Array.isArray(data?.vehicles) && data.vehicles.length > 0,
     extract: (data) => data.vehicles,
-    mapVehicle: (v) => ({ vin: v.vin, year: v.year, make: v.make, model: v.model, trim: v.trim, price: v.saleprice || v.price, mileage: v.mileage, condition: v.condition, stocknumber: v.stocknumber, exteriorcolor: v.exteriorcolor })
+    mapVehicle: (v) => ({
+      vin: v.vin, year: v.year, make: v.make, model: v.model, trim: v.trim,
+      price: v.saleprice || v.price, mileage: v.mileage, condition: v.condition,
+      stocknumber: v.stocknumber, exteriorcolor: v.exteriorcolor
+    })
   },
   {
-    platform: 'edealer', label: 'EDealer',
-    buildUrls: (origin) => [`${origin}/api/inventory/getall`, `${origin}/api/vehicles`, `${origin}/Inventory/GetInventory`],
+    platform: 'edealer',
+    label: 'EDealer',
+    buildUrls: (origin) => [
+      `${origin}/api/inventory/getall`,
+      `${origin}/api/vehicles`,
+      `${origin}/Inventory/GetInventory`
+    ],
     validate: (data) => {
       if (Array.isArray(data) && data[0]?.VIN) return true
       if (Array.isArray(data?.vehicles) && data.vehicles[0]?.VIN) return true
@@ -731,72 +1079,159 @@ const PLATFORM_PROBES = [
       return false
     },
     extract: (data) => Array.isArray(data) ? data : (data?.vehicles || data?.Vehicles || []),
-    mapVehicle: (v) => ({ vin: v.VIN || v.vin, year: v.Year || v.year, make: v.Make || v.make, model: v.Model || v.model, trim: v.Trim || v.trim, price: v.Price || v.ListPrice || v.price, mileage: v.Mileage || v.mileage, condition: v.IsNew ? 'New' : 'Used', stocknumber: v.StockNumber || v.stocknumber, exteriorcolor: v.ExteriorColour || v.ExteriorColor || v.exteriorcolor })
+    mapVehicle: (v) => ({
+      vin: v.VIN || v.vin, year: v.Year || v.year, make: v.Make || v.make,
+      model: v.Model || v.model, trim: v.Trim || v.trim,
+      price: v.Price || v.ListPrice || v.price, mileage: v.Mileage || v.mileage,
+      condition: v.IsNew ? 'New' : 'Used', stocknumber: v.StockNumber || v.stocknumber,
+      exteriorcolor: v.ExteriorColour || v.ExteriorColor || v.exteriorcolor
+    })
   },
   {
-    platform: 'dealer_inspire', label: 'Dealer Inspire',
-    buildUrls: (origin) => [`${origin}/wp-json/di-wp/v2/inventory`, `${origin}/wp-json/inventory/v1/vehicles`],
+    platform: 'dealer_inspire',
+    label: 'Dealer Inspire',
+    buildUrls: (origin) => [
+      `${origin}/wp-json/di-wp/v2/inventory`,
+      `${origin}/wp-json/inventory/v1/vehicles`
+    ],
     validate: (data) => Array.isArray(data) && data[0]?.vin,
     extract: (data) => data,
-    mapVehicle: (v) => ({ vin: v.vin, year: v.year, make: v.make, model: v.model, trim: v.trim, price: v.price || v.final_price, mileage: v.mileage || v.odometer, condition: v.type, stocknumber: v.stock_number || v.stock, exteriorcolor: v.exterior_color })
+    mapVehicle: (v) => ({
+      vin: v.vin, year: v.year, make: v.make, model: v.model, trim: v.trim,
+      price: v.price || v.final_price, mileage: v.mileage || v.odometer,
+      condition: v.type, stocknumber: v.stock_number || v.stock, exteriorcolor: v.exterior_color
+    })
   },
   {
-    platform: 'dealer_com', label: 'Dealer.com',
-    buildUrls: (origin) => [`${origin}/apis/widget/INVENTORY_LISTING_DEFAULT_AUTO_ALL:inventory-data-bus1/getInventory?limit=10`, `${origin}/apis/widget/INVENTORY_LISTING_DEFAULT_AUTO_ALL:inventory-data-bus1/getInventory`],
+    platform: 'dealer_com',
+    label: 'Dealer.com',
+    buildUrls: (origin) => [
+      `${origin}/apis/widget/INVENTORY_LISTING_DEFAULT_AUTO_ALL:inventory-data-bus1/getInventory?limit=10`,
+      `${origin}/apis/widget/INVENTORY_LISTING_DEFAULT_AUTO_ALL:inventory-data-bus1/getInventory`
+    ],
     validate: (data) => Array.isArray(data?.inventory) && data.inventory.length > 0,
     extract: (data) => data.inventory,
-    mapVehicle: (v) => ({ vin: v.vin, year: v.modelYear || v.year, make: v.make, model: v.model, trim: v.trim, price: v.pricing?.advertised || v.finalPrice || v.price, mileage: v.odometer || v.mileage, condition: v.type, stocknumber: v.stockNumber || v.stock, exteriorcolor: v.exteriorColor })
+    mapVehicle: (v) => ({
+      vin: v.vin, year: v.modelYear || v.year, make: v.make, model: v.model, trim: v.trim,
+      price: v.pricing?.advertised || v.finalPrice || v.price, mileage: v.odometer || v.mileage,
+      condition: v.type, stocknumber: v.stockNumber || v.stock, exteriorcolor: v.exteriorColor
+    })
   },
   {
-    platform: 'sincro', label: 'Sincro / DealerOn',
-    buildUrls: (origin) => [`${origin}/api/inventory/vehicles`, `${origin}/api/vehicles`, `${origin}/inventory/api/vehicles`],
-    validate: (data) => (Array.isArray(data?.vehicles) && data.vehicles[0]?.vin) || (Array.isArray(data?.data) && data.data[0]?.vin),
+    platform: 'sincro',
+    label: 'Sincro / DealerOn',
+    buildUrls: (origin) => [
+      `${origin}/api/inventory/vehicles`,
+      `${origin}/api/vehicles`,
+      `${origin}/inventory/api/vehicles`
+    ],
+    validate: (data) => {
+      if (Array.isArray(data?.vehicles) && data.vehicles[0]?.vin) return true
+      if (Array.isArray(data?.data) && data.data[0]?.vin) return true
+      return false
+    },
     extract: (data) => data?.vehicles || data?.data || [],
-    mapVehicle: (v) => ({ vin: v.vin, year: v.year || v.modelYear, make: v.make, model: v.model, trim: v.trim, price: v.price || v.sellingPrice, mileage: v.mileage || v.odometer, condition: v.newOrUsed || v.condition, stocknumber: v.stockNumber || v.stock, exteriorcolor: v.exteriorColor || v.color })
+    mapVehicle: (v) => ({
+      vin: v.vin, year: v.year || v.modelYear, make: v.make, model: v.model, trim: v.trim,
+      price: v.price || v.sellingPrice, mileage: v.mileage || v.odometer,
+      condition: v.newOrUsed || v.condition, stocknumber: v.stockNumber || v.stock,
+      exteriorcolor: v.exteriorColor || v.color
+    })
   },
   {
-    platform: 'cdk', label: 'CDK Global',
-    buildUrls: (origin) => [`${origin}/inventory/api/vehicles?pageSize=10`, `${origin}/api/cdk/inventory`],
-    validate: (data) => Array.isArray(data?.vehicles || data?.results) && (data?.vehicles || data?.results)?.[0]?.vin,
+    platform: 'cdk',
+    label: 'CDK Global',
+    buildUrls: (origin) => [
+      `${origin}/inventory/api/vehicles?pageSize=10`,
+      `${origin}/api/cdk/inventory`
+    ],
+    validate: (data) => Array.isArray(data?.vehicles || data?.results) &&
+      (data?.vehicles || data?.results)?.[0]?.vin,
     extract: (data) => data?.vehicles || data?.results || [],
-    mapVehicle: (v) => ({ vin: v.vin, year: v.modelYear || v.year, make: v.make, model: v.model, trim: v.trim, price: v.internetPrice || v.price, mileage: v.mileage, condition: v.type, stocknumber: v.stockNumber, exteriorcolor: v.exteriorColor })
+    mapVehicle: (v) => ({
+      vin: v.vin, year: v.modelYear || v.year, make: v.make, model: v.model, trim: v.trim,
+      price: v.internetPrice || v.price, mileage: v.mileage, condition: v.type,
+      stocknumber: v.stockNumber, exteriorcolor: v.exteriorColor
+    })
   },
   {
-    platform: 'strathcom', label: 'Strathcom',
-    buildUrls: (origin) => [`${origin}/wp-content/uploads/data/inventory.json`, `${origin}/vehicle-inventory/feeds/all.json`],
+    platform: 'strathcom',
+    label: 'Strathcom',
+    buildUrls: (origin) => [
+      `${origin}/wp-content/uploads/data/inventory.json`,
+      `${origin}/vehicle-inventory/feeds/all.json`
+    ],
     validate: (data) => Array.isArray(data?.vehicles) && data.vehicles.length > 0,
     extract: (data) => data.vehicles,
-    mapVehicle: (v) => ({ vin: v.vin, year: v.year, make: v.make, model: v.model, trim: v.trim, price: v.price || v.saleprice, mileage: v.mileage, condition: v.condition, stocknumber: v.stocknumber, exteriorcolor: v.exteriorcolor })
+    mapVehicle: (v) => ({
+      vin: v.vin, year: v.year, make: v.make, model: v.model, trim: v.trim,
+      price: v.price || v.saleprice, mileage: v.mileage, condition: v.condition,
+      stocknumber: v.stocknumber, exteriorcolor: v.exteriorcolor
+    })
   },
   {
-    platform: 'vicimus', label: 'Vicimus / Glovebox',
-    buildUrls: (origin) => [`${origin}/api/inventory`, `${origin}/glovebox/api/inventory/vehicles`],
+    platform: 'vicimus',
+    label: 'Vicimus / Glovebox',
+    buildUrls: (origin) => [
+      `${origin}/api/inventory`,
+      `${origin}/glovebox/api/inventory/vehicles`
+    ],
     validate: (data) => Array.isArray(data?.data || data) && (data?.data || data)?.[0]?.vin,
     extract: (data) => data?.data || data || [],
-    mapVehicle: (v) => ({ vin: v.vin, year: v.year, make: v.make, model: v.model, trim: v.trim, price: v.price, mileage: v.odometer || v.mileage, condition: v.condition, stocknumber: v.stockNumber || v.stock, exteriorcolor: v.exteriorColour || v.exteriorColor })
+    mapVehicle: (v) => ({
+      vin: v.vin, year: v.year, make: v.make, model: v.model, trim: v.trim,
+      price: v.price, mileage: v.odometer || v.mileage, condition: v.condition,
+      stocknumber: v.stockNumber || v.stock, exteriorcolor: v.exteriorColour || v.exteriorColor
+    })
   },
   {
-    platform: 'sm360', label: 'SM360',
-    buildUrls: (origin) => [`${origin}/api/inventory/list`, `${origin}/fr/api/vehicles`, `${origin}/en/api/vehicles`],
+    platform: 'sm360',
+    label: 'SM360',
+    buildUrls: (origin) => [
+      `${origin}/api/inventory/list`,
+      `${origin}/fr/api/vehicles`,
+      `${origin}/en/api/vehicles`
+    ],
     validate: (data) => Array.isArray(data?.vehicles || data?.results || data),
     extract: (data) => data?.vehicles || data?.results || (Array.isArray(data) ? data : []),
-    mapVehicle: (v) => ({ vin: v.vin || v.Vin, year: v.year || v.Year, make: v.make || v.Make, model: v.model || v.Model, trim: v.trim || v.Trim, price: v.price || v.Price, mileage: v.mileage || v.Mileage, condition: v.condition || v.Condition, stocknumber: v.stockNumber || v.StockNumber, exteriorcolor: v.exteriorColor || v.ExteriorColor })
+    mapVehicle: (v) => ({
+      vin: v.vin || v.Vin, year: v.year || v.Year, make: v.make || v.Make,
+      model: v.model || v.Model, trim: v.trim || v.Trim, price: v.price || v.Price,
+      mileage: v.mileage || v.Mileage, condition: v.condition || v.Condition,
+      stocknumber: v.stockNumber || v.StockNumber, exteriorcolor: v.exteriorColor || v.ExteriorColor
+    })
   },
   {
-    platform: 'dealerfire', label: 'DealerFire',
-    buildUrls: (origin) => [`${origin}/ws/getData.php?type=inventory`, `${origin}/inventory.json`],
+    platform: 'dealerfire',
+    label: 'DealerFire',
+    buildUrls: (origin) => [
+      `${origin}/ws/getData.php?type=inventory`,
+      `${origin}/inventory.json`
+    ],
     validate: (data) => Array.isArray(data?.vehicles || data) && (data?.vehicles || data)?.[0]?.vin,
     extract: (data) => data?.vehicles || (Array.isArray(data) ? data : []),
-    mapVehicle: (v) => ({ vin: v.vin, year: v.year, make: v.make, model: v.model, trim: v.trim, price: v.price, mileage: v.mileage, condition: v.condition, stocknumber: v.stock, exteriorcolor: v.color })
+    mapVehicle: (v) => ({
+      vin: v.vin, year: v.year, make: v.make, model: v.model, trim: v.trim,
+      price: v.price, mileage: v.mileage, condition: v.condition,
+      stocknumber: v.stock, exteriorcolor: v.color
+    })
   },
   {
-    platform: 'schema_jsonld', label: 'Schema.org JSON-LD', htmlProbe: true,
+    platform: 'schema_jsonld',
+    label: 'Schema.org JSON-LD',
+    htmlProbe: true,
     buildUrls: () => [],
-    validate: (data) => data?.jsonLd && extractCarsFromJsonLd(data.jsonLd).length > 0,
+    validate: (data) => {
+      if (!data?.jsonLd) return false
+      return extractCarsFromJsonLd(data.jsonLd).length > 0
+    },
     extract: (data) => extractCarsFromJsonLd(data.jsonLd),
     mapVehicle: (v) => {
       const cond = v.itemCondition || ''
-      const condition = cond.includes('NewCondition') ? 'New' : cond.includes('UsedCondition') ? 'Used' : cond.includes('Refurbished') ? 'Certified' : null
+      const condition = cond.includes('NewCondition') ? 'New'
+        : cond.includes('UsedCondition') ? 'Used'
+        : cond.includes('Refurbished') ? 'Certified'
+        : null
       const drive = (v.driveWheelConfiguration || '').match(/\/(\w+)WheelDriveConfiguration/)?.[1]
       let trim = null
       if (typeof v.vehicleConfiguration === 'string') {
@@ -805,13 +1240,24 @@ const PLATFORM_PROBES = [
       }
       const image = Array.isArray(v.image) ? v.image[0] : v.image
       return {
-        vin: v.vehicleIdentificationNumber, year: v.vehicleModelDate,
-        make: v.brand?.name || v.manufacturer?.name || v.brand, model: v.model, trim,
-        price: v.offers?.price ?? null, mileage: v.mileageFromOdometer?.value ?? null,
-        condition, stocknumber: v.sku || v.productID, exteriorcolor: v.color,
-        interiorcolor: v.vehicleInteriorColor, bodystyle: v.bodyType,
-        fueltype: v.vehicleEngine?.fuelType, transmission: v.vehicleTransmission, drivetrain: drive,
-        image_urls: image && image !== 'https://static.edealer.ca/V4/assets/images/new_vehicles_images_coming.png' ? [image] : []
+        vin: v.vehicleIdentificationNumber,
+        year: v.vehicleModelDate,
+        make: v.brand?.name || v.manufacturer?.name || v.brand,
+        model: v.model,
+        trim,
+        price: v.offers?.price ?? null,
+        mileage: v.mileageFromOdometer?.value ?? null,
+        condition,
+        stocknumber: v.sku || v.productID,
+        exteriorcolor: v.color,
+        interiorcolor: v.vehicleInteriorColor,
+        bodystyle: v.bodyType,
+        fueltype: v.vehicleEngine?.fuelType,
+        transmission: v.vehicleTransmission,
+        drivetrain: drive,
+        image_urls: image && image !== 'https://static.edealer.ca/V4/assets/images/new_vehicles_images_coming.png'
+          ? [image]
+          : []
       }
     }
   }
@@ -821,14 +1267,19 @@ async function probeUrlHtml(url, timeoutMs = 12000) {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), timeoutMs)
   try {
-    const res = await fetch(url, { signal: controller.signal, headers: { 'User-Agent': 'Mozilla/5.0 MarketSync-FeedProbe/1.0' } })
+    const res = await fetch(url, {
+      signal: controller.signal,
+      headers: { 'User-Agent': 'Mozilla/5.0 MarketSync-FeedProbe/1.0' }
+    })
     clearTimeout(timer)
     if (!res.ok) return { ok: false, status: res.status }
     const html = await res.text()
     const blocks = []
     const re = /<script[^>]+type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi
     let m
-    while ((m = re.exec(html)) !== null) { try { blocks.push(JSON.parse(m[1])) } catch {} }
+    while ((m = re.exec(html)) !== null) {
+      try { blocks.push(JSON.parse(m[1])) } catch {}
+    }
     const flat = []
     const walk = (node) => {
       if (!node) return
@@ -874,7 +1325,7 @@ function parseEDealerDetailPage(html, url) {
   return { vin, year, make, model, price, mileage, stocknumber, condition, onweb: true, salepending: false, image_urls, _detail_url: url }
 }
 
-// Puppeteer-based full inventory fetcher for JS-rendered EDealer sites
+// ── Puppeteer-based full inventory fetcher for JS-rendered EDealer sites ──
 async function fetchEDealerInventoryFromSitemap(origin) {
   let browser
   try {
@@ -893,6 +1344,7 @@ async function fetchEDealerInventoryFromSitemap(origin) {
     while (true) {
       const url = `${origin}/inventory/?page=${pageNum}`
       console.log(`[sync] EDealer Puppeteer: fetching page ${pageNum}`)
+
       await page.goto(url, { waitUntil: 'networkidle2', timeout: 30000 })
 
       const cars = await page.evaluate(() => {
@@ -903,7 +1355,9 @@ async function fetchEDealerInventoryFromSitemap(origin) {
             const parsed = JSON.parse(s.textContent)
             const nodes = parsed['@graph'] || (Array.isArray(parsed) ? parsed : [parsed])
             for (const node of nodes) {
-              if (node['@type'] === 'Car' || node['@type'] === 'Vehicle') results.push(node)
+              if (node['@type'] === 'Car' || node['@type'] === 'Vehicle') {
+                results.push(node)
+              }
             }
           } catch {}
         }
@@ -912,7 +1366,7 @@ async function fetchEDealerInventoryFromSitemap(origin) {
 
       console.log(`[sync] EDealer Puppeteer page ${pageNum}: ${cars.length} cars`)
 
-      // Stop if zero results or same count as last page (infinite pagination loop)
+      // Stop if same count as last page (infinite pagination loop) or zero results
       if (cars.length === 0 || cars.length === lastCount) break
       lastCount = cars.length
 
@@ -935,9 +1389,11 @@ async function fetchEDealerInventoryFromSitemap(origin) {
           transmission: c.vehicleTransmission,
           fueltype: c.vehicleEngine?.fuelType,
           bodystyle: c.bodyType,
-          condition: (c.itemCondition || '').includes('NewCondition') ? 'New' : (c.itemCondition || '').includes('UsedCondition') ? 'Used' : null,
+          condition: (c.itemCondition || '').includes('NewCondition') ? 'New'
+            : (c.itemCondition || '').includes('UsedCondition') ? 'Used' : null,
           stocknumber: c.sku || c.productID,
-          onweb: true, salepending: false,
+          onweb: true,
+          salepending: false,
           image_urls: img && !img.includes('coming.png') ? [img] : [],
           _detail_url: c.url || `${origin}/inventory/`
         })
@@ -1007,7 +1463,10 @@ function extractEDealerImageGroups(html) {
     const seen = new Set()
     const gallery = []
     for (const f of fulls) {
-      if (f.pos > t.pos && f.pos < end && !seen.has(f.url)) { seen.add(f.url); gallery.push(f.url) }
+      if (f.pos > t.pos && f.pos < end && !seen.has(f.url)) {
+        seen.add(f.url)
+        gallery.push(f.url)
+      }
     }
     return gallery
   })
@@ -1041,7 +1500,10 @@ async function probeUrl(url, timeoutMs = 8000) {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), timeoutMs)
   try {
-    const res = await fetch(url, { signal: controller.signal, headers: { 'Accept': 'application/json', 'User-Agent': 'MarketSync-FeedProbe/1.0' } })
+    const res = await fetch(url, {
+      signal: controller.signal,
+      headers: { 'Accept': 'application/json', 'User-Agent': 'MarketSync-FeedProbe/1.0' }
+    })
     clearTimeout(timer)
     if (!res.ok) return { ok: false, status: res.status }
     const contentType = res.headers.get('content-type') || ''
@@ -1056,22 +1518,45 @@ async function probeUrl(url, timeoutMs = 8000) {
 
 async function detectFeedPlatform(dealerUrl) {
   let origin
-  try { origin = new URL(dealerUrl.trim()).origin } catch { return { success: false, error: 'Invalid URL' } }
+  try {
+    origin = new URL(dealerUrl.trim()).origin
+  } catch {
+    return { success: false, error: 'Invalid URL' }
+  }
+
   const attempts = []
+
   for (const platform of PLATFORM_PROBES) {
     const urls = platform.htmlProbe ? [dealerUrl] : platform.buildUrls(origin)
     for (const url of urls) {
       const result = platform.htmlProbe ? await probeUrlHtml(url) : await probeUrl(url)
       const probeData = platform.htmlProbe ? result : result.data
-      attempts.push({ platform: platform.platform, label: platform.label, url, ok: result.ok, status: result.status, reason: result.reason })
+      attempts.push({
+        platform: platform.platform, label: platform.label, url,
+        ok: result.ok, status: result.status, reason: result.reason
+      })
+
       if (result.ok && platform.validate(probeData)) {
         const vehicles = platform.extract(probeData)
         const sample = vehicles.slice(0, 3).map(platform.mapVehicle)
-        return { success: true, platform: platform.platform, platform_label: platform.label, feed_url: url, vehicle_count: vehicles.length, sample_vehicles: sample, attempts }
+        return {
+          success: true,
+          platform: platform.platform,
+          platform_label: platform.label,
+          feed_url: url,
+          vehicle_count: vehicles.length,
+          sample_vehicles: sample,
+          attempts
+        }
       }
     }
   }
-  return { success: false, error: 'No known inventory feed found for this dealer URL. Try pasting the direct JSON feed URL instead.', attempts }
+
+  return {
+    success: false,
+    error: 'No known inventory feed found for this dealer URL. Try pasting the direct JSON feed URL instead.',
+    attempts
+  }
 }
 
 app.post('/feeds/probe', async (req, res) => {
@@ -1080,22 +1565,28 @@ app.post('/feeds/probe', async (req, res) => {
   try {
     const result = await detectFeedPlatform(url)
     res.json(result)
-  } catch (e) { res.status(500).json({ error: e.message }) }
+  } catch (e) {
+    res.status(500).json({ error: e.message })
+  }
 })
 
 function normalizeFeedUrl(input) {
   if (!input) return null
   let url
   try { url = new URL(input.trim()) } catch { return null }
+
   const path = url.pathname.toLowerCase()
   let detectedType = null
   if (path.includes('new-inventory') || path.includes('/new/') || path.includes('/new?')) detectedType = 'new'
   else if (path.includes('used-inventory') || path.includes('/used/') || path.includes('/used?')) detectedType = 'used'
   else if (path.includes('demo-inventory') || path.includes('/demo/')) detectedType = 'demo'
   else if (path.includes('/fleet')) detectedType = 'fleet'
+
   if (path.endsWith('.json')) return { jsonUrl: url.toString(), detectedType }
+
   const origin = url.origin
   const host = url.hostname.toLowerCase()
+
   if (host.includes('edealer')) return { jsonUrl: `${origin}/api/inventory/getall`, detectedType }
   if (host.includes('dealerinspire') || host.includes('di-uploads')) return { jsonUrl: `${origin}/wp-json/di-wp/v2/inventory`, detectedType }
   if (host.includes('dealer.com')) return { jsonUrl: `${origin}/apis/widget/INVENTORY_LISTING_DEFAULT_AUTO_ALL:inventory-data-bus1/getInventory`, detectedType }
@@ -1104,6 +1595,7 @@ function normalizeFeedUrl(input) {
   if (host.includes('sm360')) return { jsonUrl: `${origin}/api/inventory/list`, detectedType }
   if (host.includes('cdk') || host.includes('cobalt')) return { jsonUrl: `${origin}/inventory/api/vehicles`, detectedType }
   if (host.includes('dealerfire') || host.includes('solera')) return { jsonUrl: `${origin}/ws/getData.php?type=inventory`, detectedType }
+
   return { jsonUrl: `${origin}/wp-content/uploads/data/inventory.json`, detectedType }
 }
 
@@ -1115,34 +1607,56 @@ function matchesFeedType(v, feedType) {
   return true
 }
 
+// ── Helper: build condition-based source URL for LeadBox sites ──
+function buildLeadBoxSourceUrl(feedUrl, vehicle) {
+  const origin = feedUrl.split('/wp-content')[0]
+  if (vehicle.condition === 'New') return `${origin}/new-vehicles/`
+  if (vehicle.condition === 'Used') return `${origin}/used-vehicles/`
+  if (vehicle.demo) return `${origin}/demo-inventory/`
+  return `${origin}/vehicles/`
+}
+
 async function runInventorySync(dealershipId) {
-  const { data: feeds } = await supabaseAdmin.from('inventory_feeds').select('feed_url, feed_type').eq('dealership_id', dealershipId)
-  if (!feeds || feeds.length === 0) return { success: false, error: 'No inventory feeds configured for this dealership.' }
+  const { data: feeds } = await supabaseAdmin
+    .from('inventory_feeds')
+    .select('feed_url, feed_type')
+    .eq('dealership_id', dealershipId)
+  if (!feeds || feeds.length === 0) {
+    return { success: false, error: 'No inventory feeds configured for this dealership.' }
+  }
 
   let totalAttempts = 0, totalSkipped = 0, totalVehiclesFound = 0
-  const uniqueVins = new Set()
-  const allRawVins = new Set()
+  const uniqueVins = new Set()  // VINs successfully upserted this run
+  const allRawVins = new Set()  // every VIN from raw feed data (no filter) — for auto-sold
+
   const jsonCache = new Map()
 
   for (const feed of feeds) {
     try {
       let vehicles
+
       if (jsonCache.has(feed.feed_url)) {
         vehicles = jsonCache.get(feed.feed_url)
       } else {
-        const feedRes = await fetch(`${feed.feed_url}?v=${Date.now()}`, { headers: { 'User-Agent': 'Mozilla/5.0 MarketSync-Sync/1.0' } })
+        const feedRes = await fetch(`${feed.feed_url}?v=${Date.now()}`, {
+          headers: { 'User-Agent': 'Mozilla/5.0 MarketSync-Sync/1.0' }
+        })
         const ct = feedRes.headers.get('content-type') || ''
+
         if (ct.includes('json')) {
           const data = await feedRes.json()
           vehicles = data.vehicles || data.inventory || data.data || data.items || (Array.isArray(data) ? data : [])
           jsonCache.set(feed.feed_url, vehicles)
           totalVehiclesFound += vehicles.length
         } else {
+          // HTML response — extract Schema.org JSON-LD, then try Puppeteer
           const html = await feedRes.text()
           const blocks = []
           const re = /<script[^>]+type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi
           let m
-          while ((m = re.exec(html)) !== null) { try { blocks.push(JSON.parse(m[1])) } catch {} }
+          while ((m = re.exec(html)) !== null) {
+            try { blocks.push(JSON.parse(m[1])) } catch {}
+          }
           const flat = []
           const walk = (n) => {
             if (!n) return
@@ -1154,11 +1668,15 @@ async function runInventorySync(dealershipId) {
           const cars = extractCarsFromJsonLd(flat)
           const origin = new URL(feed.feed_url).origin
 
+          // Try Puppeteer walker first — gets full paginated inventory
           const sitemapVehicles = await fetchEDealerInventoryFromSitemap(origin)
           if (sitemapVehicles && sitemapVehicles.length > cars.length) {
             console.log(`[sync] Using Puppeteer walker (${sitemapVehicles.length}) instead of listing JSON-LD (${cars.length})`)
             vehicles = sitemapVehicles
+            jsonCache.set(feed.feed_url, vehicles)
+            totalVehiclesFound += vehicles.length
           } else {
+            // Fallback: listing-page JSON-LD + detail page photo enrichment
             const detailUrls = extractEDealerDetailUrls(html, origin)
             let imageGroups = []
             if (detailUrls.length === cars.length && detailUrls.length > 0) {
@@ -1167,7 +1685,6 @@ async function runInventorySync(dealershipId) {
             } else {
               imageGroups = extractEDealerImageGroups(html)
             }
-
             vehicles = cars.map((c, i) => ({
               vin: c.vehicleIdentificationNumber,
               year: c.vehicleModelDate,
@@ -1178,12 +1695,18 @@ async function runInventorySync(dealershipId) {
                 const parts = cfg.split(' ')
                 return parts.length > 1 ? parts.slice(0, -1).join(' ') : null
               })(),
-              price: c.offers?.price, mileage: c.mileageFromOdometer?.value,
-              exteriorcolor: c.color, interiorcolor: c.vehicleInteriorColor,
-              transmission: c.vehicleTransmission, fueltype: c.vehicleEngine?.fuelType,
+              price: c.offers?.price,
+              mileage: c.mileageFromOdometer?.value,
+              exteriorcolor: c.color,
+              interiorcolor: c.vehicleInteriorColor,
+              transmission: c.vehicleTransmission,
+              fueltype: c.vehicleEngine?.fuelType,
               bodystyle: c.bodyType,
-              condition: (c.itemCondition || '').includes('NewCondition') ? 'New' : (c.itemCondition || '').includes('UsedCondition') ? 'Used' : null,
-              stocknumber: c.sku || c.productID, onweb: true, salepending: false,
+              condition: (c.itemCondition || '').includes('NewCondition') ? 'New'
+                : (c.itemCondition || '').includes('UsedCondition') ? 'Used' : null,
+              stocknumber: c.sku || c.productID,
+              onweb: true,
+              salepending: false,
               image_urls: (() => {
                 if (imageGroups[i]?.length) return imageGroups[i]
                 const img = Array.isArray(c.image) ? c.image[0] : c.image
@@ -1192,13 +1715,16 @@ async function runInventorySync(dealershipId) {
               })(),
               _detail_url: detailUrls[i] || feed.feed_url
             }))
+            jsonCache.set(feed.feed_url, vehicles)
+            totalVehiclesFound += vehicles.length
           }
-          jsonCache.set(feed.feed_url, vehicles)
-          totalVehiclesFound += vehicles.length
         }
       }
 
-      for (const v of vehicles) { if (v.vin) allRawVins.add(v.vin) }
+      // Capture every VIN from raw feed for auto-sold logic
+      for (const v of vehicles) {
+        if (v.vin) allRawVins.add(v.vin)
+      }
 
       for (const v of vehicles) {
         if (!matchesFeedType(v, feed.feed_type)) { totalSkipped++; continue }
@@ -1206,57 +1732,93 @@ async function runInventorySync(dealershipId) {
         if (!v.vin) { totalSkipped++; continue }
 
         await sleep(200)
+
         let imageUrls = Array.isArray(v.image_urls) && v.image_urls.length ? v.image_urls : []
-        if (!imageUrls.length && v.stocknumber) imageUrls = await fetchVehiclePhotos(v.stocknumber)
+        if (!imageUrls.length && v.stocknumber) {
+          imageUrls = await fetchVehiclePhotos(v.stocknumber)
+        }
+
+        // ── source_url: EDealer gets detail page URL, LeadBox gets condition-based listing page ──
+        let sourceUrl
+        if (v._detail_url && !v._detail_url.endsWith('/inventory/')) {
+          sourceUrl = v._detail_url
+        } else if (feed.feed_url.includes('/wp-content')) {
+          sourceUrl = buildLeadBoxSourceUrl(feed.feed_url, v)
+        } else {
+          sourceUrl = feed.feed_url
+        }
 
         const record = {
           dealership_id: dealershipId,
-          vin: v.vin, year: parseInt(v.year), make: v.make, model: v.model,
-          trim: v.trim || null, price: v.saleprice || v.price || 0, mileage: v.mileage || 0,
-          exterior_color: v.exteriorcolor || null, interior_color: v.interiorcolor || null,
-          transmission: v.transmission || null, fuel_type: mapFuel(v.fueltype),
-          description: buildDescription(v), image_urls: imageUrls,
-source_url: v._detail_url || (feed.feed_url.includes('/wp-content') ? feed.feed_url.split('/wp-content')[0] : feed.feed_url),          status: v.salepending ? 'pending' : 'available',
+          vin: v.vin,
+          year: parseInt(v.year),
+          make: v.make,
+          model: v.model,
+          trim: v.trim || null,
+          price: v.saleprice || v.price || 0,
+          mileage: v.mileage || 0,
+          exterior_color: v.exteriorcolor || null,
+          interior_color: v.interiorcolor || null,
+          transmission: v.transmission || null,
+          fuel_type: mapFuel(v.fueltype),
+          description: buildDescription(v),
+          image_urls: imageUrls,
+          source_url: sourceUrl,
+          status: v.salepending ? 'pending' : 'available',
           last_synced_at: new Date().toISOString()
         }
-        const { error } = await supabaseAdmin.from('inventory').upsert(record, { onConflict: 'vin' })
-        if (error) { totalSkipped++ } else { totalAttempts++; if (v.vin) uniqueVins.add(v.vin) }
+
+        const { error } = await supabaseAdmin
+          .from('inventory')
+          .upsert(record, { onConflict: 'vin' })
+        if (error) {
+          totalSkipped++
+        } else {
+          totalAttempts++
+          if (v.vin) uniqueVins.add(v.vin)
+        }
       }
     } catch (feedErr) {
       console.error('[sync] Feed error:', feedErr.message)
     }
   }
 
-// Auto-sold logic — only run if VIN capture rate is high enough to be trustworthy
-console.log(`[sync] allRawVins captured: ${allRawVins.size} of ${totalVehiclesFound} vehicles`)
+  // ── Auto-sold: single clean block ──
+  // Union raw feed VINs with successfully upserted VINs to avoid false sold marking
+  // when JSON-LD is missing vehicleIdentificationNumber on some vehicles.
+  console.log(`[sync] allRawVins captured: ${allRawVins.size} of ${totalVehiclesFound} vehicles`)
 
-if (allRawVins.size > 0) {
-  const captureRate = allRawVins.size / Math.max(totalVehiclesFound, 1)
-  if (captureRate < 0.8) {
-    console.warn(`[sync] VIN capture rate too low (${Math.round(captureRate * 100)}%) — skipping auto-sold`)
-  } else {
-    
-    // Also fetch VINs currently in DB that we successfully upserted this run
-    // so we never accidentally mark something sold that we just synced
-    const vinList = [...new Set([...allRawVins, ...uniqueVins])]
-    
-    await supabaseAdmin.from('inventory')
-      .update({ status: 'sold' })
-      .eq('dealership_id', dealershipId)
-      .eq('status', 'available')
-      .not('vin', 'in', `(${vinList.map(v => `"${v}"`).join(',')})`)
-    
-    await supabaseAdmin.from('inventory')
-      .update({ status: 'available' })
-      .eq('dealership_id', dealershipId)
-      .eq('status', 'sold')
-      .in('vin', vinList)
+  if (allRawVins.size > 0) {
+    const captureRate = allRawVins.size / Math.max(totalVehiclesFound, 1)
+    if (captureRate < 0.8) {
+      console.warn(`[sync] VIN capture rate too low (${Math.round(captureRate * 100)}%) — skipping auto-sold to avoid false positives`)
+    } else {
+      // Union: allRawVins (from feed) + uniqueVins (actually upserted this run)
+      const vinList = [...new Set([...allRawVins, ...uniqueVins])]
+
+      // Mark sold: available vehicles whose VIN is not in this run's feed
+      await supabaseAdmin
+        .from('inventory')
+        .update({ status: 'sold' })
+        .eq('dealership_id', dealershipId)
+        .eq('status', 'available')
+        .not('vin', 'in', `(${vinList.map(v => `"${v}"`).join(',')})`)
+
+      // Restore: previously marked sold but now back in feed
+      await supabaseAdmin
+        .from('inventory')
+        .update({ status: 'available' })
+        .eq('dealership_id', dealershipId)
+        .eq('status', 'sold')
+        .in('vin', vinList)
+    }
   }
-}
 
   const { count: availableCount } = await supabaseAdmin
-    .from('inventory').select('id', { count: 'exact', head: true })
-    .eq('dealership_id', dealershipId).eq('status', 'available')
+    .from('inventory')
+    .select('id', { count: 'exact', head: true })
+    .eq('dealership_id', dealershipId)
+    .eq('status', 'available')
 
   return {
     success: true,
@@ -1273,27 +1835,40 @@ if (allRawVins.size > 0) {
 // ── SYNC ROUTES ──
 app.get('/sync', async (req, res) => {
   const secret = req.query.secret
-  if (secret !== process.env.SYNC_SECRET && process.env.SYNC_SECRET) return res.status(401).json({ error: 'Unauthorized' })
+  if (secret !== process.env.SYNC_SECRET && process.env.SYNC_SECRET) {
+    return res.status(401).json({ error: 'Unauthorized' })
+  }
   const targetDealershipId = req.query.dealership_id
   if (!targetDealershipId) return res.status(400).json({ error: 'Missing target dealership parameter' })
+
   try {
-    const { data: currentDealer } = await supabaseAdmin.from('dealerships').select('id').eq('id', targetDealershipId).single()
+    const { data: currentDealer } = await supabaseAdmin
+      .from('dealerships').select('id').eq('id', targetDealershipId).single()
     if (!currentDealer) return res.status(404).json({ error: 'Target business identity not found.' })
+
     const result = await runInventorySync(targetDealershipId)
     if (!result.success) return res.status(404).json(result)
     res.json(result)
-  } catch (e) { res.status(500).json({ error: e.message }) }
+  } catch (e) {
+    res.status(500).json({ error: e.message })
+  }
 })
 
 app.get('/inventory-feeds', requireAuth, async (req, res) => {
   if (!req.dealershipId) return res.json([])
-  const { data, error } = await supabaseAdmin.from('inventory_feeds').select('id, feed_url, feed_type, created_at').eq('dealership_id', req.dealershipId).order('created_at', { ascending: false })
+  const { data, error } = await supabaseAdmin
+    .from('inventory_feeds')
+    .select('id, feed_url, feed_type, created_at')
+    .eq('dealership_id', req.dealershipId)
+    .order('created_at', { ascending: false })
   if (error) return res.status(500).json({ error: error.message })
   res.json(data)
 })
 
 app.post('/inventory-feeds', requireAuth, async (req, res) => {
-  const canManage = req.profile.role === 'DEALER_ADMIN' || req.profile.role === 'OWNER' || req.profile.dealerships?.is_personal === true
+  const canManage = req.profile.role === 'DEALER_ADMIN'
+    || req.profile.role === 'OWNER'
+    || req.profile.dealerships?.is_personal === true
   if (!canManage) return res.status(403).json({ error: 'Only dealer admins or solo reps can manage feeds' })
   if (!req.dealershipId) return res.status(400).json({ error: 'No dealership associated with this account' })
 
@@ -1303,10 +1878,13 @@ app.post('/inventory-feeds', requireAuth, async (req, res) => {
   const typeHint = normalizeFeedUrl(rawUrl)
   if (!typeHint) return res.status(400).json({ error: 'Invalid URL' })
 
-  let workingUrl = null, detectedPlatform = null, attempts = []
+  let workingUrl = null
+  let detectedPlatform = null
+  let attempts = []
 
   const userPastedJson = (() => {
-    try { return new URL(rawUrl.trim()).pathname.toLowerCase().endsWith('.json') } catch { return false }
+    try { return new URL(rawUrl.trim()).pathname.toLowerCase().endsWith('.json') }
+    catch { return false }
   })()
 
   if (userPastedJson) {
@@ -1314,11 +1892,16 @@ app.post('/inventory-feeds', requireAuth, async (req, res) => {
       const r = await fetch(rawUrl)
       attempts.push({ url: rawUrl, status: r.status, ok: r.ok })
       if (r.ok) workingUrl = rawUrl
-    } catch (e) { attempts.push({ url: rawUrl, error: e.message }) }
+    } catch (e) {
+      attempts.push({ url: rawUrl, error: e.message })
+    }
   } else {
     const detection = await detectFeedPlatform(rawUrl)
     attempts = detection.attempts || []
-    if (detection.success) { workingUrl = detection.feed_url; detectedPlatform = detection.platform_label }
+    if (detection.success) {
+      workingUrl = detection.feed_url
+      detectedPlatform = detection.platform_label
+    }
   }
 
   if (!workingUrl) {
@@ -1328,18 +1911,38 @@ app.post('/inventory-feeds', requireAuth, async (req, res) => {
     })
   }
 
-  const feedType = requestedType && requestedType !== 'all' ? requestedType : (typeHint.detectedType || 'all')
-  const { data, error } = await supabaseAdmin.from('inventory_feeds').insert({ dealership_id: req.dealershipId, user_id: req.user.id, feed_url: workingUrl, feed_type: feedType }).select().single()
+  const feedType = requestedType && requestedType !== 'all'
+    ? requestedType
+    : (typeHint.detectedType || 'all')
+
+  const { data, error } = await supabaseAdmin
+    .from('inventory_feeds')
+    .insert({
+      dealership_id: req.dealershipId,
+      user_id: req.user.id,
+      feed_url: workingUrl,
+      feed_type: feedType
+    })
+    .select()
+    .single()
   if (error) return res.status(500).json({ error: error.message })
   console.log(`✓ Added feed: ${detectedPlatform || 'direct'} → ${workingUrl}`)
   res.json({ ...data, platform: detectedPlatform })
 })
 
 app.delete('/inventory-feeds/:id', requireAuth, async (req, res) => {
-  const canManage = req.profile.role === 'DEALER_ADMIN' || req.profile.role === 'OWNER' || req.profile.dealerships?.is_personal === true
+  const canManage = req.profile.role === 'DEALER_ADMIN'
+    || req.profile.role === 'OWNER'
+    || req.profile.dealerships?.is_personal === true
   if (!canManage) return res.status(403).json({ error: 'Only dealer admins or solo reps can manage feeds' })
-  const { data: feed } = await supabaseAdmin.from('inventory_feeds').select('id, dealership_id').eq('id', req.params.id).single()
-  if (!feed || feed.dealership_id !== req.dealershipId) return res.status(404).json({ error: 'Feed not found' })
+  const { data: feed } = await supabaseAdmin
+    .from('inventory_feeds')
+    .select('id, dealership_id')
+    .eq('id', req.params.id)
+    .single()
+  if (!feed || feed.dealership_id !== req.dealershipId) {
+    return res.status(404).json({ error: 'Feed not found' })
+  }
   const { error } = await supabaseAdmin.from('inventory_feeds').delete().eq('id', req.params.id)
   if (error) return res.status(500).json({ error: error.message })
   res.json({ success: true })
@@ -1351,7 +1954,9 @@ app.post('/inventory/sync', requireAuth, async (req, res) => {
     const result = await runInventorySync(req.dealershipId)
     if (!result.success) return res.status(400).json(result)
     res.json(result)
-  } catch (e) { res.status(500).json({ error: e.message }) }
+  } catch (e) {
+    res.status(500).json({ error: e.message })
+  }
 })
 
 // ── 11. DIAGNOSTICS ──
@@ -1363,24 +1968,36 @@ app.get('/debug', requireAuth, async (req, res) => {
 async function syncAllDealerships(triggerLabel = 'scheduled') {
   const startedAt = new Date().toISOString()
   console.log(`[sync-all:${triggerLabel}] started at ${startedAt}`)
-  const { data: dealerships, error } = await supabaseAdmin.from('dealerships').select('id, name')
+
+  const { data: dealerships, error } = await supabaseAdmin
+    .from('dealerships').select('id, name')
   if (error) {
     console.error(`[sync-all:${triggerLabel}] failed to list dealerships:`, error.message)
     return { success: false, error: error.message }
   }
+
   const results = []
   for (const d of dealerships || []) {
     try {
       const r = await runInventorySync(d.id)
-      console.log(`[sync-all:${triggerLabel}] ${d.name} (${d.id}):`, r.success ? `${r.unique_vehicles} unique, ${r.skipped} skipped` : r.error)
+      console.log(
+        `[sync-all:${triggerLabel}] ${d.name} (${d.id}):`,
+        r.success ? `${r.unique_vehicles} unique, ${r.skipped} skipped` : r.error
+      )
       results.push({ dealership_id: d.id, ...r })
     } catch (e) {
       console.error(`[sync-all:${triggerLabel}] ${d.id} threw:`, e.message)
       results.push({ dealership_id: d.id, success: false, error: e.message })
     }
   }
+
   console.log(`[sync-all:${triggerLabel}] finished. ${results.length} dealership(s) processed.`)
-  return { success: true, started_at: startedAt, finished_at: new Date().toISOString(), results }
+  return {
+    success: true,
+    started_at: startedAt,
+    finished_at: new Date().toISOString(),
+    results
+  }
 }
 
 app.post('/cron/sync-all', async (req, res) => {
@@ -1398,7 +2015,12 @@ if (SYNC_INTERVAL_HOURS > 0) {
 }
 
 app.use((err, req, res, next) => {
-  console.error('Unhandled Express error:', { path: req.path, method: req.method, message: err.message, stack: err.stack })
+  console.error('Unhandled Express error:', {
+    path: req.path,
+    method: req.method,
+    message: err.message,
+    stack: err.stack
+  })
   if (res.headersSent) return next(err)
   res.status(500).json({ error: err.message, path: req.path, stack: err.stack })
 })
