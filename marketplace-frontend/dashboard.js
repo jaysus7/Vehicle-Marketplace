@@ -855,6 +855,17 @@ async function deleteFeed(id) {
 }
 
 async function addFeed(feedUrl, feedType) {
+  // Find the submit button + URL input so we can show loading state.
+  // Probing every platform's URL can take 5-30s — without feedback users think nothing's happening.
+  const form = document.getElementById('add-feed-form');
+  const submitBtn = form?.querySelector('button[type="submit"]');
+  const urlInput = document.getElementById('add-feed-url');
+  const originalBtnText = submitBtn?.textContent || 'Add Feed';
+
+  showSyncStatus(`Probing ${feedUrl} … this can take 10-30s while we try known dealer platforms.`, 'info');
+  if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = 'Adding…'; }
+  if (urlInput) urlInput.disabled = true;
+
   try {
     const res = await fetch(`${API}/inventory-feeds`, {
       method: 'POST',
@@ -862,11 +873,19 @@ async function addFeed(feedUrl, feedType) {
       body: JSON.stringify({ feed_url: feedUrl, feed_type: feedType })
     });
     const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'Add failed');
+    if (!res.ok) {
+      const attempts = Array.isArray(data.attempted) ? `\nTried: ${data.attempted.join(' · ')}` : '';
+      throw new Error((data.error || 'Add failed') + attempts);
+    }
+    const platform = data.platform ? ` · ${data.platform}` : '';
+    showSyncStatus(`✓ Feed added${platform}. Click Sync Now to pull inventory.`, 'ok');
     loadInventoryFeeds();
-    document.getElementById('add-feed-url').value = '';
+    if (urlInput) urlInput.value = '';
   } catch (err) {
     showSyncStatus(err.message, 'err');
+  } finally {
+    if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = originalBtnText; }
+    if (urlInput) urlInput.disabled = false;
   }
 }
 
