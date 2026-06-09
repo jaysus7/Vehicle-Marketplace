@@ -895,6 +895,49 @@ app.post('/listings/sync-fb-sold', requireAuth, async (req, res) => {
   res.json({ success: true, matched: true, listing_id: listing.id })
 })
 
+// "I Sold It" — the rep clicking this closed the deal. Awards 500 points (sales table)
+// AND marks the inventory/listing as sold. Distinct from "sold by other" which only marks sold.
+app.post('/listings/:id/sold-by-me', requireAuth, async (req, res) => {
+  const { data: listing, error: lookupErr } = await supabaseAdmin
+    .from('listings')
+    .select('id, inventory_id, inventory!listings_inventory_id_fkey(dealership_id)')
+    .eq('id', req.params.id)
+    .single()
+  if (lookupErr || !listing) return res.status(404).json({ error: 'Listing not found' })
+  if (listing.inventory.dealership_id !== req.dealershipId) return res.status(403).json({ error: 'Not your dealership' })
+
+  const now = new Date().toISOString()
+  await supabaseAdmin.from('listings').update({ status: 'sold', deleted_at: now }).eq('id', listing.id)
+  await supabaseAdmin.from('inventory').update({ status: 'sold' }).eq('id', listing.inventory_id)
+
+  // Record the sale (awards 500 pts on the leaderboard via points-from-sales calculation)
+  const { error: saleErr } = await supabaseAdmin.from('sales').insert({
+    inventory_id: listing.inventory_id,
+    sold_by: req.user.id,
+    dealership_id: req.dealershipId,
+    points_awarded: 500
+  })
+  if (saleErr) console.warn('Sales insert failed (table may not exist yet):', saleErr.message)
+
+  res.json({ success: true, points_awarded: 500 })
+})
+
+// "Sold by Other" — someone else closed it. Marks sold but doesn't credit this rep.
+app.post('/listings/:id/sold-by-other', requireAuth, async (req, res) => {
+  const { data: listing, error: lookupErr } = await supabaseAdmin
+    .from('listings')
+    .select('id, inventory_id, inventory!listings_inventory_id_fkey(dealership_id)')
+    .eq('id', req.params.id)
+    .single()
+  if (lookupErr || !listing) return res.status(404).json({ error: 'Listing not found' })
+  if (listing.inventory.dealership_id !== req.dealershipId) return res.status(403).json({ error: 'Not your dealership' })
+
+  const now = new Date().toISOString()
+  await supabaseAdmin.from('listings').update({ status: 'sold', deleted_at: now }).eq('id', listing.id)
+  await supabaseAdmin.from('inventory').update({ status: 'sold' }).eq('id', listing.inventory_id)
+  res.json({ success: true, points_awarded: 0 })
+})
+
 app.post('/listings/:id/sold', requireAuth, async (req, res) => {
   const { data: listing, error: lookupErr } = await supabaseAdmin
     .from('listings')
@@ -1794,23 +1837,46 @@ async function runInventorySync(dealershipId) {
       console.warn(`[sync] VIN capture rate too low (${Math.round(captureRate * 100)}%) — skipping auto-sold to avoid false positives`)
     } else {
       // Union: allRawVins (from feed) + uniqueVins (actually upserted this run)
-      const vinList = [...new Set([...allRawVins, ...uniqueVins])]
+      const feedVinSet = new Set([...allRawVins, ...uniqueVins])
 
-      // Mark sold: available vehicles whose VIN is not in this run's feed
-      await supabaseAdmin
+      // Compute the sold/restore diffs in JS rather than via PostgREST .not().in()
+      // — the URL-encoded VIN list breaks past ~100 VINs and silently matches everything,
+      // causing the entire inventory to flip to sold. Doing it in JS is reliable at any scale.
+      const { data: currentRows, error: fetchErr } = await supabaseAdmin
         .from('inventory')
-        .update({ status: 'sold' })
+        .select('id, vin, status')
         .eq('dealership_id', dealershipId)
-        .eq('status', 'available')
-        .not('vin', 'in', `(${vinList.map(v => `"${v}"`).join(',')})`)
+        .in('status', ['available', 'sold'])
+      if (fetchErr) {
+        console.error('[sync] could not fetch current inventory for diff:', fetchErr.message)
+      } else {
+        const toSold = []         // available → sold (VIN no longer in feed)
+        const toAvailable = []    // sold → available (VIN reappeared in feed)
+        for (const row of currentRows || []) {
+          if (!row.vin) continue
+          const inFeed = feedVinSet.has(row.vin)
+          if (row.status === 'available' && !inFeed) toSold.push(row.id)
+          else if (row.status === 'sold' && inFeed) toAvailable.push(row.id)
+        }
 
-      // Restore: previously marked sold but now back in feed
-      await supabaseAdmin
-        .from('inventory')
-        .update({ status: 'available' })
-        .eq('dealership_id', dealershipId)
-        .eq('status', 'sold')
-        .in('vin', vinList)
+        // Safety brake: if the diff says >50% of available inventory must flip to sold,
+        // something's off (feed change, partial fetch) — skip rather than corrupt data.
+        const availableCount = (currentRows || []).filter(r => r.status === 'available').length
+        if (availableCount > 0 && toSold.length / availableCount > 0.5) {
+          console.warn(`[sync] would mark ${toSold.length}/${availableCount} available as sold — refusing to run (likely sync glitch)`)
+        } else {
+          const batchUpdate = async (ids, patch) => {
+            for (let i = 0; i < ids.length; i += 100) {
+              const slice = ids.slice(i, i + 100)
+              const { error } = await supabaseAdmin.from('inventory').update(patch).in('id', slice)
+              if (error) console.warn(`[sync] batch update failed:`, error.message)
+            }
+          }
+          if (toSold.length) await batchUpdate(toSold, { status: 'sold' })
+          if (toAvailable.length) await batchUpdate(toAvailable, { status: 'available' })
+          console.log(`[sync] auto-sold: ${toSold.length} marked sold, ${toAvailable.length} restored`)
+        }
+      }
     }
   }
 

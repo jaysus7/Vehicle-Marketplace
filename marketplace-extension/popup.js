@@ -180,8 +180,12 @@ async function loadInventory(token) {
       const openFbBtn = (isPosted && v._outOfStock)
         ? `<button class="open-fb-btn" data-fb-url="${fbUrl}" style="background:#1e3a5f;border:1px solid #3b82f6;color:#93c5fd;padding:5px 10px;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap;flex-shrink:0;margin-bottom:4px;">Open on FB</button>`
         : ''
+      // Two sold actions: "I Sold It" (awards points to this rep) vs "Sold by Other" (just clears the listing).
       const actionBtn = isPosted
-        ? `<button class="sold-btn" data-listing-id="${listingId}" data-vehicle-name="${vehName}" style="background:#3a1a1a;border:1px solid #ef4444;color:#ef4444;padding:5px 10px;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap;flex-shrink:0;">Mark Sold</button>`
+        ? `<div style="display:flex;flex-direction:column;gap:3px;">
+             <button class="sold-by-me-btn"    data-listing-id="${listingId}" data-vehicle-name="${vehName}" style="background:#14532d;border:1px solid #22c55e;color:#86efac;padding:4px 8px;border-radius:6px;font-size:10px;font-weight:700;cursor:pointer;white-space:nowrap;flex-shrink:0;">🤝 I Sold It</button>
+             <button class="sold-by-other-btn" data-listing-id="${listingId}" data-vehicle-name="${vehName}" style="background:#3a1a1a;border:1px solid #ef4444;color:#fca5a5;padding:4px 8px;border-radius:6px;font-size:10px;font-weight:600;cursor:pointer;white-space:nowrap;flex-shrink:0;">🔄 Sold by Other</button>
+           </div>`
         : `<button class="post-btn" data-id="${v.id}">Post</button>`
 
       const tagBits = []
@@ -210,8 +214,11 @@ async function loadInventory(token) {
     document.querySelectorAll('.post-btn').forEach(btn => {
       btn.addEventListener('click', () => postVehicle(btn.dataset.id, token))
     })
-    document.querySelectorAll('.sold-btn').forEach(btn => {
-      btn.addEventListener('click', () => markSold(btn.dataset.listingId, btn.dataset.vehicleName, token))
+    document.querySelectorAll('.sold-by-me-btn').forEach(btn => {
+      btn.addEventListener('click', () => markSold(btn.dataset.listingId, btn.dataset.vehicleName, token, 'sold-by-me'))
+    })
+    document.querySelectorAll('.sold-by-other-btn').forEach(btn => {
+      btn.addEventListener('click', () => markSold(btn.dataset.listingId, btn.dataset.vehicleName, token, 'sold-by-other'))
     })
     document.getElementById('cleanup-fb-open-all')?.addEventListener('click', () => {
       // Open each affected FB listing — fall back to user's marketplace selling page if URL missing/invalid
@@ -265,10 +272,15 @@ async function showInventoryScreen(token, user) {
   $('refresh-btn').onclick = () => loadInventory(token)
 }
 
-async function markSold(listingId, vehicleName, token) {
-  if (!confirm(`Mark "${vehicleName}" as sold? This removes it from the active inventory list.`)) return
+// kind = 'sold-by-me' (this rep closed the deal → 500 pts) | 'sold-by-other' (no points)
+async function markSold(listingId, vehicleName, token, kind) {
+  const isMine = kind === 'sold-by-me'
+  const msg = isMine
+    ? `You sold "${vehicleName}"? This credits you with the sale (500 pts).`
+    : `Mark "${vehicleName}" sold by someone else? It'll be cleared but no points are awarded.`
+  if (!confirm(msg)) return
   try {
-    const r = await fetch(`${API}/listings/${listingId}/sold`, {
+    const r = await fetch(`${API}/listings/${listingId}/${kind}`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}` }
     })
