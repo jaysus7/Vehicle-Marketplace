@@ -15,6 +15,9 @@
     </script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
+        /* Specific logo color override - Sync in Purple, | Market in White */
+        .sync-color { color: #6366F1; }
+        
         .gradient-text { background: linear-gradient(135deg, #A78BFA 0%, #6366F1 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
         .glass-panel { backdrop-filter: blur(12px); }
         .glow-btn { box-shadow: 0 0 20px rgba(99, 102, 241, 0.3); transition: all 0.3s ease; }
@@ -29,9 +32,12 @@
 
     <header class="max-w-7xl mx-auto px-6 py-5 flex items-center justify-between">
         <div class="flex items-center space-x-3">
-            <div class="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center font-black text-xl text-white tracking-tighter">M⚡S</div>
-            <span class="text-xl font-bold tracking-tight text-slate-900 dark:text-white">Market<span class="text-indigo-600 dark:text-indigo-400">Sync</span></span>
+            <span class="text-3xl font-normal text-slate-900 dark:text-white">|</span>
+            <span class="text-xl font-bold tracking-tight text-slate-900 dark:text-white logo-word-space">
+                Market<span class="sync-color">Sync</span>
+            </span>
         </div>
+        
         <nav class="hidden md:flex items-center space-x-8 text-sm font-medium text-slate-600 dark:text-gray-400">
             <a href="#features" class="hover:text-indigo-600 dark:hover:text-white transition">Features</a>
             <a href="#dashboard" class="hover:text-indigo-600 dark:hover:text-white transition">The Dashboard</a>
@@ -41,7 +47,7 @@
         </nav>
         <div class="flex items-center space-x-4">
             <a href="https://calendly.com/noreply-marketsync/30min" class="hidden sm:inline-flex bg-slate-200 hover:bg-slate-300 dark:bg-gray-800 dark:hover:bg-gray-700 text-slate-900 dark:text-white text-sm font-semibold px-4 py-2 rounded-lg border border-slate-300 dark:border-gray-700 transition">Book 30-Min Demo</a>
-            <a href="https://chrome.google.com/webstore" target="_blank" class="bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold px-4 py-2 rounded-lg transition">Install Extension</a>
+            <a href="https://chromewebstore.google.com/detail/marketsync/mfoaodaoipaalloccolophjhblgikada" target="_blank" class="bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold px-4 py-2 rounded-lg transition">Install Extension</a>
         </div>
     </header>
 
@@ -53,7 +59,7 @@
             Auto-fill vehicle marketplace listings directly from your eDealer or LeadBox inventory feed in <span class="text-slate-900 dark:text-white font-semibold">under 60 seconds</span>. Gamify your showroom floor, track individual representative conversion metrics, and verify every organic closed unit.
         </p>
         <div class="flex flex-col sm:flex-row items-center justify-center gap-4 mb-16">
-            <a href="https://calendly.com/noreply-marketsync/30min" class="w-full sm:w-auto px-8 py-4 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl glow-btn transition text-center">
+            <a href="https://marketsync.link/register" class="w-full sm:w-auto px-8 py-4 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl glow-btn transition text-center">
                 Get Started Risk-Free <i class="fa-solid fa-arrow-right ml-2 text-sm"></i>
             </a>
             <span class="text-xs sm:text-sm text-slate-500 dark:text-gray-500 font-medium">No deployment fees • Individual or Store-Wide Options</span>
@@ -81,9 +87,9 @@
     <section id="dashboard" class="w-full bg-slate-100 dark:bg-gray-950/40 border-y border-slate-200 dark:border-gray-900 py-24 px-6">
         <div class="max-w-7xl mx-auto">
             <div class="text-center max-w-3xl mx-auto mb-16">
-                <span class="text-xs font-bold uppercase tracking-widest text-indigo-600 dark:text-indigo-400 bg-indigo-500/10 px-3 py-1 rounded-full">Rooftop Control Center</span>
+                <span class="text-xs font-bold uppercase tracking-widest text-indigo-600 dark:text-indigo-400 bg-indigo-500/10 px-3 py-1 rounded-full">Dealership Control Center</span>
                 <h2 class="text-3xl sm:text-4xl font-bold mt-4 tracking-tight text-slate-900 dark:text-white">Stop Guessing If Your Reps Are Posting</h2>
-                <p class="text-slate-600 dark:text-gray-400 mt-2">Every rooftop deployment receives an enterprise-grade tracking suite to hold your floor reps accountable for organic listing loops.</p>
+                <p class="text-slate-600 dark:text-gray-400 mt-2">Every dealership deployment receives an enterprise-grade tracking suite to hold your floor reps accountable for organic listing loops.</p>
             </div>
 
             <div class="grid grid-cols-1 lg:grid-cols-4 gap-6 mb-8">
@@ -109,7 +115,7 @@
                     </div>
                 </div>
                 <div class="glass-panel bg-white/80 dark:bg-gray-900/70 p-6 rounded-xl border border-slate-200 border-white/5">
-                    <span class="text-xs font-bold text-slate-500 dark:text-gray-400 uppercase tracking-wider block">Rooftop Conversion Velocity</span>
+                    <span class="text-xs font-bold text-slate-500 dark:text-gray-400 uppercase tracking-wider block">Dealership Conversion Velocity</span>
                     <div class="flex items-baseline space-x-2 mt-2">
                         <span class="text-4xl font-black text-slate-900 dark:text-white">52.9%</span>
                         <span class="text-xs text-slate-400 dark:text-gray-500">Lead to delivery</span>
@@ -220,8 +226,8 @@
             <div class="glass-panel bg-white dark:bg-gray-900/70 border border-slate-200 dark:border-indigo-500/30 p-8 rounded-2xl flex flex-col justify-between relative shadow-xl shadow-slate-200/50 dark:shadow-none">
                 <div class="absolute top-4 right-4 bg-indigo-600 text-white text-[10px] font-black px-2.5 py-0.5 rounded-full uppercase tracking-wider">STORE-WIDE LICENSE</div>
                 <div>
-                    <h3 class="text-xl font-bold text-slate-900 dark:text-white">Dealership Rooftop</h3>
-                    <p class="text-slate-500 dark:text-gray-400 text-xs mt-1">Full mapping loop access for the entire rooftop location.</p>
+                    <h3 class="text-xl font-bold text-slate-900 dark:text-white">Dealership Location</h3>
+                    <p class="text-slate-500 dark:text-gray-400 text-xs mt-1">Full mapping loop access for the entire dealership location.</p>
                     <div class="my-6">
                         <span class="text-4xl font-black text-slate-900 dark:text-white">$199</span>
                         <span class="text-slate-500 text-sm"> / month</span>
@@ -232,7 +238,7 @@
                         <li class="flex items-center gap-2"><i class="fa-solid fa-check text-indigo-600 dark:text-indigo-400 text-xs"></i> Store Leaderboard & Conversion Analytics</li>
                     </ul>
                 </div>
-                <a href="https://calendly.com/noreply-marketsync/30min" class="mt-8 block w-full py-3 bg-indigo-600 hover:bg-indigo-500 text-center text-white font-bold rounded-xl transition">Activate Store Rooftop</a>
+                <a href="https://marketsync.link/register" class="mt-8 block w-full py-3 bg-indigo-600 hover:bg-indigo-500 text-center text-white font-bold rounded-xl transition">Activate Store Location</a>
             </div>
 
             <div class="glass-panel bg-white dark:bg-gray-900/70 border border-slate-200 dark:border-gray-800 p-8 rounded-2xl flex flex-col justify-between shadow-xl shadow-slate-200/50 dark:shadow-none">
@@ -250,7 +256,7 @@
                         <li class="flex items-center gap-2"><i class="fa-solid fa-check text-emerald-600 dark:text-emerald-400 text-xs"></i> Individual Performance & Lead Log</li>
                     </ul>
                 </div>
-                <a href="https://calendly.com/noreply-marketsync/30min" class="mt-8 block w-full py-3 bg-slate-100 dark:bg-gray-900 hover:bg-slate-200 dark:hover:bg-gray-800 text-center text-slate-900 dark:text-white font-bold rounded-xl border border-slate-300 dark:border-gray-800 transition">Activate Rep License</a>
+                <a href="https://marketsync.link/register" class="mt-8 block w-full py-3 bg-slate-100 dark:bg-gray-900 hover:bg-slate-200 dark:hover:bg-gray-800 text-center text-slate-900 dark:text-white font-bold rounded-xl border border-slate-300 dark:border-gray-800 transition">Activate Rep License</a>
             </div>
         </div>
     </section>
