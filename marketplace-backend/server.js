@@ -1369,90 +1369,47 @@ function parseEDealerDetailPage(html, url) {
 }
 
 // ── Puppeteer-based full inventory fetcher for JS-rendered EDealer sites ──
+// HTTP-only EDealer walker — uses the inventory sitemap (works on every EDealer site
+// with Yoast SEO, which is all of them). No Chrome/Puppeteer dependency.
+// For 200-300 vehicles this finishes in ~30-60 seconds with concurrency=6.
 async function fetchEDealerInventoryFromSitemap(origin) {
-  let browser
   try {
-    const puppeteer = (await import('puppeteer')).default
-    browser = await puppeteer.launch({
-      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'],
-      headless: true
+    const smRes = await fetch(`${origin}/inventory-listing-sitemap.xml`, {
+      headers: { 'User-Agent': 'Mozilla/5.0 MarketSync-Sync/1.0' }
     })
-    const page = await browser.newPage()
-    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36')
+    if (!smRes.ok) {
+      console.warn(`[sync] EDealer sitemap missing at ${origin} (HTTP ${smRes.status})`)
+      return null
+    }
+    const xml = await smRes.text()
+    // Match every <loc>...vdp/</loc> entry — vdp = vehicle detail page
+    const urls = [...xml.matchAll(/<loc>([^<]+\/inventory\/[^<]+vdp\/?)<\/loc>/g)].map(m => m[1])
+    if (!urls.length) {
+      console.warn(`[sync] EDealer sitemap parsed but contained 0 detail URLs`)
+      return null
+    }
+    console.log(`[sync] EDealer sitemap: ${urls.length} detail URLs to fetch`)
 
     const vehicles = []
-    let pageNum = 1
-    let lastCount = -1
-
-    while (true) {
-      const url = `${origin}/inventory/?page=${pageNum}`
-      console.log(`[sync] EDealer Puppeteer: fetching page ${pageNum}`)
-
-      await page.goto(url, { waitUntil: 'networkidle2', timeout: 30000 })
-
-      const cars = await page.evaluate(() => {
-        const scripts = [...document.querySelectorAll('script[type="application/ld+json"]')]
-        const results = []
-        for (const s of scripts) {
-          try {
-            const parsed = JSON.parse(s.textContent)
-            const nodes = parsed['@graph'] || (Array.isArray(parsed) ? parsed : [parsed])
-            for (const node of nodes) {
-              if (node['@type'] === 'Car' || node['@type'] === 'Vehicle') {
-                results.push(node)
-              }
-            }
-          } catch {}
-        }
-        return results
-      })
-
-      console.log(`[sync] EDealer Puppeteer page ${pageNum}: ${cars.length} cars`)
-
-      // Stop if same count as last page (infinite pagination loop) or zero results
-      if (cars.length === 0 || cars.length === lastCount) break
-      lastCount = cars.length
-
-      for (const c of cars) {
-        const img = Array.isArray(c.image) ? c.image[0] : c.image
-        vehicles.push({
-          vin: c.vehicleIdentificationNumber,
-          year: c.vehicleModelDate,
-          make: c.brand?.name || c.manufacturer?.name || c.brand,
-          model: c.model,
-          trim: (() => {
-            const cfg = typeof c.vehicleConfiguration === 'string' ? c.vehicleConfiguration : ''
-            const parts = cfg.split(' ')
-            return parts.length > 1 ? parts.slice(0, -1).join(' ') : null
-          })(),
-          price: c.offers?.price,
-          mileage: c.mileageFromOdometer?.value,
-          exteriorcolor: c.color,
-          interiorcolor: c.vehicleInteriorColor,
-          transmission: c.vehicleTransmission,
-          fueltype: c.vehicleEngine?.fuelType,
-          bodystyle: c.bodyType,
-          condition: (c.itemCondition || '').includes('NewCondition') ? 'New'
-            : (c.itemCondition || '').includes('UsedCondition') ? 'Used' : null,
-          stocknumber: c.sku || c.productID,
-          onweb: true,
-          salepending: false,
-          image_urls: img && !img.includes('coming.png') ? [img] : [],
-          _detail_url: c.url || `${origin}/inventory/`
-        })
-      }
-
-      pageNum++
-      await sleep(1000)
+    let fetched = 0, failed = 0
+    const CONCURRENCY = 6
+    for (let i = 0; i < urls.length; i += CONCURRENCY) {
+      const batch = urls.slice(i, i + CONCURRENCY)
+      const results = await Promise.all(batch.map(async (url) => {
+        try {
+          const r = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0 MarketSync-Sync/1.0' } })
+          if (!r.ok) { failed++; return null }
+          fetched++
+          return parseEDealerDetailPage(await r.text(), url)
+        } catch { failed++; return null }
+      }))
+      vehicles.push(...results.filter(Boolean))
     }
-
-    console.log(`[sync] EDealer Puppeteer: ${vehicles.length} total vehicles`)
+    console.log(`[sync] EDealer sitemap walker: ${vehicles.length} valid · ${fetched} fetched · ${failed} failed`)
     return vehicles.length > 0 ? vehicles : null
   } catch (e) {
-    console.warn('[sync] EDealer Puppeteer failed:', e.message)
+    console.warn('[sync] EDealer sitemap walker failed:', e.message)
     return null
-  } finally {
-    if (browser) await browser.close()
   }
 }
 
@@ -2013,17 +1970,68 @@ app.delete('/inventory-feeds/:id', requireAuth, async (req, res) => {
     || req.profile.role === 'OWNER'
     || req.profile.dealerships?.is_personal === true
   if (!canManage) return res.status(403).json({ error: 'Only dealer admins or solo reps can manage feeds' })
+
   const { data: feed } = await supabaseAdmin
     .from('inventory_feeds')
-    .select('id, dealership_id')
+    .select('id, dealership_id, feed_url')
     .eq('id', req.params.id)
     .single()
   if (!feed || feed.dealership_id !== req.dealershipId) {
     return res.status(404).json({ error: 'Feed not found' })
   }
-  const { error } = await supabaseAdmin.from('inventory_feeds').delete().eq('id', req.params.id)
-  if (error) return res.status(500).json({ error: error.message })
-  res.json({ success: true })
+
+  // Determine the feed's origin so we can scope inventory deletion correctly
+  let feedOrigin = null
+  try { feedOrigin = new URL(feed.feed_url).origin } catch {}
+
+  // 1. Remove the feed row itself
+  const { error: delFeedErr } = await supabaseAdmin
+    .from('inventory_feeds').delete().eq('id', req.params.id)
+  if (delFeedErr) return res.status(500).json({ error: delFeedErr.message })
+
+  // 2. Decide what inventory should also be removed
+  // Look at the dealership's REMAINING feeds. If another feed shares the same origin
+  // (e.g., you deleted /new/ but kept /used/), don't touch inventory — the remaining
+  // feed still covers it and the next sync will reconcile.
+  const { data: remainingFeeds } = await supabaseAdmin
+    .from('inventory_feeds').select('feed_url').eq('dealership_id', req.dealershipId)
+
+  const remainingOrigins = new Set((remainingFeeds || []).map(r => {
+    try { return new URL(r.feed_url).origin } catch { return null }
+  }).filter(Boolean))
+
+  let inventoryDeleted = 0
+  let toDelete = []
+
+  if (remainingFeeds && remainingFeeds.length === 0) {
+    // No feeds left at all — wipe the dealership's inventory entirely
+    const { data: all } = await supabaseAdmin
+      .from('inventory').select('id').eq('dealership_id', req.dealershipId)
+    toDelete = (all || []).map(r => r.id)
+  } else if (feedOrigin && !remainingOrigins.has(feedOrigin)) {
+    // The deleted feed's origin isn't covered by any remaining feed —
+    // remove only inventory whose source_url matches that origin
+    const { data: matching } = await supabaseAdmin
+      .from('inventory').select('id, source_url')
+      .eq('dealership_id', req.dealershipId)
+    toDelete = (matching || [])
+      .filter(r => r.source_url && r.source_url.startsWith(feedOrigin))
+      .map(r => r.id)
+  }
+
+  // 3. Cascade-delete listings then inventory, batched to avoid URL-length limits
+  if (toDelete.length) {
+    for (let i = 0; i < toDelete.length; i += 100) {
+      const slice = toDelete.slice(i, i + 100)
+      // Listings have FK to inventory — must go first
+      await supabaseAdmin.from('listings').delete().in('inventory_id', slice)
+      await supabaseAdmin.from('inventory').delete().in('id', slice)
+    }
+    inventoryDeleted = toDelete.length
+    console.log(`[feed delete] dealership=${req.dealershipId} feed=${req.params.id} removed ${inventoryDeleted} inventory rows`)
+  }
+
+  res.json({ success: true, inventory_deleted: inventoryDeleted })
 })
 
 app.post('/inventory/sync', requireAuth, async (req, res) => {

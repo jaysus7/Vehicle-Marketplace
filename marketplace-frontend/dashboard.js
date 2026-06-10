@@ -838,17 +838,20 @@ async function loadInventoryFeeds() {
 }
 
 async function deleteFeed(id) {
-  if (!confirm('Remove this inventory feed?')) return;
+  if (!confirm('Remove this inventory feed?\n\nAll synced vehicles from this feed will also be removed from your catalog. This cannot be undone.')) return;
+  showSyncStatus('Removing feed and its inventory…', 'info');
   try {
     const res = await fetch(`${API}/inventory-feeds/${id}`, {
       method: 'DELETE',
       headers: { 'Authorization': `Bearer ${token}` }
     });
-    if (!res.ok) {
-      const data = await res.json().catch(() => ({}));
-      throw new Error(data.error || 'Delete failed');
-    }
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || 'Delete failed');
+    const n = data.inventory_deleted || 0;
+    showSyncStatus(n > 0 ? `✓ Feed removed · ${n} vehicles cleared from catalog.` : '✓ Feed removed.', 'ok');
     loadInventoryFeeds();
+    loadInventoryCatalog();   // refresh the catalog grid so deleted vehicles disappear
+    loadInsights();           // update the metric strip counts
   } catch (err) {
     showSyncStatus(err.message, 'err');
   }
