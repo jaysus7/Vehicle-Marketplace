@@ -124,6 +124,25 @@ async function pickDropdown(labelText, value) {
   document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
   await sleep(400);
 
+  // Helper: verify a candidate combobox is actually labeled `labelText` by checking its
+  // aria-label OR a nearby label element. Prevents matching a sibling combobox that just
+  // happens to share placeholder text (this was causing Body Style values like "SUV"/"Truck"
+  // to land in the Model field when Model selection was still settling).
+  const isLabeled = (el) => {
+    const aria = (el.getAttribute('aria-label') || '').trim().toLowerCase();
+    if (aria === lower) return true;
+    if (aria.startsWith(lower)) return true;
+    // Walk up looking for a label/span sibling
+    let node = el;
+    for (let i = 0; i < 4 && node; i++) {
+      node = node.parentElement;
+      if (!node) break;
+      const labelEl = node.querySelector?.('label, span');
+      if (labelEl && labelEl.textContent.trim().toLowerCase() === lower) return true;
+    }
+    return false;
+  };
+
   // Find the dropdown using multiple strategies (FB keeps moving things around)
   const trigger = await waitFor(() => {
     // 1. Exact aria-label match (most reliable when present)
@@ -142,14 +161,16 @@ async function pickDropdown(labelText, value) {
         const combo = lbl.querySelector('[role="combobox"]')
           || lbl.parentElement?.querySelector('[role="combobox"]')
           || lbl.closest('label')?.querySelector('[role="combobox"]');
-        if (combo) return combo;
+        // Confirm this combobox really belongs to our label, not a neighbor
+        if (combo && isLabeled(combo)) return combo;
       }
     }
 
-    // 4. Loose fallback — combobox text starts with label but isn't enormous
+    // 4. Loose fallback — combobox text starts with label but isn't enormous,
+    //    AND confirmed to actually belong to this label by aria/sibling check.
     return comboboxes.find(el => {
       const txt = el.textContent.trim().toLowerCase();
-      return txt.startsWith(lower) && txt.length < lower.length + 30;
+      return txt.startsWith(lower) && txt.length < lower.length + 30 && isLabeled(el);
     });
   }, 10000);
 
@@ -534,9 +555,31 @@ async function fillListingForm(vehicle) {
       }
     }
   }
-  await sleep(1000);
-  
-  // BODY STYLE (Dynamically determined)
+  // Wait longer for the Model commit so the next combobox lookup doesn't grab the
+  // Model field by mistake. 2500ms beats the visual confirmation we observed.
+  await sleep(2500);
+
+  // VERIFY the Model field actually shows the model name. If it's empty or contains a
+  // body-style value (SUV/Truck/Sedan/etc.), the model selection didn't take — log and
+  // continue; this is what was causing "SUV"/"Truck" to leak into Model when Body Style
+  // ran next.
+  const modelComboboxNow = document.querySelector('[role="combobox"][aria-label="Model" i], [role="combobox"][aria-label="Vehicle model" i]');
+  const modelDisplayedNow = (modelComboboxNow?.textContent || '').trim().toLowerCase();
+  const bodyStyleVocab = ['suv', 'truck', 'sedan', 'coupe', 'hatchback', 'convertible', 'minivan', 'van', 'wagon'];
+  if (modelDisplayedNow && bodyStyleVocab.includes(modelDisplayedNow)) {
+    console.warn(`⚠️ Model field shows body-style value "${modelDisplayedNow}" — clearing and retrying`);
+    // Click the combobox to reopen, clear it via Escape + clearing search
+    try {
+      modelComboboxNow.click();
+      await sleep(1200);
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+      await sleep(400);
+    } catch {}
+  }
+
+  // BODY STYLE (Dynamically determined). The hardened pickDropdown above is now
+  // strict about aria-label / sibling-label matching, so it won't accidentally
+  // re-target the Model field even if Facebook re-renders the form.
   showStatus(`Selecting body style (${bodyStyle})...`);
   await pickDropdown('Body style', bodyStyle);
   await sleep(DELAY);
@@ -574,8 +617,9 @@ async function fillListingForm(vehicle) {
   await pickDropdown('Transmission', vehicle.transmission || 'Automatic');
   await sleep(DELAY);
 
-  // MILEAGE — Facebook rejects 0-km new vehicles in some categories.
-  // Floor at 300 so listings always validate; use feed value if it's higher.
+  // MILEAGE — use the vehicle's actual kms. Facebook rejects unusually-low values
+  // on some categories (delivery/demo cars with 0-5 km look like data errors), so
+  // anything under 30 gets bumped to 300 to ensure the listing validates.
   showStatus('Filling mileage...');
   const mileageEl = await waitFor(() =>
     getFormFields().find(f =>
@@ -583,7 +627,8 @@ async function fillListingForm(vehicle) {
       f.closest('label, div')?.textContent?.includes('Kilometers')
     )
   );
-  const finalMileage = Math.max(300, Number(vehicle.mileage) || 0);
+  const rawMileage = Number(vehicle.mileage) || 0;
+  const finalMileage = rawMileage < 30 ? 300 : rawMileage;
   if (mileageEl) await typeInto(mileageEl, String(finalMileage));
   await sleep(DELAY);
 
