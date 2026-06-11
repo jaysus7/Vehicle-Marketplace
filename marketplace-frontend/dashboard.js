@@ -209,8 +209,25 @@ async function fetchMetrics(path) {
   return r.ok ? r.json() : [];
 }
 
-// Insights range — persists in localStorage so the user's choice survives reload
+// Shared insights range — persists in localStorage so the user's choice survives reload
+// and applies to every page that shows insight data (Insights + Team Insights).
 let insightsRange = localStorage.getItem('insightsRange') || 'lifetime';
+
+// Sync all .range-pill buttons (across every range-toggle on the page) to the current range
+function syncRangePillsUI() {
+  document.querySelectorAll('.range-pill').forEach(p => {
+    const active = p.dataset.range === insightsRange;
+    p.classList.toggle('bg-white', active);
+    p.classList.toggle('dark:bg-slate-800', active);
+    p.classList.toggle('text-indigo-600', active);
+    p.classList.toggle('dark:text-indigo-400', active);
+    p.classList.toggle('text-slate-600', !active);
+    p.classList.toggle('dark:text-slate-300', !active);
+  });
+}
+function syncRangeLabels(label) {
+  document.querySelectorAll('.range-label').forEach(el => { el.textContent = label || 'lifetime' });
+}
 
 async function loadInsights() {
   try {
@@ -223,7 +240,7 @@ async function loadInsights() {
     const data = await res.json();
 
     // Range label & scope subtext
-    document.getElementById('range-label').textContent = data.range_label || 'lifetime';
+    syncRangeLabels(data.range_label);
     const scopePrefix = data.scope === 'dealership' ? 'team total' : 'your posts';
     document.getElementById('metric-listings-scope').textContent = `${scopePrefix} · ${data.range_label || 'lifetime'}`;
 
@@ -253,35 +270,41 @@ async function loadInsights() {
     // Hide the "Posts/Day" tile in Lifetime mode since the rate isn't meaningful there
     const ppdCard = document.getElementById('metric-posts-per-day')?.closest('.bg-white, .dark\\:bg-slate-900');
     if (ppdCard) ppdCard.style.opacity = (data.range === 'lifetime') ? '0.5' : '1';
+
+    // Mirror the headline metrics into Team Insights' top strip (cheap — same payload)
+    const tiSynced = document.getElementById('ti-metric-synced');
+    if (tiSynced) {
+      tiSynced.textContent = data.inventory_available ?? data.inventory_synced;
+      document.getElementById('ti-metric-synced-total').textContent = data.inventory_synced;
+      document.getElementById('ti-metric-listings').textContent = data.listings_posted;
+      document.getElementById('ti-metric-sold').textContent = data.sold_this_month;
+      document.getElementById('ti-metric-active-days').textContent = `${data.active_days_this_week}/7`;
+      document.getElementById('ti-metric-time-to-sell').textContent = data.avg_time_to_sell_days ?? '—';
+      document.getElementById('ti-metric-posts-per-day').textContent = data.posts_per_day || '—';
+      document.getElementById('ti-metric-sell-through').textContent = data.sell_through_rate || 0;
+      document.getElementById('ti-metric-aged').textContent = data.inventory_aged_60d ?? 0;
+      document.getElementById('ti-metric-clicks').textContent = data.link_clicks ?? 0;
+    }
   } catch (e) {
     console.error('Insights load threw:', e);
   }
 }
 
-// Range pill click handler — set active state, persist, refetch
+// Range pill click — sync all pills, persist, reload everything insight-related
 document.addEventListener('click', (e) => {
   const pill = e.target.closest?.('.range-pill');
   if (!pill) return;
   insightsRange = pill.dataset.range;
   localStorage.setItem('insightsRange', insightsRange);
-  document.querySelectorAll('.range-pill').forEach(p => {
-    p.classList.remove('bg-white', 'dark:bg-slate-800', 'text-indigo-600', 'dark:text-indigo-400');
-    p.classList.add('text-slate-600', 'dark:text-slate-300');
-  });
-  pill.classList.add('bg-white', 'dark:bg-slate-800', 'text-indigo-600', 'dark:text-indigo-400');
-  pill.classList.remove('text-slate-600', 'dark:text-slate-300');
+  syncRangePillsUI();
   loadInsights();
+  // Repaint team charts too if they're loaded (admin only)
+  if (typeof loadTeamInsightsCharts === 'function' && __canSeeTeamInsights) {
+    loadTeamInsightsCharts();
+  }
 });
 
-// On boot: highlight whatever pill matches the persisted range
-document.addEventListener('DOMContentLoaded', () => {
-  document.querySelectorAll('.range-pill').forEach(p => {
-    if (p.dataset.range === insightsRange) {
-      p.classList.add('bg-white', 'dark:bg-slate-800', 'text-indigo-600', 'dark:text-indigo-400');
-      p.classList.remove('text-slate-600', 'dark:text-slate-300');
-    }
-  });
-});
+document.addEventListener('DOMContentLoaded', syncRangePillsUI);
 
 // DEALER DOMAIN: Real team roster from /dealership/team
 async function loadDealerManagementMatrix() {
@@ -628,26 +651,35 @@ function timeAgo(date) {
   return date.toLocaleDateString();
 }
 
-// CHARTS: listings over time + by rep + sold by rep + active days by rep + rep cards
+// CHARTS: listings over time + by rep + sold by rep + active days by rep
+//          + sell-through % by rep + avg time-to-sell by rep + rep cards
 async function loadCharts() {
   try {
-    const res = await fetch(`${API}/dealership/charts`, { headers: { 'Authorization': `Bearer ${token}` } });
+    const res = await fetch(`${API}/dealership/charts?range=${insightsRange}`, { headers: { 'Authorization': `Bearer ${token}` } });
     if (!res.ok) return;
     const data = await res.json();
     renderDailyChart(data.daily || []);
     renderByRepChart(data.by_rep || []);
     renderSoldByRepChart(data.sold_by_rep || []);
     renderActiveByRepChart(data.active_days_by_rep || []);
+    renderSellThroughByRepChart(data.sell_through_by_rep || []);
+    renderTimeToSellByRepChart(data.time_to_sell_by_rep || []);
     renderRepCards(data.by_rep || [], data.sold_by_rep || [], data.active_days_by_rep || []);
   } catch (e) {
     console.warn('Charts failed:', e.message);
   }
 }
 
+// Alias used by the range-pill click handler — `loadTeamInsightsCharts` reads more
+// clearly when called from outside this section.
+const loadTeamInsightsCharts = loadCharts;
+
 let __dailyChart = null;
 let __byRepChart = null;
 let __soldByRepChart = null;
 let __activeByRepChart = null;
+let __sellThroughChart = null;
+let __timeToSellChart = null;
 
 function renderDailyChart(daily) {
   const ctx = document.getElementById('chart-listings-daily');
@@ -726,6 +758,50 @@ function renderActiveByRepChart(activeByRep) {
       }]
     },
     options: { ...chartCommonOptions(), scales: { ...chartCommonOptions().scales, y: { ...chartCommonOptions().scales.y, max: 14 } } }
+  });
+}
+
+function renderSellThroughByRepChart(rows) {
+  const ctx = document.getElementById('chart-sell-through-by-rep');
+  if (!ctx || typeof Chart === 'undefined') return;
+  if (__sellThroughChart) __sellThroughChart.destroy();
+  __sellThroughChart = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: rows.map(r => r.name),
+      datasets: [{
+        label: 'Sell-through %',
+        data: rows.map(r => r.percent),
+        backgroundColor: '#10b981',
+        borderRadius: 4
+      }]
+    },
+    options: {
+      ...chartCommonOptions(),
+      scales: {
+        ...chartCommonOptions().scales,
+        y: { ...chartCommonOptions().scales.y, max: 100, ticks: { callback: v => v + '%' } }
+      }
+    }
+  });
+}
+
+function renderTimeToSellByRepChart(rows) {
+  const ctx = document.getElementById('chart-time-to-sell-by-rep');
+  if (!ctx || typeof Chart === 'undefined') return;
+  if (__timeToSellChart) __timeToSellChart.destroy();
+  __timeToSellChart = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: rows.map(r => r.name),
+      datasets: [{
+        label: 'Avg days to sell',
+        data: rows.map(r => r.days),
+        backgroundColor: '#a78bfa',
+        borderRadius: 4
+      }]
+    },
+    options: chartCommonOptions()
   });
 }
 
@@ -1037,108 +1113,33 @@ function renderCatalog() {
       : `<div class="w-full h-32 rounded bg-slate-50 dark:bg-slate-950 flex items-center justify-center text-slate-700 text-2xl">⌀</div>`;
     const price = v.price ? `$${Number(v.price).toLocaleString()}` : '—';
     const mileage = v.mileage ? `${Number(v.mileage).toLocaleString()} km` : 'New';
-    // Cards open a detail modal — guarantees a usable click even for dealer sites
-    // where we can't construct a working per-vehicle URL (most LeadBox dealers, etc).
+    // Card is a clickable link to the vehicle's page on the dealer site (when we have one)
+    const tag = v.source_url ? 'a' : 'div';
+    const linkAttrs = v.source_url
+      ? `href="${v.source_url}" target="_blank" rel="noopener" title="Open on dealer site ↗"`
+      : '';
+    const externalIcon = v.source_url
+      ? `<svg class="w-3 h-3 text-slate-400 dark:text-slate-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/></svg>`
+      : '';
     return `
-      <button type="button" data-vehicle-id="${v.id}" class="catalog-card text-left bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded p-3 flex flex-col gap-2 hover:border-indigo-400 dark:hover:border-indigo-500 transition">
+      <${tag} ${linkAttrs} class="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded p-3 flex flex-col gap-2 ${v.source_url ? 'hover:border-indigo-400 dark:hover:border-indigo-500 transition no-underline' : ''}">
         ${img}
         <div class="flex items-center justify-between gap-2">
           <span class="text-xs font-bold text-slate-900 dark:text-white truncate flex-1" title="${v.year} ${v.make} ${v.model} ${v.trim || ''}">${v.year} ${v.make} ${v.model}</span>
           ${statusBadge(v.status)}
         </div>
-        <div class="text-[11px] text-slate-500 dark:text-slate-400 truncate">
-          ${v.trim || ''} ${v.exterior_color ? '· ' + v.exterior_color : ''}
+        <div class="text-[11px] text-slate-500 dark:text-slate-400 truncate flex items-center gap-1">
+          <span class="truncate">${v.trim || ''} ${v.exterior_color ? '· ' + v.exterior_color : ''}</span>
+          ${externalIcon}
         </div>
         <div class="flex items-center justify-between text-xs">
           <span class="font-bold text-indigo-600 dark:text-indigo-400">${price}</span>
           <span class="text-slate-500">${mileage}</span>
         </div>
-      </button>
+      </${tag}>
     `;
   }).join('');
 }
-
-// Catalog card → detail modal. Built from the cached catalog row so no extra fetch.
-function openVehicleModal(vehicleId) {
-  const v = __catalogCache.find(x => x.id === vehicleId);
-  if (!v) return;
-  let modal = document.getElementById('vehicle-modal');
-  if (!modal) {
-    modal = document.createElement('div');
-    modal.id = 'vehicle-modal';
-    modal.className = 'fixed inset-0 bg-black/70 backdrop-blur-sm z-50 hidden items-center justify-center p-4';
-    modal.innerHTML = `
-      <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl max-w-3xl w-full max-h-[90vh] overflow-y-auto shadow-2xl relative">
-        <button type="button" id="vehicle-modal-close" class="absolute top-3 right-3 z-10 w-9 h-9 rounded-full bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold transition">✕</button>
-        <div id="vehicle-modal-body"></div>
-      </div>`;
-    document.body.appendChild(modal);
-    modal.addEventListener('click', (e) => { if (e.target === modal) closeVehicleModal(); });
-    document.getElementById('vehicle-modal-close').addEventListener('click', closeVehicleModal);
-  }
-
-  const mileage = v.mileage ? `${Number(v.mileage).toLocaleString()} km` : 'New';
-  const price = v.price ? `$${Number(v.price).toLocaleString()}` : 'Contact for price';
-  const imgs = (v.image_urls || []).slice(0, 8).map(u =>
-    `<img src="${API}/proxy-image?url=${encodeURIComponent(u)}" loading="lazy" class="w-full h-32 object-cover rounded">`
-  ).join('');
-  const sourceBtn = v.source_url
-    ? `<a href="${v.source_url}" target="_blank" rel="noopener" class="inline-flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-bold px-4 py-2 rounded transition">
-         View on Dealer Site <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"/></svg>
-       </a>`
-    : `<span class="text-xs text-slate-500 dark:text-slate-400 italic">No per-vehicle link available for this dealer site.</span>`;
-
-  document.getElementById('vehicle-modal-body').innerHTML = `
-    <div class="p-6">
-      <h2 class="text-2xl font-black text-slate-900 dark:text-white">${v.year} ${v.make} ${v.model}</h2>
-      <p class="text-sm text-slate-500 dark:text-slate-400 mt-1">${v.trim || ''} ${v.exterior_color ? '· ' + v.exterior_color : ''} ${v.interior_color ? '· ' + v.interior_color + ' interior' : ''}</p>
-
-      <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-5">
-        <div class="bg-slate-50 dark:bg-slate-950 rounded p-3">
-          <div class="text-[10px] uppercase font-bold text-slate-500 tracking-wider">Price</div>
-          <div class="text-lg font-black text-indigo-600 dark:text-indigo-400">${price}</div>
-        </div>
-        <div class="bg-slate-50 dark:bg-slate-950 rounded p-3">
-          <div class="text-[10px] uppercase font-bold text-slate-500 tracking-wider">Mileage</div>
-          <div class="text-lg font-bold text-slate-900 dark:text-white">${mileage}</div>
-        </div>
-        <div class="bg-slate-50 dark:bg-slate-950 rounded p-3">
-          <div class="text-[10px] uppercase font-bold text-slate-500 tracking-wider">VIN</div>
-          <div class="text-xs font-mono text-slate-700 dark:text-slate-300 truncate" title="${v.vin || ''}">${v.vin || '—'}</div>
-        </div>
-        <div class="bg-slate-50 dark:bg-slate-950 rounded p-3">
-          <div class="text-[10px] uppercase font-bold text-slate-500 tracking-wider">Status</div>
-          <div class="text-sm font-bold text-slate-900 dark:text-white capitalize">${v.status || '—'}</div>
-        </div>
-      </div>
-
-      ${imgs ? `<div class="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-5">${imgs}</div>` : ''}
-
-      ${v.description ? `<div class="mt-5"><div class="text-[10px] uppercase font-bold text-slate-500 tracking-wider mb-2">Description</div><p class="text-sm text-slate-700 dark:text-slate-300 leading-relaxed whitespace-pre-line">${v.description}</p></div>` : ''}
-
-      <div class="mt-6 pt-5 border-t border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-3">
-        ${sourceBtn}
-        <button type="button" id="vehicle-modal-close-btn" class="text-sm font-semibold text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white">Close</button>
-      </div>
-    </div>`;
-
-  modal.classList.remove('hidden');
-  modal.classList.add('flex');
-  document.getElementById('vehicle-modal-close-btn')?.addEventListener('click', closeVehicleModal);
-}
-
-function closeVehicleModal() {
-  const modal = document.getElementById('vehicle-modal');
-  if (modal) { modal.classList.add('hidden'); modal.classList.remove('flex'); }
-}
-
-document.addEventListener('click', (e) => {
-  const card = e.target.closest?.('.catalog-card');
-  if (card) {
-    e.preventDefault();
-    openVehicleModal(card.dataset.vehicleId);
-  }
-});
 
 function setupActionListeners() {
   // Collapsible profile panel

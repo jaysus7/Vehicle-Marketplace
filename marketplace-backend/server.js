@@ -537,7 +537,14 @@ app.get('/dealership/charts', requireAuth, async (req, res) => {
   }
   if (!req.dealershipId) return res.json({ daily: [], by_rep: [] })
 
-  const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()
+  // Honor the same ?range= filter as /dashboard/insights. Lifetime means no filter.
+  const rangeParam = String(req.query.range || 'lifetime').toLowerCase()
+  const rangeDays = ({ '7': 7, '30': 30, '90': 90, '365': 365, '1y': 365 }[rangeParam]) || null
+  const rangeStartMs = rangeDays ? Date.now() - rangeDays * 24 * 60 * 60 * 1000 : null
+  const rangeStart = rangeStartMs ? new Date(rangeStartMs).toISOString() : null
+
+  // Daily bucket window matches the range when set, else default 30d for the line chart.
+  const dailyWindow = rangeDays || 30
   const fourteenDaysAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString()
 
   const { data: members } = await supabaseAdmin
@@ -545,13 +552,14 @@ app.get('/dealership/charts', requireAuth, async (req, res) => {
   if (!members?.length) return res.json({ daily: [], by_rep: [] })
   const memberIds = members.map(m => m.id)
 
-  const { data: recentListings } = await supabaseAdmin
-    .from('listings').select('posted_at, posted_by')
-    .in('posted_by', memberIds)
-    .gte('posted_at', thirtyDaysAgo)
+  // Daily posts buckets
+  let dailyQuery = supabaseAdmin.from('listings').select('posted_at, posted_by').in('posted_by', memberIds)
+  const dailyWindowStart = new Date(Date.now() - dailyWindow * 24 * 60 * 60 * 1000).toISOString()
+  dailyQuery = dailyQuery.gte('posted_at', dailyWindowStart)
+  const { data: recentListings } = await dailyQuery
 
   const dayBuckets = new Map()
-  for (let i = 29; i >= 0; i--) {
+  for (let i = dailyWindow - 1; i >= 0; i--) {
     const d = new Date(Date.now() - i * 24 * 60 * 60 * 1000)
     dayBuckets.set(d.toISOString().slice(0, 10), 0)
   }
@@ -560,14 +568,27 @@ app.get('/dealership/charts', requireAuth, async (req, res) => {
     if (dayBuckets.has(key)) dayBuckets.set(key, dayBuckets.get(key) + 1)
   }
 
-  const { data: allListings } = await supabaseAdmin
-    .from('listings').select('posted_by, status').in('posted_by', memberIds)
-  const repTotals = new Map(members.map(m => [m.id, { id: m.id, name: m.full_name, count: 0, sold: 0 }]))
+  // Per-rep stats — count, sold, time-to-sell ms
+  let listingsQuery = supabaseAdmin
+    .from('listings').select('posted_by, status, created_at, sold_at, posted_at')
+    .in('posted_by', memberIds)
+  if (rangeStart) listingsQuery = listingsQuery.gte('created_at', rangeStart)
+  const { data: allListings } = await listingsQuery
+
+  const repTotals = new Map(members.map(m => [m.id, {
+    id: m.id, name: m.full_name, count: 0, sold: 0, timeToSellMs: 0, soldWithDates: 0
+  }]))
   for (const l of allListings || []) {
     const entry = repTotals.get(l.posted_by)
     if (!entry) continue
     entry.count++
-    if (l.status === 'sold') entry.sold++
+    if (l.status === 'sold') {
+      entry.sold++
+      if (l.sold_at && l.created_at) {
+        entry.timeToSellMs += Math.max(0, new Date(l.sold_at).getTime() - new Date(l.created_at).getTime())
+        entry.soldWithDates++
+      }
+    }
   }
 
   const { data: logins14 } = await supabaseAdmin
@@ -579,19 +600,36 @@ app.get('/dealership/charts', requireAuth, async (req, res) => {
     if (day && activeDaysByRep.has(l.user_id)) activeDaysByRep.get(l.user_id).add(day)
   }
 
-  const by_rep = [...repTotals.values()].sort((a, b) => b.count - a.count)
+  const by_rep = [...repTotals.values()]
+    .map(r => ({ id: r.id, name: r.name, count: r.count }))
+    .sort((a, b) => b.count - a.count)
   const sold_by_rep = [...repTotals.values()]
     .map(r => ({ name: r.name, count: r.sold }))
     .sort((a, b) => b.count - a.count)
   const active_days_by_rep = [...repTotals.values()]
     .map(r => ({ name: r.name, count: activeDaysByRep.get(r.id)?.size || 0 }))
     .sort((a, b) => b.count - a.count)
+  const sell_through_by_rep = [...repTotals.values()]
+    .map(r => ({ name: r.name, percent: r.count > 0 ? Math.round((r.sold / r.count) * 1000) / 10 : 0 }))
+    .sort((a, b) => b.percent - a.percent)
+  const time_to_sell_by_rep = [...repTotals.values()]
+    .map(r => ({
+      name: r.name,
+      days: r.soldWithDates > 0
+        ? Math.round((r.timeToSellMs / r.soldWithDates / (1000 * 60 * 60 * 24)) * 10) / 10
+        : 0
+    }))
+    .sort((a, b) => a.days - b.days)  // ascending — faster sellers first
 
   res.json({
+    range: rangeDays ? String(rangeDays) : 'lifetime',
+    daily_window_days: dailyWindow,
     daily: [...dayBuckets.entries()].map(([date, count]) => ({ date, count })),
     by_rep,
     sold_by_rep,
-    active_days_by_rep
+    active_days_by_rep,
+    sell_through_by_rep,
+    time_to_sell_by_rep
   })
 })
 
