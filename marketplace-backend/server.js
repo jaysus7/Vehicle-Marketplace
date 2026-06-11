@@ -1210,6 +1210,42 @@ const PLATFORM_PROBES = [
     })
   },
   {
+    platform: 'ux_auto',
+    label: 'UX Auto',
+    buildUrls: (origin) => [
+      `${origin}/inventory/list/NEW`,
+      `${origin}/inventory/list/USED`,
+      `${origin}/inventory/list/DEMO`,
+      `${origin}/inventory/list/new`,
+      `${origin}/inventory/list/used`,
+    ],
+    validate: (data) =>
+      data?.result === 'Success' && Array.isArray(data?.records) && data.records.length > 0,
+    extract: (data) => data.records,
+    mapVehicle: (v) => ({
+      vin: v.vin,
+      year: v.year,
+      make: v.make,
+      model: v.model,
+      trim: v.trim || null,
+      price: v.sale_price || v.list_price || v.retail_price || 0,
+      mileage: v.mileage || 0,
+      condition: v.condition || null,
+      stocknumber: v.stock_id || v.stocknumber,
+      exteriorcolor: v.ext_color || null,
+      interiorcolor: v.int_color || null,
+      bodystyle: v.body_type || v.body_style || null,
+      fueltype: v.fuel_type || null,
+      transmission: v.transmission || null,
+      drivetrain: v.drivetrain || v.drive_train || null,
+      onweb: v.active !== 'n',
+      salepending: false,
+      image_urls: v.s3_key
+        ? [`https://d3ls4jww1dnhu4.cloudfront.net/${v.s3_key}`]
+        : (Array.isArray(v.images) ? v.images : [])
+    })
+  },
+  {
     platform: 'strathcom',
     label: 'Strathcom',
     buildUrls: (origin) => [
@@ -1676,7 +1712,7 @@ function buildLeadBoxSourceUrl(feedUrl, vehicle) {
 async function runInventorySync(dealershipId) {
   const { data: feeds } = await supabaseAdmin
     .from('inventory_feeds')
-    .select('feed_url, feed_type')
+    .select('feed_url, feed_type, platform')
     .eq('dealership_id', dealershipId)
   if (!feeds || feeds.length === 0) {
     return { success: false, error: 'No inventory feeds configured for this dealership.' }
@@ -1692,8 +1728,29 @@ async function runInventorySync(dealershipId) {
     try {
       let vehicles
 
+      // Match this feed to its probe definition so we can apply the right field mapper
+      const probe = PLATFORM_PROBES.find(p => p.platform === feed.platform)
+
       if (jsonCache.has(feed.feed_url)) {
         vehicles = jsonCache.get(feed.feed_url)
+      } else if (feed.platform === 'ux_auto') {
+        // UX Auto splits inventory across /NEW, /USED, /DEMO endpoints — fetch all three
+        const base = feed.feed_url.replace(/\/(NEW|USED|DEMO|new|used|demo)\/?$/, '')
+        const conditions = ['NEW', 'USED', 'DEMO']
+        const all = []
+        for (const cond of conditions) {
+          try {
+            const r = await fetch(`${base}/${cond}?v=${Date.now()}`, {
+              headers: { 'User-Agent': 'Mozilla/5.0 MarketSync-Sync/1.0' }
+            })
+            if (!r.ok) continue
+            const d = await r.json()
+            if (d?.result === 'Success' && Array.isArray(d.records)) all.push(...d.records)
+          } catch {}
+        }
+        vehicles = all
+        jsonCache.set(feed.feed_url, vehicles)
+        totalVehiclesFound += vehicles.length
       } else {
         const feedRes = await fetch(`${feed.feed_url}?v=${Date.now()}`, {
           headers: { 'User-Agent': 'Mozilla/5.0 MarketSync-Sync/1.0' }
@@ -1702,7 +1759,7 @@ async function runInventorySync(dealershipId) {
 
         if (ct.includes('json')) {
           const data = await feedRes.json()
-          vehicles = data.vehicles || data.inventory || data.data || data.items || (Array.isArray(data) ? data : [])
+          vehicles = data.vehicles || data.inventory || data.data || data.items || data.records || (Array.isArray(data) ? data : [])
           jsonCache.set(feed.feed_url, vehicles)
           totalVehiclesFound += vehicles.length
         } else {
@@ -1776,6 +1833,13 @@ async function runInventorySync(dealershipId) {
             totalVehiclesFound += vehicles.length
           }
         }
+      }
+
+      // Normalize raw vehicle records using this platform's mapper (additive — raw
+      // fields stay accessible, mapper overrides with the canonical field names that
+      // the rest of the sync engine expects: vin, stocknumber, price, exteriorcolor, etc.)
+      if (probe?.mapVehicle) {
+        vehicles = vehicles.map(raw => ({ ...raw, ...probe.mapVehicle(raw) }))
       }
 
       // Capture every VIN from raw feed for auto-sold logic
@@ -1948,6 +2012,7 @@ app.post('/inventory-feeds', requireAuth, async (req, res) => {
 
   let workingUrl = null
   let detectedPlatform = null
+  let detectedPlatformSlug = null
   let attempts = []
 
   const userPastedJson = (() => {
@@ -1969,6 +2034,7 @@ app.post('/inventory-feeds', requireAuth, async (req, res) => {
     if (detection.success) {
       workingUrl = detection.feed_url
       detectedPlatform = detection.platform_label
+      detectedPlatformSlug = detection.platform
     }
   }
 
@@ -1990,7 +2056,8 @@ app.post('/inventory-feeds', requireAuth, async (req, res) => {
       dealership_id: req.dealershipId,
       user_id: req.user.id,
       feed_url: workingUrl,
-      feed_type: feedType
+      feed_type: feedType,
+      platform: detectedPlatformSlug
     })
     .select()
     .single()
