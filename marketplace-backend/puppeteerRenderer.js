@@ -150,6 +150,107 @@ export async function renderAndCaptureInventory(dealerUrl, opts = {}) {
   }
 }
 
+// Harvest every per-vehicle detail-page URL from a dealer's inventory listing pages.
+// Renders new + used + demo listing pages, scrolls each to trigger lazy-load, collects
+// anchor hrefs, then builds a `stockNumber → fullUrl` map by matching feed stock numbers
+// against each anchor's href/text. Saved once per feed on add; the sync engine uses it
+// to resolve per-vehicle source_url without re-rendering on every sync.
+//
+// stockNumbers — array of strings the harvester tries to match against anchor URLs/text.
+//                Pass the stock numbers from your feed so we only keep relevant hits.
+export async function harvestVehicleUrls(dealerOriginOrUrl, stockNumbers, opts = {}) {
+  const timeoutMs = opts.timeoutMs ?? 45000
+  const scrollMs = opts.scrollMs ?? 6000
+  const stockSet = new Set((stockNumbers || []).map(s => String(s).trim()).filter(Boolean))
+  if (!stockSet.size) return { success: false, error: 'no stock numbers given', map: {} }
+
+  const origin = (() => {
+    try { return new URL(dealerOriginOrUrl).origin } catch { return null }
+  })()
+  if (!origin) return { success: false, error: 'invalid dealer URL', map: {} }
+
+  // Listing pages we try (in priority order — LeadBox conventions first)
+  const listingPaths = [
+    '/new-vehicles/', '/used-vehicles/', '/demo-inventory/',
+    '/inventory/', '/vehicles/', '/all-inventory/'
+  ]
+
+  const stockToUrl = {}
+  const pagesVisited = []
+  let page
+
+  try {
+    const browser = await getBrowser()
+    page = await browser.newPage()
+    await page.setUserAgent('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36')
+
+    for (const path of listingPaths) {
+      const listingUrl = `${origin}${path}`
+      try {
+        const res = await page.goto(listingUrl, { waitUntil: 'networkidle2', timeout: timeoutMs }).catch(() => null)
+        if (!res || res.status() >= 400) continue
+        pagesVisited.push(listingUrl)
+
+        // Scroll to bottom in chunks to trigger lazy-loaded cards
+        await page.evaluate(async (totalMs) => {
+          const step = 400
+          const delay = 200
+          const start = performance.now()
+          while (performance.now() - start < totalMs) {
+            window.scrollBy(0, step)
+            await new Promise(r => setTimeout(r, delay))
+          }
+          window.scrollTo(0, 0)
+        }, scrollMs)
+
+        // Collect every anchor that looks vehicle-detail-shaped, with surrounding text for matching
+        const anchors = await page.evaluate(() => {
+          const out = []
+          for (const a of document.querySelectorAll('a[href]')) {
+            const href = a.href
+            if (!href || href.startsWith('javascript:') || href.includes('#')) continue
+            // Skip obvious non-vehicle links
+            const lower = href.toLowerCase()
+            if (lower.includes('mailto:') || lower.includes('tel:')) continue
+            // Card text (used for stock-number matching)
+            const card = a.closest('[class*="card"], [class*="vehicle"], [class*="listing"], li, article') || a
+            out.push({ href, text: (card.textContent || '').slice(0, 600) })
+          }
+          return out
+        })
+
+        // Match each stock# against anchor href OR card text
+        for (const stock of stockSet) {
+          if (stockToUrl[stock]) continue  // already found on an earlier page
+          const stockLower = String(stock).toLowerCase()
+          const hit = anchors.find(a =>
+            a.href.toLowerCase().includes(stockLower) ||
+            a.text.includes(stock)
+          )
+          if (hit) stockToUrl[stock] = hit.href
+        }
+
+        // Stop early if we found everything
+        if (Object.keys(stockToUrl).length >= stockSet.size) break
+      } catch (e) {
+        console.warn(`[harvest] failed on ${listingUrl}: ${e.message}`)
+      }
+    }
+
+    return {
+      success: Object.keys(stockToUrl).length > 0,
+      map: stockToUrl,
+      matched: Object.keys(stockToUrl).length,
+      total: stockSet.size,
+      pages_visited: pagesVisited
+    }
+  } catch (e) {
+    return { success: false, error: e.message, map: stockToUrl, pages_visited: pagesVisited }
+  } finally {
+    if (page) { try { await page.close() } catch {} }
+  }
+}
+
 // Map a raw vehicle from any platform to the canonical shape the sync engine expects.
 // Field-name heuristics — covers UX Auto (sale_price/stock_id/ext_color), Dealer.com
 // (modelYear/finalPrice/stockNumber), generic camelCase, and snake_case.

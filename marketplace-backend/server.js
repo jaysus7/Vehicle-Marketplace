@@ -4,7 +4,7 @@ import cors from 'cors'
 import ws from 'ws'
 import Stripe from 'stripe'
 import { createClient } from '@supabase/supabase-js'
-import { renderAndCaptureInventory, genericMapVehicle } from './puppeteerRenderer.js'
+import { renderAndCaptureInventory, genericMapVehicle, harvestVehicleUrls } from './puppeteerRenderer.js'
 
 const missingEnvVars = [];
 if (!process.env.SUPABASE_URL) missingEnvVars.push('SUPABASE_URL');
@@ -1913,7 +1913,13 @@ function buildSourceUrl(feed, vehicle) {
                 || vehicle.vdpurl || vehicle.thirdpartyvdpurl || vehicle.vdp_url
   if (typeof explicit === 'string' && explicit.startsWith('http')) return explicit
 
-  // 3. LeadBox-specific category fallback
+  // 3. Per-feed harvested URL map (populated at feed-add for LeadBox dealers)
+  if (feed.url_map && vehicle.stocknumber) {
+    const fromMap = feed.url_map[String(vehicle.stocknumber)]
+    if (typeof fromMap === 'string' && fromMap.startsWith('http')) return fromMap
+  }
+
+  // 4. LeadBox-specific category fallback (when stock# wasn't in the harvested map)
   if (feed.feed_url && feed.feed_url.includes('/wp-content')) {
     return buildLeadBoxSourceUrl(feed.feed_url, vehicle)
   }
@@ -1952,7 +1958,7 @@ function buildLeadBoxSourceUrl(feedUrl, vehicle) {
 async function runInventorySync(dealershipId) {
   const { data: feeds } = await supabaseAdmin
     .from('inventory_feeds')
-    .select('id, feed_url, feed_type, platform, source_dealer_url')
+    .select('id, feed_url, feed_type, platform, source_dealer_url, url_map')
     .eq('dealership_id', dealershipId)
   if (!feeds || feeds.length === 0) {
     return { success: false, error: 'No inventory feeds configured for this dealership.' }
@@ -2348,6 +2354,32 @@ app.post('/inventory-feeds', requireAuth, async (req, res) => {
   // the site if the captured XHR URL stops working (e.g. auth tokens rotate).
   const sourceDealerUrl = detectedPlatformSlug === 'spa_render' ? rawUrl : null
 
+  // For LeadBox feeds, harvest per-vehicle URLs from the dealer's listing pages now
+  // (their JSON feed doesn't include vehicle detail URLs). Saves a stock→URL map onto
+  // the feed row; the sync engine uses it to set source_url per vehicle.
+  let urlMap = null
+  if (detectedPlatformSlug === 'leadbox' && workingUrl) {
+    try {
+      console.log(`[feed-add] Harvesting per-vehicle URLs from ${rawUrl}...`)
+      const feedRes = await fetch(workingUrl)
+      const feedJson = await feedRes.json().catch(() => null)
+      const stockNumbers = (feedJson?.vehicles || [])
+        .map(v => v.stocknumber || v.stock_id || v.stock)
+        .filter(Boolean)
+      if (stockNumbers.length) {
+        const harvest = await harvestVehicleUrls(rawUrl, stockNumbers)
+        if (harvest.success) {
+          urlMap = harvest.map
+          console.log(`[feed-add] Harvested ${harvest.matched}/${harvest.total} URLs`)
+        } else {
+          console.warn(`[feed-add] Harvest yielded 0 matches: ${harvest.error || 'no anchors'}`)
+        }
+      }
+    } catch (e) {
+      console.warn(`[feed-add] URL harvest failed (non-fatal): ${e.message}`)
+    }
+  }
+
   const { data, error } = await supabaseAdmin
     .from('inventory_feeds')
     .insert({
@@ -2356,7 +2388,8 @@ app.post('/inventory-feeds', requireAuth, async (req, res) => {
       feed_url: workingUrl,
       feed_type: feedType,
       platform: detectedPlatformSlug,
-      source_dealer_url: sourceDealerUrl
+      source_dealer_url: sourceDealerUrl,
+      url_map: urlMap
     })
     .select()
     .single()
