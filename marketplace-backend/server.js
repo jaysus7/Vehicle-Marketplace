@@ -493,14 +493,17 @@ app.get('/dealership/activity', requireAuth, async (req, res) => {
 
   const { data: listings } = await supabaseAdmin
     .from('listings')
-    .select('id, status, posted_at, deleted_at, posted_by, inventory!listings_inventory_id_fkey(year, make, model)')
+    .select('id, status, posted_at, deleted_at, posted_by, vehicle_label, inventory!listings_inventory_id_fkey(year, make, model)')
     .in('posted_by', memberIds)
     .order('posted_at', { ascending: false })
     .limit(50)
 
   const events = []
   for (const l of listings || []) {
-    const vehicle = `${l.inventory?.year || ''} ${l.inventory?.make || ''} ${l.inventory?.model || ''}`.trim()
+    // Prefer the live inventory row; fall back to the snapshotted vehicle_label on the listing
+    // (vehicle_label is set when finalizeSold runs, so sold/deleted vehicles still show)
+    const liveLabel = `${l.inventory?.year || ''} ${l.inventory?.make || ''} ${l.inventory?.model || ''}`.trim()
+    const vehicle = liveLabel || l.vehicle_label || 'Vehicle'
     const userName = memberMap.get(l.posted_by) || 'Unknown'
     if (l.posted_at) {
       events.push({ type: 'posted', user_name: userName, vehicle, timestamp: l.posted_at, points: 100 })
@@ -874,6 +877,36 @@ app.patch('/listings/:id/delete', requireAuth, async (req, res) => {
   res.json({ success: true })
 })
 
+// Shared helper: after a vehicle is sold via any path, snapshot identity onto the listing
+// so leaderboard/activity feeds still have year/make/model after the inventory row is gone,
+// then DELETE the inventory row entirely. Listings/sales FKs are ON DELETE SET NULL so their
+// historical records survive.
+async function finalizeSold(listingId, inventoryId) {
+  const now = new Date().toISOString()
+  // 1. Snapshot vehicle identity onto the listing row
+  if (inventoryId) {
+    const { data: inv } = await supabaseAdmin
+      .from('inventory')
+      .select('year, make, model, trim, vin, price')
+      .eq('id', inventoryId)
+      .single()
+    if (inv) {
+      const label = [inv.year, inv.make, inv.model, inv.trim].filter(Boolean).join(' ').trim()
+      await supabaseAdmin
+        .from('listings')
+        .update({ status: 'sold', deleted_at: now, vehicle_label: label || null })
+        .eq('id', listingId)
+    } else {
+      await supabaseAdmin
+        .from('listings')
+        .update({ status: 'sold', deleted_at: now })
+        .eq('id', listingId)
+    }
+    // 2. Delete the inventory row — vehicle is gone from the dealer site / sold
+    await supabaseAdmin.from('inventory').delete().eq('id', inventoryId)
+  }
+}
+
 app.post('/listings/sync-fb-sold', requireAuth, async (req, res) => {
   const { fb_listing_url } = req.body || {}
   if (!fb_listing_url) return res.status(400).json({ error: 'fb_listing_url required' })
@@ -889,14 +922,11 @@ app.post('/listings/sync-fb-sold', requireAuth, async (req, res) => {
   const listing = (candidates || []).find(l => l.inventory?.dealership_id === req.dealershipId)
   if (!listing) return res.json({ success: false, matched: false })
 
-  const now = new Date().toISOString()
-  await supabaseAdmin.from('listings').update({ status: 'sold', deleted_at: now }).eq('id', listing.id)
-  await supabaseAdmin.from('inventory').update({ status: 'sold' }).eq('id', listing.inventory_id)
+  await finalizeSold(listing.id, listing.inventory_id)
   res.json({ success: true, matched: true, listing_id: listing.id })
 })
 
-// "I Sold It" — the rep clicking this closed the deal. Awards 500 points (sales table)
-// AND marks the inventory/listing as sold. Distinct from "sold by other" which only marks sold.
+// "I Sold It" — rep closed the deal. Records sale (500 pts) + deletes inventory row.
 app.post('/listings/:id/sold-by-me', requireAuth, async (req, res) => {
   const { data: listing, error: lookupErr } = await supabaseAdmin
     .from('listings')
@@ -904,13 +934,9 @@ app.post('/listings/:id/sold-by-me', requireAuth, async (req, res) => {
     .eq('id', req.params.id)
     .single()
   if (lookupErr || !listing) return res.status(404).json({ error: 'Listing not found' })
-  if (listing.inventory.dealership_id !== req.dealershipId) return res.status(403).json({ error: 'Not your dealership' })
+  if (listing.inventory?.dealership_id !== req.dealershipId) return res.status(403).json({ error: 'Not your dealership' })
 
-  const now = new Date().toISOString()
-  await supabaseAdmin.from('listings').update({ status: 'sold', deleted_at: now }).eq('id', listing.id)
-  await supabaseAdmin.from('inventory').update({ status: 'sold' }).eq('id', listing.inventory_id)
-
-  // Record the sale (awards 500 pts on the leaderboard via points-from-sales calculation)
+  // Record the sale FIRST (before deleting inventory) so points are credited.
   const { error: saleErr } = await supabaseAdmin.from('sales').insert({
     inventory_id: listing.inventory_id,
     sold_by: req.user.id,
@@ -919,10 +945,11 @@ app.post('/listings/:id/sold-by-me', requireAuth, async (req, res) => {
   })
   if (saleErr) console.warn('Sales insert failed (table may not exist yet):', saleErr.message)
 
+  await finalizeSold(listing.id, listing.inventory_id)
   res.json({ success: true, points_awarded: 500 })
 })
 
-// "Sold by Other" — someone else closed it. Marks sold but doesn't credit this rep.
+// "Sold by Other" — someone else closed it. No points, but vehicle still gets removed.
 app.post('/listings/:id/sold-by-other', requireAuth, async (req, res) => {
   const { data: listing, error: lookupErr } = await supabaseAdmin
     .from('listings')
@@ -930,14 +957,13 @@ app.post('/listings/:id/sold-by-other', requireAuth, async (req, res) => {
     .eq('id', req.params.id)
     .single()
   if (lookupErr || !listing) return res.status(404).json({ error: 'Listing not found' })
-  if (listing.inventory.dealership_id !== req.dealershipId) return res.status(403).json({ error: 'Not your dealership' })
+  if (listing.inventory?.dealership_id !== req.dealershipId) return res.status(403).json({ error: 'Not your dealership' })
 
-  const now = new Date().toISOString()
-  await supabaseAdmin.from('listings').update({ status: 'sold', deleted_at: now }).eq('id', listing.id)
-  await supabaseAdmin.from('inventory').update({ status: 'sold' }).eq('id', listing.inventory_id)
+  await finalizeSold(listing.id, listing.inventory_id)
   res.json({ success: true, points_awarded: 0 })
 })
 
+// Legacy /sold endpoint — keep working, treats as "sold by other" (no point credit)
 app.post('/listings/:id/sold', requireAuth, async (req, res) => {
   const { data: listing, error: lookupErr } = await supabaseAdmin
     .from('listings')
@@ -945,23 +971,9 @@ app.post('/listings/:id/sold', requireAuth, async (req, res) => {
     .eq('id', req.params.id)
     .single()
   if (lookupErr || !listing) return res.status(404).json({ error: 'Listing not found' })
-  if (listing.inventory?.dealership_id !== req.dealershipId) {
-    return res.status(403).json({ error: 'Not your dealership' })
-  }
+  if (listing.inventory?.dealership_id !== req.dealershipId) return res.status(403).json({ error: 'Not your dealership' })
 
-  const now = new Date().toISOString()
-  const { error: listingErr } = await supabaseAdmin
-    .from('listings')
-    .update({ status: 'sold', deleted_at: now })
-    .eq('id', req.params.id)
-  if (listingErr) return res.status(500).json({ error: listingErr.message })
-
-  const { error: invErr } = await supabaseAdmin
-    .from('inventory')
-    .update({ status: 'sold' })
-    .eq('id', listing.inventory_id)
-  if (invErr) return res.status(500).json({ error: invErr.message })
-
+  await finalizeSold(listing.id, listing.inventory_id)
   res.json({ success: true })
 })
 
@@ -1608,19 +1620,53 @@ function matchesFeedType(v, feedType) {
 }
 
 // ── Helper: build condition-based source URL for LeadBox sites ──
+// Generic source URL resolver — works for ANY feed (LeadBox, EDealer, custom JSON, etc.)
+// Strategy: try the most specific URL we have, fall back to progressively broader pages.
+// Guarantees a non-404 link to the dealer's site for every vehicle.
+function buildSourceUrl(feed, vehicle) {
+  // 1. EDealer sitemap walker (and any future walker) provides the actual detail URL
+  if (vehicle._detail_url
+      && typeof vehicle._detail_url === 'string'
+      && vehicle._detail_url.startsWith('http')
+      && !vehicle._detail_url.endsWith('/inventory/')) {
+    return vehicle._detail_url
+  }
+
+  // 2. Some feeds include the vehicle's own detail URL inline
+  const explicit = vehicle.url || vehicle.permalink || vehicle.detailUrl || vehicle.detail_url
+                || vehicle.vdpurl || vehicle.thirdpartyvdpurl || vehicle.vdp_url
+  if (typeof explicit === 'string' && explicit.startsWith('http')) return explicit
+
+  // 3. LeadBox-specific category fallback
+  if (feed.feed_url && feed.feed_url.includes('/wp-content')) {
+    return buildLeadBoxSourceUrl(feed.feed_url, vehicle)
+  }
+
+  // 4. If the saved feed_url is a viewable HTML page (not raw JSON), use it as-is —
+  //    that's the dealer's inventory listing page, where visitors can find the car
+  if (feed.feed_url && !feed.feed_url.toLowerCase().endsWith('.json')) {
+    return feed.feed_url
+  }
+
+  // 5. Last resort: dealer's homepage (origin only) — never 404s
+  try { return new URL(feed.feed_url).origin } catch { return feed.feed_url || null }
+}
+
+// LeadBox dealers don't expose a consistent per-vehicle URL pattern across all sites
+// (we tested /inventory/{stock}/, /vehicle/{stock}/, /vehicles/{stock}/, /?p={stock} —
+// every one of them 404s on most dealer instances). Until we can probe each dealer's real
+// detail URL at feed-add time, fall back to the category listing page — it always works
+// and the visitor can find the specific car from there. EDealer + any feed that ships an
+// explicit per-vehicle URL is handled via `_detail_url` instead and never hits this fn.
 function buildLeadBoxSourceUrl(feedUrl, vehicle) {
   const origin = feedUrl.split('/wp-content')[0]
 
-  // 1. Prefer an explicit per-vehicle URL if the feed provides one
+  // Prefer an explicit per-vehicle URL if the feed provides one
   const explicit = vehicle.url || vehicle.permalink || vehicle.detailUrl || vehicle.detail_url
+                || vehicle.vdpurl || vehicle.thirdpartyvdpurl
   if (typeof explicit === 'string' && explicit.startsWith('http')) return explicit
 
-  // 2. Build a per-vehicle detail URL from the stock number. LeadBox dealer sites
-  //    consistently expose individual vehicles at /inventory/{stocknumber}/ —
-  //    this gives a real link to the specific car instead of the category page.
-  if (vehicle.stocknumber) return `${origin}/inventory/${vehicle.stocknumber}/`
-
-  // 3. Last resort — the category listing page (better than nothing)
+  // Category listing — guaranteed not to 404 across LeadBox dealers
   if (vehicle.condition === 'New') return `${origin}/new-vehicles/`
   if (vehicle.condition === 'Used') return `${origin}/used-vehicles/`
   if (vehicle.demo) return `${origin}/demo-inventory/`
@@ -1749,15 +1795,7 @@ async function runInventorySync(dealershipId) {
           imageUrls = await fetchVehiclePhotos(v.stocknumber)
         }
 
-        // ── source_url: EDealer gets detail page URL, LeadBox gets condition-based listing page ──
-        let sourceUrl
-        if (v._detail_url && !v._detail_url.endsWith('/inventory/')) {
-          sourceUrl = v._detail_url
-        } else if (feed.feed_url.includes('/wp-content')) {
-          sourceUrl = buildLeadBoxSourceUrl(feed.feed_url, v)
-        } else {
-          sourceUrl = feed.feed_url
-        }
+        const sourceUrl = buildSourceUrl(feed, v)
 
         const record = {
           dealership_id: dealershipId,
@@ -1814,35 +1852,31 @@ async function runInventorySync(dealershipId) {
         .from('inventory')
         .select('id, vin, status')
         .eq('dealership_id', dealershipId)
-        .in('status', ['available', 'sold'])
+        .eq('status', 'available')   // sold rows are now deleted, not flagged
       if (fetchErr) {
         console.error('[sync] could not fetch current inventory for diff:', fetchErr.message)
       } else {
-        const toSold = []         // available → sold (VIN no longer in feed)
-        const toAvailable = []    // sold → available (VIN reappeared in feed)
+        // Vehicle no longer in feed → it's gone from the dealer site, delete it.
+        // (Listings rows survive thanks to ON DELETE SET NULL on inventory_id.)
+        const toDelete = []
         for (const row of currentRows || []) {
           if (!row.vin) continue
-          const inFeed = feedVinSet.has(row.vin)
-          if (row.status === 'available' && !inFeed) toSold.push(row.id)
-          else if (row.status === 'sold' && inFeed) toAvailable.push(row.id)
+          if (!feedVinSet.has(row.vin)) toDelete.push(row.id)
         }
 
-        // Safety brake: if the diff says >50% of available inventory must flip to sold,
-        // something's off (feed change, partial fetch) — skip rather than corrupt data.
-        const availableCount = (currentRows || []).filter(r => r.status === 'available').length
-        if (availableCount > 0 && toSold.length / availableCount > 0.5) {
-          console.warn(`[sync] would mark ${toSold.length}/${availableCount} available as sold — refusing to run (likely sync glitch)`)
-        } else {
-          const batchUpdate = async (ids, patch) => {
-            for (let i = 0; i < ids.length; i += 100) {
-              const slice = ids.slice(i, i + 100)
-              const { error } = await supabaseAdmin.from('inventory').update(patch).in('id', slice)
-              if (error) console.warn(`[sync] batch update failed:`, error.message)
-            }
+        // Safety brake: if the diff says >50% of current inventory must be deleted,
+        // something's off (feed change, partial fetch) — skip rather than wipe data.
+        const totalCount = (currentRows || []).length
+        if (totalCount > 0 && toDelete.length / totalCount > 0.5) {
+          console.warn(`[sync] would delete ${toDelete.length}/${totalCount} inventory rows — refusing (likely sync glitch)`)
+        } else if (toDelete.length) {
+          // Detach any listings first so the activity feed/leaderboard keep history
+          for (let i = 0; i < toDelete.length; i += 100) {
+            const slice = toDelete.slice(i, i + 100)
+            // Listings FK is ON DELETE SET NULL; explicit clear isn't required but safer
+            await supabaseAdmin.from('inventory').delete().in('id', slice)
           }
-          if (toSold.length) await batchUpdate(toSold, { status: 'sold' })
-          if (toAvailable.length) await batchUpdate(toAvailable, { status: 'available' })
-          console.log(`[sync] auto-sold: ${toSold.length} marked sold, ${toAvailable.length} restored`)
+          console.log(`[sync] auto-delete: ${toDelete.length} inventory rows removed (dropped from feed)`)
         }
       }
     }
