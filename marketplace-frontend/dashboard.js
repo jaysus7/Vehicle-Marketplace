@@ -161,10 +161,10 @@ async function initializeDashboardEcosystem() {
   }
 }
 
-// Sidebar nav page switcher — also moves panels INTO Insights so it acts as an overview.
-// Each panel exists in only one DOM location at a time (no duplication, no ID clashes).
+// Sidebar nav page switcher. Each page shows only its own content — no panel
+// mirroring, so Insights stays clean and each nav item lands on a focused view.
 function switchPage(pageId) {
-  arrangePanelsForPage(pageId);
+  ensurePanelsInOriginalLocations();
 
   document.querySelectorAll('[data-page-content]').forEach(el => {
     el.classList.toggle('hidden', el.dataset.pageContent !== pageId);
@@ -180,7 +180,10 @@ function switchPage(pageId) {
   });
 }
 
-function arrangePanelsForPage(pageId) {
+// Idempotent restore: makes sure leaderboard / team-insights / sales-team panels live
+// in their own page wrappers. (Older code mirrored them into Insights as an overview,
+// which made the admin dashboard look cluttered. We now rely on sidebar nav instead.)
+function ensurePanelsInOriginalLocations() {
   const lb = document.getElementById('leaderboard-panel');
   const ti = document.getElementById('team-insights-panel');
   const st = document.getElementById('dealer-view-panel');
@@ -189,19 +192,9 @@ function arrangePanelsForPage(pageId) {
   const tiWrap = document.querySelector('[data-page-content="team-insights"]');
   const stWrap = document.querySelector('[data-page-content="sales-team"]');
 
-  // Always return panels to their dedicated wrappers first.
-  if (lb && lbWrap) lbWrap.appendChild(lb);
-  if (ti && tiWrap) tiWrap.appendChild(ti);
-  if (st && stWrap) stWrap.appendChild(st);
-
-  // On Insights, mirror panels INTO the first insights wrapper (the one with the metrics strip).
-  if (pageId === 'insights') {
-    const insights = document.querySelector('[data-page-content="insights"]');
-    if (!insights) return;
-    if (__canSeeLeaderboard && lb) insights.appendChild(lb);
-    if (__canSeeTeamInsights && ti) insights.appendChild(ti);
-    if (__canSeeSalesTeam && st) insights.appendChild(st);
-  }
+  if (lb && lbWrap && lb.parentElement !== lbWrap) lbWrap.appendChild(lb);
+  if (ti && tiWrap && ti.parentElement !== tiWrap) tiWrap.appendChild(ti);
+  if (st && stWrap && st.parentElement !== stWrap) stWrap.appendChild(st);
 }
 
 async function fetchMetrics(path) {
