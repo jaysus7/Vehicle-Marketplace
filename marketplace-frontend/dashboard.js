@@ -84,6 +84,7 @@ async function initializeDashboardEcosystem() {
     ]);
 
     loadInsights();
+    initSecurityPanel();
 
     const isAdmin = role === 'DEALER_ADMIN' || role === 'OWNER';
     const inDealership = !!profileContext.dealership?.id;
@@ -1302,4 +1303,324 @@ async function fetchInsights() {
   
   const data = await response.json();
   // ... render your data
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// SECURITY PANEL — extra login code (2FA), backup codes, passkeys, sign-in history
+// ──────────────────────────────────────────────────────────────────────────────
+async function initSecurityPanel() {
+  await refreshMfaStatus();
+  await loadPasskeys();
+
+  document.getElementById('mfa-toggle-btn')?.addEventListener('click', async () => {
+    const btn = document.getElementById('mfa-toggle-btn');
+    const isOn = btn.textContent.toLowerCase().includes('off');  // "Turn Off" = currently on
+    if (isOn) {
+      if (!confirm("Turn off the extra login code? Your account will be easier for someone else to break into.")) return;
+      btn.disabled = true; btn.textContent = 'Turning off…';
+      try {
+        await fetch(`${API}/auth/2fa/disable`, {
+          method: 'POST', headers: { 'Authorization': `Bearer ${token}` }
+        });
+        await refreshMfaStatus();
+      } finally { btn.disabled = false; }
+    } else {
+      btn.disabled = true; btn.textContent = 'Loading…';
+      try {
+        const res = await fetch(`${API}/auth/2fa/enroll`, {
+          method: 'POST', headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Could not start.');
+        currentEnrollment = { factor_id: data.factor_id, secret: data.secret };
+        document.getElementById('mfa-enroll-panel').classList.remove('hidden');
+        document.getElementById('mfa-secret-text').textContent = data.secret;
+        const canvas = document.getElementById('mfa-qr-canvas');
+        if (window.QRCode && data.qr_code_uri) {
+          QRCode.toCanvas(canvas, data.qr_code_uri, { width: 180, margin: 1 });
+        }
+        btn.textContent = 'Cancel';
+      } catch (err) {
+        alert(err.message);
+        btn.disabled = false; btn.textContent = 'Turn On';
+      }
+    }
+  });
+
+  document.getElementById('mfa-enroll-verify-btn')?.addEventListener('click', async () => {
+    const code = document.getElementById('mfa-enroll-code').value.trim();
+    const errEl = document.getElementById('mfa-enroll-error');
+    errEl.classList.add('hidden');
+    if (!/^\d{6}$/.test(code)) {
+      errEl.textContent = 'Type the 6 numbers from your app.';
+      errEl.classList.remove('hidden'); return;
+    }
+    try {
+      const res = await fetch(`${API}/auth/2fa/verify-enroll`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ factor_id: currentEnrollment.factor_id, code })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'That code did not work.');
+
+      document.getElementById('mfa-enroll-panel').classList.add('hidden');
+      document.getElementById('mfa-enroll-code').value = '';
+      await refreshMfaStatus();
+
+      // Show the backup codes ONCE — user must copy or download them
+      if (Array.isArray(data.recovery_codes) && data.recovery_codes.length) {
+        showBackupCodes(data.recovery_codes);
+      }
+    } catch (err) {
+      errEl.textContent = err.message;
+      errEl.classList.remove('hidden');
+    }
+  });
+
+  // "Make new backup codes" button — visible once 2FA is on
+  document.getElementById('regen-codes-btn')?.addEventListener('click', async () => {
+    if (!confirm("Make a new set of backup codes? Your old codes will stop working right away.")) return;
+    try {
+      const res = await fetch(`${API}/auth/2fa/regenerate-recovery-codes`, {
+        method: 'POST', headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Could not make new codes.');
+      showBackupCodes(data.recovery_codes);
+    } catch (err) { alert(err.message); }
+  });
+
+  // Add passkey button
+  document.getElementById('add-passkey-btn')?.addEventListener('click', registerNewPasskey);
+
+  document.getElementById('show-sessions-btn')?.addEventListener('click', () => {
+    const panel = document.getElementById('sessions-panel');
+    const wasHidden = panel.classList.contains('hidden');
+    panel.classList.toggle('hidden');
+    if (wasHidden) loadSessions();
+  });
+
+  document.getElementById('revoke-sessions-btn')?.addEventListener('click', async () => {
+    if (!confirm('Sign out all other devices? You will stay signed in here.')) return;
+    try {
+      const res = await fetch(`${API}/me/sessions/revoke-others`, {
+        method: 'POST', headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const data = await res.json();
+      alert(data.message || 'Other devices signed out.');
+      if (data.scope === 'all') {
+        localStorage.clear();
+        window.location.href = '/login.html';
+      }
+    } catch (err) {
+      alert('Could not revoke other sessions: ' + err.message);
+    }
+  });
+}
+
+let currentEnrollment = null;
+
+async function refreshMfaStatus() {
+  try {
+    const res = await fetch(`${API}/auth/2fa/status`, { headers: { 'Authorization': `Bearer ${token}` } });
+    const data = await res.json();
+    const statusText = document.getElementById('mfa-status-text');
+    const btn = document.getElementById('mfa-toggle-btn');
+    const regenBtn = document.getElementById('regen-codes-btn');
+    if (data.enabled) {
+      statusText.innerHTML = '<span class="text-emerald-600 dark:text-emerald-400 font-semibold">✓ On</span> — asks for a 6-digit code from your phone each time you sign in.';
+      btn.textContent = 'Turn Off';
+      btn.classList.remove('bg-indigo-600', 'hover:bg-indigo-500');
+      btn.classList.add('bg-slate-200', 'dark:bg-slate-700', 'text-slate-900', 'dark:text-white', 'hover:bg-slate-300');
+      regenBtn?.classList.remove('hidden');
+    } else {
+      statusText.textContent = 'Off. We strongly suggest turning this on — it stops people from getting in even if they know your password.';
+      btn.textContent = 'Turn On';
+      btn.classList.add('bg-indigo-600', 'hover:bg-indigo-500');
+      btn.classList.remove('bg-slate-200', 'dark:bg-slate-700', 'text-slate-900', 'dark:text-white', 'hover:bg-slate-300');
+      regenBtn?.classList.add('hidden');
+    }
+    btn.disabled = false;
+  } catch (e) {
+    document.getElementById('mfa-status-text').textContent = "Couldn't load status. Try refreshing the page.";
+  }
+}
+
+// ── Backup codes (shown once after enrollment) ──────────────────────────────
+function showBackupCodes(codes) {
+  const panel = document.getElementById('backup-codes-panel');
+  const grid = document.getElementById('backup-codes-grid');
+  grid.innerHTML = codes.map(c => `<div class="bg-white dark:bg-slate-900 border border-amber-300 dark:border-amber-700 rounded px-2 py-1.5 text-center select-all">${c}</div>`).join('');
+  panel.classList.remove('hidden');
+
+  const userEmail = JSON.parse(localStorage.getItem('user') || '{}').email || 'me';
+  const textContent = [
+    'MarketSync Backup Codes',
+    `For: ${userEmail}`,
+    `Saved: ${new Date().toLocaleString()}`,
+    '',
+    'Keep these somewhere safe (password manager, printed copy in a drawer).',
+    'If you lose your phone, type one of these instead of the 6-digit code.',
+    'Each code works ONCE.',
+    '',
+    ...codes
+  ].join('\n');
+
+  document.getElementById('backup-codes-download').onclick = () => {
+    const blob = new Blob([textContent], { type: 'text/plain' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'marketsync-backup-codes.txt';
+    a.click();
+    URL.revokeObjectURL(a.href);
+  };
+
+  document.getElementById('backup-codes-copy').onclick = async () => {
+    try {
+      await navigator.clipboard.writeText(codes.join('\n'));
+      const btn = document.getElementById('backup-codes-copy');
+      const original = btn.textContent;
+      btn.textContent = '✓ Copied!';
+      setTimeout(() => { btn.textContent = original; }, 1500);
+    } catch { alert('Copy did not work — please write them down or download the file.'); }
+  };
+
+  document.getElementById('backup-codes-done').onclick = () => {
+    if (confirm("Did you save your backup codes somewhere safe? We won't show them again.")) {
+      panel.classList.add('hidden');
+    }
+  };
+}
+
+// ── Passkeys (fingerprint / face / hardware key) ────────────────────────────
+async function loadPasskeys() {
+  const listEl = document.getElementById('passkey-list');
+  if (!listEl) return;
+  try {
+    const res = await fetch(`${API}/auth/passkey/list`, { headers: { 'Authorization': `Bearer ${token}` } });
+    const data = await res.json();
+    const items = data.passkeys || [];
+    if (!items.length) {
+      listEl.innerHTML = '<p class="text-[10px] text-slate-500 italic">No passkeys yet. Tap "+ Add" to set up your first one.</p>';
+      return;
+    }
+    listEl.innerHTML = items.map(p => {
+      const when = new Date(p.created_at).toLocaleDateString();
+      const lastUsed = p.last_used_at ? new Date(p.last_used_at).toLocaleDateString() : 'never';
+      return `
+        <div class="flex items-center justify-between gap-2 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded px-2 py-1.5">
+          <div class="min-w-0">
+            <div class="text-xs font-semibold text-slate-900 dark:text-white truncate">${p.device_name || 'My passkey'}</div>
+            <div class="text-[9px] text-slate-500">Added ${when} · Last used ${lastUsed}</div>
+          </div>
+          <button data-passkey-id="${p.id}" class="passkey-remove text-[10px] text-rose-600 dark:text-rose-400 hover:underline whitespace-nowrap">Remove</button>
+        </div>
+      `;
+    }).join('');
+    listEl.querySelectorAll('.passkey-remove').forEach(btn => {
+      btn.addEventListener('click', () => removePasskey(btn.dataset.passkeyId));
+    });
+  } catch (err) {
+    listEl.innerHTML = '<p class="text-[10px] text-red-500">Could not load passkeys.</p>';
+  }
+}
+
+async function registerNewPasskey() {
+  const errEl = document.getElementById('passkey-error');
+  errEl.classList.add('hidden');
+
+  if (!window.SimpleWebAuthnBrowser) {
+    errEl.textContent = 'Passkeys are not loaded. Refresh the page and try again.';
+    errEl.classList.remove('hidden'); return;
+  }
+  if (!window.PublicKeyCredential) {
+    errEl.textContent = "Your browser doesn't support passkeys. Try a recent Chrome, Safari, or Edge.";
+    errEl.classList.remove('hidden'); return;
+  }
+
+  const btn = document.getElementById('add-passkey-btn');
+  btn.disabled = true; btn.textContent = 'Setting up…';
+
+  try {
+    const beginRes = await fetch(`${API}/auth/passkey/register/begin`, {
+      method: 'POST', headers: { 'Authorization': `Bearer ${token}` }
+    });
+    const options = await beginRes.json();
+    if (!beginRes.ok) throw new Error(options.error || 'Could not start.');
+
+    // Browser prompts: Touch ID / Face ID / passkey picker
+    const credential = await SimpleWebAuthnBrowser.startRegistration({ optionsJSON: options });
+
+    // Friendly name — derive from the device
+    const deviceName = (navigator.userAgent.match(/Mac OS X/) ? 'Mac' :
+                       navigator.userAgent.match(/Windows/) ? 'Windows PC' :
+                       navigator.userAgent.match(/iPhone|iPad/) ? 'iPhone/iPad' :
+                       navigator.userAgent.match(/Android/) ? 'Android' :
+                       'My device') + ' (' + new Date().toLocaleDateString() + ')';
+
+    const finishRes = await fetch(`${API}/auth/passkey/register/finish`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ response: credential, device_name: deviceName })
+    });
+    const data = await finishRes.json();
+    if (!finishRes.ok) throw new Error(data.error || 'Could not save passkey.');
+
+    await loadPasskeys();
+    alert('✓ Passkey saved! Next time you sign in, you can tap "Use fingerprint or face" instead of typing a password.');
+  } catch (err) {
+    const msg = err.name === 'NotAllowedError' || err.name === 'AbortError'
+      ? 'Cancelled.'
+      : (err.message || 'Could not add passkey.');
+    errEl.textContent = msg;
+    errEl.classList.remove('hidden');
+  } finally {
+    btn.disabled = false; btn.textContent = '+ Add';
+  }
+}
+
+async function removePasskey(passkeyId) {
+  if (!confirm("Remove this passkey? You won't be able to sign in with it anymore.")) return;
+  try {
+    const res = await fetch(`${API}/auth/passkey/${passkeyId}`, {
+      method: 'DELETE', headers: { 'Authorization': `Bearer ${token}` }
+    });
+    if (!res.ok) throw new Error('Could not remove.');
+    await loadPasskeys();
+  } catch (err) { alert(err.message); }
+}
+
+async function loadSessions() {
+  const list = document.getElementById('sessions-list');
+  list.innerHTML = '<span class="text-slate-500 italic">Loading…</span>';
+  try {
+    const res = await fetch(`${API}/me/sessions`, { headers: { 'Authorization': `Bearer ${token}` } });
+    const data = await res.json();
+    const events = data.events || [];
+    if (!events.length) { list.innerHTML = '<span class="text-slate-500 italic">No sign-in history yet.</span>'; return; }
+    list.innerHTML = events.map((e, idx) => {
+      const friendlyTime = friendlyAgo(new Date(e.timestamp));
+      return `
+      <div class="flex items-start justify-between gap-2 py-1 border-b border-slate-200 dark:border-slate-800 last:border-0">
+        <div class="min-w-0">
+          <div class="text-slate-900 dark:text-white truncate">${e.browser} on ${e.os}${idx === 0 ? ' <span class="text-emerald-600 font-semibold">· this device</span>' : ''}</div>
+          <div class="text-slate-500">${friendlyTime}${e.ip ? ' · ' + e.ip : ''}</div>
+        </div>
+      </div>
+    `;
+    }).join('');
+  } catch (err) {
+    list.innerHTML = '<span class="text-red-500">Could not load sign-in history.</span>';
+  }
+}
+
+// "5 minutes ago", "2 days ago", etc — easier to scan than a date string
+function friendlyAgo(date) {
+  const seconds = Math.floor((Date.now() - date.getTime()) / 1000);
+  if (seconds < 60) return 'Just now';
+  if (seconds < 3600) return Math.floor(seconds / 60) + ' min ago';
+  if (seconds < 86400) return Math.floor(seconds / 3600) + ' hr ago';
+  if (seconds < 604800) return Math.floor(seconds / 86400) + ' days ago';
+  return date.toLocaleDateString();
 }

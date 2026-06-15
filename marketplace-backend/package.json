@@ -13,6 +13,7 @@
   "license": "ISC",
   "description": "",
   "dependencies": {
+    "@simplewebauthn/server": "^11.0.0",
     "@sparticuz/chromium": "^131.0.1",
     "@supabase/supabase-js": "^2.106.0",
     "cors": "^2.8.6",

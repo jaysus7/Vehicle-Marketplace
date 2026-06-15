@@ -153,27 +153,46 @@ export async function renderAndCaptureInventory(dealerUrl, opts = {}) {
 // Harvest every per-vehicle detail-page URL from a dealer's inventory listing pages.
 // Renders new + used + demo listing pages, scrolls each to trigger lazy-load, collects
 // anchor hrefs, then builds a `stockNumber → fullUrl` map by matching feed stock numbers
-// against each anchor's href/text. Saved once per feed on add; the sync engine uses it
-// to resolve per-vehicle source_url without re-rendering on every sync.
+// (and VINs as a fallback) against each anchor's href and surrounding card text. Saved
+// once per feed; the sync engine uses it to resolve per-vehicle source_url without re-
+// rendering on every sync. Generic across LeadBox, EDealer, Dealer.com, and most dealer
+// CMSes — anything that publishes anchor-linked vehicle cards on listing pages works.
 //
-// stockNumbers — array of strings the harvester tries to match against anchor URLs/text.
-//                Pass the stock numbers from your feed so we only keep relevant hits.
-export async function harvestVehicleUrls(dealerOriginOrUrl, stockNumbers, opts = {}) {
+// vehicles — array of `{ stock?: string, vin?: string }` objects.
+//            Stock match is tried first (most common in URL slugs), VIN as a fallback.
+//            Stock-only call sites can pass `[{stock: '12345'}, ...]`.
+export async function harvestVehicleUrls(dealerOriginOrUrl, vehicles, opts = {}) {
   const timeoutMs = opts.timeoutMs ?? 45000
   const scrollMs = opts.scrollMs ?? 6000
-  const stockSet = new Set((stockNumbers || []).map(s => String(s).trim()).filter(Boolean))
-  if (!stockSet.size) return { success: false, error: 'no stock numbers given', map: {} }
+
+  // Backwards-compat: callers that still pass an array of plain strings are auto-promoted
+  const normalized = (vehicles || []).map(v =>
+    typeof v === 'string' ? { stock: v } : { stock: v?.stock || null, vin: v?.vin || null }
+  ).filter(v => v.stock || v.vin)
+  if (!normalized.length) return { success: false, error: 'no stock numbers or VINs given', map: {} }
 
   const origin = (() => {
     try { return new URL(dealerOriginOrUrl).origin } catch { return null }
   })()
   if (!origin) return { success: false, error: 'invalid dealer URL', map: {} }
 
-  // Listing pages we try (in priority order — LeadBox conventions first)
+  // Listing pages we try (priority order, broadest possible coverage across dealer CMSes)
   const listingPaths = [
     '/new-vehicles/', '/used-vehicles/', '/demo-inventory/',
-    '/inventory/', '/vehicles/', '/all-inventory/'
+    '/new-inventory/', '/used-inventory/', '/pre-owned/',
+    '/new/', '/used/', '/new-cars/', '/used-cars/',
+    '/inventory/', '/vehicles/', '/cars/', '/showroom/',
+    '/all-inventory/', '/view/'
   ]
+
+  // Word-boundary matcher — prevents stock "300" from false-matching `?page=300`
+  // by requiring the value to sit between non-alphanumeric characters (or string edges).
+  const escapeRegex = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const matchesValue = (haystack, value) => {
+    if (!haystack || !value) return false
+    const re = new RegExp(`(^|[^a-z0-9])${escapeRegex(String(value).toLowerCase())}([^a-z0-9]|$)`)
+    return re.test(haystack.toLowerCase())
+  }
 
   const stockToUrl = {}
   const pagesVisited = []
@@ -219,19 +238,24 @@ export async function harvestVehicleUrls(dealerOriginOrUrl, stockNumbers, opts =
           return out
         })
 
-        // Match each stock# against anchor href OR card text
-        for (const stock of stockSet) {
-          if (stockToUrl[stock]) continue  // already found on an earlier page
-          const stockLower = String(stock).toLowerCase()
-          const hit = anchors.find(a =>
-            a.href.toLowerCase().includes(stockLower) ||
-            a.text.includes(stock)
-          )
-          if (hit) stockToUrl[stock] = hit.href
+        // For each feed vehicle, try to match an anchor by stock first, then by VIN.
+        // Both use word-boundary matching so we don't false-positive on substring hits.
+        for (const v of normalized) {
+          const mapKey = v.stock || v.vin  // key the result by stock (falling back to VIN)
+          if (!mapKey || stockToUrl[mapKey]) continue  // already found on an earlier page
+
+          let hit = null
+          if (v.stock) {
+            hit = anchors.find(a => matchesValue(a.href, v.stock) || matchesValue(a.text, v.stock))
+          }
+          if (!hit && v.vin) {
+            hit = anchors.find(a => matchesValue(a.href, v.vin) || matchesValue(a.text, v.vin))
+          }
+          if (hit) stockToUrl[mapKey] = hit.href
         }
 
-        // Stop early if we found everything
-        if (Object.keys(stockToUrl).length >= stockSet.size) break
+        // Stop early if we matched every vehicle we were given
+        if (Object.keys(stockToUrl).length >= normalized.length) break
       } catch (e) {
         console.warn(`[harvest] failed on ${listingUrl}: ${e.message}`)
       }
@@ -241,7 +265,7 @@ export async function harvestVehicleUrls(dealerOriginOrUrl, stockNumbers, opts =
       success: Object.keys(stockToUrl).length > 0,
       map: stockToUrl,
       matched: Object.keys(stockToUrl).length,
-      total: stockSet.size,
+      total: normalized.length,
       pages_visited: pagesVisited
     }
   } catch (e) {

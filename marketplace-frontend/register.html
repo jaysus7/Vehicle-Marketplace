@@ -12,7 +12,8 @@
 </script>
 <script id="cookieyes" type="text/javascript" src="https://cdn-cookieyes.com/client_data/4313ff69152b93899edaa7a8/script.js"></script>
   <meta charset="UTF-8">
-  <link rel="icon" type="image/png" href="logo.png">
+  <link rel="icon" type="image/png" href="/favicon.png">
+  <link rel="apple-touch-icon" href="/favicon.png">
   <title>Register · MarketSync</title>
   <style id="word-break-mobile-css">@media (max-width: 640px) { body { word-wrap: break-word; overflow-wrap: anywhere; } code { white-space: pre-wrap; word-break: break-all; } }</style>
   <script>tailwind = { config: { darkMode: 'media' } }</script>
@@ -61,7 +62,10 @@
       </div>
       <div>
         <label class="block text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1">Account Password</label>
-        <input type="password" id="password" required class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded px-3 py-1.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:border-indigo-500">
+        <input type="password" id="password" required minlength="12" class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded px-3 py-1.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:border-indigo-500">
+        <p class="text-[10px] text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">
+          At least 12 characters. We block common breached passwords. Long passphrases work great — for example, four random words you'll remember.
+        </p>
       </div>
 
       <div id="dealership-metadata-fields" class="space-y-4 pt-3 border-t border-slate-200 dark:border-slate-700/50 block w-full">
@@ -94,8 +98,25 @@
         </div>
       </div>
 
+      <label class="flex items-start gap-2 pt-3 border-t border-slate-200 dark:border-slate-700/50 cursor-pointer">
+        <input type="checkbox" id="newsletter-consent" class="mt-0.5 w-4 h-4 rounded border-slate-400 dark:border-slate-600 text-indigo-600 focus:ring-indigo-500">
+        <span class="text-[11px] text-slate-600 dark:text-slate-400 leading-relaxed">
+          Send me MarketSync product updates, dealership tips, and occasional offers via email. You can unsubscribe any time. <span class="text-slate-500 dark:text-slate-500">(Optional.)</span>
+        </span>
+      </label>
+
+      <p class="text-[10px] text-slate-500 dark:text-slate-500 leading-relaxed">
+        By signing up you agree to our <a href="terms.html" class="text-indigo-600 dark:text-indigo-400 hover:underline">Terms</a> and <a href="privacy-policy.html" class="text-indigo-600 dark:text-indigo-400 hover:underline">Privacy Policy</a>.
+      </p>
+
       <button type="submit" id="submit-btn" class="w-full bg-indigo-600 hover:bg-indigo-500 font-bold py-2.5 rounded text-sm shadow transition mt-2">Provision New Dealership</button>
     </form>
+
+    <div id="verify-banner" class="hidden mt-5 p-4 rounded bg-emerald-50 dark:bg-emerald-900/30 border border-emerald-300 dark:border-emerald-700 text-emerald-800 dark:text-emerald-200 text-sm leading-relaxed">
+      <div class="font-bold mb-1">📬 Check your inbox</div>
+      <p class="text-xs">We sent a verification link to <span id="verify-email" class="font-mono"></span>. Click it to activate your account, then log in.</p>
+      <button type="button" id="resend-btn" class="mt-2 text-xs font-bold text-emerald-700 dark:text-emerald-300 hover:underline">Didn't get it? Resend</button>
+    </div>
     
     <div class="text-center mt-5 pt-3 border-t border-slate-200 dark:border-slate-700/30">
       <a href="login.html" class="text-xs text-indigo-600 dark:text-indigo-400 hover:underline">Already have a workspace? Sign in</a>
@@ -168,31 +189,47 @@
         }
       });
       
+      const email = document.getElementById('email').value.trim();
       const payload = {
         accountRole,
         fullName: document.getElementById('full-name').value.trim(),
-        email: document.getElementById('email').value.trim(),
+        email,
         password: document.getElementById('password').value,
         dealershipName: accountRole === 'dealer_admin' ? document.getElementById('dealer-name').value.trim() : null,
         websiteUrl: accountRole === 'dealer_admin' ? document.getElementById('website-url').value.trim() : null,
-        feeds: feeds // Universal availability across both roles
+        feeds: feeds,
+        newsletterConsent: document.getElementById('newsletter-consent').checked === true
       };
-      
+
       try {
         const res = await fetch(`${API}/auth/register`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload)
         });
-        
+
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || 'Failed registration infrastructure step.');
-        
-        window.location.href = 'login.html?registered=true';
+
+        // Email verification required — show the inbox banner instead of redirecting
+        document.getElementById('register-form').style.display = 'none';
+        document.getElementById('verify-email').textContent = email;
+        document.getElementById('verify-banner').classList.remove('hidden');
+
+        document.getElementById('resend-btn').addEventListener('click', async () => {
+          try {
+            await fetch(`${API}/auth/resend-verification`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ email })
+            });
+            alert('Verification email re-sent. Check your inbox (and spam folder).');
+          } catch (e) { alert('Could not resend. Try again in a few minutes.'); }
+        });
       } catch (err) {
         errBox.textContent = err.message;
         errBox.classList.remove('hidden');
-        btn.disabled = false; 
+        btn.disabled = false;
         btn.textContent = accountRole === 'dealer_admin' ? 'Provision New Dealership' : 'Create Sales Representative Account';
       }
     });

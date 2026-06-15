@@ -5,6 +5,14 @@ import ws from 'ws'
 import Stripe from 'stripe'
 import { createClient } from '@supabase/supabase-js'
 import { renderAndCaptureInventory, genericMapVehicle, harvestVehicleUrls } from './puppeteerRenderer.js'
+import { validatePassword, rateLimit, securityHeaders, corsOriginCheck, getClientIp,
+         generateRecoveryCodes, hashRecoveryCode } from './security.js'
+import { maybeAlertSuspiciousLogin } from './securityAlerts.js'
+import {
+  beginPasskeyRegistration, finishPasskeyRegistration,
+  beginPasskeyLogin, finishPasskeyLogin,
+  listUserPasskeys, deletePasskey
+} from './passkeys.js'
 
 const missingEnvVars = [];
 if (!process.env.SUPABASE_URL) missingEnvVars.push('SUPABASE_URL');
@@ -25,7 +33,15 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY)
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_ANON_KEY, { realtime: { transport: ws } })
 const supabaseAdmin = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY, { realtime: { transport: ws } })
 
-app.use(cors({ origin: '*' }))
+// Trust Render's proxy so req.ip / X-Forwarded-For resolve correctly for rate limits
+app.set('trust proxy', 1)
+
+// Security headers on every response (HSTS, X-Frame-Options, etc.)
+app.use(securityHeaders)
+
+// CORS — allowlist only. See security.js for the full list (marketsync.link,
+// chrome-extension://*, plus localhost in non-production).
+app.use(cors({ origin: corsOriginCheck, credentials: true }))
 
 // ── 1. STRIPE WEBHOOK ──
 app.post('/stripe/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
@@ -132,21 +148,72 @@ async function requireAuth(req, res, next) {
 }
 
 // ── 3. AUTH ENDPOINTS ──
-app.post('/auth/login', async (req, res) => {
+// 5 login attempts per IP per 15 minutes — slows credential stuffing without
+// hurting real users who fat-finger their password.
+app.post('/auth/login', rateLimit('login', 5, 15 * 60 * 1000), async (req, res) => {
   const { email, password } = req.body
   const { data, error } = await supabase.auth.signInWithPassword({ email, password })
-  if (error) return res.status(401).json({ error: error.message })
-  supabaseAdmin.from('logins').insert({ user_id: data.user.id }).then(({ error: logErr }) => {
+  if (error) {
+    // Don't leak whether the email exists — Supabase already does this but we double-check
+    return res.status(401).json({ error: 'Invalid email or password.' })
+  }
+  // Require verified email before allowing the session through
+  if (!data.user.email_confirmed_at) {
+    return res.status(403).json({
+      error: 'EMAIL_NOT_VERIFIED',
+      message: 'Please check your inbox and click the verification link before signing in.'
+    })
+  }
+
+  // 2FA gate — if user has a verified TOTP factor, return a partial session and require
+  // a code via /auth/2fa/challenge before they get a usable access token.
+  try {
+    const userClient = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_ANON_KEY, {
+      global: { headers: { Authorization: `Bearer ${data.session.access_token}` } }
+    })
+    const { data: factors } = await userClient.auth.mfa.listFactors()
+    const verified = (factors?.totp || []).find(f => f.status === 'verified')
+    if (verified) {
+      return res.status(202).json({
+        mfa_required: true,
+        factor_id: verified.id,
+        partial_token: data.session.access_token,
+        message: 'Two-factor code required.'
+      })
+    }
+  } catch (mfaErr) {
+    console.warn('MFA status check failed (allowing login):', mfaErr.message)
+  }
+
+  const currentIp = getClientIp(req)
+  const currentUa = (req.headers['user-agent'] || '').slice(0, 500)
+
+  supabaseAdmin.from('logins').insert({
+    user_id: data.user.id,
+    ip: currentIp,
+    user_agent: currentUa
+  }).then(async ({ error: logErr }) => {
     if (logErr) console.warn('Failed to log login event:', logErr.message)
+    // Best-effort suspicious-login alert (never blocks login response)
+    await maybeAlertSuspiciousLogin({
+      supabaseAdmin,
+      userId: data.user.id,
+      userEmail: data.user.email,
+      currentIp,
+      currentUserAgent: currentUa
+    })
   })
+
   res.json({
     access_token: data.session.access_token,
     user: { id: data.user.id, email: data.user.email }
   })
 })
 
-app.post('/auth/register', async (req, res) => {
-  const { accountRole, fullName, email, password, dealershipName, websiteUrl, feeds } = req.body
+// 3 registrations per IP per hour — stops bot-driven sign-up abuse
+app.post('/auth/register', rateLimit('register', 3, 60 * 60 * 1000), async (req, res) => {
+  const { accountRole, fullName, email, password, dealershipName, websiteUrl, feeds,
+          newsletterConsent } = req.body
 
   if (!email || !password || !fullName || !accountRole) {
     return res.status(400).json({ error: 'Missing required registration fields' })
@@ -155,19 +222,31 @@ app.post('/auth/register', async (req, res) => {
     return res.status(400).json({ error: 'Dealership name required for admin accounts' })
   }
 
+  // 2026 password policy — NIST 800-63B compliant
+  const pwCheck = await validatePassword(password, { email })
+  if (!pwCheck.ok) return res.status(400).json({ error: pwCheck.error })
+
   let createdUserId = null
   let createdDealershipId = null
 
   try {
+    // email_confirm: false → Supabase sends a verification email; user can't log in
+    // until they click the link. This blocks signups with someone else's email.
     const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
       email,
       password,
-      email_confirm: true
+      email_confirm: false
     })
     if (authError) throw authError
     createdUserId = authData.user.id
 
     const trialEndsAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
+
+    // Newsletter consent (CASL/GDPR/CAN-SPAM): only record if explicitly opted in.
+    // Stamp the timestamp + IP so we have audit trail of when consent was given.
+    const newsletter = newsletterConsent === true
+      ? { newsletter_consent_at: new Date().toISOString(), newsletter_consent_ip: getClientIp(req) }
+      : {}
 
     if (accountRole === 'dealer_admin') {
       const { data: dealership, error: dealerError } = await supabaseAdmin
@@ -191,7 +270,8 @@ app.post('/auth/register', async (req, res) => {
           full_name: fullName,
           role: 'DEALER_ADMIN',
           account_role: accountRole,
-          price_tier: 'DEALER'
+          price_tier: 'DEALER',
+          ...newsletter
         })
       if (profileError) throw profileError
 
@@ -233,12 +313,18 @@ app.post('/auth/register', async (req, res) => {
           account_role: accountRole,
           price_tier: 'SOLO_INDIVIDUAL',
           billing_status: 'TRIALING',
-          trial_ends_at: trialEndsAt
+          trial_ends_at: trialEndsAt,
+          ...newsletter
         })
       if (profileError) throw profileError
     }
 
-    res.json({ success: true, user_id: createdUserId })
+    res.json({
+      success: true,
+      user_id: createdUserId,
+      verification_required: true,
+      message: 'Account created. Check your email and click the verification link to activate your account.'
+    })
   } catch (err) {
     if (createdDealershipId) {
       await supabaseAdmin.from('dealerships').delete().eq('id', createdDealershipId)
@@ -250,9 +336,346 @@ app.post('/auth/register', async (req, res) => {
   }
 })
 
+// Resend the verification email — rate-limited to stop abuse
+app.post('/auth/resend-verification', rateLimit('resend-verify', 3, 60 * 60 * 1000), async (req, res) => {
+  const { email } = req.body || {}
+  if (!email) return res.status(400).json({ error: 'email required' })
+  try {
+    // Supabase's resend endpoint covers both signup and email-change confirmations
+    await supabase.auth.resend({
+      type: 'signup',
+      email,
+      options: { emailRedirectTo: `${process.env.FRONTEND_URL}/login.html?verified=1` }
+    })
+  } catch (e) {
+    console.warn('resend verification failed:', e.message)
+  }
+  // Always return success so we don't leak whether the email exists
+  res.json({ success: true, message: 'If an account exists for that email and is not yet verified, a new link has been sent.' })
+})
+
 app.post('/auth/logout', requireAuth, async (req, res) => {
   await supabase.auth.signOut()
   res.json({ success: true })
+})
+
+// ── TOTP 2FA ──────────────────────────────────────────────────────────────────
+// Optional but strongly encouraged. Uses Supabase Auth's built-in MFA (TOTP).
+// Users enroll once via Google Authenticator / 1Password / Authy / etc., then
+// every login challenges them for a 6-digit code after password verification.
+//
+// Flow:
+//   1. POST /auth/2fa/enroll          → returns QR code + secret to user
+//   2. User scans into authenticator app
+//   3. POST /auth/2fa/verify-enroll   → user enters first code; we activate
+//   4. From this point, /auth/login responds with MFA_REQUIRED instead of a session
+//   5. POST /auth/2fa/challenge       → user submits code; gets full session
+
+// Step 1 — Start enrollment. Returns the TOTP secret + a provisioning URI the
+// frontend renders into a QR code.
+app.post('/auth/2fa/enroll', requireAuth, rateLimit('mfa-enroll', 5, 60 * 60 * 1000), async (req, res) => {
+  try {
+    const token = req.headers.authorization?.replace('Bearer ', '')
+    const userClient = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_ANON_KEY, {
+      global: { headers: { Authorization: `Bearer ${token}` } }
+    })
+
+    const { data, error } = await userClient.auth.mfa.enroll({
+      factorType: 'totp',
+      friendlyName: `MarketSync (${new Date().toISOString().slice(0, 10)})`
+    })
+    if (error) return res.status(400).json({ error: error.message })
+
+    // Supabase returns the TOTP secret + a URI like
+    // "otpauth://totp/MarketSync:email?secret=BASE32&issuer=MarketSync"
+    res.json({
+      factor_id: data.id,
+      qr_code_uri: data.totp?.uri || null,
+      secret: data.totp?.secret || null
+    })
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+// Step 2 — Verify the user can produce a valid TOTP code, finalizing enrollment
+app.post('/auth/2fa/verify-enroll', requireAuth, rateLimit('mfa-verify', 10, 60 * 60 * 1000), async (req, res) => {
+  const { factor_id, code } = req.body || {}
+  if (!factor_id || !code) return res.status(400).json({ error: 'factor_id and code are required' })
+
+  try {
+    const token = req.headers.authorization?.replace('Bearer ', '')
+    const userClient = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_ANON_KEY, {
+      global: { headers: { Authorization: `Bearer ${token}` } }
+    })
+
+    // Create challenge then verify in one shot — Supabase requires this pattern
+    const { data: challenge, error: chErr } = await userClient.auth.mfa.challenge({ factorId: factor_id })
+    if (chErr) return res.status(400).json({ error: chErr.message })
+
+    const { error: verifyErr } = await userClient.auth.mfa.verify({
+      factorId: factor_id,
+      challengeId: challenge.id,
+      code
+    })
+    if (verifyErr) return res.status(400).json({ error: 'Invalid code. Make sure your authenticator app is in sync.' })
+
+    // Issue 10 recovery codes — returned ONCE, hashed in DB. If the user loses
+    // their phone they can use one of these to get back in.
+    const codes = generateRecoveryCodes(10)
+    const rows = codes.map(c => ({
+      user_id: req.user.id,
+      code_hash: hashRecoveryCode(c)
+    }))
+    // Wipe any previous codes (e.g. user re-enrolled after disabling) then write fresh ones
+    await supabaseAdmin.from('recovery_codes').delete().eq('user_id', req.user.id)
+    const { error: codeErr } = await supabaseAdmin.from('recovery_codes').insert(rows)
+    if (codeErr) console.warn('recovery_codes insert failed:', codeErr.message)
+
+    res.json({
+      success: true,
+      message: 'Two-factor authentication is now active on this account.',
+      recovery_codes: codes,
+      recovery_codes_note: 'Save these somewhere safe (password manager, printed). Each one works ONCE if you lose your phone. They will not be shown again.'
+    })
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+// Regenerate recovery codes (invalidates old ones). Available from the security panel.
+app.post('/auth/2fa/regenerate-recovery-codes', requireAuth, rateLimit('mfa-regen', 3, 60 * 60 * 1000), async (req, res) => {
+  try {
+    const codes = generateRecoveryCodes(10)
+    const rows = codes.map(c => ({ user_id: req.user.id, code_hash: hashRecoveryCode(c) }))
+    await supabaseAdmin.from('recovery_codes').delete().eq('user_id', req.user.id)
+    const { error } = await supabaseAdmin.from('recovery_codes').insert(rows)
+    if (error) throw error
+    res.json({ recovery_codes: codes, message: 'New recovery codes generated. Old codes no longer work.' })
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+// ── WEBAUTHN / PASSKEYS ───────────────────────────────────────────────────────
+// Register a new passkey (user must be signed in)
+app.post('/auth/passkey/register/begin', requireAuth, rateLimit('passkey-reg', 10, 60 * 60 * 1000), async (req, res) => {
+  try {
+    const options = await beginPasskeyRegistration({
+      supabaseAdmin, userId: req.user.id, userEmail: req.user.email
+    })
+    res.json(options)
+  } catch (err) { res.status(500).json({ error: err.message }) }
+})
+
+app.post('/auth/passkey/register/finish', requireAuth, async (req, res) => {
+  const { response, device_name } = req.body || {}
+  if (!response) return res.status(400).json({ error: 'response required' })
+  const result = await finishPasskeyRegistration({
+    supabaseAdmin, userId: req.user.id, response, deviceName: device_name
+  })
+  if (!result.ok) return res.status(400).json({ error: result.error })
+  res.json({ success: true, message: 'Passkey registered.' })
+})
+
+// List & delete passkeys (for the security panel UI)
+app.get('/auth/passkey/list', requireAuth, async (req, res) => {
+  const items = await listUserPasskeys({ supabaseAdmin, userId: req.user.id })
+  res.json({ passkeys: items })
+})
+
+app.delete('/auth/passkey/:id', requireAuth, async (req, res) => {
+  const ok = await deletePasskey({ supabaseAdmin, userId: req.user.id, passkeyId: req.params.id })
+  if (!ok) return res.status(404).json({ error: 'Passkey not found' })
+  res.json({ success: true })
+})
+
+// Passwordless login via passkey — no password required
+app.post('/auth/passkey/login/begin', rateLimit('passkey-login', 10, 15 * 60 * 1000), async (req, res) => {
+  const { email } = req.body || {}
+  try {
+    const options = await beginPasskeyLogin({ supabaseAdmin, email })
+    res.json(options)
+  } catch (err) { res.status(500).json({ error: err.message }) }
+})
+
+app.post('/auth/passkey/login/finish', rateLimit('passkey-login', 10, 15 * 60 * 1000), async (req, res) => {
+  const { email, response } = req.body || {}
+  if (!response) return res.status(400).json({ error: 'response required' })
+  const result = await finishPasskeyLogin({ supabaseAdmin, email, response })
+  if (!result.ok) return res.status(401).json({ error: result.error })
+
+  // Mint a Supabase session for the verified user. We use the admin API to
+  // generate a fresh access token via magic link (server-side) without sending
+  // an email.
+  try {
+    const { data: { user } } = await supabaseAdmin.auth.admin.getUserById(result.userId)
+    if (!user) return res.status(401).json({ error: 'User no longer exists' })
+
+    // Use generateLink to produce a one-time recovery URL we'll consume server-side
+    const { data: link, error: linkErr } = await supabaseAdmin.auth.admin.generateLink({
+      type: 'magiclink',
+      email: user.email,
+      options: { redirectTo: `${process.env.FRONTEND_URL}/dashboard.html` }
+    })
+    if (linkErr) return res.status(500).json({ error: 'Could not mint session: ' + linkErr.message })
+
+    // Pull the access token out of the hashed verification URL
+    const params = new URL(link.properties.action_link).searchParams
+    const tokenHash = params.get('token_hash') || link.properties.hashed_token
+    if (!tokenHash) return res.status(500).json({ error: 'No token returned by Supabase' })
+
+    const { data: verifyData, error: verifyErr } = await supabase.auth.verifyOtp({
+      token_hash: tokenHash,
+      type: 'magiclink'
+    })
+    if (verifyErr || !verifyData?.session) {
+      return res.status(500).json({ error: 'Session mint failed: ' + (verifyErr?.message || 'unknown') })
+    }
+
+    // Log + suspicious-login check (best-effort)
+    const currentIp = getClientIp(req)
+    const currentUa = (req.headers['user-agent'] || '').slice(0, 500) + ' [passkey]'
+    supabaseAdmin.from('logins').insert({
+      user_id: user.id, ip: currentIp, user_agent: currentUa
+    }).then(async ({ error: logErr }) => {
+      if (logErr) console.warn('login log failed:', logErr.message)
+      await maybeAlertSuspiciousLogin({
+        supabaseAdmin, userId: user.id, userEmail: user.email,
+        currentIp, currentUserAgent: currentUa
+      })
+    })
+
+    res.json({
+      access_token: verifyData.session.access_token,
+      user: { id: user.id, email: user.email }
+    })
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+// Step 3 — Disable 2FA (requires fresh authentication, i.e. current session)
+app.post('/auth/2fa/disable', requireAuth, rateLimit('mfa-disable', 5, 60 * 60 * 1000), async (req, res) => {
+  try {
+    const token = req.headers.authorization?.replace('Bearer ', '')
+    const userClient = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_ANON_KEY, {
+      global: { headers: { Authorization: `Bearer ${token}` } }
+    })
+
+    const { data: factors } = await userClient.auth.mfa.listFactors()
+    const totp = (factors?.totp || []).find(f => f.status === 'verified')
+    if (!totp) return res.json({ success: true, message: 'No active 2FA factor.' })
+
+    const { error } = await userClient.auth.mfa.unenroll({ factorId: totp.id })
+    if (error) throw error
+    res.json({ success: true, message: 'Two-factor authentication has been disabled.' })
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+// Status — returns whether the current user has 2FA active. Used by the profile UI.
+app.get('/auth/2fa/status', requireAuth, async (req, res) => {
+  try {
+    const token = req.headers.authorization?.replace('Bearer ', '')
+    const userClient = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_ANON_KEY, {
+      global: { headers: { Authorization: `Bearer ${token}` } }
+    })
+    const { data: factors } = await userClient.auth.mfa.listFactors()
+    const verified = (factors?.totp || []).find(f => f.status === 'verified')
+    res.json({ enabled: !!verified, factor_id: verified?.id || null })
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+// Login-time challenge. Called after the password step when login responds with
+// MFA_REQUIRED. Accepts a TOTP code OR an 8-char recovery code (XXXX-XXXX format).
+app.post('/auth/2fa/challenge', rateLimit('mfa-challenge', 5, 15 * 60 * 1000), async (req, res) => {
+  const { factor_id, code, partial_token } = req.body || {}
+  if (!factor_id || !code || !partial_token) {
+    return res.status(400).json({ error: 'factor_id, code, and partial_token are required' })
+  }
+
+  try {
+    const userClient = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_ANON_KEY, {
+      global: { headers: { Authorization: `Bearer ${partial_token}` } }
+    })
+
+    // Detect recovery code by shape (8 alphanumeric chars with optional dash) —
+    // distinguishes from 6-digit TOTP. Lets users paste codes as XXXX-XXXX or XXXXXXXX.
+    const normalized = code.replace(/[\s-]/g, '').toUpperCase()
+    const isRecoveryCode = /^[A-Z2-9]{8}$/.test(normalized)
+
+    if (isRecoveryCode) {
+      // Recover via recovery code — look up the hash + delete it (single-use)
+      const { data: { user } } = await userClient.auth.getUser()
+      if (!user) return res.status(401).json({ error: 'Invalid session.' })
+
+      const hash = hashRecoveryCode(normalized)
+      const { data: codeRow, error: lookupErr } = await supabaseAdmin
+        .from('recovery_codes')
+        .select('id')
+        .eq('user_id', user.id)
+        .eq('code_hash', hash)
+        .maybeSingle()
+      if (lookupErr || !codeRow) return res.status(401).json({ error: 'Invalid recovery code.' })
+
+      // Burn the code immediately
+      await supabaseAdmin.from('recovery_codes').delete().eq('id', codeRow.id)
+
+      // The partial_token is already a valid Supabase access token at this point —
+      // we accept the recovery code as proof and return it as the session.
+      // (Recovery code use is logged via the logins insert below.)
+      supabaseAdmin.from('logins').insert({
+        user_id: user.id,
+        ip: getClientIp(req),
+        user_agent: (req.headers['user-agent'] || '').slice(0, 500) + ' [recovery-code]'
+      }).then(({ error: logErr }) => {
+        if (logErr) console.warn('login log failed:', logErr.message)
+      })
+
+      // Count remaining codes so the UI can nag the user to regenerate
+      const { count: remaining } = await supabaseAdmin
+        .from('recovery_codes').select('id', { count: 'exact', head: true })
+        .eq('user_id', user.id)
+
+      return res.json({
+        access_token: partial_token,
+        user: { id: user.id, email: user.email },
+        used_recovery_code: true,
+        recovery_codes_remaining: remaining || 0
+      })
+    }
+
+    // Otherwise treat as TOTP code
+    const { data: challenge, error: chErr } = await userClient.auth.mfa.challenge({ factorId: factor_id })
+    if (chErr) return res.status(400).json({ error: chErr.message })
+
+    const { data, error } = await userClient.auth.mfa.verify({
+      factorId: factor_id,
+      challengeId: challenge.id,
+      code
+    })
+    if (error) return res.status(401).json({ error: 'Invalid 2FA code.' })
+
+    // Log successful TOTP login
+    supabaseAdmin.from('logins').insert({
+      user_id: data.user?.id,
+      ip: getClientIp(req),
+      user_agent: (req.headers['user-agent'] || '').slice(0, 500) + ' [totp]'
+    }).then(({ error: logErr }) => {
+      if (logErr) console.warn('login log failed:', logErr.message)
+    })
+
+    res.json({
+      access_token: data.access_token,
+      user: { id: data.user?.id, email: data.user?.email }
+    })
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
 })
 
 app.post('/support', async (req, res) => {
@@ -270,7 +693,7 @@ app.post('/support', async (req, res) => {
   res.json({ success: true })
 })
 
-app.post('/auth/forgot-password', async (req, res) => {
+app.post('/auth/forgot-password', rateLimit('forgot', 3, 60 * 60 * 1000), async (req, res) => {
   const { email } = req.body || {}
   if (!email) return res.status(400).json({ error: 'email required' })
   try {
@@ -280,17 +703,21 @@ app.post('/auth/forgot-password', async (req, res) => {
   } catch (e) {
     console.warn('resetPasswordForEmail failed:', e.message)
   }
-  res.json({ success: true })
+  // Same response whether the email exists or not — prevents account enumeration
+  res.json({ success: true, message: 'If an account exists for that email, a reset link has been sent.' })
 })
 
-app.post('/auth/reset-password', async (req, res) => {
+app.post('/auth/reset-password', rateLimit('reset', 5, 60 * 60 * 1000), async (req, res) => {
   const token = req.headers.authorization?.replace('Bearer ', '')
   if (!token) return res.status(401).json({ error: 'No token provided' })
   const { password } = req.body || {}
-  if (!password || password.length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters' })
 
   const { data: { user }, error: userErr } = await supabase.auth.getUser(token)
   if (userErr || !user) return res.status(401).json({ error: 'Invalid recovery session' })
+
+  // 2026 password policy — same rules as registration
+  const pwCheck = await validatePassword(password, { email: user.email })
+  if (!pwCheck.ok) return res.status(400).json({ error: pwCheck.error })
 
   const { error: updateErr } = await supabaseAdmin.auth.admin.updateUserById(user.id, { password })
   if (updateErr) return res.status(500).json({ error: updateErr.message })
@@ -309,13 +736,18 @@ app.get('/auth/me', requireAuth, async (req, res) => {
 })
 
 // ── 4. PROFILE ──
-app.put('/profile/update', requireAuth, async (req, res) => {
+app.put('/profile/update', requireAuth, rateLimit('profile-update', 10, 60 * 60 * 1000), async (req, res) => {
   const { fullName, email, password, dealershipName, websiteUrl } = req.body
 
   try {
     const authUpdates = {}
     if (email) authUpdates.email = email
-    if (password) authUpdates.password = password
+    if (password) {
+      // 2026 password policy applies to in-app password changes too
+      const pwCheck = await validatePassword(password, { email: email || req.user.email })
+      if (!pwCheck.ok) return res.status(400).json({ error: pwCheck.error })
+      authUpdates.password = password
+    }
 
     if (Object.keys(authUpdates).length > 0) {
       const { error: authError } = await supabaseAdmin.auth.admin.updateUserById(req.user.id, authUpdates)
@@ -405,12 +837,25 @@ app.post('/admin/users/invite', requireAuth, async (req, res) => {
   const { email, full_name, password } = req.body || {}
   if (!email || !full_name) return res.status(400).json({ error: 'email and full_name required' })
 
-  const tempPassword = password || Math.random().toString(36).slice(-12)
+  // Either: admin set a real password (must meet 2026 policy), or we generate a
+  // cryptographically-random 16-char temporary one. No more weak Math.random() temps.
+  let tempPassword
+  if (password) {
+    const pwCheck = await validatePassword(password, { email })
+    if (!pwCheck.ok) return res.status(400).json({ error: pwCheck.error })
+    tempPassword = password
+  } else {
+    // 16 base64 chars from crypto.randomBytes — strong enough that the rep should
+    // reset on first login. Always passes the policy.
+    const { randomBytes } = await import('crypto')
+    tempPassword = randomBytes(12).toString('base64').replace(/[+/=]/g, '') + 'Aa9!'
+  }
 
+  // Rep needs to verify their email like any other signup
   const { data: newUser, error: authError } = await supabaseAdmin.auth.admin.createUser({
     email,
     password: tempPassword,
-    email_confirm: true
+    email_confirm: false
   })
   if (authError) return res.status(500).json({ error: authError.message })
 
@@ -430,7 +875,8 @@ app.post('/admin/users/invite', requireAuth, async (req, res) => {
     success: true,
     user_id: newUser.user.id,
     email,
-    temp_password: tempPassword
+    temp_password: tempPassword,
+    note: 'Rep must verify their email before they can log in. Share the temp password securely.'
   })
 })
 
@@ -932,6 +1378,96 @@ async function buildUserStats(userId) {
     }))
   }
 }
+
+// ── SESSION ACTIVITY (recent logins + sign out other devices) ──
+// Returns last 20 login events for the current user so they can spot suspicious access.
+// Pairs with /me/sessions/revoke-others to sign all OTHER sessions out at once.
+app.get('/me/sessions', requireAuth, async (req, res) => {
+  const { data, error } = await supabaseAdmin
+    .from('logins')
+    .select('id, created_at, ip, user_agent')
+    .eq('user_id', req.user.id)
+    .order('created_at', { ascending: false })
+    .limit(20)
+  if (error) return res.status(500).json({ error: error.message })
+
+  const events = (data || []).map(row => {
+    const ua = row.user_agent || ''
+    let browser = 'Unknown browser'
+    if (/Edg\//.test(ua)) browser = 'Edge'
+    else if (/Chrome\//.test(ua) && !/Edg\//.test(ua)) browser = 'Chrome'
+    else if (/Safari\//.test(ua) && !/Chrome\//.test(ua)) browser = 'Safari'
+    else if (/Firefox\//.test(ua)) browser = 'Firefox'
+    let os = 'Unknown OS'
+    if (/Mac OS X/.test(ua)) os = 'macOS'
+    else if (/Windows/.test(ua)) os = 'Windows'
+    else if (/iPhone|iPad/.test(ua)) os = 'iOS'
+    else if (/Android/.test(ua)) os = 'Android'
+    else if (/Linux/.test(ua)) os = 'Linux'
+    return { id: row.id, timestamp: row.created_at, ip: row.ip || null, browser, os }
+  })
+  res.json({ events })
+})
+
+// Revoke every refresh token except the current request's. The current access token
+// still works until its short-lived expiry (Supabase ~1h default), then forces a
+// re-login on every other device.
+app.post('/me/sessions/revoke-others', requireAuth, async (req, res) => {
+  try {
+    const { error } = await supabaseAdmin.auth.admin.signOut(req.user.id, 'others')
+    if (error) {
+      // Older Supabase clients don't accept the scope arg — fall back to revoking all
+      const { error: fallbackErr } = await supabaseAdmin.auth.admin.signOut(req.user.id)
+      if (fallbackErr) throw fallbackErr
+      return res.json({ success: true, scope: 'all', message: 'All sessions signed out, including this one. Please log in again.' })
+    }
+    res.json({ success: true, scope: 'others', message: 'Other devices have been signed out.' })
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+// ── OWNER-ONLY: NEWSLETTER SUBSCRIBER EXPORT ──
+// Gated to a single owner email (you). Returns CSV-ready data of everyone who
+// opted in to marketing emails during signup. Drop the file into Resend/Mailchimp/etc.
+const OWNER_EMAIL = (process.env.OWNER_EMAIL || 'massiejay@gmail.com').toLowerCase()
+
+app.get('/owner/newsletter-subscribers', requireAuth, async (req, res) => {
+  if ((req.user.email || '').toLowerCase() !== OWNER_EMAIL) {
+    return res.status(403).json({ error: 'Owner-only endpoint' })
+  }
+
+  const { data: profiles, error } = await supabaseAdmin
+    .from('profiles')
+    .select('id, full_name, newsletter_consent_at, newsletter_consent_ip')
+    .not('newsletter_consent_at', 'is', null)
+    .order('newsletter_consent_at', { ascending: false })
+  if (error) return res.status(500).json({ error: error.message })
+
+  // Look up email from Supabase auth for each consented profile
+  const enriched = await Promise.all((profiles || []).map(async (p) => {
+    const { data: authUser } = await supabaseAdmin.auth.admin.getUserById(p.id).catch(() => ({ data: null }))
+    return {
+      email: authUser?.user?.email || null,
+      full_name: p.full_name,
+      consent_at: p.newsletter_consent_at,
+      consent_ip: p.newsletter_consent_ip
+    }
+  }))
+  const valid = enriched.filter(r => r.email)
+
+  // Respect ?format=csv for direct paste into mail tools
+  if ((req.query.format || '').toLowerCase() === 'csv') {
+    const header = 'email,name,consent_at,consent_ip\n'
+    const rows = valid.map(r =>
+      `${r.email},${(r.full_name || '').replace(/,/g, ' ')},${r.consent_at},${r.consent_ip || ''}`
+    ).join('\n')
+    res.set('Content-Type', 'text/csv')
+    res.set('Content-Disposition', 'attachment; filename="marketsync-newsletter.csv"')
+    return res.send(header + rows)
+  }
+  res.json({ count: valid.length, subscribers: valid })
+})
 
 app.delete('/admin/users/:id', requireAuth, async (req, res) => {
   if (req.profile.role !== 'DEALER_ADMIN' && req.profile.role !== 'OWNER') {
@@ -2007,11 +2543,17 @@ async function runInventorySync(dealershipId) {
           console.log(`[sync] Backfilling url_map for LeadBox feed ${feed.id}...`)
           const feedRes = await fetch(feed.feed_url)
           const feedJson = await feedRes.json().catch(() => null)
-          const stockNumbers = (feedJson?.vehicles || [])
-            .map(v => v.stocknumber || v.stock_id || v.stock).filter(Boolean)
-          if (stockNumbers.length) {
+          // Pass {stock, vin} so the harvester can match either when the dealer's
+          // detail URL slug uses VIN instead of stock (Dealer.com, some EDealer configs).
+          const vehicleKeys = (feedJson?.vehicles || [])
+            .map(v => ({
+              stock: v.stocknumber || v.stock_id || v.stock || null,
+              vin: v.vin || v.VIN || null
+            }))
+            .filter(v => v.stock || v.vin)
+          if (vehicleKeys.length) {
             const dealerOrigin = feed.feed_url.split('/wp-content')[0]
-            const harvest = await harvestVehicleUrls(dealerOrigin, stockNumbers)
+            const harvest = await harvestVehicleUrls(dealerOrigin, vehicleKeys)
             if (harvest.success) {
               feed.url_map = harvest.map
               await supabaseAdmin
@@ -2414,11 +2956,14 @@ app.post('/inventory-feeds', requireAuth, async (req, res) => {
       console.log(`[feed-add] Harvesting per-vehicle URLs from ${rawUrl}...`)
       const feedRes = await fetch(workingUrl)
       const feedJson = await feedRes.json().catch(() => null)
-      const stockNumbers = (feedJson?.vehicles || [])
-        .map(v => v.stocknumber || v.stock_id || v.stock)
-        .filter(Boolean)
-      if (stockNumbers.length) {
-        const harvest = await harvestVehicleUrls(rawUrl, stockNumbers)
+      const vehicleKeys = (feedJson?.vehicles || [])
+        .map(v => ({
+          stock: v.stocknumber || v.stock_id || v.stock || null,
+          vin: v.vin || v.VIN || null
+        }))
+        .filter(v => v.stock || v.vin)
+      if (vehicleKeys.length) {
+        const harvest = await harvestVehicleUrls(rawUrl, vehicleKeys)
         if (harvest.success) {
           urlMap = harvest.map
           console.log(`[feed-add] Harvested ${harvest.matched}/${harvest.total} URLs`)

@@ -12,11 +12,13 @@
 </script>
 <script id="cookieyes" type="text/javascript" src="https://cdn-cookieyes.com/client_data/4313ff69152b93899edaa7a8/script.js"></script>
   <meta charset="UTF-8">
-  <link rel="icon" type="image/png" href="logo.png">
+  <link rel="icon" type="image/png" href="/favicon.png">
+  <link rel="apple-touch-icon" href="/favicon.png">
   <title>Sign In · MarketSync</title>
   <style id="word-break-mobile-css">@media (max-width: 640px) { body { word-wrap: break-word; overflow-wrap: anywhere; } code { white-space: pre-wrap; word-break: break-all; } }</style>
   <script>tailwind = { config: { darkMode: 'media' } }</script>
   <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@simplewebauthn/browser@11/dist/bundle/index.umd.min.js"></script>
   <meta name="color-scheme" content="light dark">
 </head>
 <body class="bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 h-screen flex items-center justify-center font-sans overflow-x-hidden">
@@ -43,7 +45,33 @@
         </div>
         <input type="password" id="password" required class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:border-indigo-500">
       </div>
-      <button type="submit" id="submit-btn" class="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-2.5 rounded text-sm shadow transition">Sign In to Dashboard</button>
+      <button type="submit" id="submit-btn" class="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-2.5 rounded text-sm shadow transition">Sign In</button>
+
+      <div class="relative my-3">
+        <div class="absolute inset-0 flex items-center"><span class="w-full border-t border-slate-200 dark:border-slate-700"></span></div>
+        <span class="relative flex justify-center text-[10px] uppercase tracking-wider text-slate-400 bg-white dark:bg-slate-900 px-2">or</span>
+      </div>
+
+      <button type="button" id="passkey-btn" class="w-full bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-900 dark:text-white font-semibold py-2.5 rounded text-sm border border-slate-300 dark:border-slate-700 transition flex items-center justify-center gap-2">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z"/></svg>
+        Use fingerprint or face
+      </button>
+    </form>
+
+    <form id="mfa-form" class="hidden space-y-4">
+      <div class="mb-2 text-center">
+        <div class="text-3xl mb-2">🔐</div>
+        <h2 class="text-base font-bold text-slate-900 dark:text-white">Enter your code</h2>
+        <p class="text-xs text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">
+          Open your authenticator app (Google Authenticator, Authy, 1Password…) and type the 6-digit code below.
+        </p>
+      </div>
+      <input type="text" id="mfa-code" inputmode="text" autocomplete="one-time-code" placeholder="123456 or XXXX-XXXX"
+        class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded px-3 py-2 text-center text-xl tracking-widest font-mono text-slate-900 dark:text-white focus:outline-none focus:border-indigo-500">
+      <p class="text-[10px] text-center text-slate-500 dark:text-slate-400 -mt-2">
+        Lost your phone? Enter one of your backup codes instead.
+      </p>
+      <button type="submit" id="mfa-submit-btn" class="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-2.5 rounded text-sm shadow transition">Verify &amp; Sign In</button>
     </form>
 
     <p class="text-center text-xs text-slate-500 dark:text-slate-400 mt-6">New location? <a href="register.html" class="text-indigo-600 dark:text-indigo-400 hover:underline">Register Dealership</a></p>
@@ -51,6 +79,8 @@
 
   <script>
     const API = 'https://vehicle-marketplace-s0e4.onrender.com';
+    let mfaState = null;  // { factor_id, partial_token } when MFA challenge is pending
+
     document.getElementById('login-form').addEventListener('submit', async (e) => {
       e.preventDefault();
       const btn = document.getElementById('submit-btn');
@@ -68,6 +98,16 @@
           })
         });
         const data = await res.json();
+
+        // 2FA challenge — backend returned 202 with mfa_required:true
+        if (res.status === 202 && data.mfa_required) {
+          mfaState = { factor_id: data.factor_id, partial_token: data.partial_token };
+          document.getElementById('login-form').classList.add('hidden');
+          document.getElementById('mfa-form').classList.remove('hidden');
+          document.getElementById('mfa-code').focus();
+          return;
+        }
+
         if (!res.ok || data.error) throw new Error(data.error || 'Identity rejection');
 
         localStorage.setItem('token', data.access_token);
@@ -77,6 +117,97 @@
         errBox.textContent = err.message;
         errBox.classList.remove('hidden');
         btn.disabled = false; btn.textContent = 'Sign In to Dashboard';
+      }
+    });
+
+    document.getElementById('mfa-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const btn = document.getElementById('mfa-submit-btn');
+      const errBox = document.getElementById('error-box');
+      btn.disabled = true; btn.textContent = 'Checking…';
+      errBox.classList.add('hidden');
+
+      try {
+        const res = await fetch(`${API}/auth/2fa/challenge`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            factor_id: mfaState.factor_id,
+            partial_token: mfaState.partial_token,
+            code: document.getElementById('mfa-code').value.trim()
+          })
+        });
+        const data = await res.json();
+        if (!res.ok || data.error) throw new Error(data.error || 'That code did not work. Try again.');
+
+        // Friendly heads-up when a backup code was used
+        if (data.used_recovery_code) {
+          alert(`✓ Backup code used. You have ${data.recovery_codes_remaining} backup code${data.recovery_codes_remaining === 1 ? '' : 's'} left.\n\nYou should make new backup codes from your dashboard's Security section soon.`);
+        }
+
+        localStorage.setItem('token', data.access_token);
+        localStorage.setItem('user', JSON.stringify(data.user));
+        window.location.href = 'dashboard.html';
+      } catch (err) {
+        errBox.textContent = err.message;
+        errBox.classList.remove('hidden');
+        btn.disabled = false; btn.textContent = 'Verify & Sign In';
+      }
+    });
+
+    // Sign in with passkey — fingerprint, Face ID, Windows Hello, or hardware key
+    document.getElementById('passkey-btn').addEventListener('click', async () => {
+      const btn = document.getElementById('passkey-btn');
+      const errBox = document.getElementById('error-box');
+      const email = document.getElementById('email').value.trim();
+      errBox.classList.add('hidden');
+
+      if (!email) {
+        errBox.textContent = 'Please type your email above first.';
+        errBox.classList.remove('hidden');
+        return;
+      }
+      if (!window.SimpleWebAuthnBrowser) {
+        errBox.textContent = 'Passkeys are not loaded yet. Refresh the page and try again.';
+        errBox.classList.remove('hidden');
+        return;
+      }
+
+      const original = btn.innerHTML;
+      btn.disabled = true; btn.innerHTML = 'Waiting for your device…';
+
+      try {
+        const beginRes = await fetch(`${API}/auth/passkey/login/begin`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email })
+        });
+        const options = await beginRes.json();
+        if (!beginRes.ok) throw new Error(options.error || 'Could not start passkey sign-in.');
+
+        // Browser prompts user: Touch ID / Face ID / passkey picker
+        const assertion = await SimpleWebAuthnBrowser.startAuthentication({ optionsJSON: options });
+
+        const finishRes = await fetch(`${API}/auth/passkey/login/finish`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, response: assertion })
+        });
+        const data = await finishRes.json();
+        if (!finishRes.ok) throw new Error(data.error || 'Passkey sign-in failed.');
+
+        localStorage.setItem('token', data.access_token);
+        localStorage.setItem('user', JSON.stringify(data.user));
+        window.location.href = 'dashboard.html';
+      } catch (err) {
+        // User cancelling the browser prompt throws an AbortError — handle nicely
+        const msg = err.name === 'NotAllowedError' || err.name === 'AbortError'
+          ? 'Sign-in cancelled.'
+          : (err.message || 'Passkey sign-in failed.');
+        errBox.textContent = msg;
+        errBox.classList.remove('hidden');
+      } finally {
+        btn.disabled = false; btn.innerHTML = original;
       }
     });
   </script>
