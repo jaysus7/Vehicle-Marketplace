@@ -2821,10 +2821,17 @@ async function runInventorySync(dealershipId) {
         if (v.vin) allRawVins.add(v.vin)
       }
 
+      let skippedNoIdentifier = 0
+      let skippedFeedType = 0
+      let skippedOnweb = 0
+
       for (const v of vehicles) {
-        if (!matchesFeedType(v, feed.feed_type)) { totalSkipped++; continue }
-        if (v.onweb === false || v.nonvehicle) { totalSkipped++; continue }
-        if (!v.vin) { totalSkipped++; continue }
+        if (!matchesFeedType(v, feed.feed_type)) { totalSkipped++; skippedFeedType++; continue }
+        if (v.onweb === false || v.nonvehicle) { totalSkipped++; skippedOnweb++; continue }
+        // Need SOME unique identifier — VIN preferred, stock# acceptable. Was previously
+        // rejecting all vehicles with no VIN, which made schema_jsonld dealer sites (where
+        // JSON-LD often omits VIN) sync 0 vehicles.
+        if (!v.vin && !v.stocknumber) { totalSkipped++; skippedNoIdentifier++; continue }
 
         await sleep(200)
 
@@ -2835,9 +2842,13 @@ async function runInventorySync(dealershipId) {
 
         const sourceUrl = buildSourceUrl(feed, v)
 
+        // Synthesize a stable VIN when one isn't provided — combine dealer + stock so
+        // the same vehicle re-syncs cleanly without exploding the inventory table.
+        const effectiveVin = v.vin || `STK-${dealershipId.slice(0, 8)}-${v.stocknumber}`
+
         const record = {
           dealership_id: dealershipId,
-          vin: v.vin,
+          vin: effectiveVin,
           year: parseInt(v.year),
           make: v.make,
           model: v.model,
@@ -2862,8 +2873,14 @@ async function runInventorySync(dealershipId) {
           totalSkipped++
         } else {
           totalAttempts++
-          if (v.vin) uniqueVins.add(v.vin)
+          uniqueVins.add(effectiveVin)
         }
+      }
+
+      // Verbose per-feed skip diagnostics — exposed in sync logs so we can tell exactly
+      // WHY vehicles were skipped instead of guessing "sale-pending / offline".
+      if (totalSkipped > 0) {
+        console.log(`[sync] feed ${feed.id} skip breakdown: feed_type=${skippedFeedType}, offline=${skippedOnweb}, no_identifier=${skippedNoIdentifier}`)
       }
     } catch (feedErr) {
       console.error('[sync] Feed error:', feedErr.message)

@@ -312,8 +312,8 @@ function readVehicleFields(v) {
 // Given the dealer's site + a few sample vehicles from the feed, find an anchor
 // that links to one of them and derive a template.
 export async function inferUrlTemplate(dealerSite, sampleVehicles, opts = {}) {
-  const timeoutMs = opts.timeoutMs ?? 45000
-  const scrollMs = opts.scrollMs ?? 6000
+  const timeoutMs = opts.timeoutMs ?? 12000   // 12s per page (down from 45s)
+  const scrollMs = opts.scrollMs ?? 3000      // 3s scroll (down from 6s)
 
   const origin = (() => { try { return new URL(dealerSite).origin } catch { return null } })()
   if (!origin) return { ok: false, error: 'invalid dealer URL' }
@@ -321,13 +321,13 @@ export async function inferUrlTemplate(dealerSite, sampleVehicles, opts = {}) {
   const samples = (sampleVehicles || []).slice(0, 5).map(readVehicleFields).filter(v => v.stock || v.vin)
   if (!samples.length) return { ok: false, error: 'no sample vehicles with stock/VIN' }
 
-  // Try the same broad list of listing paths the harvester uses
+  // Listing paths in PRIORITY order — most likely to have anchors first.
+  // We break out the moment we find a match, so order matters a lot.
   const listingPaths = [
-    '/used-vehicles/', '/new-vehicles/', '/demo-inventory/',
+    '/used-vehicles/', '/new-vehicles/', '/demo-inventory/',           // LeadBox conventions
+    '/inventory/list/new', '/inventory/list/used', '/inventory/list/demos',  // UX Auto SPAs
     '/used-inventory/', '/new-inventory/', '/pre-owned/',
-    '/inventory/list/new', '/inventory/list/used', '/inventory/list/demos',
-    '/new/', '/used/', '/new-cars/', '/used-cars/',
-    '/inventory/', '/vehicles/', '/cars/', '/showroom/', '/all-inventory/'
+    '/new/', '/used/', '/inventory/', '/vehicles/'
   ]
 
   let page
@@ -336,13 +336,20 @@ export async function inferUrlTemplate(dealerSite, sampleVehicles, opts = {}) {
     page = await browser.newPage()
     await page.setUserAgent('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36')
 
+    const pagesVisited = []
     for (const path of listingPaths) {
       const listingUrl = `${origin}${path}`
       try {
-        const res = await page.goto(listingUrl, { waitUntil: 'networkidle2', timeout: timeoutMs }).catch(() => null)
-        if (!res || res.status() >= 400) continue
+        const res = await page.goto(listingUrl, { waitUntil: 'domcontentloaded', timeout: timeoutMs }).catch(() => null)
+        if (!res) { continue }
+        const status = res.status()
+        if (status >= 400) {
+          console.log(`[inferTemplate]   ${status} ${listingUrl} — skipped`)
+          continue
+        }
+        pagesVisited.push(listingUrl)
 
-        // Scroll to trigger lazy loads
+        // Scroll to trigger lazy loads (Angular/React SPAs)
         await page.evaluate(async (totalMs) => {
           const start = performance.now()
           while (performance.now() - start < totalMs) {
@@ -357,6 +364,7 @@ export async function inferUrlTemplate(dealerSite, sampleVehicles, opts = {}) {
             .map(a => a.href)
             .filter(h => h && !h.startsWith('javascript:') && !h.startsWith('mailto:') && !h.startsWith('tel:'))
         )
+        console.log(`[inferTemplate]   ${status} ${listingUrl} — ${anchors.length} anchors`)
 
         // Find first anchor that matches ANY sample's stock or VIN
         for (const sample of samples) {
@@ -367,18 +375,18 @@ export async function inferUrlTemplate(dealerSite, sampleVehicles, opts = {}) {
                             : null
             if (!matchedBy) continue
 
-            // Found a real per-vehicle URL — derive the template by reverse-substituting
             const template = deriveTemplate(href, sample)
+            console.log(`[inferTemplate]   ✓ MATCH on ${listingUrl} via ${matchedBy}: ${href}`)
             await page.close().catch(() => {})
             return { ok: true, template, source_url: href, matched_by: matchedBy, listing_page: listingUrl }
           }
         }
       } catch (e) {
-        console.warn(`[inferTemplate] error on ${listingUrl}: ${e.message}`)
+        console.warn(`[inferTemplate]   error on ${listingUrl}: ${e.message}`)
       }
     }
 
-    return { ok: false, error: 'No matching anchor found on any listing page' }
+    return { ok: false, error: `No matching anchor on any listing page (visited ${pagesVisited.length})`, pages_visited: pagesVisited }
   } catch (e) {
     return { ok: false, error: e.message }
   } finally {
