@@ -2541,15 +2541,18 @@ async function runInventorySync(dealershipId) {
       // Match this feed to its probe definition so we can apply the right field mapper
       const probe = PLATFORM_PROBES.find(p => p.platform === feed.platform)
 
-      // ── UNIVERSAL URL-TEMPLATE INFERENCE ────────────────────────────────────
-      // For ANY feed missing a url_template, render the dealer's listing page in
-      // a headless browser, find a real per-vehicle anchor, and reverse-engineer
-      // the URL pattern. Saves the template once — every future sync just plugs
-      // in vehicle data. No platform-specific code needed for new dealer sites.
-      if (!feed.url_template) {
+      // ── URL DISCOVERY (puppeteer-gated) ─────────────────────────────────────
+      // Browser-based template inference + URL harvest are MEMORY HUNGRY (~200MB
+      // per Chromium instance). On Render's free tier they push the process past
+      // its 512MB limit and crash the sync mid-run. The deterministic builders
+      // in buildSourceUrl already cover LeadBox + UX Auto (the two platforms we
+      // actually use), so this puppeteer-based discovery is now opt-in only.
+      //
+      // To re-enable on a beefier instance, set ENABLE_PUPPETEER_DISCOVERY=1 in
+      // Render → Environment. The deterministic builders run regardless.
+      if (process.env.ENABLE_PUPPETEER_DISCOVERY === '1' && !feed.url_template) {
         try {
           console.log(`[sync] Inferring url_template for feed ${feed.id} (${feed.platform || 'unknown'})...`)
-          // Fetch a few sample vehicles to anchor the inference
           const dealerSite = feed.source_dealer_url
             || (feed.feed_url?.includes('/wp-content') ? feed.feed_url.split('/wp-content')[0] : null)
             || (() => { try { return new URL(feed.feed_url).origin } catch { return null } })()
@@ -2582,72 +2585,6 @@ async function runInventorySync(dealershipId) {
           }
         } catch (e) {
           console.warn(`[sync] url_template inference failed (non-fatal): ${e.message}`)
-        }
-      }
-
-      // First sync after deploy — backfill url_map for ANY platform where per-vehicle
-      // URLs aren't included in the feed (LeadBox JSON, UX Auto SPA, etc.). This is what
-      // makes existing feeds get per-vehicle URLs without delete/re-add.
-      const PLATFORMS_NEEDING_HARVEST = ['leadbox', 'spa_render']
-      const needsBackfill = PLATFORMS_NEEDING_HARVEST.includes(feed.platform)
-        && (!feed.url_map || Object.keys(feed.url_map).length === 0)
-        && !feed.url_template  // template inference already covers this case
-      if (needsBackfill) {
-        try {
-          console.log(`[sync] Backfilling url_map for ${feed.platform} feed ${feed.id}...`)
-
-          // Pull the list of stock/VIN pairs we need to map URLs for. The fetch URL
-          // differs by platform — LeadBox feed_url returns JSON, spa_render feed_url
-          // IS the captured XHR (which also returns JSON).
-          let feedJson = null
-          try {
-            const feedRes = await fetch(feed.feed_url, {
-              headers: {
-                'Accept': 'application/json',
-                'Origin': feed.source_dealer_url ? new URL(feed.source_dealer_url).origin : '',
-                'Referer': feed.source_dealer_url || ''
-              }
-            })
-            feedJson = await feedRes.json().catch(() => null)
-          } catch (e) {
-            console.warn(`[sync] Could not fetch feed JSON for harvest: ${e.message}`)
-          }
-
-          const vehicleArray = feedJson?.vehicles || feedJson?.records
-            || (Array.isArray(feedJson) ? feedJson : [])
-          const vehicleKeys = vehicleArray
-            .map(v => ({
-              stock: v.stocknumber || v.stock_id || v.stock || null,
-              vin: v.vin || v.VIN || null
-            }))
-            .filter(v => v.stock || v.vin)
-
-          if (vehicleKeys.length) {
-            // Harvest against the actual dealer site — for LeadBox we strip /wp-content,
-            // for spa_render we use the original source_dealer_url the user pasted.
-            const dealerSite = feed.platform === 'spa_render' && feed.source_dealer_url
-              ? feed.source_dealer_url
-              : feed.feed_url.split('/wp-content')[0]
-
-            const harvest = await harvestVehicleUrls(dealerSite, vehicleKeys)
-            if (harvest.success) {
-              feed.url_map = harvest.map
-              await supabaseAdmin
-                .from('inventory_feeds')
-                .update({ url_map: harvest.map })
-                .eq('id', feed.id)
-              console.log(`[sync] Backfilled ${harvest.matched}/${harvest.total} URLs for feed ${feed.id}`)
-            } else {
-              console.warn(`[sync] Backfill harvest yielded no matches: ${harvest.error || 'no anchors'}`)
-              if (harvest.pages_visited?.length) {
-                console.warn(`[sync]   Pages visited: ${harvest.pages_visited.join(', ')}`)
-              }
-            }
-          } else {
-            console.warn(`[sync] No stock numbers in feed payload — skipping harvest`)
-          }
-        } catch (e) {
-          console.warn(`[sync] url_map backfill failed (non-fatal): ${e.message}`)
         }
       }
 

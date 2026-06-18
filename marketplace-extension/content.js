@@ -272,22 +272,61 @@ function showStatus(message, type = 'info') {
 }
 
 // ── Photo injection ───────────────────────────
+// Inject photos directly into Facebook's hidden file input. The input only mounts
+// AFTER the user clicks "Add photos", so we surface it first if missing — this was
+// the cause of "stuck on Downloading photos" (the fallback path that downloaded
+// every photo to the user's Mac was firing because injection silently failed).
 async function injectPhotosIntoInput(imageUrls) {
-  const fileInput = document.querySelector('input[type="file"][accept*="image"]');
-  if (!fileInput) { console.warn('No file input found'); return false; }
+  let fileInput = document.querySelector('input[type="file"][accept*="image"]');
 
-  const files = [];
-  for (let i = 0; i < Math.min(imageUrls.length, 20); i++) {
-    try {
-      const res = await fetch(`${API}/proxy-image?url=${encodeURIComponent(imageUrls[i])}`);
-      const blob = await res.blob();
-      files.push(new File([blob], `photo_${i + 1}.jpg`, { type: 'image/jpeg' }));
-    } catch(e) {
-      console.warn('Failed to fetch photo', i + 1);
+  // Input not in DOM yet — click "Add photos" to mount it
+  if (!fileInput) {
+    const addBtn = document.querySelector('[aria-label="Add photos"]')
+      || [...document.querySelectorAll('div[role="button"], button')].find(el =>
+           el.textContent?.trim() === 'Add photos');
+    if (addBtn) {
+      addBtn.click();
+      // Wait up to 5s for the file input to mount
+      for (let i = 0; i < 10; i++) {
+        await sleep(500);
+        fileInput = document.querySelector('input[type="file"][accept*="image"]');
+        if (fileInput) break;
+      }
+      // Dismiss any modal that opened over the photo input area
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+      await sleep(300);
+      fileInput = document.querySelector('input[type="file"][accept*="image"]');
     }
   }
 
-  if (!files.length) return false;
+  if (!fileInput) {
+    console.warn('Could not find file input even after clicking Add photos');
+    return false;
+  }
+
+  // FB Marketplace allows up to 30 photos per listing
+  const files = [];
+  let fetchFailures = 0;
+  for (let i = 0; i < Math.min(imageUrls.length, 30); i++) {
+    try {
+      const res = await fetch(`${API}/proxy-image?url=${encodeURIComponent(imageUrls[i])}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const blob = await res.blob();
+      if (blob.size < 1000) throw new Error('blob too small');  // probably an error page
+      files.push(new File([blob], `photo_${i + 1}.jpg`, { type: 'image/jpeg' }));
+    } catch (e) {
+      console.warn(`Failed to fetch photo ${i + 1}: ${e.message}`);
+      fetchFailures++;
+    }
+  }
+
+  if (!files.length) {
+    console.warn('No photos could be downloaded from proxy');
+    return false;
+  }
+  if (fetchFailures > 0) {
+    console.warn(`${fetchFailures}/${imageUrls.length} photos failed to download — uploading the rest`);
+  }
 
   const dt = new DataTransfer();
   files.forEach(f => dt.items.add(f));
@@ -368,34 +407,14 @@ function showPhotoStrip(imageUrls, vehicleId) {
       uploadBtn.style.color = '#000';
       showStatus('✅ Photos uploaded successfully!', 'success');
     } else {
-      showStatus('Downloading photos...', 'info');
-      const objectUrls = [];
-      let downloaded = 0;
-      for (let i = 0; i < imageUrls.length; i++) {
-        try {
-          const res = await fetch(`${API}/proxy-image?url=${encodeURIComponent(imageUrls[i])}`);
-          const blob = await res.blob();
-          const objectUrl = URL.createObjectURL(blob);
-          objectUrls.push(objectUrl);
-          const a = document.createElement('a')
-          a.href = objectUrl;
-          a.download = `WellandChev_${String(i + 1).padStart(2, '0')}.jpg`;
-          document.body.appendChild(a);
-          a.click();
-          document.body.removeChild(a);
-          downloaded++;
-          uploadBtn.textContent = `⬇ ${downloaded}/${imageUrls.length}`;
-          await sleep(300);
-        } catch(e) { console.warn('Download failed', i + 1); }
-      }
-      uploadBtn.textContent = `✅ ${downloaded} downloaded — Select in Add Photos`;
-      uploadBtn.style.background = '#22c55e';
-      uploadBtn.style.color = '#000';
-      await sleep(500);
-      const addBtn = document.querySelector('[aria-label="Add photos"]') ||
-        [...document.querySelectorAll('div[role="button"]')].find(el => el.textContent.trim() === 'Add photos');
-      if (addBtn) addBtn.click();
-      setTimeout(() => objectUrls.forEach(u => URL.revokeObjectURL(u)), 180000);
+      // Injection failed even after surfacing the file input. Don't bulk-download
+      // the user's Mac with 20+ random files — that was the old "stuck at
+      // Downloading photos" behavior. Show a clear error + retry button instead.
+      uploadBtn.textContent = '⚠️ Retry Upload';
+      uploadBtn.style.background = '#ef4444';
+      uploadBtn.style.color = '#fff';
+      uploadBtn.disabled = false;
+      showStatus('Photo upload failed. Click "Add photos" on Facebook to open the upload box, then click Retry Upload.', 'error');
     }
   });
   strip.appendChild(uploadBtn);

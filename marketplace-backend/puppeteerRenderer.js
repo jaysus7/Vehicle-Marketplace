@@ -6,7 +6,16 @@
 // Runs on Render via @sparticuz/chromium (slim Lambda-style Chromium). Locally, falls
 // back to whatever Chrome/Chromium is on the host. Cold start ~2-4s, warm ~5-15s.
 
-import puppeteer from 'puppeteer-core'
+// Lazy-load puppeteer-core only when actually needed. On free-tier Render the
+// puppeteer-core + @sparticuz/chromium pair adds ~150-200MB just by being imported,
+// which is enough to push memory-tight syncs over the limit. With dynamic import,
+// the cost only lands when the user explicitly opts into headless features.
+let _puppeteer = null
+async function getPuppeteer() {
+  if (_puppeteer) return _puppeteer
+  _puppeteer = (await import('puppeteer-core')).default
+  return _puppeteer
+}
 
 let cachedBrowser = null
 let cachedLaunchPromise = null
@@ -42,6 +51,7 @@ async function getBrowser() {
   if (cachedBrowser && cachedBrowser.connected !== false) return cachedBrowser
   if (cachedLaunchPromise) return cachedLaunchPromise
   cachedLaunchPromise = (async () => {
+    const puppeteer = await getPuppeteer()
     const cfg = await getChromiumExecutable()
     const browser = await puppeteer.launch({
       executablePath: cfg.executablePath,
