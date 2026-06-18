@@ -2766,7 +2766,7 @@ async function _runInventorySyncInner(dealershipId) {
           // Try Puppeteer walker first — gets full paginated inventory
           const sitemapVehicles = await fetchEDealerInventoryFromSitemap(origin)
           if (sitemapVehicles && sitemapVehicles.length > cars.length) {
-            console.log(`[sync] Using Puppeteer walker (${sitemapVehicles.length}) instead of listing JSON-LD (${cars.length})`)
+            console.log(`[sync] Using sitemap walker (${sitemapVehicles.length} vehicles) instead of listing-page JSON-LD (${cars.length})`)
             vehicles = sitemapVehicles
             jsonCache.set(feed.feed_url, vehicles)
             totalVehiclesFound += vehicles.length
