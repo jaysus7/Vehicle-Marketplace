@@ -2209,7 +2209,7 @@ async function fetchEDealerInventoryFromSitemap(origin) {
     // the heap (each page is ~300KB-1MB HTML, decoded to UTF-16 = 2x in V8). For
     // dealers with more inventory than this cap, we sync only the most recent N and
     // log how many were skipped. Configurable via env so upgrades unlock everything.
-    const MAX_DETAIL_URLS = parseInt(process.env.MAX_SITEMAP_URLS) || 150
+    const MAX_DETAIL_URLS = parseInt(process.env.MAX_SITEMAP_URLS) || 100
     const totalUrls = urls.length
     if (totalUrls > MAX_DETAIL_URLS) {
       urls = urls.slice(0, MAX_DETAIL_URLS)
@@ -3227,6 +3227,15 @@ async function syncAllDealerships(triggerLabel = 'scheduled') {
       console.error(`[sync-all:${triggerLabel}] ${d.id} threw:`, e.message)
       results.push({ dealership_id: d.id, success: false, error: e.message })
     }
+
+    // Breathing room between dealerships — gives V8's GC time to reclaim memory
+    // from the previous dealership's sitemap walker before the next one starts.
+    // Also logs current heap usage so we can see what's actually accumulating.
+    const mem = process.memoryUsage()
+    const mb = (n) => (n / 1024 / 1024).toFixed(0)
+    console.log(`[sync-all:${triggerLabel}] heap=${mb(mem.heapUsed)}/${mb(mem.heapTotal)}MB rss=${mb(mem.rss)}MB`)
+    if (global.gc) global.gc()
+    await new Promise(r => setTimeout(r, 2000))
   }
 
   console.log(`[sync-all:${triggerLabel}] finished. ${results.length} dealership(s) processed.`)
