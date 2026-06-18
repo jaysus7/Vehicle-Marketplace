@@ -2798,7 +2798,10 @@ async function _runInventorySyncInner(dealershipId) {
       // fields stay accessible, mapper overrides with the canonical field names that
       // the rest of the sync engine expects: vin, stocknumber, price, exteriorcolor, etc.)
       if (probe?.mapVehicle) {
-        vehicles = vehicles.map(raw => ({ ...raw, ...probe.mapVehicle(raw) }))
+        // In-place merge instead of spread+map — saves ~50% peak memory on large
+        // feeds (500+ cars). The previous version doubled the vehicles array by
+        // creating a new wrapper object for every entry.
+        for (const raw of vehicles) Object.assign(raw, probe.mapVehicle(raw))
       }
 
       // Capture every VIN from raw feed for auto-sold logic
@@ -2810,13 +2813,18 @@ async function _runInventorySyncInner(dealershipId) {
       let skippedFeedType = 0
       let skippedOnweb = 0
 
-      for (const v of vehicles) {
-        if (!matchesFeedType(v, feed.feed_type)) { totalSkipped++; skippedFeedType++; continue }
-        if (v.onweb === false || v.nonvehicle) { totalSkipped++; skippedOnweb++; continue }
+      // Iterate by index so we can null-out each vehicle after upserting it.
+      // For 500+ vehicle feeds this lets V8 reclaim per-vehicle memory mid-loop
+      // instead of holding the whole array until the sync finishes.
+      for (let vehicleIdx = 0; vehicleIdx < vehicles.length; vehicleIdx++) {
+        const v = vehicles[vehicleIdx]
+        if (!v) continue
+        if (!matchesFeedType(v, feed.feed_type)) { totalSkipped++; skippedFeedType++; vehicles[vehicleIdx] = null; continue }
+        if (v.onweb === false || v.nonvehicle) { totalSkipped++; skippedOnweb++; vehicles[vehicleIdx] = null; continue }
         // Need SOME unique identifier — VIN preferred, stock# acceptable. Was previously
         // rejecting all vehicles with no VIN, which made schema_jsonld dealer sites (where
         // JSON-LD often omits VIN) sync 0 vehicles.
-        if (!v.vin && !v.stocknumber) { totalSkipped++; skippedNoIdentifier++; continue }
+        if (!v.vin && !v.stocknumber) { totalSkipped++; skippedNoIdentifier++; vehicles[vehicleIdx] = null; continue }
 
         await sleep(200)
 
@@ -2862,6 +2870,9 @@ async function _runInventorySyncInner(dealershipId) {
           totalAttempts++
           uniqueVins.add(effectiveVin)
         }
+        // Release per-vehicle memory after upsert — gives V8 the chance to GC
+        // the vehicle's image_urls + description + raw feed fields mid-loop
+        vehicles[vehicleIdx] = null
       }
 
       // Aggregate this feed's skip counts into the dealership-wide totals

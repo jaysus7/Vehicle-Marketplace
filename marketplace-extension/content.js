@@ -305,23 +305,48 @@ async function injectPhotosIntoInput(imageUrls) {
   let fileInput = findFileInput()
   console.log('[MarketSync] initial file input found:', !!fileInput)
 
-  // Input not in DOM yet — click "Add photos" to mount it
+  // Input not in DOM yet — click "Add photos" (or any variant) to mount it.
+  // Tries permissive selectors because Facebook ships different labels in
+  // different builds/locales (e.g. "Add Photos", "Add photo", "Photo · Video", etc).
   if (!fileInput) {
-    const addBtn = document.querySelector('[aria-label="Add photos"]')
-      || [...document.querySelectorAll('div[role="button"], button')].find(el =>
-           el.textContent?.trim() === 'Add photos');
-    console.log('[MarketSync] Add photos button found:', !!addBtn)
+    const findAddBtn = () => {
+      // aria-label match (case-insensitive, contains "photo")
+      const byAria = [...document.querySelectorAll('[aria-label]')].find(el => {
+        const al = (el.getAttribute('aria-label') || '').toLowerCase()
+        return al.includes('add') && al.includes('photo')
+      })
+      if (byAria) return byAria
+
+      // Visible text match — any clickable element whose text says "Add ... photo"
+      const candidates = [...document.querySelectorAll('div[role="button"], button, [role="button"]')]
+      const byText = candidates.find(el => {
+        const t = (el.textContent || '').toLowerCase().trim()
+        return t.length < 50 && t.includes('add') && (t.includes('photo') || t.includes('media'))
+      })
+      if (byText) return byText
+
+      // Last resort — any element with "Add photos" / "Add Photos" / "Photo · Video"
+      return candidates.find(el => /add\s*photos?|photo\s*[·•]\s*video/i.test(el.textContent || ''))
+    }
+
+    const addBtn = findAddBtn()
+    console.log('[MarketSync] Add photos button found:', !!addBtn, addBtn?.getAttribute('aria-label') || addBtn?.textContent?.slice(0, 40))
     if (addBtn) {
-      addBtn.click();
+      try { addBtn.scrollIntoView({ behavior: 'instant', block: 'center' }) } catch {}
+      addBtn.click()
       for (let i = 0; i < 10; i++) {
         await sleep(500);
         fileInput = findFileInput()
         if (fileInput) { console.log('[MarketSync] file input mounted after', (i + 1) * 500, 'ms'); break; }
       }
-      // Dismiss any modal that may have popped up
-      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
-      await sleep(300);
+      // Don't auto-dismiss modals — FB sometimes opens a file picker dialog that
+      // we want to KEEP open so the user can pick photos manually if injection fails
       if (!fileInput) fileInput = findFileInput()
+    } else {
+      console.warn('[MarketSync] No Add photos button found. Available role=button labels:',
+        [...document.querySelectorAll('[role="button"][aria-label]')]
+          .slice(0, 20)
+          .map(el => el.getAttribute('aria-label')))
     }
   }
 
