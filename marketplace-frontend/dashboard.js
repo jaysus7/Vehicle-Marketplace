@@ -1005,9 +1005,40 @@ async function addFeed(feedUrl, feedType) {
       throw new Error((data.error || 'Add failed') + attempts);
     }
     const platform = data.platform ? ` · ${data.platform}` : '';
-    showSyncStatus(`✓ Feed added${platform}. Click Sync Now to pull inventory.`, 'ok');
+    showSyncStatus(`✓ Feed added${platform}. Pulling inventory now…`, 'ok');
     loadInventoryFeeds();
     if (urlInput) urlInput.value = '';
+
+    // Auto-trigger the first sync so the user doesn't have to click Sync Now manually.
+    // Skips the dashboard's syncNow() wrapper because we want to keep using the
+    // already-disabled submit button to gate the second action.
+    try {
+      const syncRes = await fetch(`${API}/inventory/sync`, {
+        method: 'POST', headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const syncData = await syncRes.json();
+      if (syncRes.ok && syncData.success) {
+        const b = syncData.skip_breakdown || {};
+        const reasons = []
+        if (b.feed_type > 0) reasons.push(`${b.feed_type} wrong condition`)
+        if (b.offline > 0) reasons.push(`${b.offline} offline`)
+        if (b.no_identifier > 0) reasons.push(`${b.no_identifier} no VIN/stock #`)
+        if (b.upsert_error > 0) reasons.push(`${b.upsert_error} DB errors`)
+        const skipNote = syncData.skipped > 0
+          ? ` · ${syncData.skipped} skipped (${reasons.join(', ') || 'misc'})`
+          : ''
+        showSyncStatus(
+          `✓ Feed added. Synced ${syncData.unique_vehicles} unique vehicles (${syncData.available_after_sync} available)${skipNote}.`,
+          'ok'
+        );
+        loadInsights?.()
+        loadInventoryCatalog?.()
+      } else {
+        showSyncStatus(`✓ Feed added. First sync had an issue — click Sync Now to retry.`, 'err');
+      }
+    } catch (e) {
+      showSyncStatus(`✓ Feed added — click Sync Now to pull inventory.`, 'ok');
+    }
   } catch (err) {
     showSyncStatus(err.message, 'err');
   } finally {

@@ -2073,37 +2073,50 @@ const PLATFORM_PROBES = [
     },
     extract: (data) => extractCarsFromJsonLd(data.jsonLd),
     mapVehicle: (v) => {
-      const cond = v.itemCondition || ''
+      // Idempotent: works on RAW Schema.org Car nodes AND on already-normalized
+      // vehicles from parseEDealerDetailPage. We pick whichever field name is
+      // populated rather than blindly overwriting with undefined.
+      // Without this, the sitemap walker's vin/stocknumber got wiped when the
+      // mapper ran over its output → "128 no VIN/stock #" skips.
+      const pick = (...keys) => {
+        for (const k of keys) {
+          if (v[k] != null && v[k] !== '') return v[k]
+        }
+        return null
+      }
+      const cond = v.itemCondition || v.condition || ''
       const condition = cond.includes('NewCondition') ? 'New'
         : cond.includes('UsedCondition') ? 'Used'
         : cond.includes('Refurbished') ? 'Certified'
+        : (cond === 'New' || cond === 'Used' || cond === 'Demo') ? cond
         : null
       const drive = (v.driveWheelConfiguration || '').match(/\/(\w+)WheelDriveConfiguration/)?.[1]
-      let trim = null
-      if (typeof v.vehicleConfiguration === 'string') {
+      let trim = v.trim || null
+      if (!trim && typeof v.vehicleConfiguration === 'string') {
         const parts = v.vehicleConfiguration.split(' ')
         trim = parts.slice(0, -1).join(' ') || null
       }
       const image = Array.isArray(v.image) ? v.image[0] : v.image
       return {
-        vin: v.vehicleIdentificationNumber,
-        year: v.vehicleModelDate,
-        make: v.brand?.name || v.manufacturer?.name || v.brand,
-        model: v.model,
+        vin: pick('vin', 'vehicleIdentificationNumber'),
+        year: pick('year', 'vehicleModelDate'),
+        make: v.make || v.brand?.name || v.manufacturer?.name || v.brand || null,
+        model: pick('model'),
         trim,
-        price: v.offers?.price ?? null,
-        mileage: v.mileageFromOdometer?.value ?? null,
+        price: pick('price') ?? v.offers?.price ?? null,
+        mileage: pick('mileage') ?? v.mileageFromOdometer?.value ?? null,
         condition,
-        stocknumber: v.sku || v.productID,
-        exteriorcolor: v.color,
-        interiorcolor: v.vehicleInteriorColor,
-        bodystyle: v.bodyType,
-        fueltype: v.vehicleEngine?.fuelType,
-        transmission: v.vehicleTransmission,
-        drivetrain: drive,
-        image_urls: image && image !== 'https://static.edealer.ca/V4/assets/images/new_vehicles_images_coming.png'
-          ? [image]
-          : []
+        stocknumber: pick('stocknumber', 'sku', 'productID'),
+        exteriorcolor: pick('exteriorcolor', 'color'),
+        interiorcolor: pick('interiorcolor', 'vehicleInteriorColor'),
+        bodystyle: pick('bodystyle', 'bodyType'),
+        fueltype: pick('fueltype') ?? v.vehicleEngine?.fuelType ?? null,
+        transmission: pick('transmission', 'vehicleTransmission'),
+        drivetrain: pick('drivetrain') || drive,
+        image_urls: Array.isArray(v.image_urls) && v.image_urls.length
+          ? v.image_urls
+          : (image && image !== 'https://static.edealer.ca/V4/assets/images/new_vehicles_images_coming.png'
+              ? [image] : [])
       }
     }
   }
