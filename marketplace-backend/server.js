@@ -2284,16 +2284,17 @@ function extractCarsFromJsonLd(nodes) {
     const types = Array.isArray(type) ? type : [type]
     return types.some(t => t === 'Car' || t === 'Vehicle' || t === 'MotorVehicle')
   }
+  // Fully recursive walker — descends into ANY object/array value, not just the
+  // schema.org "navigation" keys. EDealer + Yoast-SEO graphs nest cars under
+  // mainEntity/offers/subjectOf/etc, which the older walker missed entirely.
   const visit = (node) => {
     if (!node) return
     if (Array.isArray(node)) { node.forEach(visit); return }
     if (typeof node !== 'object') return
     if (seen.has(node)) return
     seen.add(node)
-    if (isCar(node)) { cars.push(node); return }
-    if (node['@graph']) visit(node['@graph'])
-    if (node.itemListElement) visit(node.itemListElement)
-    if (node.item) visit(node.item)
+    if (isCar(node)) { cars.push(node); return }  // matched — don't double-count its inner refs
+    for (const v of Object.values(node)) visit(v)
   }
   visit(nodes)
   return cars
