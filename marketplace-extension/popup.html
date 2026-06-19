@@ -305,14 +305,15 @@
     </div>
   </div>
 
-  <div id="inventory-screen" class="view-screen">
-    <div class="header">
-      <div>
-        <h1 id="header-name">Loading...</h1>
-        <div class="dealer" id="header-dealer"></div>
-      </div>
-      <button class="logout-btn" id="logout-btn">Sign Out</button>
-    </div>
+  <div class="toolbar">
+  <div class="category-filter" id="category-filter">
+    <button class="cat-btn active" data-cat="all">All</button>
+    <button class="cat-btn" data-cat="New">New</button>
+    <button class="cat-btn" data-cat="Used">Used</button>
+    <button class="cat-btn" data-cat="Demo">Demo</button>
+  </div>
+  <button class="refresh-btn" id="refresh-btn">↻ Refresh</button>
+</div>
 
     <div class="stats-bar">
       <div class="stat">
