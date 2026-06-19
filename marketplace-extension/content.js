@@ -641,19 +641,77 @@ async function fillListingForm(vehicle) {
   // body-style value (SUV/Truck/Sedan/etc.), the model selection didn't take — log and
   // continue; this is what was causing "SUV"/"Truck" to leak into Model when Body Style
   // ran next.
-  const modelComboboxNow = document.querySelector('[role="combobox"][aria-label="Model" i], [role="combobox"][aria-label="Vehicle model" i]');
-  const modelDisplayedNow = (modelComboboxNow?.textContent || '').trim().toLowerCase();
-  const bodyStyleVocab = ['suv', 'truck', 'sedan', 'coupe', 'hatchback', 'convertible', 'minivan', 'van', 'wagon'];
-  if (modelDisplayedNow && bodyStyleVocab.includes(modelDisplayedNow)) {
-    console.warn(`⚠️ Model field shows body-style value "${modelDisplayedNow}" — clearing and retrying`);
-    // Click the combobox to reopen, clear it via Escape + clearing search
-    try {
-      modelComboboxNow.click();
-      await sleep(1200);
-      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
-      await sleep(400);
-    } catch {}
+ // ── REPLACE this block in content.js (the one that checks bodyStyleVocab) ──
+// Old version detected the corruption but never actually fixed it — it just
+// opened the dropdown and pressed Escape. This version retries the real
+// model search/select sequence.
+
+const modelComboboxNow = document.querySelector('[role="combobox"][aria-label="Model" i], [role="combobox"][aria-label="Vehicle model" i]');
+const modelDisplayedNow = (modelComboboxNow?.textContent || '').trim().toLowerCase();
+const bodyStyleVocab = ['suv', 'truck', 'sedan', 'coupe', 'hatchback', 'convertible', 'minivan', 'van', 'wagon'];
+
+if (modelComboboxNow && (
+  !modelDisplayedNow ||
+  bodyStyleVocab.includes(modelDisplayedNow) ||
+  modelDisplayedNow === 'model' ||
+  modelDisplayedNow === 'vehicle model'
+)) {
+  console.warn(`⚠️ Model field shows "${modelDisplayedNow || '(empty)'}" instead of "${model}" — retrying selection`);
+
+  modelComboboxNow.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  await sleep(500);
+  modelComboboxNow.click();
+  await sleep(1800); // overlay mount
+
+  // Search input scoped to the open overlay only (not the whole document) —
+  // this is what stops us from grabbing a leftover option from another panel.
+  const retrySearchInput = await waitFor(() => {
+    const containers = [...document.querySelectorAll('[role="dialog"], [role="listbox"], [role="menu"]')];
+    for (const c of containers) {
+      if (c.closest('[aria-hidden="true"]')) continue;
+      const input = c.querySelector('input:not([type="hidden"])');
+      if (input && input.offsetParent !== null) return input;
+    }
+    return null;
+  }, 4000);
+
+  if (retrySearchInput) {
+    retrySearchInput.click();
+    retrySearchInput.focus();
+    await sleep(300);
+    const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
+    if (nativeSetter) nativeSetter.call(retrySearchInput, model);
+    else retrySearchInput.value = model;
+    retrySearchInput.dispatchEvent(new Event('input', { bubbles: true }));
+    retrySearchInput.dispatchEvent(new Event('change', { bubbles: true }));
+    await sleep(1500);
+
+    // Option search scoped to the SAME overlay the search input lives in —
+    // never falls back to a bare document-wide query() that could click
+    // a stray option from an unrelated panel.
+    const overlay = retrySearchInput.closest('[role="dialog"], [role="listbox"], [role="menu"]') || document;
+    const retryOption = await waitFor(() => {
+      const targets = [...overlay.querySelectorAll('[role="option"]')];
+      return targets.find(el => el.textContent.trim().toLowerCase() === model.toLowerCase())
+          || targets.find(el => el.textContent.trim().toLowerCase().includes(model.toLowerCase()));
+    }, 6000);
+
+    if (retryOption) {
+      retryOption.click();
+      await sleep(1000);
+      console.log('✓ Model corrected on retry:', model);
+    } else {
+      console.error(`❌ Still could not find "${model}" in the Model dropdown after retry. Fill manually.`);
+      showStatus(`Could not auto-select model "${model}" — please set it manually.`, 'info');
+    }
+  } else {
+    console.error('❌ Retry: no search input found in Model overlay.');
+    showStatus(`Could not auto-select model "${model}" — please set it manually.`, 'info');
   }
+
+  document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  await sleep(400);
+}
 
   // BODY STYLE (Dynamically determined). The hardened pickDropdown above is now
   // strict about aria-label / sibling-label matching, so it won't accidentally
