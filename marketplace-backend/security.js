@@ -253,9 +253,10 @@ export function corsOriginCheck(origin, callback) {
   if (!origin) return callback(null, true)  // server-to-server, curl, etc.
   const allowed = [
     'https://marketsync.link',
-    'https://www.marketsync.link'
-    'https://www.facebook.com',   // ← add this
-  'https://facebook.com',       // ← and this for safety
+    'https://www.marketsync.link',
+    'https://www.facebook.com',
+    'https://facebook.com',
+    'https://m.facebook.com'
   ]
   if (allowed.includes(origin)) return callback(null, true)
   if (origin.startsWith('chrome-extension://')) return callback(null, true)
