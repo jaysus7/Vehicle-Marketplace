@@ -2441,6 +2441,88 @@ app.post('/feeds/probe', async (req, res) => {
   }
 })
 
+// ── EXTENSION-SIDE INVENTORY CAPTURE ───────────────────────────────────────
+// The user's Chrome extension (dealer-extract.js) fetched inventory from
+// inside their authenticated browser session and is uploading it here. Used
+// for dealer sites our backend can't reach (Cloudflare, custom auth, etc.).
+//
+// Payload: { vehicles: [...], source_url, platform }
+// `feed_id` from the URL path must belong to req.dealershipId.
+app.post('/feeds/:id/extension-capture', requireAuth, async (req, res) => {
+  const feedId = req.params.id
+  const { vehicles, source_url, platform } = req.body || {}
+
+  if (!Array.isArray(vehicles)) {
+    return res.status(400).json({ error: 'vehicles array required' })
+  }
+
+  // Verify the caller owns this feed
+  const { data: feed, error: feedErr } = await supabaseAdmin
+    .from('inventory_feeds')
+    .select('id, dealership_id, feed_url')
+    .eq('id', feedId)
+    .single()
+  if (feedErr || !feed) return res.status(404).json({ error: 'Feed not found' })
+  if (feed.dealership_id !== req.dealershipId) {
+    return res.status(403).json({ error: 'Feed does not belong to your dealership' })
+  }
+
+  // Stamp the feed so the dashboard can show "last captured via extension"
+  await supabaseAdmin
+    .from('inventory_feeds')
+    .update({
+      platform: platform || 'extension_capture',
+      last_extension_sync_at: new Date().toISOString(),
+      source_dealer_url: source_url || feed.feed_url
+    })
+    .eq('id', feedId)
+
+  // Upsert each vehicle. Re-uses the same record shape as runInventorySync
+  // so the dashboard catalog / sold-tracking / leaderboard all just work.
+  let upserted = 0, skipped = 0
+  for (const v of vehicles) {
+    // The probe inside the extension already runs roughly the same field
+    // normalization as PLATFORM_PROBES.mapVehicle. Apply the canonical mapper
+    // here too so weirdly-shaped feeds still land in the right columns.
+    const probe = PLATFORM_PROBES.find(p => p.platform === platform)
+    const mapped = probe?.mapVehicle ? { ...v, ...probe.mapVehicle(v) } : v
+
+    if (!mapped.vin && !mapped.stocknumber) { skipped++; continue }
+    if (!matchesFeedType(mapped, 'all')) { skipped++; continue }
+
+    const effectiveVin = mapped.vin || `STK-${req.dealershipId.slice(0, 8)}-${mapped.stocknumber}`
+
+    const record = {
+      dealership_id: req.dealershipId,
+      vin: effectiveVin,
+      year: parseInt(mapped.year) || null,
+      make: mapped.make,
+      model: mapped.model,
+      trim: mapped.trim || null,
+      price: mapped.saleprice || mapped.price || 0,
+      mileage: mapped.mileage || 0,
+      exterior_color: mapped.exteriorcolor || null,
+      interior_color: mapped.interiorcolor || null,
+      transmission: mapped.transmission || null,
+      fuel_type: mapFuel(mapped.fueltype),
+      description: buildDescription(mapped),
+      image_urls: Array.isArray(mapped.image_urls) ? mapped.image_urls : [],
+      source_url: buildSourceUrl({ ...feed, platform, url_template: null, url_map: null }, mapped),
+      status: mapped.salepending ? 'pending' : 'available',
+      last_synced_at: new Date().toISOString()
+    }
+
+    const { error } = await supabaseAdmin
+      .from('inventory')
+      .upsert(record, { onConflict: 'vin' })
+    if (error) { skipped++; continue }
+    upserted++
+  }
+
+  console.log(`[extension-capture] feed=${feedId} upserted=${upserted} skipped=${skipped}`)
+  res.json({ success: true, upserted, skipped, total: vehicles.length })
+})
+
 function normalizeFeedUrl(input) {
   if (!input) return null
   let url
@@ -3006,7 +3088,7 @@ app.get('/inventory-feeds', requireAuth, async (req, res) => {
   if (!req.dealershipId) return res.json([])
   const { data, error } = await supabaseAdmin
     .from('inventory_feeds')
-    .select('id, feed_url, feed_type, created_at')
+    .select('id, feed_url, feed_type, platform, created_at, last_extension_sync_at')
     .eq('dealership_id', req.dealershipId)
     .order('created_at', { ascending: false })
   if (error) return res.status(500).json({ error: error.message })

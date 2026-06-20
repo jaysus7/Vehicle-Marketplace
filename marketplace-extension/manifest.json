@@ -1,13 +1,14 @@
 {
   "manifest_version": 3,
   "name": "MarketSync",
-  "version": "1.7.0",
+  "version": "1.8.0",
   "description": "Post dealership inventory to Facebook Marketplace in seconds. Auto-sync, auto-fill, auto-track.",
   "permissions": [
     "storage",
     "activeTab",
     "scripting",
-    "downloads"
+    "downloads",
+    "tabs"
   ],
   "host_permissions": [
     "https://www.facebook.com/*",
@@ -15,6 +16,10 @@
     "https://yippi.uxauto.agency/*",
     "https://cardealerstg.blob.core.windows.net/*",
     "https://vehicleimages.leadboxhq.com/*"
+  ],
+  "optional_host_permissions": [
+    "https://*/*",
+    "http://*/*"
   ],
   "icons": {
     "16": "icons/icon16.png",

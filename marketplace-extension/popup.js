@@ -277,6 +277,58 @@ async function showInventoryScreen(token, user) {
 
   const refreshBtn = $('refresh-btn')
   if (refreshBtn) refreshBtn.onclick = () => loadInventory(token)
+
+  // Premium Sync — extension-side dealer site capture. Shown only when a feed
+  // is flagged needs_extension_capture (e.g. Cloudflare blocked us server-side).
+  checkExtensionSyncNeeded(token)
+}
+
+async function checkExtensionSyncNeeded(token) {
+  try {
+    const r = await fetch(`${API}/inventory-feeds`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    })
+    if (!r.ok) return
+    const feeds = await r.json()
+    // Any feed that's never been captured OR was flagged as needing extension help
+    const candidates = (feeds || []).filter(f =>
+      f.platform === 'extension_capture'
+      || f.platform === 'needs_extension_capture'
+      || (f.feed_url && f.last_extension_sync_at === null && !f.platform)
+    )
+    if (!candidates.length) return
+
+    const bar = $('premium-sync-bar')
+    const status = $('ext-sync-status')
+    const btn = $('connect-dealer-btn')
+    if (!bar || !btn) return
+
+    bar.style.display = 'block'
+    const feed = candidates[0]
+    const host = (() => { try { return new URL(feed.feed_url).host } catch { return feed.feed_url } })()
+    status.textContent = `Pull inventory from ${host} using your browser session.`
+
+    btn.onclick = () => {
+      btn.disabled = true
+      btn.textContent = 'Opening dealer site...'
+      chrome.runtime.sendMessage({
+        type: 'CONNECT_DEALER_SITE',
+        url: feed.feed_url,
+        feed_id: feed.id
+      }, (resp) => {
+        if (resp?.success) {
+          btn.textContent = '✓ Pulling...'
+          status.textContent = 'Inventory is being pulled — close this when done.'
+        } else {
+          btn.disabled = false
+          btn.textContent = 'Try Again'
+          status.textContent = resp?.error || 'Could not connect.'
+        }
+      })
+    }
+  } catch (e) {
+    console.warn('checkExtensionSyncNeeded failed:', e.message)
+  }
 }
 
 // kind = 'sold-by-me' (this rep closed the deal → 500 pts) | 'sold-by-other' (no points)

@@ -326,6 +326,18 @@
   <button class="refresh-btn" id="refresh-btn">↻ Refresh</button>
 </div>
 
+<!-- Premium Sync: extension-side dealer site capture (Cloudflare-safe). -->
+<div id="premium-sync-bar" style="background:#0d1117;padding:10px 16px;border-top:1px solid #2a2a2a;display:none">
+  <div style="display:flex;align-items:center;justify-content:space-between;gap:10px">
+    <div style="font-size:11px;color:#888;flex:1">
+      <span id="ext-sync-status">Couldn't reach your dealer site from our servers.</span>
+    </div>
+    <button id="connect-dealer-btn" style="background:#4f46e5;border:none;color:#fff;padding:6px 12px;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap">
+      Pull Inventory
+    </button>
+  </div>
+</div>
+
     <div class="stats-bar">
       <div class="stat">
         <div class="num" id="stat-total">—</div>
