@@ -2901,6 +2901,7 @@ app.post('/feeds/:id/extension-capture', requireAuth, async (req, res) => {
 
   // Upsert each vehicle. Re-uses the same record shape as runInventorySync
   // so the dashboard catalog / sold-tracking / leaderboard all just work.
+  const hasFeedId = await inventoryHasFeedId()
   let upserted = 0, skipped = 0
   for (const v of vehicles) {
     // The probe inside the extension already runs roughly the same field
@@ -2923,6 +2924,7 @@ app.post('/feeds/:id/extension-capture', requireAuth, async (req, res) => {
       trim: mapped.trim || null,
       price: mapped.saleprice || mapped.price || 0,
       mileage: mapped.mileage || 0,
+      condition: mapped.condition || null,
       exterior_color: mapped.exteriorcolor || null,
       interior_color: mapped.interiorcolor || null,
       transmission: mapped.transmission || null,
@@ -2931,7 +2933,8 @@ app.post('/feeds/:id/extension-capture', requireAuth, async (req, res) => {
       image_urls: Array.isArray(mapped.image_urls) ? mapped.image_urls : [],
       source_url: buildSourceUrl({ ...feed, platform, url_template: null, url_map: null }, mapped),
       status: mapped.salepending ? 'pending' : 'available',
-      last_synced_at: new Date().toISOString()
+      last_synced_at: new Date().toISOString(),
+      ...(hasFeedId ? { feed_id: feedId } : {})
     }
 
     const { error } = await supabaseAdmin
@@ -3054,15 +3057,58 @@ function buildLeadBoxSourceUrl(feedUrl, vehicle) {
 // from multiple large feed parses overlapping in memory).
 const _syncsInFlight = new Map()  // dealershipId → Promise<result>
 
+// Live sync progress, keyed by dealershipId, so the dashboard's Sync button can
+// poll an accurate percentage and the user knows it isn't frozen. In-memory only
+// (fine for our single Render instance); entries self-expire shortly after a sync
+// finishes. Overall pct blends feed index + per-feed import fraction so it climbs
+// smoothly 0→100 even across multiple feeds.
+const syncProgress = new Map()  // dealershipId → { phase, feedIndex, feedCount, current, total, pct, message, updatedAt }
+
+function setSyncProgress(dealershipId, patch) {
+  const prev = syncProgress.get(dealershipId) || {}
+  syncProgress.set(dealershipId, { ...prev, ...patch, updatedAt: Date.now() })
+}
+
+function syncOverallPct(feedIndex, feedCount, current, total) {
+  if (!feedCount) return 0
+  const feedFraction = total > 0 ? current / total : 0
+  // Cap at 99 until the run fully finalizes (delete-diff + count queries still run).
+  return Math.min(99, Math.round(((feedIndex + feedFraction) / feedCount) * 100))
+}
+
+// Feature-detect the inventory.feed_id column once per process. Lets us tag each
+// vehicle with the feed that produced it (precise, cascade-safe deletes) WITHOUT
+// breaking sync if the migration hasn't been run yet — we just omit the column.
+let _invHasFeedId = null
+async function inventoryHasFeedId() {
+  if (_invHasFeedId !== null) return _invHasFeedId
+  const { error } = await supabaseAdmin.from('inventory').select('feed_id').limit(1)
+  _invHasFeedId = !error
+  if (error) console.warn('[sync] inventory.feed_id column missing — run the migration for precise feed-scoped deletes (falling back to origin matching)')
+  return _invHasFeedId
+}
+
 async function runInventorySync(dealershipId) {
   if (_syncsInFlight.has(dealershipId)) {
     console.log(`[sync] piggy-backing on in-flight sync for ${dealershipId}`)
     return _syncsInFlight.get(dealershipId)
   }
+  setSyncProgress(dealershipId, { phase: 'starting', feedIndex: 0, feedCount: 0, current: 0, total: 0, pct: 0, message: 'Starting sync…' })
   const promise = _runInventorySyncInner(dealershipId)
   _syncsInFlight.set(dealershipId, promise)
-  try { return await promise }
-  finally { _syncsInFlight.delete(dealershipId) }
+  try {
+    const result = await promise
+    setSyncProgress(dealershipId, { phase: 'done', pct: 100, message: 'Sync complete.' })
+    return result
+  } catch (e) {
+    setSyncProgress(dealershipId, { phase: 'error', message: e.message || 'Sync failed.' })
+    throw e
+  } finally {
+    _syncsInFlight.delete(dealershipId)
+    // Keep the terminal state briefly so a final poll can read 100%/error, then drop it.
+    const ds = dealershipId
+    setTimeout(() => syncProgress.delete(ds), 15000)
+  }
 }
 
 async function _runInventorySyncInner(dealershipId) {
@@ -3104,8 +3150,16 @@ async function _runInventorySyncInner(dealershipId) {
   const allRawVins = new Set()  // every VIN from raw feed data (no filter) — for auto-sold
 
   const jsonCache = new Map()
+  const hasFeedId = await inventoryHasFeedId()
 
+  let feedIndex = -1
   for (const feed of feeds) {
+    feedIndex++
+    setSyncProgress(dealershipId, {
+      phase: 'fetching', feedIndex, feedCount: feeds.length, current: 0, total: 0,
+      pct: syncOverallPct(feedIndex, feeds.length, 0, 0),
+      message: feeds.length > 1 ? `Fetching inventory (feed ${feedIndex + 1}/${feeds.length})…` : 'Fetching inventory…'
+    })
     try {
       let vehicles
 
@@ -3369,8 +3423,24 @@ async function _runInventorySyncInner(dealershipId) {
       // Iterate by index so we can null-out each vehicle after upserting it.
       // For 500+ vehicle feeds this lets V8 reclaim per-vehicle memory mid-loop
       // instead of holding the whole array until the sync finishes.
+      const feedTotal = vehicles.length
+      setSyncProgress(dealershipId, {
+        phase: 'importing', feedIndex, feedCount: feeds.length, current: 0, total: feedTotal,
+        pct: syncOverallPct(feedIndex, feeds.length, 0, feedTotal),
+        message: feeds.length > 1
+          ? `Importing vehicles (feed ${feedIndex + 1}/${feeds.length}): 0/${feedTotal}`
+          : `Importing vehicles: 0/${feedTotal}`
+      })
       for (let vehicleIdx = 0; vehicleIdx < vehicles.length; vehicleIdx++) {
         const v = vehicles[vehicleIdx]
+        // Report progress every vehicle — cheap, and the loop already sleeps 200ms each.
+        setSyncProgress(dealershipId, {
+          current: vehicleIdx + 1,
+          pct: syncOverallPct(feedIndex, feeds.length, vehicleIdx + 1, feedTotal),
+          message: feeds.length > 1
+            ? `Importing vehicles (feed ${feedIndex + 1}/${feeds.length}): ${vehicleIdx + 1}/${feedTotal}`
+            : `Importing vehicles: ${vehicleIdx + 1}/${feedTotal}`
+        })
         if (!v) continue
         if (!matchesFeedType(v, feed.feed_type)) { totalSkipped++; skippedFeedType++; vehicles[vehicleIdx] = null; continue }
         if (v.onweb === false || v.nonvehicle) { totalSkipped++; skippedOnweb++; vehicles[vehicleIdx] = null; continue }
@@ -3410,7 +3480,10 @@ async function _runInventorySyncInner(dealershipId) {
   image_urls: imageUrls,
   source_url: sourceUrl,
   status: v.salepending ? 'pending' : 'available',
-  last_synced_at: new Date().toISOString()
+  last_synced_at: new Date().toISOString(),
+  // Tag the originating feed when the column exists → ON DELETE CASCADE removes
+  // these rows automatically when the feed is deleted (omitted pre-migration).
+  ...(hasFeedId ? { feed_id: feed.id } : {})
 }
 
         const { error } = await supabaseAdmin
@@ -3492,6 +3565,8 @@ async function _runInventorySyncInner(dealershipId) {
       }
     }
   }
+
+  setSyncProgress(dealershipId, { phase: 'finalizing', pct: 99, message: 'Finalizing…' })
 
   const { count: availableCount } = await supabaseAdmin
     .from('inventory')
@@ -3597,13 +3672,21 @@ app.post('/inventory-feeds', requireAuth, async (req, res) => {
   }
 
   if (!workingUrl) {
-    return res.status(400).json({
-      cloudflare_blocked: cloudflareBlocked,
-      error: cloudflareBlocked
-        ? "This dealer site is protected by Cloudflare and blocks server-side access — the block is on our server's IP, so it can't be bypassed from the backend. Open the dealer's inventory page in Chrome with the MarketSync extension installed to capture vehicles directly from your browser."
-        : `Could not find a working inventory feed at this dealer site. We tried ${attempts.length} known platform paths. If your dealer uses a different system, paste the direct JSON feed URL instead.`,
-      attempted: attempts.slice(0, 8).map(a => `${a.url} → ${a.status || a.error || 'no data'}`)
-    })
+    if (cloudflareBlocked) {
+      // Cloudflare blocks server-side access, but the user's OWN browser can reach
+      // the site. Instead of failing, create the feed flagged for extension capture
+      // so the extension's "Connect dealer site" button appears and pulls inventory
+      // from their session. No server-side sync runs for this feed.
+      workingUrl = rawUrl
+      detectedPlatformSlug = 'needs_extension_capture'
+      detectedPlatform = 'Browser capture (Cloudflare-protected)'
+    } else {
+      return res.status(400).json({
+        cloudflare_blocked: false,
+        error: `Could not find a working inventory feed at this dealer site. We tried ${attempts.length} known platform paths. If your dealer uses a different system, paste the direct JSON feed URL instead.`,
+        attempted: attempts.slice(0, 8).map(a => `${a.url} → ${a.status || a.error || 'no data'}`)
+      })
+    }
   }
 
   // Respect the user's explicit dropdown choice — including "all" — over URL-path detection.
@@ -3613,7 +3696,7 @@ app.post('/inventory-feeds', requireAuth, async (req, res) => {
 
   // For SPA-rendered dealers, keep the user's original URL — we need it to re-render
   // the site if the captured XHR URL stops working (e.g. auth tokens rotate).
-  const sourceDealerUrl = ['spa_render', 'convertus'].includes(detectedPlatformSlug) ? rawUrl : null
+  const sourceDealerUrl = ['spa_render', 'convertus', 'needs_extension_capture'].includes(detectedPlatformSlug) ? rawUrl : null
 
   // For LeadBox feeds, harvest per-vehicle URLs from the dealer's listing pages now
   // (their JSON feed doesn't include vehicle detail URLs). Saves a stock→URL map onto
@@ -3659,7 +3742,11 @@ app.post('/inventory-feeds', requireAuth, async (req, res) => {
     .single()
   if (error) return res.status(500).json({ error: error.message })
   console.log(`✓ Added feed: ${detectedPlatform || 'direct'} → ${workingUrl}`)
-  res.json({ ...data, platform: detectedPlatform })
+  res.json({
+    ...data,
+    platform: detectedPlatform,
+    needs_extension_capture: detectedPlatformSlug === 'needs_extension_capture'
+  })
 })
 
 app.delete('/inventory-feeds/:id', requireAuth, async (req, res) => {
@@ -3670,50 +3757,77 @@ app.delete('/inventory-feeds/:id', requireAuth, async (req, res) => {
 
   const { data: feed } = await supabaseAdmin
     .from('inventory_feeds')
-    .select('id, dealership_id, feed_url')
+    .select('id, dealership_id, feed_url, source_dealer_url')
     .eq('id', req.params.id)
     .single()
   if (!feed || feed.dealership_id !== req.dealershipId) {
     return res.status(404).json({ error: 'Feed not found' })
   }
 
-  // Determine the feed's origin so we can scope inventory deletion correctly
-  let feedOrigin = null
-  try { feedOrigin = new URL(feed.feed_url).origin } catch {}
+  // Collect every origin this feed covers. We check BOTH feed_url and
+  // source_dealer_url because for many platforms the vehicles' source_url lives on
+  // the dealer site origin while the feed_url is a JSON/proxy host on a different
+  // origin — matching only feed_url would orphan inventory on delete.
+  const originsOf = (...urls) => {
+    const s = new Set()
+    for (const u of urls) { try { if (u) s.add(new URL(u).origin) } catch {} }
+    return s
+  }
+  const feedOrigins = originsOf(feed.feed_url, feed.source_dealer_url)
+
+  // 0. Precise path: if inventory rows are tagged with this feed_id, remove them
+  // (and detach their listings) directly — reliable for ANY platform regardless of
+  // whether the vehicle source_url shares the feed's origin. Legacy rows without a
+  // feed_id fall through to the origin-matching logic below.
+  let deletedByFeedId = 0
+  if (await inventoryHasFeedId()) {
+    const { data: byFeed } = await supabaseAdmin
+      .from('inventory').select('id').eq('dealership_id', req.dealershipId).eq('feed_id', req.params.id)
+    const ids = (byFeed || []).map(r => r.id)
+    for (let i = 0; i < ids.length; i += 100) {
+      const slice = ids.slice(i, i + 100)
+      await supabaseAdmin.from('listings').delete().in('inventory_id', slice)
+      await supabaseAdmin.from('inventory').delete().in('id', slice)
+    }
+    deletedByFeedId = ids.length
+  }
 
   // 1. Remove the feed row itself
   const { error: delFeedErr } = await supabaseAdmin
     .from('inventory_feeds').delete().eq('id', req.params.id)
   if (delFeedErr) return res.status(500).json({ error: delFeedErr.message })
 
-  // 2. Decide what inventory should also be removed
-  // Look at the dealership's REMAINING feeds. If another feed shares the same origin
-  // (e.g., you deleted /new/ but kept /used/), don't touch inventory — the remaining
-  // feed still covers it and the next sync will reconcile.
+  // 2. Decide what inventory should also be removed.
+  // Look at the dealership's REMAINING feeds. If another feed still covers one of
+  // this feed's origins (e.g., you deleted /new/ but kept /used/), leave that
+  // inventory — the remaining feed covers it and the next sync reconciles.
   const { data: remainingFeeds } = await supabaseAdmin
-    .from('inventory_feeds').select('feed_url').eq('dealership_id', req.dealershipId)
+    .from('inventory_feeds').select('feed_url, source_dealer_url').eq('dealership_id', req.dealershipId)
 
-  const remainingOrigins = new Set((remainingFeeds || []).map(r => {
-    try { return new URL(r.feed_url).origin } catch { return null }
-  }).filter(Boolean))
+  const remainingOrigins = new Set()
+  for (const f of remainingFeeds || []) {
+    for (const o of originsOf(f.feed_url, f.source_dealer_url)) remainingOrigins.add(o)
+  }
 
   let inventoryDeleted = 0
   let toDelete = []
 
-  if (remainingFeeds && remainingFeeds.length === 0) {
+  if (Array.isArray(remainingFeeds) && remainingFeeds.length === 0) {
     // No feeds left at all — wipe the dealership's inventory entirely
     const { data: all } = await supabaseAdmin
       .from('inventory').select('id').eq('dealership_id', req.dealershipId)
     toDelete = (all || []).map(r => r.id)
-  } else if (feedOrigin && !remainingOrigins.has(feedOrigin)) {
-    // The deleted feed's origin isn't covered by any remaining feed —
-    // remove only inventory whose source_url matches that origin
-    const { data: matching } = await supabaseAdmin
-      .from('inventory').select('id, source_url')
-      .eq('dealership_id', req.dealershipId)
-    toDelete = (matching || [])
-      .filter(r => r.source_url && r.source_url.startsWith(feedOrigin))
-      .map(r => r.id)
+  } else {
+    // Origins covered ONLY by the deleted feed (not by any remaining feed).
+    const orphanedOrigins = [...feedOrigins].filter(o => !remainingOrigins.has(o))
+    if (orphanedOrigins.length) {
+      const { data: matching } = await supabaseAdmin
+        .from('inventory').select('id, source_url')
+        .eq('dealership_id', req.dealershipId)
+      toDelete = (matching || [])
+        .filter(r => r.source_url && orphanedOrigins.some(o => r.source_url.startsWith(o)))
+        .map(r => r.id)
+    }
   }
 
   // 3. Cascade-delete listings then inventory, batched to avoid URL-length limits
@@ -3725,10 +3839,20 @@ app.delete('/inventory-feeds/:id', requireAuth, async (req, res) => {
       await supabaseAdmin.from('inventory').delete().in('id', slice)
     }
     inventoryDeleted = toDelete.length
-    console.log(`[feed delete] dealership=${req.dealershipId} feed=${req.params.id} removed ${inventoryDeleted} inventory rows`)
+  }
+  inventoryDeleted += deletedByFeedId
+  if (inventoryDeleted) {
+    console.log(`[feed delete] dealership=${req.dealershipId} feed=${req.params.id} removed ${inventoryDeleted} inventory rows (${deletedByFeedId} by feed_id)`)
   }
 
   res.json({ success: true, inventory_deleted: inventoryDeleted })
+})
+
+// Lightweight progress poll for the dashboard Sync button. Returns the live
+// percentage/phase of an in-flight sync for the caller's dealership, or idle.
+app.get('/inventory/sync/progress', requireAuth, (req, res) => {
+  if (!req.dealershipId) return res.json({ phase: 'idle', pct: 0 })
+  res.json(syncProgress.get(req.dealershipId) || { phase: 'idle', pct: 0 })
 })
 
 app.post('/inventory/sync', requireAuth, async (req, res) => {

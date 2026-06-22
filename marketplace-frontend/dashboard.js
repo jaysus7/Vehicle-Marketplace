@@ -1005,6 +1005,20 @@ async function addFeed(feedUrl, feedType) {
       throw new Error((data.error || 'Add failed') + attempts);
     }
     const platform = data.platform ? ` · ${data.platform}` : '';
+
+    // Cloudflare-protected dealer: server can't reach it. The feed was saved flagged
+    // for extension capture — guide the user to the browser extension instead of
+    // auto-syncing (which would return nothing from the server).
+    if (data.needs_extension_capture) {
+      showSyncStatus(
+        `✓ Feed added${platform}. This dealer blocks server access (Cloudflare). Open the MarketSync browser extension and click "Connect dealer site" to pull inventory from your own browser session.`,
+        'ok'
+      );
+      loadInventoryFeeds();
+      if (urlInput) urlInput.value = '';
+      return;
+    }
+
     showSyncStatus(`✓ Feed added${platform}. Pulling inventory now…`, 'ok');
     loadInventoryFeeds();
     if (urlInput) urlInput.value = '';
@@ -1051,8 +1065,24 @@ async function syncNow() {
   const btn = document.getElementById('sync-now-btn');
   btn.disabled = true;
   const originalText = btn.textContent;
-  btn.textContent = 'Syncing...';
+  btn.textContent = 'Syncing… 0%';
   showSyncStatus('Sync running — this can take a minute depending on inventory size.', 'info');
+
+  // Poll live progress so the user sees an accurate, moving percentage (and knows
+  // the sync isn't frozen). Stops in the finally block when the sync POST resolves.
+  const pollProgress = async () => {
+    try {
+      const r = await fetch(`${API}/inventory/sync/progress`, { headers: { 'Authorization': `Bearer ${token}` } });
+      if (!r.ok) return;
+      const p = await r.json();
+      if (p && typeof p.pct === 'number' && p.phase !== 'idle' && p.phase !== 'done' && p.phase !== 'error') {
+        btn.textContent = `Syncing… ${p.pct}%`;
+        if (p.message) showSyncStatus(p.message, 'info');
+      }
+    } catch { /* transient — keep polling */ }
+  };
+  const progressTimer = setInterval(pollProgress, 900);
+
   try {
     const res = await fetch(`${API}/inventory/sync`, {
       method: 'POST',
@@ -1084,6 +1114,7 @@ async function syncNow() {
   } catch (err) {
     showSyncStatus(err.message, 'err');
   } finally {
+    clearInterval(progressTimer);
     btn.disabled = false;
     btn.textContent = originalText;
   }
