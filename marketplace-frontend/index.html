@@ -13,7 +13,15 @@
 <script id="cookieyes" type="text/javascript" src="https://cdn-cookieyes.com/client_data/4313ff69152b93899edaa7a8/script.js"></script>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>MarketSync — Post Car Dealer Inventory to Facebook Marketplace in 60 Seconds</title>
+    <meta name="theme-color" content="#6366F1">
+
+    <!-- Speed up third-party CDN handshakes (perf) -->
+    <link rel="preconnect" href="https://cdn.tailwindcss.com" crossorigin>
+    <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin>
+    <link rel="dns-prefetch" href="https://cdn.tailwindcss.com">
+    <link rel="dns-prefetch" href="https://cdnjs.cloudflare.com">
+
+    <title>MarketSync — Post Dealer Inventory to Facebook Marketplace Fast</title>
 
     <meta name="description" content="MarketSync helps car dealerships and sales reps post their whole inventory to Facebook Marketplace fast. Auto-sync feeds, one-click listings, sold tracking, and a sales leaderboard. Free 7-day trial — no credit card required.">
     <meta name="keywords" content="facebook marketplace for car dealers, dealership inventory automation, auto post vehicles to facebook, car sales leaderboard, dealership chrome extension, vehicle marketplace tool, sold tracking for dealers">
@@ -26,10 +34,9 @@
     <meta property="og:title" content="MarketSync — Post Dealer Inventory to Facebook Marketplace in 60 Seconds">
     <meta property="og:description" content="The fastest way for car dealerships to list every vehicle on Facebook Marketplace. Free 7-day trial. No credit card required.">
     <meta property="og:url" content="https://marketsync.link/">
-    <!-- Add an og-image.png (1200x630) at marketplace-frontend/og-image.png and uncomment:
-    <meta property="og:image" content="https://marketsync.link/og-image.png">
-    <meta name="twitter:image" content="https://marketsync.link/og-image.png">
-    -->
+    <meta property="og:image" content="https://marketsync.link/logo.png">
+    <meta property="og:image:alt" content="MarketSync logo">
+    <meta name="twitter:image" content="https://marketsync.link/logo.png">
 
     <meta name="twitter:card" content="summary">
     <meta name="twitter:title" content="MarketSync — Sell More Cars on Facebook Marketplace">
@@ -53,6 +60,22 @@
         .mock-screen { font-family: ui-monospace, SFMono-Regular, monospace; }
         details > summary { list-style: none; }
         details > summary::-webkit-details-marker { display: none; }
+
+        /* ── Animated dashboard mockup (hero). Pure CSS/JS — no video, instant load. ── */
+        @keyframes msFloat   { 0%,100% { transform: translateY(0) } 50% { transform: translateY(-6px) } }
+        @keyframes msGrowBar { from { transform: scaleY(0) } to { transform: scaleY(1) } }
+        @keyframes msFeedIn  { 0% { opacity:0; transform:translateY(10px) } 7% { opacity:1; transform:translateY(0) } 93% { opacity:1; transform:translateY(0) } 100% { opacity:0; transform:translateY(-4px) } }
+        @keyframes msPulse   { 0%,100% { opacity:.3 } 50% { opacity:1 } }
+        .ms-card-float { animation: msFloat 6s ease-in-out infinite; }
+        .ms-podium-bar { transform-origin: bottom; animation: msGrowBar 1.1s cubic-bezier(.22,1,.36,1) both; }
+        .ms-chart-col  { transform-origin: bottom; animation: msGrowBar 1.2s cubic-bezier(.22,1,.36,1) both; }
+        .ms-feed-row   { opacity: 0; animation: msFeedIn 8s ease-in-out infinite; }
+        .ms-live-dot   { animation: msPulse 1.4s ease-in-out infinite; }
+        @media (prefers-reduced-motion: reduce) {
+            .ms-card-float, .ms-podium-bar, .ms-chart-col, .ms-feed-row, .ms-live-dot { animation: none !important; }
+            .ms-feed-row { opacity: 1 !important; }
+            .ms-podium-bar, .ms-chart-col { transform: none !important; }
+        }
     </style>
 
     <script type="application/ld+json">
@@ -70,14 +93,24 @@
                 "name": "Dealer Plan",
                 "price": "199",
                 "priceCurrency": "USD",
-                "priceSpecification": { "@type": "RecurringPaymentFrequency", "billingPeriod": "P1M" }
+                "priceSpecification": {
+                    "@type": "UnitPriceSpecification",
+                    "price": "199",
+                    "priceCurrency": "USD",
+                    "referenceQuantity": { "@type": "QuantitativeValue", "value": "1", "unitCode": "MON" }
+                }
             },
             {
                 "@type": "Offer",
                 "name": "Individual Sales Rep Plan",
                 "price": "49",
                 "priceCurrency": "USD",
-                "priceSpecification": { "@type": "RecurringPaymentFrequency", "billingPeriod": "P1M" }
+                "priceSpecification": {
+                    "@type": "UnitPriceSpecification",
+                    "price": "49",
+                    "priceCurrency": "USD",
+                    "referenceQuantity": { "@type": "QuantitativeValue", "value": "1", "unitCode": "MON" }
+                }
             }
         ],
         "publisher": { "@type": "Organization", "name": "MarketSync Technologies Inc.", "url": "https://marketsync.link/" }
@@ -145,7 +178,8 @@
         🎉 7-day free trial · No credit card required
     </div>
 
-    <header class="max-w-7xl mx-auto px-6 py-5 flex items-center justify-between">
+    <header class="sticky top-0 z-40 bg-slate-50/80 dark:bg-[#0B0F19]/80 backdrop-blur-md border-b border-slate-200/60 dark:border-gray-800/60">
+      <div class="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
         <a href="/" class="flex items-center space-x-3">
             <span class="text-3xl font-normal text-slate-900 dark:text-white">|</span>
             <span class="text-xl font-bold tracking-tight text-slate-900 dark:text-white">
@@ -166,6 +200,7 @@
             <a href="https://marketsync.link/login.html" class="hidden sm:inline-flex text-sm font-semibold text-slate-700 dark:text-gray-300 hover:text-indigo-600 dark:hover:text-white px-3 py-2 transition">Log in</a>
             <a href="https://marketsync.link/register.html" class="bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold px-4 py-2 rounded-lg transition">Sign up free</a>
         </div>
+      </div>
     </header>
 
     <section class="max-w-5xl mx-auto px-6 pt-16 pb-20 text-center">
@@ -193,14 +228,107 @@
         </div>
         <p class="text-xs text-slate-500 dark:text-gray-500 font-medium mb-12">No credit card needed · Cancel anytime · Works in any browser</p>
 
-        <div onclick="openVideoModal()" class="w-full aspect-video glass-panel bg-slate-200/50 dark:bg-gray-100/5 rounded-2xl border border-slate-300 dark:border-gray-800 flex flex-col items-center justify-center p-8 relative overflow-hidden shadow-2xl shadow-indigo-950/10 cursor-pointer group">
-            <div class="absolute inset-0 bg-gradient-to-t from-slate-300/40 dark:from-gray-950/80 via-transparent to-transparent z-10"></div>
-            <div class="w-16 h-16 bg-indigo-600 hover:bg-indigo-500 rounded-full flex items-center justify-center z-20 shadow-lg transition-transform group-hover:scale-105">
-                <i class="fa-solid fa-play text-white text-xl ml-1"></i>
+        <!-- Animated dashboard preview — pure CSS/JS motion, no video file, loads instantly -->
+        <div class="ms-card-float w-full max-w-4xl mx-auto text-left rounded-2xl border border-slate-200 dark:border-gray-800 bg-white dark:bg-gray-900/80 shadow-2xl shadow-indigo-950/10 overflow-hidden"
+             role="img" aria-label="Animated preview of the MarketSync dealer dashboard: live inventory counters, a sales leaderboard climbing tiers, a feed of vehicles being posted to Facebook Marketplace, and a daily listings chart drawing in.">
+            <!-- window chrome -->
+            <div class="flex items-center gap-2 px-4 py-2.5 border-b border-slate-200 dark:border-gray-800 bg-slate-50 dark:bg-gray-950/60">
+                <span class="w-2.5 h-2.5 rounded-full bg-rose-400"></span>
+                <span class="w-2.5 h-2.5 rounded-full bg-amber-400"></span>
+                <span class="w-2.5 h-2.5 rounded-full bg-emerald-400"></span>
+                <span class="ml-3 text-[11px] font-mono text-slate-400 dark:text-gray-500">marketsync.link/dashboard</span>
+                <span class="ml-auto flex items-center gap-1.5 text-[10px] font-bold text-emerald-600 dark:text-emerald-400"><span class="ms-live-dot w-1.5 h-1.5 rounded-full bg-emerald-500"></span> LIVE</span>
             </div>
-            <span class="mt-4 font-bold text-sm tracking-wide text-slate-700 dark:text-gray-300 z-20">WATCH THE 60-SECOND DEMO</span>
-            <p class="text-xs text-slate-500 dark:text-gray-500 max-w-sm mt-1 z-20">See a real car go from inventory to a finished Facebook Marketplace post in under a minute.</p>
+
+            <div class="p-4 sm:p-5 space-y-3 sm:space-y-4">
+                <!-- metric strip — numbers count up on view -->
+                <div class="grid grid-cols-4 gap-2 sm:gap-3">
+                    <div class="bg-slate-50 dark:bg-gray-950/60 border border-slate-200 dark:border-gray-800 rounded-lg p-2 sm:p-2.5">
+                        <div class="text-[8px] sm:text-[9px] uppercase font-bold tracking-wider text-slate-500">Available</div>
+                        <div class="text-base sm:text-2xl font-black text-slate-900 dark:text-white ms-count" data-target="129">0</div>
+                    </div>
+                    <div class="bg-slate-50 dark:bg-gray-950/60 border border-slate-200 dark:border-gray-800 rounded-lg p-2 sm:p-2.5">
+                        <div class="text-[8px] sm:text-[9px] uppercase font-bold tracking-wider text-slate-500">Posted</div>
+                        <div class="text-base sm:text-2xl font-black text-indigo-600 dark:text-indigo-400 ms-count" data-target="94">0</div>
+                    </div>
+                    <div class="bg-slate-50 dark:bg-gray-950/60 border border-slate-200 dark:border-gray-800 rounded-lg p-2 sm:p-2.5">
+                        <div class="text-[8px] sm:text-[9px] uppercase font-bold tracking-wider text-slate-500">Sold</div>
+                        <div class="text-base sm:text-2xl font-black text-emerald-600 dark:text-emerald-400 ms-count" data-target="17">0</div>
+                    </div>
+                    <div class="bg-slate-50 dark:bg-gray-950/60 border border-slate-200 dark:border-gray-800 rounded-lg p-2 sm:p-2.5">
+                        <div class="text-[8px] sm:text-[9px] uppercase font-bold tracking-wider text-slate-500">Clicks</div>
+                        <div class="text-base sm:text-2xl font-black text-violet-600 dark:text-violet-400 ms-count" data-target="312">0</div>
+                    </div>
+                </div>
+
+                <div class="grid sm:grid-cols-2 gap-3">
+                    <!-- leaderboard podium — bars grow in -->
+                    <div class="bg-slate-50 dark:bg-gray-950/60 border border-slate-200 dark:border-gray-800 rounded-lg p-3">
+                        <div class="flex items-center justify-between mb-3">
+                            <span class="text-[10px] uppercase font-bold tracking-wider text-slate-500">🏆 Leaderboard</span>
+                            <span class="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-slate-200 dark:bg-gray-700 text-slate-600 dark:text-gray-200">🥈 Silver</span>
+                        </div>
+                        <div class="grid grid-cols-3 gap-2 items-end h-24">
+                            <div class="flex flex-col items-center justify-end h-full">
+                                <span class="text-[9px] font-bold text-slate-500 mb-1">Sarah</span>
+                                <div class="ms-podium-bar w-full rounded-t bg-gradient-to-b from-slate-300 to-slate-400 dark:from-slate-600 dark:to-slate-500 flex items-start justify-center pt-1 text-white text-[10px] font-black" style="height:62%; animation-delay:.15s">2</div>
+                            </div>
+                            <div class="flex flex-col items-center justify-end h-full">
+                                <span class="text-[9px] font-bold text-slate-700 dark:text-gray-200 mb-1">👑 Mike</span>
+                                <div class="ms-podium-bar w-full rounded-t bg-gradient-to-b from-amber-300 to-amber-500 flex items-start justify-center pt-1 text-white text-[10px] font-black" style="height:100%; animation-delay:0s">1</div>
+                            </div>
+                            <div class="flex flex-col items-center justify-end h-full">
+                                <span class="text-[9px] font-bold text-slate-500 mb-1">Jay</span>
+                                <div class="ms-podium-bar w-full rounded-t bg-gradient-to-b from-orange-300 to-orange-500 flex items-start justify-center pt-1 text-white text-[10px] font-black" style="height:46%; animation-delay:.3s">3</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- recent listings — rows post in on a loop -->
+                    <div class="bg-slate-50 dark:bg-gray-950/60 border border-slate-200 dark:border-gray-800 rounded-lg p-3">
+                        <div class="text-[10px] uppercase font-bold tracking-wider text-slate-500 mb-2">Recent listings</div>
+                        <div class="space-y-1.5">
+                            <div class="ms-feed-row flex items-center justify-between bg-white dark:bg-gray-900 border border-slate-200 dark:border-gray-800 rounded p-1.5" style="animation-delay:0s">
+                                <span class="text-[10px] font-semibold text-slate-700 dark:text-gray-200 truncate">2024 Ford F-150 XLT</span>
+                                <span class="text-[8px] font-bold text-emerald-600 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-700 rounded px-1 whitespace-nowrap">POSTED</span>
+                            </div>
+                            <div class="ms-feed-row flex items-center justify-between bg-white dark:bg-gray-900 border border-slate-200 dark:border-gray-800 rounded p-1.5" style="animation-delay:2s">
+                                <span class="text-[10px] font-semibold text-slate-700 dark:text-gray-200 truncate">2023 Honda Civic Sport</span>
+                                <span class="text-[8px] font-bold text-emerald-600 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-700 rounded px-1 whitespace-nowrap">POSTED</span>
+                            </div>
+                            <div class="ms-feed-row flex items-center justify-between bg-white dark:bg-gray-900 border border-slate-200 dark:border-gray-800 rounded p-1.5" style="animation-delay:4s">
+                                <span class="text-[10px] font-semibold text-slate-700 dark:text-gray-200 truncate">2026 GMC Hummer EV</span>
+                                <span class="text-[8px] font-bold text-emerald-600 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-700 rounded px-1 whitespace-nowrap">POSTED</span>
+                            </div>
+                            <div class="ms-feed-row flex items-center justify-between bg-white dark:bg-gray-900 border border-slate-200 dark:border-gray-800 rounded p-1.5" style="animation-delay:6s">
+                                <span class="text-[10px] font-semibold text-slate-700 dark:text-gray-200 truncate">2022 Ram 1500 Limited</span>
+                                <span class="text-[8px] font-bold text-emerald-600 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-700 rounded px-1 whitespace-nowrap">POSTED</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- daily listings chart — columns draw up -->
+                <div class="bg-slate-50 dark:bg-gray-950/60 border border-slate-200 dark:border-gray-800 rounded-lg p-3">
+                    <div class="text-[10px] uppercase font-bold tracking-wider text-slate-500 mb-2">📈 Listings posted · daily</div>
+                    <div class="flex items-end gap-1 sm:gap-1.5 h-14 sm:h-16">
+                        <div class="ms-chart-col flex-1 rounded-t bg-indigo-200 dark:bg-indigo-500/30" style="height:30%; animation-delay:.0s"></div>
+                        <div class="ms-chart-col flex-1 rounded-t bg-indigo-300 dark:bg-indigo-500/50" style="height:55%; animation-delay:.06s"></div>
+                        <div class="ms-chart-col flex-1 rounded-t bg-indigo-300 dark:bg-indigo-500/50" style="height:40%; animation-delay:.12s"></div>
+                        <div class="ms-chart-col flex-1 rounded-t bg-indigo-400 dark:bg-indigo-500/70" style="height:70%; animation-delay:.18s"></div>
+                        <div class="ms-chart-col flex-1 rounded-t bg-indigo-400 dark:bg-indigo-500/70" style="height:85%; animation-delay:.24s"></div>
+                        <div class="ms-chart-col flex-1 rounded-t bg-indigo-500 dark:bg-indigo-500/90" style="height:65%; animation-delay:.3s"></div>
+                        <div class="ms-chart-col flex-1 rounded-t bg-indigo-500" style="height:100%; animation-delay:.36s"></div>
+                        <div class="ms-chart-col flex-1 rounded-t bg-indigo-400 dark:bg-indigo-500/70" style="height:78%; animation-delay:.42s"></div>
+                        <div class="ms-chart-col flex-1 rounded-t bg-indigo-500" style="height:92%; animation-delay:.48s"></div>
+                        <div class="ms-chart-col flex-1 rounded-t bg-indigo-300 dark:bg-indigo-500/50" style="height:50%; animation-delay:.54s"></div>
+                    </div>
+                </div>
+            </div>
         </div>
+        <button type="button" onclick="openVideoModal()" class="mt-5 inline-flex items-center gap-2 text-sm font-semibold text-indigo-600 dark:text-indigo-400 hover:underline">
+            <i class="fa-solid fa-play text-xs"></i> Watch the 60-second demo
+        </button>
     </section>
 
     <section id="what-is-it" class="max-w-5xl mx-auto px-6 py-20">
@@ -330,12 +458,8 @@
             <p class="text-slate-500 dark:text-gray-400 max-w-2xl mx-auto">The dashboard is the website where you, the dealer or sales rep, see everything happening with your inventory.</p>
         </div>
 
-        <!-- Real dashboard screenshot: save your file at marketplace-frontend/dashboard-screenshot.png -->
-        <img src="dashboard-screenshot.png" alt="MarketSync dashboard Insights page showing inventory, listings posted, sold counts, and team stats" loading="lazy"
-             onerror="this.parentElement.querySelector('.fallback-dashboard-mock').classList.remove('hidden'); this.remove();"
-             class="w-full rounded-2xl shadow-xl border border-slate-200 dark:border-gray-800">
-        <!-- Fallback mockup — hidden when the screenshot loads -->
-        <div class="fallback-dashboard-mock hidden bg-white dark:bg-gray-900/70 border border-slate-200 dark:border-gray-800 rounded-2xl p-6 shadow-xl shadow-slate-200/30 dark:shadow-none">
+        <!-- Clean CSS dashboard mock — no external screenshot file, so crawlers never see a broken image. -->
+        <div class="fallback-dashboard-mock bg-white dark:bg-gray-900/70 border border-slate-200 dark:border-gray-800 rounded-2xl p-6 shadow-xl shadow-slate-200/30 dark:shadow-none">
             <div class="grid sm:grid-cols-4 gap-3 mb-6">
                 <div class="bg-slate-100 dark:bg-gray-800 rounded-lg p-4">
                     <div class="text-[10px] uppercase tracking-wider text-slate-500 dark:text-gray-500 font-semibold">Available</div>
@@ -694,6 +818,30 @@
             videoModal.classList.remove('flex');
             videoPlayer.src = "";
         }
+
+        // Count the hero dashboard-mockup metrics up from 0 when they scroll into view.
+        (function () {
+            const els = document.querySelectorAll('.ms-count');
+            if (!els.length) return;
+            const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+            const run = (el) => {
+                const target = parseInt(el.dataset.target, 10) || 0;
+                if (reduce) { el.textContent = target.toLocaleString(); return; }
+                const dur = 1400, start = performance.now();
+                const tick = (now) => {
+                    const p = Math.min(1, (now - start) / dur);
+                    const eased = 1 - Math.pow(1 - p, 3);
+                    el.textContent = Math.round(target * eased).toLocaleString();
+                    if (p < 1) requestAnimationFrame(tick);
+                };
+                requestAnimationFrame(tick);
+            };
+            if (!('IntersectionObserver' in window)) { els.forEach(run); return; }
+            const io = new IntersectionObserver((entries) => {
+                entries.forEach((e) => { if (e.isIntersecting) { run(e.target); io.unobserve(e.target); } });
+            }, { threshold: 0.4 });
+            els.forEach((el) => io.observe(el));
+        })();
     </script>
 </body>
 </html>

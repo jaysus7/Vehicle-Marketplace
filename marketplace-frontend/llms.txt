@@ -1,0 +1,46 @@
+# MarketSync
+
+> MarketSync is a web app and Chrome extension that helps car dealerships and independent auto sales reps post their entire vehicle inventory to Facebook Marketplace in about 60 seconds per vehicle. It auto-syncs inventory from the dealer's existing website, auto-fills every Facebook Marketplace listing field (title, price, photos, description), tracks which rep sold which vehicle, and ranks the sales team on a gamified leaderboard. There is a free 7-day trial with no credit card required.
+
+## What MarketSync does
+
+- **Inventory sync**: Reads a dealer's website inventory feed automatically (Schema.org structured data or a smart detector) — no manual setup or code.
+- **One-click Facebook Marketplace posting**: The Chrome extension fills in the year, make, model, price, mileage, color, photos, and description for each vehicle. The user only clicks "Post". MarketSync never auto-posts or spams — a human always clicks Post, so it stays within Facebook's rules.
+- **Sold tracking (three ways)**: "I Sold It" (the rep closed the deal, +500 points), "Sold by Other" (a teammate closed it, tracked with no points), and Facebook Auto-Detect (the extension notices when Facebook marks a listing sold).
+- **Tracked link clicks**: Each listing includes a tracked link so the dashboard reports how many buyers clicked through to the dealer's vehicle page.
+- **Gamified leaderboard**: Reps earn 100 points per vehicle posted and 500 points per vehicle they sell, climbing tiers — Bronze, Silver, Gold, Platinum, Diamond, Legend.
+- **Dashboard insights**: Available inventory, listings posted, sold counts, sell-through rate, average time to sell, active days, per-rep contribution charts, and team trends.
+
+## Who it is for
+
+- Car dealerships (new, used, fleet) that want their whole lot on Facebook Marketplace without hours of manual data entry.
+- Independent / individual auto sales reps whose dealership has not adopted a tool yet.
+- Both United States and Canadian dealerships are supported.
+
+## Pricing
+
+- **Dealer Plan — $199/month**: One subscription covers the whole dealership, including unlimited sales reps, auto-sync, the team leaderboard, insights, and rep management. Reps do not pay; the dealer pays once.
+- **Individual Sales Rep Plan — $49/month**: For a single rep working alone — personal extension license, posting automation, personal dashboard, and sold tracking.
+- Every account starts with a **7-day free trial, no credit card required**, and can be cancelled anytime.
+
+## Supported dealer website platforms
+
+LeadBox, EDealer, Dealer.com, Sincro, DealerOn, CDK Global, Strathcom, Vicimus, SM360, DealerFire, Dealer Inspire, UX Auto, plus a smart detector for any site using Schema.org structured data.
+
+## Key pages
+
+- [Home](https://marketsync.link/): Product overview, how it works, leaderboard, and pricing.
+- [Pricing & plans](https://marketsync.link/upgrade.html): Dealer Plan and Individual Sales Rep Plan details.
+- [FAQ](https://marketsync.link/faq.html): Common questions about the trial, Facebook's rules, supported platforms, and billing.
+- [Support](https://marketsync.link/support.html): How to get help and contact the team.
+- [Sign up](https://marketsync.link/register.html): Start the free 7-day trial.
+- [Log in](https://marketsync.link/login.html): Access the dashboard.
+
+## Legal
+
+- [Terms of Service](https://marketsync.link/terms.html)
+- [Privacy Policy](https://marketsync.link/privacy-policy.html)
+
+## Contact
+
+MarketSync Technologies Inc. — https://marketsync.link/support.html
