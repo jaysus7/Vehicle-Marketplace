@@ -944,15 +944,28 @@ async function loadInventoryFeeds() {
     const isAdmin = profileContext?.role === 'DEALER_ADMIN' || profileContext?.role === 'OWNER';
     const isSoloOwner = profileContext?.dealership?.is_personal === true;
     const canManage = isAdmin || isSoloOwner;
-    list.innerHTML = feeds.map(f => `
-      <div class="flex items-center justify-between bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded p-3 gap-3 overflow-hidden">
-        <div class="flex items-center gap-2 min-w-0 flex-1 overflow-hidden">
-          <span class="text-[10px] uppercase font-bold bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 px-1.5 py-0.5 rounded flex-shrink-0">${f.feed_type || 'all'}</span>
-          <span class="text-xs text-slate-600 dark:text-slate-300 truncate block min-w-0 flex-1" title="${f.feed_url}">${f.feed_url}</span>
+    list.innerHTML = feeds.map(f => {
+      const needsExt = f.platform === 'needs_extension_capture'
+        || (f.platform === 'extension_capture' && !f.last_extension_sync_at);
+      const extNote = needsExt ? `
+        <div class="mt-2 text-[11px] leading-snug rounded bg-amber-100 dark:bg-amber-900/40 border border-amber-300 dark:border-amber-700 text-amber-800 dark:text-amber-200 px-2 py-1.5">
+          🔒 This dealer is Cloudflare-protected — our servers can't reach it, so <b>Sync Now won't work</b>.
+          Open the <b>MarketSync browser extension</b> (puzzle-piece icon in Chrome's toolbar → MarketSync),
+          then click <b>“Connect dealer site”</b> to pull inventory from your own browser session.
+        </div>` : '';
+      return `
+      <div class="bg-slate-50 dark:bg-slate-950 border ${needsExt ? 'border-amber-300 dark:border-amber-700' : 'border-slate-200 dark:border-slate-800'} rounded p-3 overflow-hidden">
+        <div class="flex items-center justify-between gap-3 overflow-hidden">
+          <div class="flex items-center gap-2 min-w-0 flex-1 overflow-hidden">
+            <span class="text-[10px] uppercase font-bold bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 px-1.5 py-0.5 rounded flex-shrink-0">${f.feed_type || 'all'}</span>
+            ${needsExt ? '<span class="text-[10px] uppercase font-bold bg-amber-200 dark:bg-amber-800 text-amber-800 dark:text-amber-100 px-1.5 py-0.5 rounded flex-shrink-0">Extension</span>' : ''}
+            <span class="text-xs text-slate-600 dark:text-slate-300 truncate block min-w-0 flex-1" title="${f.feed_url}">${f.feed_url}</span>
+          </div>
+          ${canManage ? `<button data-feed-id="${f.id}" class="feed-delete-btn text-red-400 hover:text-red-300 text-xs font-bold flex-shrink-0">Remove</button>` : ''}
         </div>
-        ${canManage ? `<button data-feed-id="${f.id}" class="feed-delete-btn text-red-400 hover:text-red-300 text-xs font-bold flex-shrink-0">Remove</button>` : ''}
-      </div>
-    `).join('');
+        ${extNote}
+      </div>`;
+    }).join('');
     document.querySelectorAll('.feed-delete-btn').forEach(btn => {
       btn.addEventListener('click', () => deleteFeed(btn.dataset.feedId));
     });

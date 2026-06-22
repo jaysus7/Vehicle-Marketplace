@@ -163,8 +163,12 @@ app.post('/stripe/webhook', express.raw({ type: 'application/json' }), async (re
   res.json({ received: true })
 })
 
-app.use(express.json())
-app.use(express.urlencoded({ extended: true }))
+// Raise the body limit well above Express's 100KB default: the extension's
+// dealer-capture POST sends the full inventory (vehicles + image_url arrays +
+// descriptions) in one request, which for a few hundred vehicles is several MB.
+// 100KB was causing "request entity too large" (HTTP 413) on capture uploads.
+app.use(express.json({ limit: '25mb' }))
+app.use(express.urlencoded({ extended: true, limit: '25mb' }))
 
 // ── 2. AUTH MIDDLEWARE ──
 async function requireAuth(req, res, next) {
@@ -2881,7 +2885,7 @@ app.post('/feeds/:id/extension-capture', requireAuth, async (req, res) => {
   // Verify the caller owns this feed
   const { data: feed, error: feedErr } = await supabaseAdmin
     .from('inventory_feeds')
-    .select('id, dealership_id, feed_url')
+    .select('id, dealership_id, feed_url, platform')
     .eq('id', feedId)
     .single()
   if (feedErr || !feed) return res.status(404).json({ error: 'Feed not found' })
@@ -2889,11 +2893,14 @@ app.post('/feeds/:id/extension-capture', requireAuth, async (req, res) => {
     return res.status(403).json({ error: 'Feed does not belong to your dealership' })
   }
 
-  // Stamp the feed so the dashboard can show "last captured via extension"
+  // Stamp the feed so the dashboard can show "last captured via extension".
+  // Preserve the needs_extension_capture marker for Cloudflare-protected feeds so
+  // the extension bar + dashboard warning keep showing (the server still can't sync
+  // these; they must always be re-captured via the browser). Record when we last did.
   await supabaseAdmin
     .from('inventory_feeds')
     .update({
-      platform: platform || 'extension_capture',
+      platform: feed.platform === 'needs_extension_capture' ? 'needs_extension_capture' : (platform || 'extension_capture'),
       last_extension_sync_at: new Date().toISOString(),
       source_dealer_url: source_url || feed.feed_url
     })
