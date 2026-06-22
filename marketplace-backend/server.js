@@ -1839,13 +1839,11 @@ app.get('/listings', requireAuth, async (req, res) => {
     .from('listings')
     .select('*, inventory!listings_inventory_id_fkey(*)')
     .eq('status', 'posted')
+    .eq('posted_by', req.user.id)   // ← THIS is the fix
     .order('posted_at', { ascending: false })
   if (error) return res.status(500).json({ error: error.message })
-  // Filter to this dealership only
-  const filtered = (data || []).filter(l => l.inventory?.dealership_id === req.dealershipId)
-  res.json(filtered)
+  res.json(data || [])
 })
-
 app.patch('/listings/:id/delete', requireAuth, async (req, res) => {
   const { error } = await supabaseAdmin
     .from('listings')
