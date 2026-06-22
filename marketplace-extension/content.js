@@ -360,9 +360,9 @@ async function injectPhotosIntoInput(imageUrls) {
   }
   console.log('[MarketSync] using file input:', { accept: fileInput.accept, multiple: fileInput.multiple })
 
-  // FB Marketplace vehicle listings allow up to 50 photos. Earlier cap was 30
-  // but real listings often have 25-40 photos and we were truncating them.
-  const MAX_PHOTOS = 50
+  // Upload only the first 20 photos. Listings sometimes have more, but 20 is all
+  // we need (and all we upload) — any extras are intentionally ignored.
+  const MAX_PHOTOS = 20
   const files = [];
   let fetchFailures = 0;
   for (let i = 0; i < Math.min(imageUrls.length, MAX_PHOTOS); i++) {
@@ -408,8 +408,10 @@ async function injectPhotosIntoInput(imageUrls) {
 }
 
 // ── Photo strip ───────────────────────────────
-function showPhotoStrip(imageUrls, vehicleId) {
-  if (!imageUrls?.length) return;
+function showPhotoStrip(allImageUrls, vehicleId) {
+  if (!allImageUrls?.length) return;
+  // Only the first 20 photos are uploaded, so only preview/inject those.
+  const imageUrls = allImageUrls.slice(0, 20);
   document.getElementById('wc-photo-strip')?.remove();
 
   const uploadZone = document.querySelector('[aria-label="Add photos"]') ||
@@ -532,27 +534,39 @@ function showPhotoStrip(imageUrls, vehicleId) {
 // order — Escape key (the cleanest), then "Close" button by aria-label, then
 // click outside the dialog area. Safe to call when nothing is open.
 function closePhotoLightboxes() {
-  // 1. Escape key — most modals listen for this
-  document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true }))
-  document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true }))
+  const openDialogs = () => [...document.querySelectorAll('[role="dialog"]')].filter(d =>
+    d.offsetParent !== null && !d.closest('[aria-hidden="true"]')
+  )
 
-  // 2. Find any visible Close button inside an open dialog
-  setTimeout(() => {
-    const dialogs = [...document.querySelectorAll('[role="dialog"]')].filter(d =>
-      d.offsetParent !== null && !d.closest('[aria-hidden="true"]')
-    )
-    for (const dlg of dialogs) {
+  const closeOnce = () => {
+    // 1. Escape key — most modals listen for this
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', keyCode: 27, bubbles: true }))
+    document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', keyCode: 27, bubbles: true }))
+
+    // 2. Click any visible Close/X button inside an open dialog
+    for (const dlg of openDialogs()) {
       const closeBtn = dlg.querySelector('[aria-label="Close" i], [aria-label*="close" i]')
       if (closeBtn) { closeBtn.click(); continue }
-      // Some FB modals use just an X icon — search for a button with text "×" or "Close"
-      const buttons = [...dlg.querySelectorAll('div[role="button"], button')]
+      // Some FB modals use just an X icon — match text "×"/"✕"/"Close" or an aria-label
+      const buttons = [...dlg.querySelectorAll('div[role="button"], button, [role="button"]')]
       const xBtn = buttons.find(b => {
         const t = b.textContent.trim()
-        return t === '×' || t === 'Close' || t === '✕'
+        const al = (b.getAttribute('aria-label') || '').toLowerCase()
+        return t === '×' || t === 'Close' || t === '✕' || al.includes('close')
       })
       if (xBtn) xBtn.click()
     }
-  }, 200)
+  }
+
+  // FB photo lightboxes can take a moment to mount/dismiss, and closing the photo
+  // viewer sometimes reveals an underlying dialog. Retry a few passes so the user
+  // never has to hit X manually after posting.
+  closeOnce()
+  let attempts = 0
+  const timer = setInterval(() => {
+    closeOnce()
+    if (!openDialogs().length || ++attempts >= 6) clearInterval(timer)
+  }, 350)
 }
 
 // ── Main form filler ──────────────────────────
@@ -631,10 +645,10 @@ async function fillListingForm(vehicle) {
     // Strategy 5 (last resort): the combobox that appears AFTER the Make combobox
     // in the DOM. Make has just been selected so it shows the make name now.
     const allCombos = [...document.querySelectorAll('[role="combobox"]')]
-    const makeIdx = allCombos.findIndex(el => {
-      const txt = el.textContent.trim().toLowerCase()
-      return txt === (make || '').toLowerCase()
-    })
+    const makeLower = (make || '').toLowerCase()
+    const makeIdx = makeLower
+      ? allCombos.findIndex(el => el.textContent.trim().toLowerCase().includes(makeLower))
+      : -1
     if (makeIdx >= 0 && allCombos[makeIdx + 1]) {
       const next = allCombos[makeIdx + 1]
       const nextTxt = next.textContent.trim().toLowerCase()
@@ -651,6 +665,15 @@ async function fillListingForm(vehicle) {
   if (!modelTrigger) {
     console.error('❌ Model dropdown not found after 15s. Fill manually.');
     showStatus('Could not find Model field — fill manually.', 'info');
+  } else if (modelTrigger.tagName === 'INPUT' && modelTrigger.getAttribute('role') !== 'combobox') {
+    // FB renders Model as a plain free-text input for some makes (no option list).
+    // The dropdown dance below would silently fail here, so just type the value.
+    modelTrigger.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    await sleep(600);
+    await typeInto(modelTrigger, model);
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    await sleep(400);
+    console.log('✓ Model typed into free-text field:', model);
   } else {
     modelTrigger.scrollIntoView({ behavior: 'smooth', block: 'center' });
     await sleep(600);
@@ -727,10 +750,19 @@ async function fillListingForm(vehicle) {
   // free-text input — that's how SUV / Truck got dumped into Model. Just
   // log + close the overlay; the verification step below will retry with
   // the same scoped logic, and the user can finish manually if needed.
-  console.warn(`❌ No "${model}" option in FB's Model list. Closing overlay; user can fill manually.`);
+  console.warn(`❌ No "${model}" option in FB's Model list.`);
+  // FB's model search box accepts custom typed values. If we already typed the
+  // model into the scoped overlay search input, commit it with Enter rather than
+  // discarding it — this fills the field correctly for models not in FB's list.
+  if (searchInput2 && searchInput2.value) {
+    searchInput2.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, bubbles: true }));
+    await sleep(500);
+    console.log('✓ Committed custom model value via Enter:', model);
+  } else {
+    showStatus(`"${model}" wasn't in Facebook's Model list — please type it manually.`, 'info');
+  }
   document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
   await sleep(400);
-  showStatus(`"${model}" wasn't in Facebook's Model list — please type it manually.`, 'info');
 }
   }
   // Wait longer for the Model commit so the next combobox lookup doesn't grab the
@@ -841,17 +873,9 @@ if (modelComboboxNow && (
       .find(el => el.textContent.trim().toLowerCase().includes('condition'))
   );
   // FB Marketplace's vehicle condition uses 5-point labels ("Excellent","Very Good",
-  // "Good","Fair","Poor"), NOT "New"/"Used". Map our condition values to FB's vocab.
-  // Defaults: "New" → Excellent, "Used" → Good, "Demo" → Very Good, "Certified" → Very Good.
-  const fbCondition = (() => {
-    const raw = String(vehicle.condition || '').toLowerCase()
-    if (raw === 'new') return 'Excellent'
-    if (raw === 'demo' || raw === 'certified' || raw === 'certified pre-owned') return 'Very Good'
-    if (raw === 'used' || raw === 'pre-owned') return 'Good'
-    if (['excellent','very good','good','fair','poor'].includes(raw)) return vehicle.condition
-    return 'Good'  // safe default
-  })()
-  await pickDropdown('Vehicle condition', fbCondition);
+  // "Good","Fair","Poor"). Per request, condition is ALWAYS listed as "Good"
+  // regardless of the source vehicle's condition value.
+  await pickDropdown('Vehicle condition', 'Good');
   await sleep(DELAY);
 
   // FUEL TYPE
