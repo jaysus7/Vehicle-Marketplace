@@ -329,20 +329,13 @@ async function checkExtensionSyncNeeded(token) {
     if (!candidates.length) return
 
     const bar = $('premium-sync-bar')
-    const status = $('ext-sync-status')
-    const btn = $('connect-dealer-btn')
-    if (!bar || !btn) return
-
+    if (!bar) return
     bar.style.display = 'block'
-    const feed = candidates[0]
-    const host = (() => { try { return new URL(feed.feed_url).host } catch { return feed.feed_url } })()
-    const steps = $('ext-sync-steps')
-    const track = $('ext-sync-progress-track')
-    const fill = $('ext-sync-progress-fill')
-    if (steps) steps.style.display = 'block'  // always show the how-to while a capture feed exists
 
-    // One-time "Enable one-click capture" — grants broad host access so the dashboard's
-    // Pull Inventory button can drive capture for ANY dealer without a per-site prompt.
+    // The popup's ONLY job for Cloudflare dealers is the one-time "Enable one-click
+    // capture" grant (Chrome requires the host-permission request to come from an
+    // extension UI with a user gesture). The instructions, Pull Inventory button,
+    // and progress all live on the dashboard now.
     const enableBtn = $('enable-oneclick-btn')
     const enableNote = $('enable-oneclick-note')
     if (enableBtn) {
@@ -371,95 +364,6 @@ async function checkExtensionSyncNeeded(token) {
               enableBtn.textContent = '⚡ Enable one-click capture from dashboard'
             }
           }
-        }
-      })
-    }
-
-    const setProgress = (pct) => {
-      if (!track || !fill) return
-      if (pct == null) { track.style.display = 'none'; return }
-      track.style.display = 'block'
-      fill.style.width = `${Math.max(0, Math.min(100, pct))}%`
-    }
-
-    // The capture runs in the BACKGROUND (separate tab + service worker) and keeps
-    // going after this popup closes. The popup is a fresh document each time it
-    // opens, so without mirroring the persisted captureState it resets to idle and
-    // looks like the pull stopped. Reflect the real status here instead.
-    const STALE_MS = 10 * 60 * 1000
-    const renderState = (state) => {
-      const relevant = state && (state.feedId == null || state.feedId === feed.id)
-      const pulling = relevant && state.status === 'pulling' && (Date.now() - (state.startedAt || 0) < STALE_MS)
-      if (pulling) {
-        btn.disabled = true
-        const pctStr = (state.pct != null) ? ` ${state.pct}%` : ''
-        btn.textContent = `⏳ Pulling…${pctStr}`
-        status.textContent = state.total
-          ? `Reading inventory… ${state.current || 0}/${state.total} vehicles. You can close this — it keeps running.`
-          : 'Pulling inventory in the background — you can close this popup, it keeps running.'
-        setProgress(state.pct != null ? state.pct : null)
-      } else if (relevant && state.status === 'done') {
-        btn.disabled = false
-        btn.textContent = 'Pull again'
-        status.textContent = `✓ Pulled ${state.count ?? 0} vehicles from ${host}. Refresh your dashboard to see them.`
-        setProgress(100)
-      } else if (relevant && state.status === 'error') {
-        btn.disabled = false
-        btn.textContent = 'Try again'
-        status.textContent = state.error || 'Capture failed — try again.'
-        setProgress(null)
-      } else {
-        btn.disabled = false
-        btn.textContent = 'Pull Inventory'
-        status.textContent = `Pull inventory from ${host} using your browser session.`
-        setProgress(null)
-      }
-    }
-
-    const { captureState } = await chrome.storage.local.get(['captureState'])
-    renderState(captureState)
-
-    // Live-update while the popup stays open (background writes captureState as it
-    // progresses), so the user sees pulling → done without reopening.
-    chrome.storage.onChanged.addListener((changes, area) => {
-      if (area === 'local' && changes.captureState) renderState(changes.captureState.newValue)
-    })
-
-    btn.onclick = async () => {
-      btn.disabled = true
-      // Request host permission HERE — the popup has the user gesture that MV3
-      // requires. Requesting it from the background service worker silently fails,
-      // which is why the button looked like it "never connected" for a new dealer
-      // origin (each dealer domain needs its own grant).
-      try {
-        btn.textContent = 'Requesting access…'
-        const origin = new URL(feed.feed_url).origin + '/*'
-        const granted = await chrome.permissions.request({ origins: [origin] })
-        if (!granted) {
-          btn.disabled = false
-          btn.textContent = 'Try again'
-          status.textContent = 'Access is required to read the dealer site. Click Pull Inventory and choose Allow.'
-          return
-        }
-      } catch (e) {
-        btn.disabled = false
-        btn.textContent = 'Try again'
-        status.textContent = e.message || 'Could not request site access.'
-        return
-      }
-      btn.textContent = 'Opening dealer site…'
-      chrome.runtime.sendMessage({
-        type: 'CONNECT_DEALER_SITE',
-        url: feed.feed_url,
-        feed_id: feed.id
-      }, (resp) => {
-        if (resp?.success) {
-          btn.textContent = '⏳ Pulling…'
-          status.textContent = 'Pulling inventory in the background — you can close this popup, it keeps running.'
-        } else {
-          btn.disabled = false
-          btn.textContent = 'Try again'
-          status.textContent = resp?.error || 'Could not connect.'
         }
       })
     }
