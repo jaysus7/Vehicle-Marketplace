@@ -1437,6 +1437,9 @@ function setupActionListeners() {
 
   // Global Session Exits
   document.getElementById('logout-btn').addEventListener('click', () => {
+    // Tell the extension bridge this is a deliberate sign-out so it logs the
+    // extension out too instead of auto-logging the site back in.
+    sessionStorage.setItem('ms_logged_out', '1');
     localStorage.clear();
     window.location.href = 'login.html';
   });
@@ -1601,6 +1604,7 @@ async function initSecurityPanel() {
       const data = await res.json();
       alert(data.message || 'Other devices signed out.');
       if (data.scope === 'all') {
+        sessionStorage.setItem('ms_logged_out', '1');
         localStorage.clear();
         window.location.href = '/login.html';
       }

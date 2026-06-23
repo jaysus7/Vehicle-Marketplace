@@ -99,6 +99,35 @@ function handleSubscriptionGate(token) {
   })
 }
 
+// Text search over the already-rendered vehicle list (make/model/year/trim).
+// Works on top of the category filter — purely client-side, no refetch.
+function applySearchFilter() {
+  const q = (window.__msSearchQuery || '').trim().toLowerCase()
+  const list = $('vehicle-list')
+  if (!list) return
+  const items = list.querySelectorAll('.vehicle-item')
+  let visible = 0
+  items.forEach(it => {
+    const show = !q || it.textContent.toLowerCase().includes(q)
+    it.style.display = show ? '' : 'none'
+    if (show) visible++
+  })
+
+  let note = document.getElementById('search-no-results')
+  if (q && visible === 0 && items.length) {
+    if (!note) {
+      note = document.createElement('div')
+      note.id = 'search-no-results'
+      note.style.cssText = 'padding:20px 12px;text-align:center;color:#888;font-size:12px;'
+      list.appendChild(note)
+    }
+    note.textContent = `No vehicles match “${window.__msSearchQuery.trim()}”.`
+    note.style.display = ''
+  } else if (note) {
+    note.style.display = 'none'
+  }
+}
+
 async function loadInventory(token) {
   $('vehicle-list').innerHTML = '<div class="loading">Loading inventory...</div>'
 
@@ -253,6 +282,9 @@ async function loadInventory(token) {
         chrome.tabs.create({ url })
       })
     })
+
+    // Re-apply any active text search on top of the freshly rendered list.
+    applySearchFilter()
   } catch (e) {
     if (e.message === 'SUBSCRIPTION_REQUIRED') {
       handleSubscriptionGate(token)
@@ -307,6 +339,28 @@ async function showInventoryScreen(token, user) {
       loadInventory(token)
     })
   })
+
+  // Search box — filters the rendered list live (no refetch). Sits beside the
+  // New / Used / Demo category buttons in the toolbar.
+  const searchInput = $('search-input')
+  const searchWrap = $('search-wrap')
+  const searchClear = $('search-clear')
+  if (searchInput) {
+    searchInput.value = window.__msSearchQuery || ''
+    searchWrap?.classList.toggle('has-value', !!searchInput.value)
+    searchInput.addEventListener('input', () => {
+      window.__msSearchQuery = searchInput.value
+      searchWrap?.classList.toggle('has-value', !!searchInput.value)
+      applySearchFilter()
+    })
+    searchClear?.addEventListener('click', () => {
+      searchInput.value = ''
+      window.__msSearchQuery = ''
+      searchWrap?.classList.remove('has-value')
+      applySearchFilter()
+      searchInput.focus()
+    })
+  }
 
   // Premium Sync — extension-side dealer site capture. Shown only when a feed
   // is flagged needs_extension_capture (e.g. Cloudflare blocked us server-side).
@@ -386,6 +440,8 @@ async function markSold(listingId, vehicleName, token, kind) {
     })
     const data = await r.json().catch(() => ({}))
     if (!r.ok) throw new Error(data.error || 'Failed to mark sold')
+    // Kick the background poller so the FB listing gets marked Sold right away.
+    chrome.runtime.sendMessage({ type: 'FB_SYNC_NOW' })
     loadInventory(token)
   } catch (err) {
     alert(`Could not mark sold: ${err.message}`)
@@ -515,6 +571,8 @@ document.addEventListener('DOMContentLoaded', () => {
   chrome.storage.local.get(['token', 'user'], ({ token, user }) => {
     if (token && user) {
       showInventoryScreen(token, user)
+      // Opportunistically process any pending FB mark-sold / delete actions.
+      chrome.runtime.sendMessage({ type: 'FB_SYNC_NOW' })
     } else {
       setScreen('login')
     }

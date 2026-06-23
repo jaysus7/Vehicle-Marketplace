@@ -210,3 +210,109 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true
   }
 })
+
+// ── Facebook auto-sync (mark Sold / Delete) ───────────────────────────────────
+// The backend flags listings whose vehicle was sold/deleted in MarketSync. We poll
+// for them, open each FB listing in a background tab, and content.js performs the
+// "Mark as sold" / "Delete listing" click, then reports back here. FB has no API
+// for this — it can only run while Chrome is open and the user is logged into FB.
+
+const FB_SYNC_ALARM = 'fbSyncPoll'
+const FB_MAX_OPEN_PER_POLL = 3      // don't flood the user with tabs at once
+const FB_REDISPATCH_MS = 6 * 60 * 1000  // re-open a still-pending listing at most this often
+
+function fbItemIdFromUrl(url) {
+  const m = String(url || '').match(/\/marketplace\/item\/(\d+)/)
+  return m ? m[1] : null
+}
+
+async function pollFbSync() {
+  const { token } = await chrome.storage.local.get(['token'])
+  if (!token) return
+
+  let pending
+  try {
+    const r = await fetch(`${API}/listings/pending-fb-sync`, {
+      headers: { Authorization: `Bearer ${token}` }
+    })
+    if (!r.ok) return
+    pending = await r.json()
+  } catch { return }
+
+  if (!Array.isArray(pending) || pending.length === 0) {
+    await chrome.storage.local.set({ fbSyncQueue: {} })  // nothing pending → clear
+    return
+  }
+
+  const { fbSyncQueue = {} } = await chrome.storage.local.get(['fbSyncQueue'])
+  const now = Date.now()
+  const queue = {}
+  const toOpen = []
+
+  for (const item of pending) {
+    const itemId = fbItemIdFromUrl(item.fb_listing_url)
+    if (!itemId) continue
+    const prev = fbSyncQueue[itemId]
+    const dispatchedAt = prev?.dispatchedAt || 0
+    const entry = { listingId: item.id, action: item.fb_sync_action, fbUrl: item.fb_listing_url, dispatchedAt }
+    if (toOpen.length < FB_MAX_OPEN_PER_POLL && (now - dispatchedAt) > FB_REDISPATCH_MS) {
+      entry.dispatchedAt = now
+      toOpen.push(item.fb_listing_url)
+    }
+    queue[itemId] = entry
+  }
+
+  // IMPORTANT: persist the queue BEFORE opening tabs, so content.js (which reads
+  // fbSyncQueue on load) always finds its instructions when the tab finishes loading.
+  await chrome.storage.local.set({ fbSyncQueue: queue })
+  for (const url of toOpen) chrome.tabs.create({ url, active: false }).catch(() => {})
+}
+
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  // Run a poll right now (e.g. popup just opened, or a sale was just recorded).
+  if (msg.type === 'FB_SYNC_NOW') {
+    pollFbSync()
+    sendResponse({ success: true })
+    return true
+  }
+
+  // content.js reports the result of a Mark-Sold / Delete attempt.
+  if (msg.type === 'FB_SYNC_REPORT') {
+    chrome.storage.local.get(['token', 'fbSyncQueue'], async ({ token, fbSyncQueue }) => {
+      if (token && msg.listingId) {
+        try {
+          await fetch(`${API}/listings/${msg.listingId}/fb-sync-done`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+            body: JSON.stringify({ ok: !!msg.ok })
+          })
+        } catch (e) { console.warn('fb-sync-done failed:', e.message) }
+      }
+      // On success, drop it from the local queue and close the tab we opened.
+      if (msg.ok && fbSyncQueue && msg.itemId && fbSyncQueue[msg.itemId]) {
+        delete fbSyncQueue[msg.itemId]
+        await chrome.storage.local.set({ fbSyncQueue })
+      }
+      if (msg.ok && sender.tab?.id) {
+        chrome.tabs.get(sender.tab.id, (t) => {
+          if (t && !t.active) chrome.tabs.remove(sender.tab.id).catch(() => {})
+        })
+      }
+      sendResponse({ success: true })
+    })
+    return true
+  }
+})
+
+// Poll on install, on browser startup, and every 5 minutes.
+chrome.runtime.onInstalled.addListener(() => {
+  chrome.alarms.create(FB_SYNC_ALARM, { periodInMinutes: 5 })
+  pollFbSync()
+})
+chrome.runtime.onStartup.addListener(() => {
+  chrome.alarms.create(FB_SYNC_ALARM, { periodInMinutes: 5 })
+  pollFbSync()
+})
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name === FB_SYNC_ALARM) pollFbSync()
+})

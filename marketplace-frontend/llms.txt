@@ -19,8 +19,8 @@
 
 ## Pricing
 
-- **Dealer Plan — $199/month**: One subscription covers the whole dealership, including unlimited sales reps, auto-sync, the team leaderboard, insights, and rep management. Reps do not pay; the dealer pays once.
-- **Individual Sales Rep Plan — $49/month**: For a single rep working alone — personal extension license, posting automation, personal dashboard, and sold tracking.
+- **Dealer Plan — $499/month**: One subscription covers the whole dealership, including unlimited sales reps, auto-sync, the team leaderboard, insights, and rep management. Reps do not pay; the dealer pays once.
+- **Individual Sales Rep Plan — $79/month**: For a single rep working alone — personal extension license, posting automation, personal dashboard, and sold tracking.
 - Every account starts with a **7-day free trial, no credit card required**, and can be cancelled anytime.
 
 ## Supported dealer website platforms

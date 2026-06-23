@@ -1845,10 +1845,61 @@ app.get('/listings', requireAuth, async (req, res) => {
   res.json(data || [])
 })
 app.patch('/listings/:id/delete', requireAuth, async (req, res) => {
+  // Queue the Facebook listing for DELETION (not "sold") — the extension will
+  // remove it from Marketplace. We only queue it if there's an FB URL to act on;
+  // fb_synced_at stays null so the extension's poller picks it up.
   const { error } = await supabaseAdmin
     .from('listings')
-    .update({ status: 'deleted', deleted_at: new Date().toISOString() })
+    .update({
+      status: 'deleted',
+      deleted_at: new Date().toISOString(),
+      fb_sync_action: 'delete',
+      fb_synced_at: null
+    })
     .eq('id', req.params.id)
+  if (error) return res.status(500).json({ error: error.message })
+  res.json({ success: true })
+})
+
+// ── Facebook auto-sync queue ──────────────────────────────────────────────────
+// Facebook Marketplace has no server-side API for personal listings, so the
+// browser extension performs "Mark as sold" / "Delete" actions client-side.
+// These two endpoints are the queue: the extension polls pending-fb-sync for the
+// signed-in user's own listings, acts on Facebook, then reports back via fb-sync-done.
+
+// What FB actions are waiting for THIS user to perform (scoped to posted_by — the
+// FB session belongs to the logged-in rep, so we only ever touch their own posts).
+app.get('/listings/pending-fb-sync', requireAuth, async (req, res) => {
+  const { data, error } = await supabaseAdmin
+    .from('listings')
+    .select('id, fb_listing_url, fb_sync_action, fb_sync_attempts, vehicle_label')
+    .eq('posted_by', req.user.id)
+    .not('fb_sync_action', 'is', null)
+    .is('fb_synced_at', null)
+    .not('fb_listing_url', 'is', null)
+    .lt('fb_sync_attempts', 5)       // give up after 5 failed attempts
+    .order('deleted_at', { ascending: true })
+    .limit(25)
+  if (error) return res.status(500).json({ error: error.message })
+  res.json(data || [])
+})
+
+// Extension reports the outcome. ok=true → mark synced (stop queueing).
+// ok=false → bump the attempt counter so we eventually stop retrying.
+app.post('/listings/:id/fb-sync-done', requireAuth, async (req, res) => {
+  const { ok } = req.body || {}
+  const { data: listing } = await supabaseAdmin
+    .from('listings')
+    .select('id, posted_by, fb_sync_attempts')
+    .eq('id', req.params.id)
+    .single()
+  if (!listing) return res.status(404).json({ error: 'Listing not found' })
+  if (listing.posted_by !== req.user.id) return res.status(403).json({ error: 'Not your listing' })
+
+  const update = ok
+    ? { fb_synced_at: new Date().toISOString() }
+    : { fb_sync_attempts: (listing.fb_sync_attempts || 0) + 1 }
+  const { error } = await supabaseAdmin.from('listings').update(update).eq('id', req.params.id)
   if (error) return res.status(500).json({ error: error.message })
   res.json({ success: true })
 })
@@ -1868,14 +1919,15 @@ async function finalizeSold(listingId, inventoryId) {
       .single()
     if (inv) {
       const label = [inv.year, inv.make, inv.model, inv.trim].filter(Boolean).join(' ').trim()
+      // fb_sync_action='sold' queues the extension to mark the FB listing "Sold".
       await supabaseAdmin
         .from('listings')
-        .update({ status: 'sold', deleted_at: now, vehicle_label: label || null })
+        .update({ status: 'sold', deleted_at: now, vehicle_label: label || null, fb_sync_action: 'sold', fb_synced_at: null })
         .eq('id', listingId)
     } else {
       await supabaseAdmin
         .from('listings')
-        .update({ status: 'sold', deleted_at: now })
+        .update({ status: 'sold', deleted_at: now, fb_sync_action: 'sold', fb_synced_at: null })
         .eq('id', listingId)
     }
     // 2. Delete the inventory row — vehicle is gone from the dealer site / sold
@@ -1899,6 +1951,12 @@ app.post('/listings/sync-fb-sold', requireAuth, async (req, res) => {
   if (!listing) return res.json({ success: false, matched: false })
 
   await finalizeSold(listing.id, listing.inventory_id)
+  // FB already shows this as sold (that's how we detected it) — no need to queue
+  // the extension to mark it sold again.
+  await supabaseAdmin
+    .from('listings')
+    .update({ fb_sync_action: null, fb_synced_at: new Date().toISOString() })
+    .eq('id', listing.id)
   res.json({ success: true, matched: true, listing_id: listing.id })
 })
 

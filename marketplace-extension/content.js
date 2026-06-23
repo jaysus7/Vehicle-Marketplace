@@ -1093,3 +1093,146 @@ function detectFbSoldBadge() {
 
   return false;
 }
+
+// ── FB auto-sync: mark Sold / Delete on Facebook ──────────────────────────────
+// When a vehicle is sold or deleted in MarketSync, the backend flags its listing
+// and background.js opens the FB listing in a background tab. Here we detect that
+// this tab was opened for an auto-sync action and perform it (click "Mark as sold"
+// or "Delete listing"). Facebook has no API for this, so we drive the real UI.
+// All matching is text-based + multi-fallback because FB ships frequent DOM changes.
+
+function fbItemId(url) {
+  const m = String(url || '').match(/\/marketplace\/item\/(\d+)/);
+  return m ? m[1] : null;
+}
+
+function fbVisible(el) {
+  if (!el) return false;
+  const rect = el.getBoundingClientRect();
+  return rect.width > 0 && rect.height > 0 && !el.closest('[aria-hidden="true"]');
+}
+
+// Find the nearest clickable element whose (own) text matches one of `texts`.
+// Matches role=button / button / a / [role=menuitem] and bubbles up to a clickable.
+function findClickableByText(texts, { exact = false, root = document } = {}) {
+  const wants = texts.map(t => t.toLowerCase());
+  const nodes = [...root.querySelectorAll('div[role="button"], button, a[role="button"], a, [role="menuitem"], span')];
+  for (const el of nodes) {
+    if (!fbVisible(el)) continue;
+    const txt = (el.textContent || '').trim().toLowerCase();
+    if (!txt || txt.length > 40) continue;
+    const hit = exact ? wants.includes(txt) : wants.some(w => txt === w || txt.startsWith(w));
+    if (!hit) continue;
+    // Bubble up to an actually-clickable ancestor if this is a bare <span>.
+    const clickable = el.closest('div[role="button"], button, a[role="button"], a, [role="menuitem"]') || el;
+    return clickable;
+  }
+  return null;
+}
+
+// Click a confirmation-dialog button (e.g. the modal that pops after "Delete").
+async function clickDialogButton(texts) {
+  const dialog = await waitFor(() => document.querySelector('[role="dialog"]'), 4000);
+  const root = dialog || document;
+  const btn = findClickableByText(texts, { exact: true, root });
+  if (btn) { btn.click(); return true; }
+  return false;
+}
+
+// Open Facebook's overflow / "More" menu on a listing so menu items become reachable.
+async function openFbOverflowMenu() {
+  const labels = ['more', 'more options', 'actions', 'menu', 'see options'];
+  // aria-label based (most reliable for the "⋯" icon button)
+  const byAria = [...document.querySelectorAll('div[role="button"], button')].find(el => {
+    const a = (el.getAttribute('aria-label') || '').toLowerCase();
+    return fbVisible(el) && labels.some(l => a === l || a.includes(l));
+  });
+  const trigger = byAria || findClickableByText(['more', 'more options'], { root: document });
+  if (!trigger) return false;
+  trigger.click();
+  await sleep(900);
+  return true;
+}
+
+async function fbMarkAsSold() {
+  // 1) direct button
+  let btn = findClickableByText(['mark as sold'], {});
+  // 2) fall back to the overflow menu
+  if (!btn) { await openFbOverflowMenu(); btn = findClickableByText(['mark as sold'], {}); }
+  if (!btn) return false;
+  btn.click();
+  await sleep(1200);
+  // Some builds show a confirm dialog; click it if present (harmless if not).
+  await clickDialogButton(['mark as sold', 'confirm', 'ok']);
+  // Verify FB now shows the sold state.
+  const ok = await waitFor(() => detectFbSoldBadge() ? true : null, 9000);
+  return !!ok;
+}
+
+async function fbDeleteListing() {
+  // 1) direct delete button
+  let btn = findClickableByText(['delete listing', 'delete'], {});
+  // 2) fall back to overflow menu
+  if (!btn) { await openFbOverflowMenu(); btn = findClickableByText(['delete listing', 'delete'], {}); }
+  if (!btn) return false;
+  btn.click();
+  await sleep(1000);
+  // Confirmation modal — the final destructive "Delete" button.
+  const confirmed = await clickDialogButton(['delete', 'delete listing', 'confirm']);
+  await sleep(1500);
+  // Success heuristics: confirm clicked, or the listing controls are gone /
+  // FB shows an "isn't available" message after deletion.
+  if (confirmed) return true;
+  const gone = !findClickableByText(['delete listing', 'delete'], {});
+  const unavailable = /isn't available|no longer available|this content isn't/i.test(document.body.innerText || '');
+  return gone || unavailable;
+}
+
+// Is the user even logged into Facebook on this tab? If not, bail WITHOUT
+// reporting failure, so we don't burn the listing's retry budget — we'll just
+// try again on the next poll once they're logged in.
+function fbLoggedOut() {
+  if (/\/login\b/.test(location.pathname)) return true;
+  if (document.querySelector('input[name="email"]') && document.querySelector('input[name="pass"]')) return true;
+  return false;
+}
+
+(async function runFbAutoSync() {
+  const itemId = fbItemId(location.href);
+  if (!itemId) return;
+
+  const { fbSyncQueue } = await new Promise(r => chrome.storage.local.get(['fbSyncQueue'], r));
+  const entry = fbSyncQueue && fbSyncQueue[itemId];
+  if (!entry || !entry.action) return;  // this tab wasn't opened for an auto-sync
+
+  // Let FB hydrate the listing UI first.
+  await sleep(3000);
+  if (fbLoggedOut()) {
+    console.warn('[MarketSync] FB auto-sync skipped — not logged into Facebook.');
+    return; // no report → no attempt burned
+  }
+
+  showStatus(entry.action === 'delete'
+    ? 'Removing this listing from Facebook…'
+    : 'Marking this listing Sold on Facebook…');
+
+  let ok = false;
+  try {
+    ok = entry.action === 'delete' ? await fbDeleteListing() : await fbMarkAsSold();
+  } catch (e) {
+    console.warn('[MarketSync] FB auto-sync error:', e.message);
+    ok = false;
+  }
+
+  showStatus(ok
+    ? (entry.action === 'delete' ? 'Listing removed from Facebook.' : 'Listing marked Sold on Facebook.')
+    : 'Could not finish on Facebook — will retry later.', ok ? 'success' : 'info');
+
+  // Report outcome so background can hit the backend + (on success) close this tab.
+  chrome.runtime.sendMessage({
+    type: 'FB_SYNC_REPORT',
+    listingId: entry.listingId,
+    itemId,
+    ok
+  });
+})();
