@@ -28,22 +28,22 @@
       target: '#feeds-panel',
       before: () => goPage('inventory'),
       title: '1. Connect your dealer website',
-      body: `Add your dealership inventory URL here. MarketSync auto-syncs every vehicle — year, make, model, price, mileage and photos — so you never re-type a listing.`
+      body: `Your dealership inventory feed lives here. MarketSync auto-syncs every vehicle — year, make, model, price, mileage and photos — so you never re-type a listing. Hit <b>Sync Now</b> to pull the latest.`
     },
     {
-      target: '#catalog-panel',
+      target: '#catalog-search',
       before: () => goPage('inventory'),
-      title: '2. Your synced inventory',
-      body: `Every vehicle we pull in shows up here, ready to post. Use the search box to find a specific car fast.`
+      title: '2. Find any synced car',
+      body: `Every vehicle we pull in shows up in your catalog below. Use this search box to jump to a specific car by make, model, VIN or stock #.`
     },
     {
-      target: '#catalog-panel',
+      target: '#install-ext-btn',
       before: () => goPage('inventory'),
       title: '3. Post with the Chrome extension',
-      body: `Install the <b>MarketSync</b> Chrome extension and sign in once. From any car here, open the extension on Facebook and click <b>Post</b> — it fills out the entire Marketplace listing for you. The extension also has a <b>search bar</b> beside the New / Used / Demo filters.`
+      body: `Install the <b>MarketSync</b> Chrome extension and sign in once. Open it on Facebook, pick a car, and click <b>Post</b> — it fills out the entire Marketplace listing for you. The extension also has a <b>search bar</b> beside the New / Used / Demo filters.`
     },
     {
-      target: '#catalog-panel',
+      target: '#catalog-status',
       before: () => goPage('inventory'),
       title: '4. Sold? It clears Facebook for you ✨',
       body: `When you mark a car <b>Sold</b>, the extension automatically marks that listing <b>Sold on Facebook</b>. <b>Delete</b> a vehicle and it's <b>removed from Facebook Marketplace</b> too — no more stale listings. (Runs while Chrome is open and you're signed into Facebook.)`
@@ -69,7 +69,7 @@
   let idx = 0;
   let els = null;
   let reposition = null;   // active scroll/resize handler for the current step
-  let trackTimer = null;   // re-measures the target while async content shifts layout
+  let roObserver = null;   // ResizeObserver that repositions when the target resizes
   let renderToken = 0;     // guards against a stale async render repositioning
 
   function buildUI() {
@@ -150,27 +150,13 @@
     })();
   });
 
-  // After scrollIntoView, wait until the element's position stops moving so we
-  // measure the final coordinates (smooth-scroll duration varies by browser).
-  const settleScroll = (el) => new Promise((resolve) => {
-    let last = null, stable = 0;
-    const start = Date.now();
-    (function tick() {
-      const top = Math.round(el.getBoundingClientRect().top);
-      if (top === last) { if (++stable >= 3) return resolve(); }
-      else { stable = 0; last = top; }
-      if (Date.now() - start > 900) return resolve();
-      requestAnimationFrame(() => setTimeout(tick, 30));
-    })();
-  });
-
   function detachReposition() {
     if (reposition) {
       window.removeEventListener('scroll', reposition, true);
       window.removeEventListener('resize', reposition);
       reposition = null;
     }
-    if (trackTimer) { clearInterval(trackTimer); trackTimer = null; }
+    if (roObserver) { roObserver.disconnect(); roObserver = null; }
   }
 
   async function render() {
@@ -178,6 +164,11 @@
     const step = STEPS[idx];
     const token = ++renderToken;
     detachReposition();
+
+    // Hide the old spotlight immediately so it never lingers on the previous
+    // target while we locate the new one (that caused the "jumps to two spots").
+    hole.style.opacity = '0';
+    hole.style.pointerEvents = 'none';
 
     if (step.before) { try { step.before(); } catch {} }
 
@@ -194,27 +185,28 @@
     if (token !== renderToken) return;   // user advanced while we were waiting
 
     if (target) {
-      target.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
-      await settleScroll(target);
+      // Instant scroll (no smooth-scroll race), then a brief settle, then reveal
+      // the spotlight directly on the final position so it never visibly jumps.
+      target.scrollIntoView({ behavior: 'auto', block: 'center', inline: 'nearest' });
+      await new Promise(r => setTimeout(r, 220));
       if (token !== renderToken) return;
       positionTo(target);
-      reposition = () => positionTo(target);
+      reposition = () => { if (token === renderToken) positionTo(target); };
       window.addEventListener('scroll', reposition, true);
       window.addEventListener('resize', reposition);
-      // Async panels (e.g. the catalog) keep loading and shifting layout after we
-      // first position — re-measure for ~1.6s so the spotlight tracks the element.
-      let ticks = 0;
-      trackTimer = setInterval(() => {
-        if (token !== renderToken || ++ticks > 13) { clearInterval(trackTimer); trackTimer = null; return; }
-        positionTo(target);
-      }, 120);
+      // Reposition only when the target's box actually changes (e.g. catalog
+      // images finish loading) — no blind interval, so no drifting.
+      if (window.ResizeObserver) {
+        roObserver = new ResizeObserver(() => reposition());
+        try { roObserver.observe(target); } catch {}
+      }
     } else {
       hole.style.opacity = '0';
       hole.style.width = hole.style.height = '0px';
       centerCard();
     }
 
-    if (idx === STEPS.length - 1) fireConfetti();
+    if (idx === STEPS.length - 1) setTimeout(() => { if (token === renderToken) fireConfetti(); }, 250);
   }
 
   function positionTo(target) {
@@ -245,46 +237,68 @@
     card.style.transform = 'translate(-50%,-50%)';
   }
 
-  // Lightweight self-contained confetti burst for the final step. No dependency.
+  // Self-contained confetti — real popping burst, rendered ON TOP of everything.
+  // Two side cannons fire inward/upward (party-popper style) plus a center pop.
   function fireConfetti() {
     const canvas = document.createElement('canvas');
-    canvas.style.cssText = 'position:fixed;inset:0;width:100%;height:100%;z-index:99999;pointer-events:none;';
-    canvas.width = window.innerWidth;
-    canvas.height = window.innerHeight;
+    // Above the card (100000) so it visibly pops in front, not behind the modal.
+    canvas.style.cssText = 'position:fixed;inset:0;width:100%;height:100%;z-index:100002;pointer-events:none;';
+    const dpr = window.devicePixelRatio || 1;
+    const W = window.innerWidth, H = window.innerHeight;
+    canvas.width = W * dpr; canvas.height = H * dpr;
     document.body.appendChild(canvas);
     const ctx = canvas.getContext('2d');
-    const colors = ['#6366f1', '#22c55e', '#f59e0b', '#ef4444', '#3b82f6', '#ec4899', '#fff'];
-    const N = 160;
-    const parts = Array.from({ length: N }, () => ({
-      x: canvas.width / 2 + (Math.random() - 0.5) * 200,
-      y: canvas.height / 2,
-      vx: (Math.random() - 0.5) * 14,
-      vy: Math.random() * -16 - 4,
-      w: 6 + Math.random() * 6,
-      h: 8 + Math.random() * 8,
-      rot: Math.random() * Math.PI,
-      vrot: (Math.random() - 0.5) * 0.4,
-      color: colors[(Math.random() * colors.length) | 0]
-    }));
+    ctx.scale(dpr, dpr);
+
+    const colors = ['#6366f1', '#22c55e', '#f59e0b', '#ef4444', '#3b82f6', '#ec4899', '#a855f7', '#fff'];
+    const parts = [];
+    const burst = (ox, oy, angle, count, power) => {
+      for (let i = 0; i < count; i++) {
+        const a = angle + (Math.random() - 0.5) * 0.9;     // spread cone
+        const speed = power * (0.55 + Math.random() * 0.7);
+        parts.push({
+          x: ox, y: oy,
+          vx: Math.cos(a) * speed,
+          vy: Math.sin(a) * speed,
+          w: 7 + Math.random() * 7,
+          h: 9 + Math.random() * 9,
+          rot: Math.random() * Math.PI * 2,
+          vrot: (Math.random() - 0.5) * 0.5,
+          color: colors[(Math.random() * colors.length) | 0],
+          round: Math.random() < 0.3
+        });
+      }
+    };
+    // Two corner cannons aiming up-and-inward + a center pop upward.
+    burst(0, H, -Math.PI / 3.2, 120, 26);              // bottom-left → up-right
+    burst(W, H, -Math.PI + Math.PI / 3.2, 120, 26);    // bottom-right → up-left
+    burst(W / 2, H * 0.62, -Math.PI / 2, 90, 22);      // center → straight up
+
     const start = Date.now();
     (function frame() {
       const t = Date.now() - start;
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.clearRect(0, 0, W, H);
+      let alive = 0;
       parts.forEach(p => {
-        p.vy += 0.4;          // gravity
-        p.vx *= 0.99;
+        p.vy += 0.42;        // gravity
+        p.vx *= 0.992;
+        p.vy *= 0.992;
         p.x += p.vx;
         p.y += p.vy;
         p.rot += p.vrot;
+        const alpha = Math.max(0, 1 - t / 3200);
+        if (alpha <= 0 || p.y > H + 40) return;
+        alive++;
         ctx.save();
         ctx.translate(p.x, p.y);
         ctx.rotate(p.rot);
-        ctx.globalAlpha = Math.max(0, 1 - t / 2600);
+        ctx.globalAlpha = alpha;
         ctx.fillStyle = p.color;
-        ctx.fillRect(-p.w / 2, -p.h / 2, p.w, p.h);
+        if (p.round) { ctx.beginPath(); ctx.arc(0, 0, p.w / 2, 0, Math.PI * 2); ctx.fill(); }
+        else ctx.fillRect(-p.w / 2, -p.h / 2, p.w, p.h);
         ctx.restore();
       });
-      if (t < 2600) requestAnimationFrame(frame);
+      if (t < 3200 && alive > 0) requestAnimationFrame(frame);
       else canvas.remove();
     })();
   }
