@@ -2,7 +2,7 @@
 // A dependency-free spotlight walkthrough for the dashboard. Auto-runs once for
 // new users (tracked in localStorage) and can be replayed from the "Tour" button.
 // Steps target real dashboard elements when present and fall back to a centered
-// card otherwise, so a missing element never breaks the tour.
+// card otherwise, so a missing/hidden element never breaks the tour.
 (() => {
   const DONE_KEY = 'ms_tour_done';
   const PAD = 8;
@@ -66,6 +66,8 @@
 
   let idx = 0;
   let els = null;
+  let reposition = null;   // active scroll/resize handler for the current step
+  let renderToken = 0;     // guards against a stale async render repositioning
 
   function buildUI() {
     if (els) return els;
@@ -73,25 +75,25 @@
     css.textContent = `
       .ms-tour-backdrop{position:fixed;inset:0;z-index:99998;pointer-events:auto;}
       .ms-tour-hole{position:fixed;z-index:99998;border-radius:10px;
-        box-shadow:0 0 0 9999px rgba(15,23,42,0.72);transition:all .25s ease;pointer-events:none;}
-      .ms-tour-card{position:fixed;z-index:100000;max-width:340px;width:calc(100vw - 32px);
+        box-shadow:0 0 0 9999px rgba(15,23,42,0.72);transition:top .2s ease,left .2s ease,width .2s ease,height .2s ease,opacity .2s ease;pointer-events:none;}
+      .ms-tour-card{position:fixed;z-index:100000;max-width:400px;width:calc(100vw - 32px);
         background:#0f172a;color:#e2e8f0;border:1px solid #334155;border-radius:14px;
-        padding:18px 18px 14px;box-shadow:0 20px 50px rgba(0,0,0,.5);
-        font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;transition:all .2s ease;}
-      .ms-tour-card h3{margin:0 0 8px;font-size:16px;font-weight:800;color:#fff;}
-      .ms-tour-card p{margin:0 0 14px;font-size:13.5px;line-height:1.55;color:#cbd5e1;}
+        padding:22px 22px 16px;box-shadow:0 20px 50px rgba(0,0,0,.5);
+        font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;}
+      .ms-tour-card h3{margin:0 0 10px;font-size:21px;font-weight:800;color:#fff;line-height:1.25;}
+      .ms-tour-card p{margin:0 0 18px;font-size:16px;line-height:1.6;color:#cbd5e1;}
       .ms-tour-card b{color:#fff;}
       .ms-tour-foot{display:flex;align-items:center;justify-content:space-between;gap:10px;}
-      .ms-tour-dots{display:flex;gap:5px;}
-      .ms-tour-dot{width:6px;height:6px;border-radius:99px;background:#334155;}
+      .ms-tour-dots{display:flex;gap:6px;}
+      .ms-tour-dot{width:7px;height:7px;border-radius:99px;background:#334155;}
       .ms-tour-dot.on{background:#6366f1;}
       .ms-tour-btns{display:flex;gap:8px;}
-      .ms-tour-btn{border:none;cursor:pointer;font-size:13px;font-weight:700;padding:7px 14px;border-radius:8px;}
+      .ms-tour-btn{border:none;cursor:pointer;font-size:15px;font-weight:700;padding:9px 18px;border-radius:9px;}
       .ms-tour-next{background:#6366f1;color:#fff;}
       .ms-tour-next:hover{background:#4f46e5;}
       .ms-tour-back{background:#1e293b;color:#cbd5e1;}
-      .ms-tour-skip{position:absolute;top:12px;right:14px;background:none;border:none;color:#64748b;
-        font-size:18px;cursor:pointer;line-height:1;}
+      .ms-tour-skip{position:absolute;top:12px;right:16px;background:none;border:none;color:#64748b;
+        font-size:22px;cursor:pointer;line-height:1;}
       .ms-tour-skip:hover{color:#cbd5e1;}
     `;
     document.head.appendChild(css);
@@ -125,37 +127,86 @@
     return els;
   }
 
-  function render() {
+  const isVisible = (el) => {
+    if (!el) return false;
+    const r = el.getBoundingClientRect();
+    if (r.width <= 1 || r.height <= 1) return false;
+    const cs = getComputedStyle(el);
+    return cs.display !== 'none' && cs.visibility !== 'hidden' && cs.opacity !== '0';
+  };
+
+  // Poll for the target to become laid-out & visible (it may be on a not-yet-shown
+  // SPA page that step.before() just switched to).
+  const waitForVisible = (selector, timeout) => new Promise((resolve) => {
+    const start = Date.now();
+    (function poll() {
+      const el = document.querySelector(selector);
+      if (el && isVisible(el)) return resolve(el);
+      if (Date.now() - start > timeout) return resolve(el && isVisible(el) ? el : null);
+      setTimeout(poll, 60);
+    })();
+  });
+
+  // After scrollIntoView, wait until the element's position stops moving so we
+  // measure the final coordinates (smooth-scroll duration varies by browser).
+  const settleScroll = (el) => new Promise((resolve) => {
+    let last = null, stable = 0;
+    const start = Date.now();
+    (function tick() {
+      const top = Math.round(el.getBoundingClientRect().top);
+      if (top === last) { if (++stable >= 3) return resolve(); }
+      else { stable = 0; last = top; }
+      if (Date.now() - start > 900) return resolve();
+      requestAnimationFrame(() => setTimeout(tick, 30));
+    })();
+  });
+
+  function detachReposition() {
+    if (reposition) {
+      window.removeEventListener('scroll', reposition, true);
+      window.removeEventListener('resize', reposition);
+      reposition = null;
+    }
+  }
+
+  async function render() {
     const { hole, card } = buildUI();
     const step = STEPS[idx];
+    const token = ++renderToken;
+    detachReposition();
+
     if (step.before) { try { step.before(); } catch {} }
 
-    const finish = () => {
-      card.querySelector('h3').innerHTML = step.title;
-      card.querySelector('p').innerHTML = step.body;
-      const dots = card.querySelector('.ms-tour-dots');
-      dots.innerHTML = STEPS.map((_, i) => `<span class="ms-tour-dot ${i === idx ? 'on' : ''}"></span>`).join('');
-      card.querySelector('.ms-tour-back').style.visibility = idx === 0 ? 'hidden' : 'visible';
-      card.querySelector('.ms-tour-next').textContent = idx === STEPS.length - 1 ? 'Finish' : 'Next';
+    // Fill text + chrome immediately so the card never looks frozen.
+    card.querySelector('h3').innerHTML = step.title;
+    card.querySelector('p').innerHTML = step.body;
+    card.querySelector('.ms-tour-dots').innerHTML =
+      STEPS.map((_, i) => `<span class="ms-tour-dot ${i === idx ? 'on' : ''}"></span>`).join('');
+    card.querySelector('.ms-tour-back').style.visibility = idx === 0 ? 'hidden' : 'visible';
+    card.querySelector('.ms-tour-next').textContent = idx === STEPS.length - 1 ? 'Finish' : 'Next';
 
-      const target = step.target ? document.querySelector(step.target) : null;
-      if (target) {
-        target.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        // Let the smooth scroll settle before measuring.
-        setTimeout(() => positionTo(target), 280);
-      } else {
-        hole.style.opacity = '0';
-        hole.style.width = hole.style.height = '0px';
-        centerCard();
-      }
-    };
+    let target = null;
+    if (step.target) target = await waitForVisible(step.target, step.before ? 2200 : 1200);
+    if (token !== renderToken) return;   // user advanced while we were waiting
 
-    // Give step.before() (page switch) a beat to render its panel.
-    step.before ? setTimeout(finish, 120) : finish();
+    if (target) {
+      target.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
+      await settleScroll(target);
+      if (token !== renderToken) return;
+      positionTo(target);
+      reposition = () => positionTo(target);
+      window.addEventListener('scroll', reposition, true);
+      window.addEventListener('resize', reposition);
+    } else {
+      hole.style.opacity = '0';
+      hole.style.width = hole.style.height = '0px';
+      centerCard();
+    }
   }
 
   function positionTo(target) {
     const { hole, card } = els;
+    if (!isVisible(target)) { hole.style.opacity = '0'; centerCard(); return; }
     const r = target.getBoundingClientRect();
     hole.style.opacity = '1';
     hole.style.top = (r.top - PAD) + 'px';
@@ -166,8 +217,8 @@
     const cw = card.offsetWidth, ch = card.offsetHeight;
     const vw = window.innerWidth, vh = window.innerHeight;
     let top = r.bottom + 14, left = r.left;
-    if (top + ch > vh - 12) top = Math.max(12, r.top - ch - 14);      // flip above
-    if (top + ch > vh - 12) top = Math.max(12, (vh - ch) / 2);        // last resort
+    if (top + ch > vh - 12) top = r.top - ch - 14;          // flip above
+    if (top < 12) top = Math.max(12, (vh - ch) / 2);        // last resort: vertical center
     left = Math.min(Math.max(12, left), vw - cw - 12);
     card.style.top = top + 'px';
     card.style.left = left + 'px';
@@ -189,6 +240,8 @@
   }
 
   function end() {
+    renderToken++;
+    detachReposition();
     if (els) els.backdrop.style.display = els.hole.style.display = els.card.style.display = 'none';
     try { localStorage.setItem(DONE_KEY, '1'); } catch {}
   }
