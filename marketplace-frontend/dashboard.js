@@ -525,6 +525,51 @@ const LB_TIERS = [
   { name: 'Legend',   min: 30000, icon: '🔥', cls: 'bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300 border-red-300 dark:border-red-700' }
 ];
 
+// Shared leaderboard legend — "How you earn points" + "The Six Tiers". Rendered
+// into both the team and global boards so the scoring rules are always visible.
+const TIER_DOT = { Bronze: '#b45309', Silver: '#94a3b8', Gold: '#f59e0b', Platinum: '#22d3ee', Diamond: '#a78bfa', Legend: '#7c6cf6' };
+function leaderboardLegendHTML() {
+  const rules = [
+    { label: 'Post a car to Facebook Marketplace', pts: '+100', cls: 'text-indigo-600 dark:text-indigo-400' },
+    { label: 'You sell that car ("I Sold It")', pts: '+500', cls: 'text-emerald-600 dark:text-emerald-400' },
+    { label: 'Someone else sold it (no points, just tracked)', pts: '0', cls: 'text-slate-400' }
+  ];
+  const ruleRows = rules.map((r, i) => `
+    <div class="flex items-center justify-between py-3 ${i < rules.length - 1 ? 'border-b border-slate-100 dark:border-slate-800/60' : ''}">
+      <span class="text-sm text-slate-700 dark:text-slate-300">${r.label}</span>
+      <span class="font-bold ${r.cls}">${r.pts}</span>
+    </div>`).join('');
+  const tierRows = LB_TIERS.map(t => {
+    const isLegend = t.name === 'Legend';
+    const marker = isLegend
+      ? '<span class="text-indigo-500">👑</span>'
+      : `<span class="inline-block w-2.5 h-2.5 rounded-full" style="background:${TIER_DOT[t.name] || '#94a3b8'}"></span>`;
+    return `
+      <div class="flex items-center justify-between px-3 py-2.5 rounded-lg ${isLegend ? 'bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800' : 'bg-slate-50 dark:bg-slate-950/60'}">
+        <span class="flex items-center gap-2.5 ${isLegend ? 'font-bold text-slate-900 dark:text-white' : 'font-medium text-slate-700 dark:text-slate-300'}">${marker}${t.name}</span>
+        <span class="text-sm font-medium ${isLegend ? 'text-slate-900 dark:text-white' : 'text-slate-500 dark:text-slate-400'}">${t.min.toLocaleString()} pts</span>
+      </div>`;
+  }).join('');
+  return `
+    <div class="lb-legend grid grid-cols-1 md:grid-cols-2 gap-6 mt-8 pt-8 border-t border-slate-200 dark:border-slate-800">
+      <div>
+        <h3 class="text-lg font-bold text-slate-900 dark:text-white mb-2">How you earn points</h3>
+        <div>${ruleRows}</div>
+        <p class="text-xs italic text-slate-400 mt-3">It pays to be the one who closes the deal.</p>
+      </div>
+      <div>
+        <h3 class="text-lg font-bold text-slate-900 dark:text-white mb-3">The Six Tiers</h3>
+        <div class="space-y-1.5">${tierRows}</div>
+      </div>
+    </div>`;
+}
+// Append the legend to a board panel once (idempotent).
+function ensureLeaderboardLegend(panelId) {
+  const panel = document.getElementById(panelId);
+  if (!panel || panel.querySelector('.lb-legend')) return;
+  panel.insertAdjacentHTML('beforeend', leaderboardLegendHTML());
+}
+
 const calcPoints = (m) => (m.total_listings || 0) * 100 + (m.sold_listings || 0) * 500;
 const tierFor = (points) => {
   let current = LB_TIERS[0];
@@ -536,6 +581,7 @@ const nextTierFor = (points) => LB_TIERS.find(t => t.min > points) || null;
 async function loadLeaderboard() {
   const body = document.getElementById('leaderboard-body');
   if (!body) return;
+  ensureLeaderboardLegend('leaderboard-panel');
   body.innerHTML = `<tr><td colspan="7" class="p-6 text-center text-slate-500 italic">Loading leaderboard...</td></tr>`;
   try {
     const res = await fetch(`${API}/dealership/leaderboard`, { headers: { 'Authorization': `Bearer ${token}` } });
@@ -1185,6 +1231,7 @@ let __glData = null;
 let __glTab = 'reps';
 
 function initGlobalLeaderboard() {
+  ensureLeaderboardLegend('global-leaderboard-panel');
   if (window.__glWired) return;
   window.__glWired = true;
   document.querySelectorAll('.gl-tab').forEach(btn => {

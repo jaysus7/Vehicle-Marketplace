@@ -36,7 +36,7 @@
 </head>
 <body class="bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-slate-100 font-sans antialiased min-h-screen flex flex-col overflow-x-hidden">
 
-  <header class="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-4 sm:px-6 py-3 sm:py-4 flex flex-wrap justify-between items-center gap-2 sm:gap-4">
+  <header class="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-4 sm:px-6 lg:px-8 py-4 sm:py-5 flex flex-wrap justify-between items-center gap-3 sm:gap-5">
     <div class="flex items-center gap-2 sm:gap-3 min-w-0">
       <div class="flex items-center gap-2 flex-shrink-0">
         <span class="w-1.5 h-6 bg-indigo-500 rounded-sm"></span>
@@ -54,7 +54,7 @@
     </div>
   </header>
 
-  <main class="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 grid grid-cols-1 md:grid-cols-4 gap-4 sm:gap-6 items-start">
+  <main class="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8 grid grid-cols-1 md:grid-cols-4 gap-6 sm:gap-8 items-start">
 
     <section class="flex flex-col gap-4 sm:gap-6 md:col-span-1 min-w-0">
 
@@ -168,7 +168,7 @@
       </div>
 
       <!-- Sidebar navigation — horizontal scrollable pills on mobile, stacked sidebar on desktop -->
-      <nav id="dashboard-nav" class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-2 text-sm order-1 md:order-2 flex md:flex-col gap-1 md:gap-0 md:space-y-0.5 overflow-x-auto md:overflow-visible scrollbar-thin sticky top-[57px] md:top-auto z-10">
+      <nav id="dashboard-nav" class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-3 text-sm order-1 md:order-2 flex md:flex-col gap-1.5 md:gap-0 md:space-y-1 overflow-x-auto md:overflow-visible scrollbar-thin sticky top-[57px] md:top-auto z-10">
         <button type="button" data-page="insights" class="nav-item flex-shrink-0 md:w-full text-left whitespace-nowrap px-3 py-2 rounded font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition">Insights</button>
         <button type="button" data-page="inventory" class="nav-item flex-shrink-0 md:w-full text-left whitespace-nowrap px-3 py-2 rounded font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition">Inventory</button>
         <button type="button" data-page="leaderboard" class="nav-item flex-shrink-0 md:w-full text-left whitespace-nowrap px-3 py-2 rounded font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition">Leaderboard</button>
@@ -199,10 +199,10 @@
 
       <!-- ───────── PROFILE & SETTINGS PAGE ───────── -->
       <!-- #profile-card is authored in the sidebar then relocated here by dashboard.js. -->
-      <div data-page-content="profile" class="page-content hidden space-y-6"></div>
+      <div data-page-content="profile" class="page-content hidden space-y-8"></div>
 
       <!-- ───────── INSIGHTS PAGE ───────── -->
-      <div data-page-content="insights" class="page-content space-y-6">
+      <div data-page-content="insights" class="page-content space-y-8">
 
       <!-- Time range toggle. Reusable component — same markup is used on Team Insights too. -->
       <div class="range-toggle flex items-center justify-between flex-wrap gap-3">
@@ -217,12 +217,12 @@
       </div>
 
       <div class="grid grid-cols-2 md:grid-cols-4 gap-4" id="metrics-strip">
-        <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-4 rounded-lg">
+        <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-5 rounded-lg">
           <div class="text-[10px] uppercase font-bold text-slate-500 dark:text-slate-400 tracking-wider">Available Inventory</div>
           <div class="text-2xl font-black text-slate-900 dark:text-white mt-1" id="metric-synced">—</div>
           <div class="text-[10px] text-slate-500 mt-0.5"><span id="metric-synced-total">—</span> total synced</div>
         </div>
-        <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-4 rounded-lg">
+        <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-5 rounded-lg">
           <div class="text-[10px] uppercase font-bold text-slate-500 dark:text-slate-400 tracking-wider">Listings Posted</div>
           <div class="text-2xl font-black text-indigo-600 dark:text-indigo-400 mt-1" id="metric-listings">—</div>
           <div class="text-[10px] text-slate-500 mt-0.5" id="metric-listings-scope">lifetime</div>
@@ -237,12 +237,12 @@
             </div>
           </div>
         </div>
-        <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-4 rounded-lg">
+        <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-5 rounded-lg">
           <div class="text-[10px] uppercase font-bold text-slate-500 dark:text-slate-400 tracking-wider">Sold via Marketplace</div>
           <div class="text-2xl font-black text-emerald-600 dark:text-emerald-400 mt-1" id="metric-sold">—</div>
           <div class="text-[10px] text-slate-500 mt-0.5">lifetime</div>
         </div>
-        <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-4 rounded-lg">
+        <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-5 rounded-lg">
           <div class="text-[10px] uppercase font-bold text-slate-500 dark:text-slate-400 tracking-wider">Active Days</div>
           <div class="text-2xl font-black text-amber-600 dark:text-amber-400 mt-1" id="metric-active-days">—</div>
           <div class="text-[10px] text-slate-500 mt-0.5">this week</div>
@@ -251,27 +251,27 @@
 
       <!-- Second row: derived insights -->
       <div class="grid grid-cols-2 md:grid-cols-5 gap-4">
-        <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-4 rounded-lg" title="Average number of days between when a vehicle was posted to Marketplace and when it sold.">
+        <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-5 rounded-lg" title="Average number of days between when a vehicle was posted to Marketplace and when it sold.">
           <div class="text-[10px] uppercase font-bold text-slate-500 dark:text-slate-400 tracking-wider">Avg Time to Sell</div>
           <div class="text-2xl font-black text-slate-900 dark:text-white mt-1"><span id="metric-time-to-sell">—</span><span class="text-sm font-normal text-slate-500 ml-1">days</span></div>
           <div class="text-[10px] text-slate-500 mt-0.5">posted → sold</div>
         </div>
-        <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-4 rounded-lg" title="Average listings posted per day in this range.">
+        <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-5 rounded-lg" title="Average listings posted per day in this range.">
           <div class="text-[10px] uppercase font-bold text-slate-500 dark:text-slate-400 tracking-wider">Posts / Day</div>
           <div class="text-2xl font-black text-indigo-600 dark:text-indigo-400 mt-1" id="metric-posts-per-day">—</div>
           <div class="text-[10px] text-slate-500 mt-0.5">average rate</div>
         </div>
-        <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-4 rounded-lg" title="Of vehicles you posted to Marketplace, how many sold? Higher is better.">
+        <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-5 rounded-lg" title="Of vehicles you posted to Marketplace, how many sold? Higher is better.">
           <div class="text-[10px] uppercase font-bold text-slate-500 dark:text-slate-400 tracking-wider">Sell-Through</div>
           <div class="text-2xl font-black text-emerald-600 dark:text-emerald-400 mt-1"><span id="metric-sell-through">—</span><span class="text-sm font-normal text-slate-500 ml-0.5">%</span></div>
           <div class="text-[10px] text-slate-500 mt-0.5">sold ÷ posted</div>
         </div>
-        <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-4 rounded-lg" title="Available cars that have sat on your lot longer than 60 days.">
+        <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-5 rounded-lg" title="Available cars that have sat on your lot longer than 60 days.">
           <div class="text-[10px] uppercase font-bold text-slate-500 dark:text-slate-400 tracking-wider">Aged Inventory</div>
           <div class="text-2xl font-black text-rose-600 dark:text-rose-400 mt-1" id="metric-aged">—</div>
           <div class="text-[10px] text-slate-500 mt-0.5">on lot &gt; 60 days</div>
         </div>
-        <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-4 rounded-lg" title="Buyers who tapped the tracked link in your Facebook Marketplace listings to view the vehicle. This is MarketSync's own count, not Facebook's listing-view number.">
+        <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-5 rounded-lg" title="Buyers who tapped the tracked link in your Facebook Marketplace listings to view the vehicle. This is MarketSync's own count, not Facebook's listing-view number.">
           <div class="text-[10px] uppercase font-bold text-slate-500 dark:text-slate-400 tracking-wider">Tracked Link Clicks</div>
           <div class="text-2xl font-black text-violet-600 dark:text-violet-400 mt-1" id="metric-clicks">—</div>
           <div class="text-[10px] text-slate-500 mt-0.5" id="metric-clicks-help">via your MarketSync links</div>
@@ -324,7 +324,7 @@
 
       </div>
       <!-- ───────── INVENTORY PAGE ───────── -->
-      <div data-page-content="inventory" class="page-content hidden space-y-6">
+      <div data-page-content="inventory" class="page-content hidden space-y-8">
 
       <div id="feeds-panel" class="hidden bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-4 sm:p-6">
         <div class="flex flex-wrap justify-between items-start mb-4 gap-3">
@@ -376,7 +376,7 @@
 
       </div>
       <!-- ───────── LEADERBOARD PAGE ───────── -->
-      <div data-page-content="leaderboard" class="page-content hidden space-y-6">
+      <div data-page-content="leaderboard" class="page-content hidden space-y-8">
 
       <div id="leaderboard-panel" class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-4 sm:p-6 space-y-8">
 
@@ -490,7 +490,7 @@
 
       </div>
       <!-- ───────── SALES TEAM PAGE ───────── -->
-      <div data-page-content="sales-team" class="page-content hidden space-y-6">
+      <div data-page-content="sales-team" class="page-content hidden space-y-8">
 
       <div id="dealer-view-panel" class="hidden bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-4 sm:p-6">
         <div class="flex justify-between items-start mb-4 gap-4 flex-wrap">
@@ -540,7 +540,7 @@
 
       </div>
       <!-- rep-view-panel belongs on the Insights page (only visible for reps) -->
-      <div data-page-content="insights" class="page-content space-y-6">
+      <div data-page-content="insights" class="page-content space-y-8">
 
       <div id="rep-view-panel" class="hidden bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-4 sm:p-6">
         <h2 class="text-lg font-bold text-slate-900 dark:text-white mb-1">My Performance</h2>
