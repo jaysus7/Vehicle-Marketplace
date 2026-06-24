@@ -120,6 +120,12 @@ async function initializeDashboardEcosystem() {
       document.querySelectorAll('[data-team-nav]').forEach(el => el.classList.add('hidden'));
     }
 
+    // All role-based hide rules above have run. Reveal the page now (the head CSS
+    // kept role-gated items hidden until this point, so nothing dealer-only ever
+    // flashed for a solo rep). This happens synchronously after the hides, so the
+    // browser paints the correct nav in one go.
+    document.body.classList.add('ms-role-ready');
+
     // Leaderboard is visible to all team members (admin + reps), not just admin
     if (inDealership && !isPersonal) {
       loadLeaderboard();
@@ -135,6 +141,10 @@ async function initializeDashboardEcosystem() {
       btn.addEventListener('click', () => switchPage(btn.dataset.page));
     });
     switchPage('insights');
+
+    // Global leaderboard — available to EVERYONE (solo reps included).
+    initGlobalLeaderboard();
+    loadGlobalLeaderboard();
 
     if (isAdmin) {
       document.getElementById('leaderboard-panel')?.classList.remove('hidden');
@@ -283,6 +293,8 @@ document.addEventListener('click', (e) => {
   if (typeof loadTeamInsightsCharts === 'function' && __canSeeTeamInsights) {
     loadTeamInsightsCharts();
   }
+  // Repaint personal charts for solo/dealer reps.
+  if (document.getElementById('chart-my-trend')) loadMyCharts();
 });
 
 document.addEventListener('DOMContentLoaded', syncRangePillsUI);
@@ -432,6 +444,48 @@ async function loadMyStats() {
     renderRecentListings('rep-recent-list', data.recent);
   } catch (e) {
     document.getElementById('rep-recent-list').innerHTML = `<div class="text-xs text-red-400">${e.message}</div>`;
+  }
+  loadMyCharts();
+}
+
+// Personal insight charts for solo reps / dealer reps (mirrors the dealer charts).
+let __myTrendChart = null, __myStatusChart = null;
+async function loadMyCharts() {
+  const trendCtx = document.getElementById('chart-my-trend');
+  if (!trendCtx || typeof Chart === 'undefined') return;
+  let data;
+  try {
+    const res = await fetch(`${API}/me/charts?range=${insightsRange}`, { headers: { 'Authorization': `Bearer ${token}` } });
+    data = res.ok ? await res.json() : null;
+  } catch { data = null; }
+  if (!data) return;
+
+  const trend = data.trend || [];
+  if (__myTrendChart) __myTrendChart.destroy();
+  __myTrendChart = new Chart(trendCtx, {
+    type: 'line',
+    data: {
+      labels: trend.map(d => data.monthly ? d.date : d.date.slice(5)),
+      datasets: [
+        { label: 'Posted', data: trend.map(d => d.posted), borderColor: '#6366f1', backgroundColor: 'rgba(99,102,241,0.15)', fill: true, tension: 0.3, pointRadius: 2 },
+        { label: 'Sold', data: trend.map(d => d.sold), borderColor: '#10b981', backgroundColor: 'rgba(16,185,129,0.15)', fill: true, tension: 0.3, pointRadius: 2 }
+      ]
+    },
+    options: { ...chartCommonOptions(), plugins: { legend: { display: true, labels: { boxWidth: 10, font: { size: 10 } } } } }
+  });
+
+  const statusCtx = document.getElementById('chart-my-status');
+  if (statusCtx) {
+    const b = data.breakdown || { active: 0, sold: 0, deleted: 0 };
+    if (__myStatusChart) __myStatusChart.destroy();
+    __myStatusChart = new Chart(statusCtx, {
+      type: 'doughnut',
+      data: {
+        labels: ['Active', 'Sold', 'Removed'],
+        datasets: [{ data: [b.active, b.sold, b.deleted], backgroundColor: ['#6366f1', '#10b981', '#94a3b8'], borderWidth: 0 }]
+      },
+      options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { boxWidth: 10, font: { size: 10 }, color: window.matchMedia('(prefers-color-scheme: dark)').matches ? '#94a3b8' : '#64748b' } } } }
+    });
   }
 }
 
@@ -1098,6 +1152,77 @@ function setPullUI(wrap, { status, pct, disabled } = {}) {
     if (pct == null) { track.style.display = 'none'; }
     else { track.style.display = 'block'; fill.style.width = `${Math.max(0, Math.min(100, pct))}%`; }
   }
+}
+
+// ── Global leaderboard (platform-wide, anonymized) ──────────────────────────────
+let __glData = null;
+let __glTab = 'reps';
+
+function initGlobalLeaderboard() {
+  if (window.__glWired) return;
+  window.__glWired = true;
+  document.querySelectorAll('.gl-tab').forEach(btn => {
+    btn.addEventListener('click', () => {
+      __glTab = btn.dataset.glTab;
+      document.querySelectorAll('.gl-tab').forEach(b => {
+        const on = b === btn;
+        b.classList.toggle('bg-white', on);
+        b.classList.toggle('dark:bg-slate-800', on);
+        b.classList.toggle('text-indigo-600', on);
+        b.classList.toggle('dark:text-indigo-400', on);
+        b.classList.toggle('text-slate-600', !on);
+        b.classList.toggle('dark:text-slate-300', !on);
+      });
+      renderGlobalLeaderboard();
+    });
+  });
+}
+
+async function loadGlobalLeaderboard() {
+  const body = document.getElementById('gl-body');
+  if (!body) return;
+  try {
+    const res = await fetch(`${API}/leaderboard/global`, { headers: { 'Authorization': `Bearer ${token}` } });
+    __glData = res.ok ? await res.json() : null;
+  } catch { __glData = null; }
+  renderGlobalLeaderboard();
+}
+
+function renderGlobalLeaderboard() {
+  const body = document.getElementById('gl-body');
+  const youEl = document.getElementById('gl-you');
+  if (!body) return;
+  if (!__glData) {
+    body.innerHTML = '<tr><td colspan="5" class="p-6 text-center text-slate-500 italic">Global leaderboard unavailable right now.</td></tr>';
+    if (youEl) youEl.classList.add('hidden');
+    return;
+  }
+  const rows = __glTab === 'dealers' ? __glData.dealers : __glData.reps;
+  const you = __glTab === 'dealers' ? __glData.you_dealer : __glData.you_rep;
+  const total = __glTab === 'dealers' ? __glData.total_dealers : __glData.total_reps;
+
+  if (you && youEl) {
+    youEl.classList.remove('hidden');
+    youEl.innerHTML = `You're ranked <b>#${you.rank}</b> of ${total} ${__glTab} · <b>${(you.points || 0).toLocaleString()}</b> pts · ${you.sold} sold`;
+  } else if (youEl) {
+    youEl.classList.add('hidden');
+  }
+
+  if (!rows || !rows.length) {
+    body.innerHTML = `<tr><td colspan="5" class="p-6 text-center text-slate-500 italic">No ${__glTab} on the board yet.</td></tr>`;
+    return;
+  }
+  body.innerHTML = rows.map(r => {
+    const hl = r.isYou ? 'bg-indigo-50 dark:bg-indigo-950/40 font-bold' : '';
+    const rank = r.rank === 1 ? '🥇' : r.rank === 2 ? '🥈' : r.rank === 3 ? '🥉' : r.rank;
+    return `<tr class="${hl}">
+      <td class="py-2.5 px-3 text-left">${rank}</td>
+      <td class="py-2.5 px-3 text-left text-slate-900 dark:text-white">${r.name}${r.isYou ? ' <span class="text-[10px] text-indigo-500">(you)</span>' : ''}</td>
+      <td class="py-2.5 px-3 text-right font-mono">${(r.points || 0).toLocaleString()}</td>
+      <td class="py-2.5 px-3 text-right font-mono text-slate-500 dark:text-slate-400">${r.posted}</td>
+      <td class="py-2.5 px-3 text-right font-mono text-emerald-600 dark:text-emerald-400">${r.sold}</td>
+    </tr>`;
+  }).join('');
 }
 
 async function deleteFeed(id) {

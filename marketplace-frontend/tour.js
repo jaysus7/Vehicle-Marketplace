@@ -57,7 +57,7 @@
       target: '#dashboard-nav [data-page="leaderboard"]',
       before: () => goPage('leaderboard'),
       title: '6. Track your wins',
-      body: `Every sale earns points. Watch the leaderboard to see how your team — or you — stacks up.`
+      body: `Every listing and sale earns points. The <b>Global Leaderboard</b> ranks you against every dealer and rep on MarketSync (everyone else stays anonymous) — so even solo reps can see how they stack up.`
     },
     {
       target: null,

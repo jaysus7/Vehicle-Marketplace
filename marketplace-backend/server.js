@@ -1344,6 +1344,116 @@ app.get('/me/stats', requireAuth, async (req, res) => {
   res.json(stats)
 })
 
+// Personal chart data for the solo/rep insights page: posts & sales over time +
+// a status breakdown. Mirrors what dealer admins get, scoped to this one user.
+app.get('/me/charts', requireAuth, async (req, res) => {
+  try {
+    const range = String(req.query.range || 'lifetime')
+    const { data: rows, error } = await supabaseAdmin
+      .from('listings')
+      .select('status, posted_at, deleted_at')
+      .eq('posted_by', req.user.id)
+    if (error) return res.status(500).json({ error: error.message })
+    const listings = rows || []
+
+    const breakdown = { active: 0, sold: 0, deleted: 0 }
+    for (const l of listings) {
+      if (l.status === 'sold') breakdown.sold++
+      else if (l.status === 'deleted') breakdown.deleted++
+      else breakdown.active++
+    }
+
+    const days = range === '7' ? 7 : range === '30' ? 30 : range === '90' ? 90 : range === '365' ? 365 : null
+    const monthly = days === null || days > 90       // lifetime / 1y → monthly buckets
+    const since = days ? Date.now() - days * 86400000 : null
+    const keyOf = (iso) => new Date(iso).toISOString().slice(0, monthly ? 7 : 10)
+
+    const buckets = new Map()
+    const bump = (iso, field) => {
+      if (!iso) return
+      if (since && new Date(iso).getTime() < since) return
+      const k = keyOf(iso)
+      const b = buckets.get(k) || { date: k, posted: 0, sold: 0 }
+      b[field]++
+      buckets.set(k, b)
+    }
+    for (const l of listings) {
+      bump(l.posted_at, 'posted')
+      if (l.status === 'sold') bump(l.deleted_at || l.posted_at, 'sold')
+    }
+    const trend = [...buckets.values()].sort((a, b) => a.date.localeCompare(b.date))
+    res.json({ trend, breakdown, monthly })
+  } catch (e) {
+    res.status(500).json({ error: e.message })
+  }
+})
+
+// ── Global leaderboard ─────────────────────────────────────────────────────────
+// Platform-wide ranking of every rep and every dealership. ANONYMIZED: each caller
+// sees only their OWN name; everyone else shows as "Rep #N" / "Dealer #N". Lets solo
+// reps and dealers see how they stack up against the whole network without exposing
+// competitors' identities. Points = listings·100 + sold·500 (same as team board).
+app.get('/leaderboard/global', requireAuth, async (req, res) => {
+  try {
+    const [{ data: listings }, { data: profiles }] = await Promise.all([
+      supabaseAdmin.from('listings').select('posted_by, status'),
+      supabaseAdmin.from('profiles').select('id, full_name, dealership_id, dealerships(name, is_personal)')
+    ])
+    const profById = new Map((profiles || []).map(p => [p.id, p]))
+
+    // Tally listings + sold per rep.
+    const repTally = new Map()
+    for (const l of listings || []) {
+      if (!l.posted_by) continue
+      const t = repTally.get(l.posted_by) || { posted: 0, sold: 0 }
+      t.posted++
+      if (l.status === 'sold') t.sold++
+      repTally.set(l.posted_by, t)
+    }
+    const pts = (t) => t.posted * 100 + t.sold * 500
+
+    // Reps board — every rep with activity.
+    const reps = [...repTally.entries()].map(([uid, t]) => ({
+      uid, points: pts(t), sold: t.sold, posted: t.posted,
+      name: profById.get(uid)?.full_name || 'Rep', isYou: uid === req.user.id
+    })).sort((a, b) => b.points - a.points || b.sold - a.sold)
+
+    // Dealers board — roll reps up into their (non-personal) dealership.
+    const dealerTally = new Map()
+    for (const [uid, t] of repTally.entries()) {
+      const p = profById.get(uid)
+      if (!p?.dealership_id || p.dealerships?.is_personal) continue
+      const d = dealerTally.get(p.dealership_id) || { points: 0, sold: 0, posted: 0, name: p.dealerships?.name || 'Dealer' }
+      d.points += pts(t); d.sold += t.sold; d.posted += t.posted
+      dealerTally.set(p.dealership_id, d)
+    }
+    const dealers = [...dealerTally.entries()].map(([did, d]) => ({
+      did, ...d, isYou: did === req.dealershipId
+    })).sort((a, b) => b.points - a.points || b.sold - a.sold)
+
+    const repsOut = reps.map((r, i) => ({
+      rank: i + 1, points: r.points, sold: r.sold, posted: r.posted,
+      isYou: r.isYou, name: r.isYou ? (r.name || 'You') : `Rep #${i + 1}`
+    }))
+    const dealersOut = dealers.map((d, i) => ({
+      rank: i + 1, points: d.points, sold: d.sold, posted: d.posted,
+      isYou: d.isYou, name: d.isYou ? (d.name || 'Your dealership') : `Dealer #${i + 1}`
+    }))
+
+    res.json({
+      total_reps: repsOut.length,
+      total_dealers: dealersOut.length,
+      reps: repsOut.slice(0, 100),
+      dealers: dealersOut.slice(0, 100),
+      you_rep: repsOut.find(r => r.isYou) || null,
+      you_dealer: dealersOut.find(d => d.isYou) || null
+    })
+  } catch (e) {
+    console.error('[leaderboard/global] failed:', e.message)
+    res.status(500).json({ error: e.message })
+  }
+})
+
 app.get('/dashboard/insights', requireAuth, async (req, res) => {
   const isAdmin = req.profile.role === 'DEALER_ADMIN' || req.profile.role === 'OWNER'
   const now = new Date()
@@ -1981,6 +2091,29 @@ app.post('/listings/:id/sold-by-me', requireAuth, async (req, res) => {
 
   await finalizeSold(listing.id, listing.inventory_id)
   res.json({ success: true, points_awarded: 500 })
+})
+
+// "I Sold It on FB" — rep closed a deal that came through the Facebook listing.
+// Bonus points (750) since the sale came from MarketSync's posting.
+app.post('/listings/:id/sold-on-fb', requireAuth, async (req, res) => {
+  const { data: listing, error: lookupErr } = await supabaseAdmin
+    .from('listings')
+    .select('id, inventory_id, inventory!listings_inventory_id_fkey(dealership_id)')
+    .eq('id', req.params.id)
+    .single()
+  if (lookupErr || !listing) return res.status(404).json({ error: 'Listing not found' })
+  if (listing.inventory?.dealership_id !== req.dealershipId) return res.status(403).json({ error: 'Not your dealership' })
+
+  const { error: saleErr } = await supabaseAdmin.from('sales').insert({
+    inventory_id: listing.inventory_id,
+    sold_by: req.user.id,
+    dealership_id: req.dealershipId,
+    points_awarded: 750
+  })
+  if (saleErr) console.warn('Sales insert failed:', saleErr.message)
+
+  await finalizeSold(listing.id, listing.inventory_id)
+  res.json({ success: true, points_awarded: 750 })
 })
 
 // "Sold by Other" — someone else closed it. No points, but vehicle still gets removed.
@@ -2921,6 +3054,11 @@ function parseDealerPageHtml(html) {
     const stock = (text.match(/Stock\s*#?\s*:?\s*([A-Za-z0-9-]+)/i) || [])[1] || null
     const trans = (text.match(/Transmission\s+(.+?)\s+(?:Dealer Price|Price|Details|Get|Book|Apply)/i) || [])[1] || null
     const condition = (/\bUsed\b/i.test(text)) ? 'Used' : (/\bNew\b/i.test(text) ? 'New' : null)
+    // Sold detection: DealerPage keeps sold cars on the listing page, flagged via the
+    // schema.org availability ("Sold!") and a "SOLD" image overlay. Mark them so they
+    // import as status:'sold' (shown in the catalog, but NOT offered for posting).
+    const sold = /itemprop="availability"[^>]*>[^<]*sold/i.test(chunk)
+      || /<p[^>]*>\s*SOLD\s*<\/p>/i.test(chunk)
 
     const toks = decodeHtmlEntities(alt).trim().split(/\s+/)
     const year = /^(19|20)\d{2}$/.test(toks[0] || '') ? toks[0] : null
@@ -2937,6 +3075,7 @@ function parseDealerPageHtml(html) {
       stock_number: stock,
       transmission: trans ? trans.trim() : null,
       condition,
+      sold,
       vdp_url: href,
       images: img ? [decodeHtmlEntities(img)] : []
     })
@@ -2951,7 +3090,7 @@ async function fetchDealerPageInventory(pageUrl) {
   })
   if (!r.ok) return []
   const html = await r.text()
-  return parseDealerPageHtml(html).map(v => ({ ...genericMapVehicle(v), vdp_url: v.vdp_url, _detail_url: v.vdp_url }))
+  return parseDealerPageHtml(html).map(v => ({ ...genericMapVehicle(v), sold: v.sold, vdp_url: v.vdp_url, _detail_url: v.vdp_url }))
 }
 
 async function detectDealerPage(dealerUrl) {
@@ -3787,6 +3926,13 @@ async function _runInventorySyncInner(dealershipId) {
         // the same vehicle re-syncs cleanly without exploding the inventory table.
         const effectiveVin = v.vin || `STK-${dealershipId.slice(0, 8)}-${v.stocknumber}`
 
+        // Platform-agnostic sold/pending detection: honor whatever status the feed
+        // exposes (DealerPage sets v.sold; JSON feeds may carry status/availability).
+        // A vehicle can't be both — sold wins over pending.
+        const statusStr = String(v.status || v.availability || v.sale_status || v.saleStatus || v.state || '').toLowerCase()
+        const isSold = v.sold === true || /\bsold\b|sold[\s_-]?out|soldout/.test(statusStr)
+        const isPending = !isSold && (v.salepending === true || v.sale_pending === true || /pending|deposit|on[\s_-]?hold|in[\s_-]?progress/.test(statusStr))
+
         const record = {
   dealership_id: dealershipId,
   vin: effectiveVin,
@@ -3804,7 +3950,7 @@ async function _runInventorySyncInner(dealershipId) {
   description: buildDescription(v),
   image_urls: imageUrls,
   source_url: sourceUrl,
-  status: v.salepending ? 'pending' : 'available',
+  status: isSold ? 'sold' : (isPending ? 'pending' : 'available'),
   last_synced_at: new Date().toISOString(),
   // Tag the originating feed when the column exists → ON DELETE CASCADE removes
   // these rows automatically when the feed is deleted (omitted pre-migration).
@@ -3879,10 +4025,21 @@ async function _runInventorySyncInner(dealershipId) {
         if (totalCount > 0 && toDelete.length / totalCount > 0.5) {
           console.warn(`[sync] would delete ${toDelete.length}/${totalCount} inventory rows — refusing (likely sync glitch)`)
         } else if (toDelete.length) {
-          // Detach any listings first so the activity feed/leaderboard keep history
           for (let i = 0; i < toDelete.length; i += 100) {
             const slice = toDelete.slice(i, i + 100)
-            // Listings FK is ON DELETE SET NULL; explicit clear isn't required but safer
+            // Dropped from the feed → if any were posted to Facebook, queue their
+            // listings for DELETION from Marketplace (the extension performs it). Do
+            // this BEFORE deleting inventory so inventory_id still matches. Wrapped so a
+            // pre-migration DB (no fb_sync_action column) never breaks the sync.
+            try {
+              await supabaseAdmin
+                .from('listings')
+                .update({ status: 'deleted', deleted_at: new Date().toISOString(), fb_sync_action: 'delete', fb_synced_at: null })
+                .in('inventory_id', slice)
+                .eq('status', 'posted')
+                .not('fb_listing_url', 'is', null)
+            } catch (e) { console.warn('[sync] delete→FB queue failed (non-fatal):', e.message) }
+            // Listings FK is ON DELETE SET NULL → their history survives.
             await supabaseAdmin.from('inventory').delete().in('id', slice)
           }
           console.log(`[sync] auto-delete: ${toDelete.length} inventory rows removed (dropped from feed)`)
@@ -3890,6 +4047,22 @@ async function _runInventorySyncInner(dealershipId) {
       }
     }
   }
+
+  // Feed marks a vehicle SOLD but keeps it listed (e.g. DealerPage) → if it was
+  // posted to Facebook, queue a "mark sold" so the FB listing reflects it. Idempotent:
+  // once the listing flips to 'sold' it no longer matches status='posted'.
+  try {
+    const { data: soldRows } = await supabaseAdmin
+      .from('inventory').select('id')
+      .eq('dealership_id', dealershipId).eq('status', 'sold')
+    const soldIds = (soldRows || []).map(r => r.id)
+    for (let i = 0; i < soldIds.length; i += 100) {
+      const slice = soldIds.slice(i, i + 100)
+      await supabaseAdmin.from('listings')
+        .update({ status: 'sold', deleted_at: new Date().toISOString(), fb_sync_action: 'sold', fb_synced_at: null })
+        .in('inventory_id', slice).eq('status', 'posted').not('fb_listing_url', 'is', null)
+    }
+  } catch (e) { console.warn('[sync] sold→FB queue failed (non-fatal):', e.message) }
 
   setSyncProgress(dealershipId, { phase: 'finalizing', pct: 99, message: 'Finalizing…' })
 

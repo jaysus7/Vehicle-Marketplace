@@ -133,7 +133,7 @@ async function loadInventory(token) {
 
   try {
     const [inventory, listingsRes] = await Promise.all([
-  apiGet('/inventory', token),
+  apiGet('/inventory/all', token),   // include sold/pending so we can badge them
   apiGet('/listings', token).catch(() => [])
 ])
 
@@ -163,10 +163,12 @@ async function loadInventory(token) {
       }
     }
 
+    const isAvail = (v) => String(v.status || 'available').toLowerCase() === 'available'
+    const availableCount = inventory.filter(isAvail).length
     const postedInStock = inventory.filter(v => postedMap.has(v.id)).length
-    $('stat-total').textContent = inventory.length
+    $('stat-total').textContent = availableCount
     $('stat-posted').textContent = postedMap.size
-    $('stat-remaining').textContent = Math.max(0, inventory.length - postedInStock)
+    $('stat-remaining').textContent = Math.max(0, availableCount - postedInStock)
 
     // Cache the fully-merged dataset so the category-filter buttons can re-render
     // instantly without re-fetching from the API. The active category lives in
@@ -225,16 +227,21 @@ async function loadInventory(token) {
       const openFbBtn = (isPosted && v._outOfStock)
         ? `<button class="open-fb-btn" data-fb-url="${fbUrl}" style="background:#1e3a5f;border:1px solid #3b82f6;color:#93c5fd;padding:5px 10px;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap;flex-shrink:0;margin-bottom:4px;">Open on FB</button>`
         : ''
-      // Two sold actions: "I Sold It" (awards points to this rep) vs "Sold by Other" (just clears the listing).
-      const actionBtn = isPosted
-        ? `<div style="display:flex;flex-direction:column;gap:3px;">
+      const status = String(v.status || 'available').toLowerCase()
+      const available = status === 'available'
+      // Posted → three sold actions. Available + not posted → Post. Sold/Pending → badge only.
+      const soldBtns = `<div style="display:flex;flex-direction:column;gap:3px;">
              <button class="sold-by-me-btn"    data-listing-id="${listingId}" data-vehicle-name="${vehName}" style="background:#14532d;border:1px solid #22c55e;color:#86efac;padding:4px 8px;border-radius:6px;font-size:10px;font-weight:700;cursor:pointer;white-space:nowrap;flex-shrink:0;">🤝 I Sold It</button>
-             <button class="sold-by-other-btn" data-listing-id="${listingId}" data-vehicle-name="${vehName}" style="background:#3a1a1a;border:1px solid #ef4444;color:#fca5a5;padding:4px 8px;border-radius:6px;font-size:10px;font-weight:600;cursor:pointer;white-space:nowrap;flex-shrink:0;">🔄 Sold by Other</button>
+             <button class="sold-on-fb-btn"    data-listing-id="${listingId}" data-vehicle-name="${vehName}" style="background:#172554;border:1px solid #3b82f6;color:#93c5fd;padding:4px 8px;border-radius:6px;font-size:10px;font-weight:700;cursor:pointer;white-space:nowrap;flex-shrink:0;">📘 I Sold It on FB</button>
+             <button class="sold-by-other-btn" data-listing-id="${listingId}" data-vehicle-name="${vehName}" style="background:#3a1a1a;border:1px solid #ef4444;color:#fca5a5;padding:4px 8px;border-radius:6px;font-size:10px;font-weight:600;cursor:pointer;white-space:nowrap;flex-shrink:0;">🔄 Someone Else Sold It</button>
            </div>`
-        : `<button class="post-btn" data-id="${v.id}">Post</button>`
+      const statusBadge = `<span style="background:#1f2937;border:1px solid #374151;color:${status === 'sold' ? '#9ca3af' : '#fbbf24'};padding:4px 10px;border-radius:6px;font-size:10px;font-weight:700;text-transform:uppercase;white-space:nowrap;flex-shrink:0;">${status}</span>`
+      const actionBtn = isPosted ? soldBtns : (available ? `<button class="post-btn" data-id="${v.id}">Post</button>` : statusBadge)
 
       const tagBits = []
       if (isPosted) tagBits.push('<span style="color:#22c55e;font-weight:600;">✓ POSTED</span>')
+      else if (status === 'sold') tagBits.push('<span style="color:#9ca3af;font-weight:600;">SOLD</span>')
+      else if (status === 'pending') tagBits.push('<span style="color:#fbbf24;font-weight:600;">PENDING</span>')
       if (v._outOfStock) tagBits.push('<span style="color:#fbbf24;font-weight:600;">OUT OF STOCK</span>')
       const tagLine = tagBits.length
         ? `<div style="font-size:10px;margin-bottom:3px;text-align:right;">${tagBits.join(' · ')}</div>`
@@ -261,6 +268,9 @@ async function loadInventory(token) {
     })
     document.querySelectorAll('.sold-by-me-btn').forEach(btn => {
       btn.addEventListener('click', () => markSold(btn.dataset.listingId, btn.dataset.vehicleName, token, 'sold-by-me'))
+    })
+    document.querySelectorAll('.sold-on-fb-btn').forEach(btn => {
+      btn.addEventListener('click', () => markSold(btn.dataset.listingId, btn.dataset.vehicleName, token, 'sold-on-fb'))
     })
     document.querySelectorAll('.sold-by-other-btn').forEach(btn => {
       btn.addEventListener('click', () => markSold(btn.dataset.listingId, btn.dataset.vehicleName, token, 'sold-by-other'))
@@ -445,9 +455,10 @@ async function checkExtensionSyncNeeded(token) {
 
 // kind = 'sold-by-me' (this rep closed the deal → 500 pts) | 'sold-by-other' (no points)
 async function markSold(listingId, vehicleName, token, kind) {
-  const isMine = kind === 'sold-by-me'
-  const msg = isMine
+  const msg = kind === 'sold-by-me'
     ? `You sold "${vehicleName}"? This credits you with the sale (500 pts).`
+    : kind === 'sold-on-fb'
+    ? `You sold "${vehicleName}" through the Facebook listing? Credits you with a bonus (750 pts).`
     : `Mark "${vehicleName}" sold by someone else? It'll be cleared but no points are awarded.`
   if (!confirm(msg)) return
   try {
