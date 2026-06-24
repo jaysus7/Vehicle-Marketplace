@@ -1454,6 +1454,109 @@ app.get('/leaderboard/global', requireAuth, async (req, res) => {
   }
 })
 
+// ── BLOG ───────────────────────────────────────────────────────────────────────
+// Public read endpoints + an API-key-protected write endpoint so n8n (or any
+// automation) can publish posts. Set BLOG_API_KEY in the environment; if it's unset
+// the write endpoints are disabled (read stays open).
+const slugify = (s) => String(s || '')
+  .toLowerCase().trim()
+  .replace(/[^a-z0-9]+/g, '-')
+  .replace(/^-+|-+$/g, '')
+  .slice(0, 80)
+
+function requireBlogKey(req, res) {
+  const expected = process.env.BLOG_API_KEY
+  if (!expected) { res.status(503).json({ error: 'Blog publishing is not configured (BLOG_API_KEY unset).' }); return false }
+  const got = req.get('x-api-key') || (req.get('authorization') || '').replace(/^Bearer\s+/i, '')
+  if (got !== expected) { res.status(401).json({ error: 'Invalid API key' }); return false }
+  return true
+}
+
+// List published posts (newest first). Lightweight — no full body.
+app.get('/blog', async (req, res) => {
+  const limit = Math.min(parseInt(req.query.limit) || 50, 100)
+  let q = supabaseAdmin
+    .from('blog_posts')
+    .select('slug, title, excerpt, cover_image_url, author, tags, published_at')
+    .eq('status', 'published')
+    .order('published_at', { ascending: false })
+    .limit(limit)
+  if (req.query.tag) q = q.contains('tags', [req.query.tag])
+  const { data, error } = await q
+  if (error) return res.status(500).json({ error: error.message })
+  res.json(data || [])
+})
+
+// Single published post (full body).
+app.get('/blog/:slug', async (req, res) => {
+  const { data, error } = await supabaseAdmin
+    .from('blog_posts')
+    .select('*')
+    .eq('slug', req.params.slug)
+    .eq('status', 'published')
+    .single()
+  if (error || !data) return res.status(404).json({ error: 'Post not found' })
+  res.json(data)
+})
+
+// Create / update a post (upsert on slug). For n8n.
+app.post('/blog', async (req, res) => {
+  if (!requireBlogKey(req, res)) return
+  const b = req.body || {}
+  const title = (b.title || '').trim()
+  const contentHtml = (b.content_html || b.content || b.html || '').trim()
+  if (!title || !contentHtml) return res.status(400).json({ error: 'title and content_html are required' })
+
+  const slug = slugify(b.slug || title)
+  if (!slug) return res.status(400).json({ error: 'Could not derive a slug from the title' })
+
+  const row = {
+    slug,
+    title,
+    excerpt: b.excerpt || contentHtml.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 200),
+    content_html: contentHtml,
+    cover_image_url: b.cover_image_url || b.cover || b.image || null,
+    author: b.author || 'MarketSync',
+    tags: Array.isArray(b.tags) ? b.tags : (typeof b.tags === 'string' ? b.tags.split(',').map(t => t.trim()).filter(Boolean) : []),
+    status: b.status === 'draft' ? 'draft' : 'published',
+    published_at: b.published_at || new Date().toISOString(),
+    updated_at: new Date().toISOString()
+  }
+  const { data, error } = await supabaseAdmin
+    .from('blog_posts')
+    .upsert(row, { onConflict: 'slug' })
+    .select()
+    .single()
+  if (error) return res.status(500).json({ error: error.message })
+  res.json({ success: true, slug: data.slug, url: `${FRONTEND_URL}/post.html?slug=${data.slug}`, post: data })
+})
+
+// Dynamic sitemap of all published posts — submit this URL in Google Search Console
+// so new n8n posts get crawled without touching the static sitemap.
+app.get('/blog-sitemap.xml', async (req, res) => {
+  const { data } = await supabaseAdmin
+    .from('blog_posts')
+    .select('slug, updated_at, published_at')
+    .eq('status', 'published')
+    .order('published_at', { ascending: false })
+    .limit(5000)
+  const base = 'https://marketsync.link'
+  const urls = (data || []).map(p => {
+    const lastmod = (p.updated_at || p.published_at || '').slice(0, 10)
+    return `  <url>\n    <loc>${base}/post.html?slug=${encodeURIComponent(p.slug)}</loc>\n    <lastmod>${lastmod}</lastmod>\n    <changefreq>monthly</changefreq>\n  </url>`
+  }).join('\n')
+  res.set('Content-Type', 'application/xml')
+  res.send(`<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls}\n</urlset>\n`)
+})
+
+// Delete a post. For n8n.
+app.delete('/blog/:slug', async (req, res) => {
+  if (!requireBlogKey(req, res)) return
+  const { error } = await supabaseAdmin.from('blog_posts').delete().eq('slug', req.params.slug)
+  if (error) return res.status(500).json({ error: error.message })
+  res.json({ success: true })
+})
+
 app.get('/dashboard/insights', requireAuth, async (req, res) => {
   const isAdmin = req.profile.role === 'DEALER_ADMIN' || req.profile.role === 'OWNER'
   const now = new Date()

@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <!-- Google tag (gtag.js) -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-80X981D9FP"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+  gtag('config', 'G-80X981D9FP');
+</script>
+<script id="cookieyes" type="text/javascript" src="https://cdn-cookieyes.com/client_data/4313ff69152b93899edaa7a8/script.js"></script>
+  <meta charset="UTF-8">
+  <link rel="icon" type="image/png" href="/favicon.png">
+  <link rel="apple-touch-icon" href="/favicon.png">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Blog — MarketSync | Selling Cars on Facebook Marketplace</title>
+  <meta name="description" content="Tips, guides, and playbooks for car dealers and sales reps selling on Facebook Marketplace — posting faster, ranking higher, and closing more deals with MarketSync.">
+  <link rel="canonical" href="https://marketsync.link/blog.html">
+  <meta property="og:title" content="MarketSync Blog">
+  <meta property="og:description" content="Tips and guides for selling cars on Facebook Marketplace.">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://marketsync.link/blog.html">
+  <script>tailwind = { config: { darkMode: 'media' } }</script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <meta name="color-scheme" content="light dark">
+</head>
+<body class="bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 font-sans antialiased overflow-x-hidden">
+
+  <nav class="border-b border-slate-200 dark:border-slate-800/80 backdrop-blur-sm sticky top-0 bg-slate-50/80 dark:bg-slate-950/80 z-50">
+    <div class="max-w-5xl mx-auto px-6 py-4 flex items-center justify-between">
+      <a href="index.html" class="flex items-center gap-2.5">
+        <span class="w-1.5 h-6 bg-indigo-500 rounded-sm"></span>
+        <span class="text-xl font-black tracking-tight text-slate-900 dark:text-white">Market<span class="text-indigo-600 dark:text-indigo-400">Sync</span></span>
+      </a>
+      <a href="index.html" class="text-sm font-medium text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition">← Back to home</a>
+    </div>
+  </nav>
+
+  <header class="max-w-5xl mx-auto px-6 pt-16 pb-10">
+    <p class="text-xs uppercase font-bold tracking-widest text-indigo-600 dark:text-indigo-400 mb-3">Blog</p>
+    <h1 class="text-4xl md:text-5xl font-extrabold tracking-tight text-slate-900 dark:text-white mb-4">The MarketSync Blog</h1>
+    <p class="text-base text-slate-600 dark:text-slate-400 max-w-2xl">Playbooks for selling more cars on Facebook Marketplace — faster posting, better listings, and closing more deals.</p>
+  </header>
+
+  <main class="max-w-5xl mx-auto px-6 pb-24">
+    <div id="post-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+      <div class="col-span-full text-sm text-slate-500 italic">Loading posts…</div>
+    </div>
+  </main>
+
+  <footer class="border-t border-slate-200 dark:border-slate-800/60 py-8">
+    <div class="max-w-5xl mx-auto px-6 flex flex-col sm:flex-row justify-between items-center gap-4">
+      <div class="flex items-center gap-2.5">
+        <span class="w-1.5 h-5 bg-indigo-500 rounded-sm"></span>
+        <span class="text-sm font-bold tracking-tight text-slate-900 dark:text-white">Market<span class="text-indigo-600 dark:text-indigo-400">Sync</span></span>
+      </div>
+      <div class="text-xs text-slate-500">&copy; 2026 MarketSync · Not affiliated with Meta or Facebook</div>
+    </div>
+  </footer>
+
+  <script>
+    const API = 'https://vehicle-marketplace-s0e4.onrender.com';
+    const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    const fmtDate = (d) => { try { return new Date(d).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }); } catch { return ''; } };
+
+    (async function () {
+      const grid = document.getElementById('post-grid');
+      let posts = [];
+      try {
+        const r = await fetch(`${API}/blog`);
+        posts = r.ok ? await r.json() : [];
+      } catch { posts = []; }
+
+      if (!posts.length) {
+        grid.innerHTML = `<div class="col-span-full text-center py-16 text-slate-500">
+          <div class="text-4xl mb-3">✍️</div>
+          <p class="font-semibold text-slate-700 dark:text-slate-300">No posts yet</p>
+          <p class="text-sm mt-1">Check back soon — we're just getting started.</p>
+        </div>`;
+        return;
+      }
+
+      grid.innerHTML = posts.map(p => {
+        const cover = p.cover_image_url
+          ? `<img src="${esc(p.cover_image_url)}" alt="${esc(p.title)}" loading="lazy" class="w-full h-44 object-cover">`
+          : `<div class="w-full h-44 bg-gradient-to-br from-indigo-500/20 to-slate-500/10 flex items-center justify-center text-4xl">📝</div>`;
+        const tags = (p.tags || []).slice(0, 2).map(t => `<span class="text-[10px] uppercase font-bold tracking-wider text-indigo-600 dark:text-indigo-400">${esc(t)}</span>`).join(' · ');
+        return `<a href="post.html?slug=${encodeURIComponent(p.slug)}" class="group block bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden hover:shadow-lg hover:-translate-y-0.5 transition">
+          ${cover}
+          <div class="p-5">
+            <div class="flex items-center gap-2 mb-2">${tags}${tags ? '<span class="text-slate-300 dark:text-slate-700">·</span>' : ''}<span class="text-[11px] text-slate-400">${fmtDate(p.published_at)}</span></div>
+            <h2 class="text-lg font-bold text-slate-900 dark:text-white leading-snug group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition">${esc(p.title)}</h2>
+            <p class="text-sm text-slate-500 dark:text-slate-400 mt-2 line-clamp-3">${esc(p.excerpt || '')}</p>
+            <span class="inline-block mt-3 text-xs font-semibold text-indigo-600 dark:text-indigo-400">Read more →</span>
+          </div>
+        </a>`;
+      }).join('');
+    })();
+  </script>
+</body>
+</html>

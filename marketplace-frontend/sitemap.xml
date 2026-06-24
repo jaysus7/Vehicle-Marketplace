@@ -23,6 +23,17 @@
   </url>
 
   <url>
+    <loc>https://marketsync.link/blog.html</loc>
+    <lastmod>2026-06-23</lastmod>
+    <changefreq>daily</changefreq>
+    <priority>0.8</priority>
+  </url>
+
+  <!-- Individual posts are listed in the dynamic post sitemap (submit it in
+       Google Search Console): https://vehicle-marketplace-s0e4.onrender.com/blog-sitemap.xml -->
+
+
+  <url>
     <loc>https://marketsync.link/support.html</loc>
     <lastmod>2026-06-10</lastmod>
     <changefreq>monthly</changefreq>
