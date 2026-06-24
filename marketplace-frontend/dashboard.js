@@ -204,14 +204,18 @@ function ensurePanelsInOriginalLocations() {
   const lb = document.getElementById('leaderboard-panel');
   const ti = document.getElementById('team-insights-panel');
   const st = document.getElementById('dealer-view-panel');
+  const pc = document.getElementById('profile-card');
 
   const lbWrap = document.querySelector('[data-page-content="leaderboard"]');
   const tiWrap = document.querySelector('[data-page-content="team-insights"]');
   const stWrap = document.querySelector('[data-page-content="sales-team"]');
+  const pcWrap = document.querySelector('[data-page-content="profile"]');
 
   if (lb && lbWrap && lb.parentElement !== lbWrap) lbWrap.appendChild(lb);
   if (ti && tiWrap && ti.parentElement !== tiWrap) tiWrap.appendChild(ti);
   if (st && stWrap && st.parentElement !== stWrap) stWrap.appendChild(st);
+  // Profile card is authored in the sidebar; move it into the profile page + reveal.
+  if (pc && pcWrap && pc.parentElement !== pcWrap) { pcWrap.appendChild(pc); pc.classList.remove('hidden'); }
 }
 
 async function fetchMetrics(path) {
@@ -307,12 +311,16 @@ document.addEventListener('DOMContentLoaded', syncRangePillsUI);
 // it, then stays hidden forever (persisted in localStorage).
 document.addEventListener('DOMContentLoaded', () => {
   const banner = document.getElementById('ext-cta-banner');
-  if (!banner) return;
+  const headerBtn = document.getElementById('ext-header-btn');
   let dismissed = false;
   try { dismissed = localStorage.getItem('ms_ext_cta_dismissed') === '1'; } catch {}
-  if (!dismissed) banner.classList.remove('hidden');
+  // Not dismissed → big banner at the top. Dismissed → compact "Install extension"
+  // button beside Tour in the header (stays there forever).
+  const applyDismissed = () => { banner?.classList.add('hidden'); headerBtn?.classList.remove('hidden'); };
+  if (dismissed) applyDismissed();
+  else { banner?.classList.remove('hidden'); headerBtn?.classList.add('hidden'); }
   document.getElementById('ext-cta-dismiss')?.addEventListener('click', () => {
-    banner.classList.add('hidden');
+    applyDismissed();
     try { localStorage.setItem('ms_ext_cta_dismissed', '1'); } catch {}
   });
 });
@@ -1502,15 +1510,9 @@ function renderCatalog() {
 }
 
 function setupActionListeners() {
-  // Collapsible profile panel
-  const toggle = document.getElementById('profile-toggle');
-  const panel = document.getElementById('profile-panel');
-  const chevron = document.getElementById('profile-chevron');
-  toggle?.addEventListener('click', () => {
-    const open = !panel.classList.contains('hidden');
-    panel.classList.toggle('hidden', open);
-    chevron.style.transform = open ? '' : 'rotate(180deg)';
-  });
+  // Profile & Settings is its own nav page now — make sure the card is relocated
+  // into the profile page (in case this runs before the first switchPage).
+  ensurePanelsInOriginalLocations();
 
   // Profile update form (full identity + workspace)
   document.getElementById('profile-form').addEventListener('submit', async (e) => {

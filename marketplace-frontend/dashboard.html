@@ -48,6 +48,7 @@
         <div class="text-xs sm:text-sm font-bold text-slate-900 dark:text-white truncate max-w-[120px] sm:max-w-none" id="ui-profile-name">---</div>
         <div class="text-[10px] sm:text-xs text-slate-500 dark:text-slate-400 truncate max-w-[120px] sm:max-w-none" id="ui-dealership-name">---</div>
       </div>
+      <a id="ext-header-btn" href="https://chromewebstore.google.com/detail/marketsync/mfoaodaoipaalloccolophjhblgikada" target="_blank" rel="noopener" class="hidden bg-indigo-50 dark:bg-indigo-950/40 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 px-2.5 sm:px-3 py-1.5 rounded text-[11px] sm:text-xs font-medium border border-indigo-200 dark:border-indigo-800 transition whitespace-nowrap">Install extension</a>
       <button id="logout-btn" class="bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 px-2.5 sm:px-3 py-1.5 rounded text-[11px] sm:text-xs font-medium border border-slate-300 dark:border-slate-700 transition whitespace-nowrap">Sign Out</button>
     </div>
   </header>
@@ -56,17 +57,12 @@
 
     <section class="flex flex-col gap-4 sm:gap-6 md:col-span-1 min-w-0">
 
-      <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg overflow-hidden order-2 md:order-1">
-        <button id="profile-toggle" type="button" class="w-full px-5 py-4 flex justify-between items-center hover:bg-slate-100/60 dark:bg-slate-800/40 transition focus:outline-none">
-          <div class="text-left">
-            <div class="text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300">Profile &amp; Workspace</div>
-            <div class="text-[11px] text-slate-500 mt-0.5">Update identity, password &amp; dealership</div>
-          </div>
-          <svg id="profile-chevron" class="w-4 h-4 text-slate-500 transition-transform duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
-          </svg>
-        </button>
-        <div id="profile-panel" class="hidden border-t border-slate-200 dark:border-slate-800 p-5">
+      <div id="profile-card" class="hidden bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg overflow-hidden">
+        <div class="px-5 pt-5">
+          <h2 class="text-lg font-bold text-slate-900 dark:text-white">Profile &amp; Settings</h2>
+          <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Update your identity, password, billing &amp; account security.</p>
+        </div>
+        <div id="profile-panel" class="p-5">
           <div id="profile-msg" class="hidden mb-3 p-2 text-xs rounded"></div>
           <form id="profile-form" class="space-y-3">
             <div>
@@ -176,15 +172,17 @@
         <button type="button" data-page="inventory" class="nav-item flex-shrink-0 md:w-full text-left whitespace-nowrap px-3 py-2 rounded font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition">Inventory</button>
         <button type="button" data-page="leaderboard" class="nav-item flex-shrink-0 md:w-full text-left whitespace-nowrap px-3 py-2 rounded font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition">Leaderboard</button>
         <button type="button" data-page="sales-team" data-admin-nav class="nav-item flex-shrink-0 md:w-full text-left whitespace-nowrap px-3 py-2 rounded font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition">Sales Team</button>
+        <button type="button" data-page="profile" class="nav-item flex-shrink-0 md:w-full text-left whitespace-nowrap px-3 py-2 rounded font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition">Profile &amp; Settings</button>
       </nav>
 
     </section>
 
-    <section class="md:col-span-3 space-y-6 min-w-0">
+    <section class="md:col-span-3 min-w-0">
 
       <!-- Extension CTA — sits at the top of the dashboard (all pages) until dismissed.
-           Dismissal is remembered forever (localStorage). -->
-      <div id="ext-cta-banner" class="hidden relative bg-indigo-50 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-800 rounded-lg p-4 sm:p-5 flex flex-col sm:flex-row sm:items-start gap-3 sm:gap-4">
+           Dismissal is remembered forever (localStorage), then a compact "Install
+           extension" button appears beside Tour in the header. -->
+      <div id="ext-cta-banner" class="hidden relative mb-6 bg-indigo-50 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-800 rounded-lg p-4 sm:p-5 flex flex-col sm:flex-row sm:items-start gap-3 sm:gap-4">
         <div class="flex-1 min-w-0 pr-6">
           <div class="text-xs font-bold uppercase tracking-wider text-indigo-700 dark:text-indigo-300 mb-1">Posting to Facebook Marketplace</div>
           <p class="text-sm text-slate-700 dark:text-slate-300 leading-relaxed">
@@ -197,6 +195,10 @@
         </a>
         <button id="ext-cta-dismiss" type="button" title="Dismiss" aria-label="Dismiss" class="absolute top-2 right-2 w-6 h-6 flex items-center justify-center rounded text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-200/60 dark:hover:bg-slate-800 text-lg leading-none transition">&times;</button>
       </div>
+
+      <!-- ───────── PROFILE & SETTINGS PAGE ───────── -->
+      <!-- #profile-card is authored in the sidebar then relocated here by dashboard.js. -->
+      <div data-page-content="profile" class="page-content hidden space-y-6"></div>
 
       <!-- ───────── INSIGHTS PAGE ───────── -->
       <div data-page-content="insights" class="page-content space-y-6">
