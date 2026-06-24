@@ -126,9 +126,13 @@ async function initializeDashboardEcosystem() {
     // browser paints the correct nav in one go.
     document.body.classList.add('ms-role-ready');
 
-    // Leaderboard is visible to all team members (admin + reps), not just admin
+    // Team leaderboard is for actual teams (admin + reps in a real dealership).
+    // Solo reps / no-team users have nothing to rank against on a team, so we hide
+    // the team panel entirely — they only get the Global Leaderboard below.
     if (inDealership && !isPersonal) {
       loadLeaderboard();
+    } else {
+      document.getElementById('leaderboard-panel')?.classList.add('hidden');
     }
 
     // Set permission flags used by switchPage to mirror panels into Insights
@@ -298,6 +302,20 @@ document.addEventListener('click', (e) => {
 });
 
 document.addEventListener('DOMContentLoaded', syncRangePillsUI);
+
+// Install-extension CTA: sits at the top of the dashboard until the user dismisses
+// it, then stays hidden forever (persisted in localStorage).
+document.addEventListener('DOMContentLoaded', () => {
+  const banner = document.getElementById('ext-cta-banner');
+  if (!banner) return;
+  let dismissed = false;
+  try { dismissed = localStorage.getItem('ms_ext_cta_dismissed') === '1'; } catch {}
+  if (!dismissed) banner.classList.remove('hidden');
+  document.getElementById('ext-cta-dismiss')?.addEventListener('click', () => {
+    banner.classList.add('hidden');
+    try { localStorage.setItem('ms_ext_cta_dismissed', '1'); } catch {}
+  });
+});
 
 // DEALER DOMAIN: Real team roster from /dealership/team
 async function loadDealerManagementMatrix() {
