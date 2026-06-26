@@ -17,8 +17,6 @@ import {
 } from './passkeys.js'
 import { randomBytes, createHash } from 'crypto'
 import { Resend } from 'resend'
-import Stripe from 'stripe'
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY)
 
 // Resend SMTP — we send transactional email (password resets etc.) directly
 // from this backend instead of going through Supabase Auth. Lower latency,
