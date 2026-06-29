@@ -920,72 +920,129 @@ if (modelComboboxNow && (
   showStatus('Writing description...');
   const descEl = await waitFor(() => document.querySelector('textarea'));
   if (descEl) {
-    // Pull dealership/rep info from the poster profile that popup.js attached.
+    // ── Poster / dealership info ──
     const rawDealership = vehicle.poster?.dealership?.name || '';
-    const repName = vehicle.poster?.full_name || '';
-    const repEmail = vehicle.poster?.email || '';
-    const repPhone = vehicle.poster?.phone || '';
-    const dealerPhone = vehicle.poster?.dealership?.phone || '';
+    const repName       = vehicle.poster?.full_name || '';
+    const repEmail      = vehicle.poster?.email || '';
+    const repPhone      = vehicle.poster?.phone || vehicle.poster?.dealership?.phone || '';
     const dealerWebsite = vehicle.poster?.dealership?.website_url || '';
+    const posterRole    = vehicle.poster?.role || '';  // 'DEALER_ADMIN' | 'OWNER' | 'SALES_REP'
 
-    // Personal accounts are auto-named "{Name} — Personal". Show "Dealer" instead
-    // (for every account), and always produce a headline — even with no dealership.
+    const isAdmin = posterRole === 'DEALER_ADMIN' || posterRole === 'OWNER';
     const displayDealership = rawDealership.replace(/\bPersonal\b/gi, 'Dealer');
     const brandName = displayDealership || (repName ? `${repName} — Dealer` : 'Dealer');
 
-    // Marketing headline at the very top — auto-filled from the user's profile so
-    // nothing has to be typed manually.
-    const headline = `🔥 ${brandName} | Plus HST & Licensing | HOT DEAL! 🔥`;
+    // ── Section 1: Headline ──
+    const headline = `🔥 ${brandName} | ${vehicle.condition ? vehicle.condition.toUpperCase() + ' ' : ''}${vehicle.year} ${make} ${model}${vehicle.trim ? ' ' + vehicle.trim : ''} | HOT DEAL! 🔥`;
 
-    const baseDesc = vehicle.ai_description || vehicle.description ||
-      `${vehicle.year} ${make} ${model} ${vehicle.trim || ''}. ` +
-      `${vehicle.mileage ? vehicle.mileage.toLocaleString() + ' km. ' : ''}` +
-      `${vehicle.exterior_color ? vehicle.exterior_color + ' exterior. ' : ''}` +
-      `${vehicle.transmission || 'Automatic'} transmission.`;
-
-    // Pricing disclaimer in the body (separate from the headline) so it's explicit.
-    const pricingLine = '💲 Price plus applicable tax & licensing.';
-
-    // Contact name: avoid the "Jane Doe — Jane Doe — Dealer" duplication that happens
-    // when a personal account's dealership name already starts with the rep's name.
-    const isPersonalDealer = displayDealership && repName &&
-      displayDealership.toLowerCase().startsWith(repName.toLowerCase());
-    const contactName = isPersonalDealer
-      ? displayDealership
-      : (repName ? (displayDealership ? `${repName} — ${displayDealership}` : repName) : displayDealership);
-
-    // Tracked deep link → logs the click (powers the FB CLICK-THROUGHS metric) then
-    // 302s the buyer to this vehicle's detail page on the dealer site. Keyed by the
-    // inventory id because the listing row isn't created until after the post goes
-    // live. Falls back to the plain website if we somehow lack an id.
-    const trackedLink = vehicle.id ? `${API}/r/v/${vehicle.id}?s=fb` : null;
-
-    const contactLines = [
-      '',
-      '─── CONTACT ───',
-      contactName || null,
-      repPhone ? `📞 ${repPhone}` : (dealerPhone ? `📞 ${dealerPhone}` : null),
-      repEmail ? `✉️ ${repEmail.replace('@', ' [at] ')}` : null,
-      trackedLink ? `🌐 Full details & photos: ${trackedLink}`
-                  : (dealerWebsite ? `🌐 ${dealerWebsite}` : null)
+    // ── Section 2: Full vehicle specs ──
+    const specLines = [
+      vehicle.year        ? `📅 Year:           ${vehicle.year}`                                           : null,
+      make                ? `🏭 Make:           ${make}`                                                    : null,
+      model               ? `🚘 Model:          ${model}`                                                   : null,
+      vehicle.trim        ? `✨ Trim:           ${vehicle.trim}`                                            : null,
+      vehicle.condition   ? `🏷️  Condition:      ${vehicle.condition}`                                      : null,
+      vehicle.mileage     ? `🛣️  Mileage:        ${Number(vehicle.mileage).toLocaleString()} km`            : null,
+      vehicle.price       ? `💰 Price:          $${Number(vehicle.price).toLocaleString()} + HST & Lic.`   : null,
+      vehicle.exterior_color ? `🎨 Ext. Color:     ${vehicle.exterior_color}`                              : null,
+      vehicle.interior_color ? `🪑 Int. Color:     ${vehicle.interior_color}`                              : null,
+      vehicle.transmission   ? `⚙️  Transmission:  ${vehicle.transmission}`                                 : null,
+      vehicle.fuel_type      ? `⛽ Fuel Type:     ${vehicle.fuel_type}`                                     : null,
+      vehicle.engine         ? `🔧 Engine:        ${vehicle.engine}`                                        : null,
+      vehicle.drivetrain     ? `🔄 Drivetrain:    ${vehicle.drivetrain}`                                    : null,
+      vehicle.body_style || vehicle.bodystyle
+        ? `🚗 Body Style:    ${vehicle.body_style || vehicle.bodystyle}`                                    : null,
+      vehicle.doors       ? `🚪 Doors:          ${vehicle.doors}`                                          : null,
+      vehicle.seats       ? `💺 Seats:          ${vehicle.seats}`                                          : null,
+      vehicle.certified   ? `✅ Certified Pre-Owned`                                                       : null,
+      vehicle.vin         ? `🔑 VIN:            ${vehicle.vin}`                                            : null,
+      vehicle.stock_number || vehicle.stocknumber
+        ? `📋 Stock #:       ${vehicle.stock_number || vehicle.stocknumber}`                               : null,
     ].filter(Boolean);
+
+    // ── Section 3: Description / blurb from the feed ──
+    const feedDesc = vehicle.ai_description
+      || (typeof vehicle.description === 'string' && vehicle.description.length > 30 && vehicle.description.length < 1200
+          ? vehicle.description : null);
+
+    // ── Section 4: Features/options ──
+    const featureSrc = Array.isArray(vehicle.searchablesarray) && vehicle.searchablesarray.length
+      ? vehicle.searchablesarray
+      : Array.isArray(vehicle.upgrades) ? vehicle.upgrades
+      : Array.isArray(vehicle.options) ? vehicle.options : [];
+    const features = featureSrc
+      .map(f => typeof f === 'string' ? f : (f?.name || f?.label || ''))
+      .map(s => String(s).trim()).filter(Boolean).slice(0, 24);
+    const featuresBlock = features.length
+      ? `🔹 FEATURES & OPTIONS:\n${features.map(f => `  • ${f}`).join('\n')}`
+      : null;
+
+    // ── Section 5: Dealership disclaimer ──
+    // If admin/owner posted → any rep can help. If a sales rep posted → ask for them by name.
+    const askFor = isAdmin
+      ? `any of our sales representatives`
+      : `${repName} specifically`;
+    const disclaimer = [
+      `⚠️ DEALERSHIP LISTING — ${brandName.toUpperCase()}`,
+      `This vehicle is listed by a licensed dealership. All prices are in CAD and exclude applicable taxes, licensing, and dealer fees.`,
+      ``,
+      `📍 To get a deal on this vehicle, come in to the store and ask for ${askFor}.`,
+      dealerWebsite ? `🌐 Visit us online: ${dealerWebsite}` : null,
+    ].filter(Boolean).join('\n');
+
+    // ── Section 6: Tracked link + contact ──
+    const trackedLink = vehicle.id ? `${API}/r/v/${vehicle.id}?s=fb` : null;
+    const contactBlock = [
+      `─── CONTACT ───`,
+      isAdmin ? brandName : `${repName}${displayDealership ? ' — ' + displayDealership : ''}`,
+      repPhone    ? `📞 ${repPhone}`                        : null,
+      repEmail    ? `✉️  ${repEmail.replace('@', ' [at] ')}` : null,
+      trackedLink ? `🌐 Full listing & photos: marketsync.link/r/v/${vehicle.id}` : (dealerWebsite ? `🌐 ${dealerWebsite}` : null),
+    ].filter(Boolean).join('\n');
 
     const desc = [
       headline,
       '',
-      baseDesc,
-      '',
-      pricingLine,
-      contactLines.join('\n')
+      specLines.join('\n'),
+      feedDesc ? `\n${feedDesc}` : null,
+      featuresBlock ? `\n${featuresBlock}` : null,
+      `\n${disclaimer}`,
+      `\n${contactBlock}`,
     ].filter(s => s !== null).join('\n');
 
     await typeInto(descEl, desc);
   }
   await sleep(DELAY);
+  // LISTING WEBSITE — fill the dedicated FB field so the link renders as a real
+  // tappable "Visit website" button on the listing (description links are plain text only).
+  if (vehicle.id) {
+    showStatus('Adding website link...');
+    const trackedUrl = `${API}/r/v/${vehicle.id}?s=fb`;
+
+    const websiteEl = await waitFor(() => {
+      const inputs = [...document.querySelectorAll('input[type="text"], input[type="url"], input:not([type])')];
+      return inputs.find(el => {
+        if (el.offsetParent === null) return false;
+        const al = (el.getAttribute('aria-label') || '').toLowerCase();
+        const ph = (el.placeholder || '').toLowerCase();
+        const labelEl = el.closest('label, div')?.querySelector('label, span');
+        const labelTxt = (labelEl?.textContent || '').toLowerCase();
+        return al.includes('website') || al.includes('url') || al.includes('link') ||
+               ph.includes('website') || ph.includes('url') || ph.includes('http') ||
+               labelTxt.includes('website') || labelTxt.includes('listing url');
+      });
+    }, 5000);
+
+    if (websiteEl) {
+      await typeInto(websiteEl, trackedUrl);
+      console.log('✓ Website field filled:', trackedUrl);
+    } else {
+      console.warn('[MarketSync] Website/URL field not found on FB form — link in description only');
+    }
+    await sleep(DELAY);
+  }
 
   showStatus('✅ Form filled! Click Upload Photos.', 'success');
-  showPhotoStrip(vehicle.image_urls || [], vehicle.id);
-  console.log('✅ Automated pipeline processing successfully executed.');
 }
 
 // ── Boot ──────────────────────────────────────
