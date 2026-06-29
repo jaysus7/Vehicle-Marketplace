@@ -273,6 +273,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.type === 'FB_SYNC_NOW') {
     pollFbSync()
     sendResponse({ success: true })
+    runFbSyncQueue()      // existing — processes pending mark-sold/delete queue
+    runSoldScan()         // NEW — proactively check all active listings for sold badge
     return true
   }
 
