@@ -1042,8 +1042,56 @@ if (modelComboboxNow && (
     await sleep(DELAY);
   }
 
-  showStatus('✅ Form filled! Click Upload Photos.', 'success');
-}
+// AUTO-INJECT PHOTOS — attempt immediately after form fills.
+  // Show the strip first so the rep has a visual + manual fallback if injection fails.
+  const imageUrls = (vehicle.image_urls || []).slice(0, 20);
+  showPhotoStrip(imageUrls, vehicle.id);
+
+  if (imageUrls.length) {
+    showStatus('📸 Auto-uploading photos...', 'info');
+    await sleep(1500); // Let FB finish rendering the photo zone
+
+    // Try clicking "Add photos" to mount the file input before injecting
+    const findAddBtn = () => {
+      const byAria = [...document.querySelectorAll('[aria-label]')].find(el => {
+        const al = (el.getAttribute('aria-label') || '').toLowerCase();
+        return al.includes('add') && al.includes('photo');
+      });
+      if (byAria) return byAria;
+      return [...document.querySelectorAll('div[role="button"], button, [role="button"]')]
+        .find(el => {
+          const t = (el.textContent || '').toLowerCase().trim();
+          return t.length < 50 && t.includes('add') && (t.includes('photo') || t.includes('media'));
+        });
+    };
+
+    const addBtn = findAddBtn();
+    if (addBtn) {
+      addBtn.click();
+      await sleep(1200);
+    }
+
+    const autoInjected = await injectPhotosIntoInput(imageUrls);
+
+    if (autoInjected) {
+      showStatus('✅ Photos uploaded automatically! Review then click Next.', 'success');
+      // Update the strip button so rep knows it already worked
+      const uploadBtn = document.querySelector('#wc-photo-strip button');
+      if (uploadBtn) {
+        uploadBtn.textContent = '✅ Photos uploaded!';
+        uploadBtn.style.background = '#22c55e';
+        uploadBtn.style.color = '#000';
+        uploadBtn.disabled = true;
+      }
+    } else {
+      // Auto-inject failed — strip is already visible, rep can click manually
+      showStatus('⚠️ Auto-upload failed. Click "Upload Photos" in the bar below.', 'info');
+    }
+  } else {
+    showStatus('✅ Form filled! No photos found for this vehicle.', 'success');
+  }
+
+  console.log('✅ Automated pipeline processing successfully executed.');}
 
 // ── Boot ──────────────────────────────────────
 const isCreatePage = /\/marketplace\/create(\/|\?|$)/i.test(window.location.href);
