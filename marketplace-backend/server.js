@@ -2135,22 +2135,37 @@ async function finalizeSold(listingId, inventoryId) {
       // fb_sync_action='sold' queues the extension to mark the FB listing "Sold".
       await supabaseAdmin
         .from('listings')
-        .update({ status: 'sold', deleted_at: now, vehicle_label: label || null, fb_sync_action: 'sold', fb_synced_at: null })
+        .update({ status: 'sold', deleted_at: now, sold_at: now, vehicle_label: label || null, fb_sync_action: 'sold', fb_synced_at: null })
         .eq('id', listingId)
     } else {
       await supabaseAdmin
         .from('listings')
-        .update({ status: 'sold', deleted_at: now, fb_sync_action: 'sold', fb_synced_at: null })
+        .update({ status: 'sold', deleted_at: now, sold_at: now, fb_sync_action: 'sold', fb_synced_at: null })
         .eq('id', listingId)
-    }
     // 2. Delete the inventory row — vehicle is gone from the dealer site / sold
     await supabaseAdmin.from('inventory').delete().eq('id', inventoryId)
   }
 }
 
-app.post('/listings/sync-fb-sold', requireAuth, async (req, res) => {
-  const { fb_listing_url } = req.body || {}
-  if (!fb_listing_url) return res.status(400).json({ error: 'fb_listing_url required' })
+app.get('/listings', requireAuth, async (req, res) => {
+  // status filter: ?status=posted (default), sold, all
+  const statusParam = req.query.status || 'posted'
+  let query = supabaseAdmin
+    .from('listings')
+    .select('*, inventory!listings_inventory_id_fkey(*)')
+    .eq('posted_by', req.user.id)
+    .order('posted_at', { ascending: false })
+
+  if (statusParam === 'all') {
+    query = query.in('status', ['posted', 'sold'])
+  } else {
+    query = query.eq('status', statusParam)
+  }
+
+  const { data, error } = await query
+  if (error) return res.status(500).json({ error: error.message })
+  res.json(data || [])
+})
 
   const normalizedUrl = fb_listing_url.split('?')[0].split('#')[0]
 
@@ -4524,12 +4539,44 @@ app.post('/cron/sync-all', async (req, res) => {
   res.json(result)
 })
 
-const SYNC_INTERVAL_HOURS = Number(process.env.SYNC_INTERVAL_HOURS || 6)
-if (SYNC_INTERVAL_HOURS > 0) {
-  setTimeout(() => syncAllDealerships('boot'), 60 * 1000)
-  setInterval(() => syncAllDealerships('interval'), SYNC_INTERVAL_HOURS * 60 * 60 * 1000)
-  console.log(`📅 Scheduled inventory sync every ${SYNC_INTERVAL_HOURS}h (set SYNC_INTERVAL_HOURS=0 to disable)`)
+// ── 2-WEEK SOLD LISTING CLEANUP ──────────────────────────────────────────────
+// Sold listings are kept for 14 days (so reps can see the SOLD badge + FB delete
+// notice), then soft-deleted. Runs daily at 3am UTC. Uses setInterval not cron.
+async function cleanupExpiredSoldListings() {
+  const twoWeeksAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString()
+  const { data: expired, error: fetchErr } = await supabaseAdmin
+    .from('listings')
+    .select('id, vehicle_label, sold_at')
+    .eq('status', 'sold')
+    .not('sold_at', 'is', null)
+    .lt('sold_at', twoWeeksAgo)
+
+  if (fetchErr) {
+    console.error('[cleanup-sold] fetch error:', fetchErr.message)
+    return
+  }
+  if (!expired?.length) {
+    console.log('[cleanup-sold] no expired sold listings to clean up')
+    return
+  }
+
+  const ids = expired.map(l => l.id)
+  const { error: updateErr } = await supabaseAdmin
+    .from('listings')
+    .update({ status: 'deleted' })
+    .in('id', ids)
+
+  if (updateErr) {
+    console.error('[cleanup-sold] soft-delete error:', updateErr.message)
+  } else {
+    console.log(`[cleanup-sold] soft-deleted ${ids.length} expired sold listings`)
+  }
 }
+
+// Run once 5 minutes after boot, then every 24 hours
+setTimeout(() => cleanupExpiredSoldListings(), 5 * 60 * 1000)
+setInterval(() => cleanupExpiredSoldListings(), 24 * 60 * 60 * 1000)
+console.log('🧹 Sold listing cleanup scheduled (daily, 14-day retention)')
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Onboarding drip campaign — 7-email trial sequence (see drip.js)
