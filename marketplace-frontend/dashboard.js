@@ -26,10 +26,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
 async function initializeDashboardEcosystem() {
   try {
-    // Fetch unified server profile context
+    // Fetch unified server profile context. Render free/starter tier can cold-start
+    // (30-60s) — give it real time instead of letting a default browser timeout
+    // produce a confusing error that looks identical to an auth failure.
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 45000);
     const res = await fetch(`${API}/auth/me`, {
-      headers: { 'Authorization': `Bearer ${token}` }
+      headers: { 'Authorization': `Bearer ${token}` },
+      signal: controller.signal
     });
+    clearTimeout(timeoutId);
     
     if (res.status === 401 || res.status === 402) {
       if (res.status === 402) {
@@ -162,7 +168,7 @@ async function initializeDashboardEcosystem() {
       loadMyStats();
     }
 
-  } catch (err) {
+} catch (err) {
     if (err.message === 'TRIAL_EXPIRED') {
       alert('Your 7-day free trial has ended. Add a payment method to keep using MarketSync.');
       window.location.href = '/upgrade.html?reason=trial_ended';
@@ -171,12 +177,25 @@ async function initializeDashboardEcosystem() {
     if (err.message === 'SUBSCRIPTION_REQUIRED') {
       alert('Subscription required to access system. Redirecting to billing...');
       launchStripeLifecycle();
-    } else {
+      return;
+    }
+    if (err.message === 'SESSION_EXPIRED') {
+      // Genuine 401 from the server — token really is invalid/expired. Safe to log out.
       localStorage.clear();
       window.location.href = 'login.html';
+      return;
     }
+    // Anything else (network blip, cold-start timeout, a render-time JS error, etc.)
+    // is NOT proof the session is invalid. Logging out here is what causes the
+    // dashboard <-> login flicker loop. Show an inline error and let the user retry
+    // instead of nuking their session.
+    console.error('Dashboard init failed (non-auth error):', err);
+    const banner = document.createElement('div');
+    banner.className = 'fixed top-0 left-0 right-0 z-50 bg-red-600 text-white text-sm text-center py-2';
+    banner.innerHTML = `Something went wrong loading the dashboard. <button onclick="window.location.reload()" class="underline font-bold ml-2">Retry</button>`;
+    document.body.prepend(banner);
+    document.body.classList.add('ms-role-ready'); // reveal page instead of leaving it stuck hidden
   }
-}
 
 // Sidebar nav page switcher. Each page shows only its own content — no panel
 // mirroring, so Insights stays clean and each nav item lands on a focused view.
