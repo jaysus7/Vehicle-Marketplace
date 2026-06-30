@@ -13,31 +13,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="theme-color" content="#6366F1">
-<script type="application/ld+json">
-    {
-        "@context": "https://schema.org",
-        "@type": "SoftwareApplication",
-        "name": "MarketSync",
-        "applicationCategory": "BusinessApplication",
-        "operatingSystem": "Web, Chrome",
-        "description": "MarketSync is a SaaS tool for car dealerships and independent sales reps...",
-        "url": "https://marketsync.link/",
-        "offers": [
-            {
-                "@type": "Offer",
-                "name": "Dealer Plan",
-                "price": "499",
-                "priceCurrency": "USD"
-            },
-            {
-                "@type": "Offer",
-                "name": "Individual Sales Rep Plan",
-                "price": "79",
-                "priceCurrency": "USD"
-            }
-        ]
-    }
-    </script>
     <!-- Speed up third-party CDN handshakes (perf) -->
     <link rel="preconnect" href="https://cdn.tailwindcss.com" crossorigin>
     <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin>
@@ -174,6 +149,26 @@
                 "@type": "Question",
                 "name": "How much does MarketSync cost?",
                 "acceptedAnswer": { "@type": "Answer", "text": "MarketSync has two plans. The Dealer Plan is for a whole dealership and the Individual Sales Rep Plan is for one person who works alone. Pricing is shown on the Pricing section. Every new account starts with a 7-day free trial — no credit card required." }
+            },
+            {
+                "@type": "Question",
+                "name": "How is MarketSync different from other Facebook Marketplace listing tools?",
+                "acceptedAnswer": { "@type": "Answer", "text": "Most listing tools just push inventory to Facebook and stop there. MarketSync also tracks who posted and who sold each vehicle, awards points, and runs a live sales leaderboard with tiers, combining listing automation with sales team motivation in one subscription." }
+            },
+            {
+                "@type": "Question",
+                "name": "Do I need to give MarketSync access to my DMS or inventory system?",
+                "acceptedAnswer": { "@type": "Answer", "text": "No. MarketSync only needs a dealer's public website URL — the same inventory pages customers already browse. There is no DMS login, API key, or IT setup required." }
+            },
+            {
+                "@type": "Question",
+                "name": "What happens when a vehicle sells?",
+                "acceptedAnswer": { "@type": "Answer", "text": "A rep marks it sold from the dashboard or extension in one click. The Facebook listing is queued for removal automatically, points are awarded to the right rep, and the leaderboard updates immediately." }
+            },
+            {
+                "@type": "Question",
+                "name": "Is there a contract or setup fee?",
+                "acceptedAnswer": { "@type": "Answer", "text": "No contracts and no setup fees. MarketSync is a month-to-month subscription with a 7-day free trial — cancel before day 8 and you are not charged." }
             }
         ]
     }
@@ -211,7 +206,7 @@
             </span>
         </a>
 
-        <nav class="hidden md:flex items-center space-x-8 text-sm font-medium text-slate-600 dark:text-gray-400">
+        <nav class="hidden md:flex items-center space-x-8 text-sm font-medium text-slate-600 dark:text-gray-400" aria-label="Primary">
             <a href="#what-is-it" class="hover:text-indigo-600 dark:hover:text-white transition">What is it?</a>
             <a href="#how-it-works" class="hover:text-indigo-600 dark:hover:text-white transition">How it works</a>
             <a href="#dashboard" class="hover:text-indigo-600 dark:hover:text-white transition">Dashboard</a>
@@ -223,10 +218,39 @@
 
         <div class="flex items-center space-x-3">
             <a href="https://marketsync.link/login.html" class="hidden sm:inline-flex text-sm font-semibold text-slate-700 dark:text-gray-300 hover:text-indigo-600 dark:hover:text-white px-3 py-2 transition">Log in</a>
-            <a href="https://marketsync.link/register.html" class="bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold px-4 py-2 rounded-lg transition">Sign up free</a>
+            <a href="https://marketsync.link/register.html" class="hidden sm:inline-flex bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold px-4 py-2 rounded-lg transition">Sign up free</a>
+            <button id="ms-menu-btn" type="button" class="md:hidden inline-flex items-center justify-center w-10 h-10 rounded-lg border border-slate-200 dark:border-gray-800 text-slate-700 dark:text-gray-300" aria-label="Open menu" aria-expanded="false" aria-controls="ms-mobile-menu" onclick="msToggleMenu()">
+                <i class="fa-solid fa-bars text-lg" id="ms-menu-icon"></i>
+            </button>
         </div>
       </div>
+
+      <nav id="ms-mobile-menu" class="md:hidden hidden border-t border-slate-200/60 dark:border-gray-800/60 bg-slate-50 dark:bg-[#0B0F19] px-6 py-4 space-y-1 text-sm font-medium text-slate-600 dark:text-gray-400" aria-label="Mobile">
+        <a href="#what-is-it" class="block py-2.5 hover:text-indigo-600 dark:hover:text-white transition" onclick="msToggleMenu()">What is it?</a>
+        <a href="#how-it-works" class="block py-2.5 hover:text-indigo-600 dark:hover:text-white transition" onclick="msToggleMenu()">How it works</a>
+        <a href="#dashboard" class="block py-2.5 hover:text-indigo-600 dark:hover:text-white transition" onclick="msToggleMenu()">Dashboard</a>
+        <a href="#leaderboard" class="block py-2.5 hover:text-indigo-600 dark:hover:text-white transition" onclick="msToggleMenu()">Leaderboard</a>
+        <a href="#pricing" class="block py-2.5 hover:text-indigo-600 dark:hover:text-white transition" onclick="msToggleMenu()">Pricing</a>
+        <a href="#faq" class="block py-2.5 hover:text-indigo-600 dark:hover:text-white transition" onclick="msToggleMenu()">FAQ</a>
+        <a href="https://marketsync.link/blog.html" class="block py-2.5 hover:text-indigo-600 dark:hover:text-white transition">Blog</a>
+        <div class="pt-3 mt-2 border-t border-slate-200 dark:border-gray-800 flex flex-col gap-2">
+            <a href="https://marketsync.link/login.html" class="text-center py-2.5 font-semibold text-slate-700 dark:text-gray-300 hover:text-indigo-600 dark:hover:text-white transition">Log in</a>
+            <a href="https://marketsync.link/register.html" class="text-center py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold rounded-lg transition">Sign up free</a>
+        </div>
+      </nav>
     </header>
+
+    <script>
+        function msToggleMenu() {
+            const menu = document.getElementById('ms-mobile-menu')
+            const btn = document.getElementById('ms-menu-btn')
+            const icon = document.getElementById('ms-menu-icon')
+            const isOpen = !menu.classList.contains('hidden')
+            menu.classList.toggle('hidden')
+            btn.setAttribute('aria-expanded', String(!isOpen))
+            icon.className = isOpen ? 'fa-solid fa-bars text-lg' : 'fa-solid fa-xmark text-lg'
+        }
+    </script>
 
     <section class="max-w-5xl mx-auto px-6 pt-16 pb-20 text-center">
         <div class="inline-flex items-center gap-2 bg-indigo-100 dark:bg-indigo-500/10 border border-indigo-200 dark:border-indigo-500/20 text-indigo-700 dark:text-indigo-300 text-xs font-semibold px-3 py-1.5 rounded-full mb-6">
@@ -365,6 +389,7 @@
             <p>Facebook Marketplace is one of the biggest places people look when they want to buy a car. But posting a car to Facebook takes a long time. You have to type the year, the make, the model, the price. You have to upload all the photos. You have to write a description. For 100 cars, that is many hours of work.</p>
             <p><span class="font-semibold text-slate-900 dark:text-white">MarketSync does the boring part for you.</span> It looks at your dealership website, grabs every car, and helps you post each one to Facebook Marketplace in under a minute. It also keeps score so you can see which sales rep is posting and selling the most cars.</p>
             <p class="text-sm text-slate-500 dark:text-gray-400 italic border-l-4 border-indigo-500 pl-4">Think of it like a remote control for Facebook Marketplace, made just for car dealers.</p>
+            <p><span class="font-semibold text-slate-900 dark:text-white">Who it's for:</span> independent dealer lots, franchise stores with a team of reps, and solo sales reps whose dealership hasn't signed up yet. If your inventory already lives on a dealer website — built on LeadBox, EDealer, Dealer.com, CDK, DealerFire, or almost anything else — MarketSync can read it without any backend integration.</p>
         </div>
     </section>
 
@@ -780,7 +805,41 @@
                 </summary>
                 <div class="px-6 pb-5 text-sm text-slate-600 dark:text-gray-300 leading-relaxed">Yes. Cancel from your dashboard in two clicks. You keep access until the end of the month you already paid for. Nothing locks you in.</div>
             </details>
+
+            <details class="group bg-white dark:bg-gray-900/70 border border-slate-200 dark:border-gray-800 rounded-lg overflow-hidden">
+                <summary class="cursor-pointer px-6 py-4 flex justify-between items-center font-semibold text-slate-900 dark:text-white">
+                    How is MarketSync different from other Facebook Marketplace listing tools?
+                    <i class="fa-solid fa-chevron-down text-xs text-slate-500 transition-transform group-open:rotate-180"></i>
+                </summary>
+                <div class="px-6 pb-5 text-sm text-slate-600 dark:text-gray-300 leading-relaxed">Most listing tools just push your inventory to Facebook and stop there. MarketSync adds the sales team layer on top: it tracks who posted and who sold each vehicle, awards points, and runs a live leaderboard with tiers — so the dealer gets both the listing automation and a built-in way to motivate the sales floor, in one subscription.</div>
+            </details>
+
+            <details class="group bg-white dark:bg-gray-900/70 border border-slate-200 dark:border-gray-800 rounded-lg overflow-hidden">
+                <summary class="cursor-pointer px-6 py-4 flex justify-between items-center font-semibold text-slate-900 dark:text-white">
+                    Do I need to give MarketSync access to my DMS or inventory system?
+                    <i class="fa-solid fa-chevron-down text-xs text-slate-500 transition-transform group-open:rotate-180"></i>
+                </summary>
+                <div class="px-6 pb-5 text-sm text-slate-600 dark:text-gray-300 leading-relaxed">No. MarketSync only needs your public dealer website URL — the same inventory pages your customers already browse. There's no DMS login, API key, or IT setup required. The Smart Detect feature reads your site's public inventory data directly.</div>
+            </details>
+
+            <details class="group bg-white dark:bg-gray-900/70 border border-slate-200 dark:border-gray-800 rounded-lg overflow-hidden">
+                <summary class="cursor-pointer px-6 py-4 flex justify-between items-center font-semibold text-slate-900 dark:text-white">
+                    What happens when a vehicle sells?
+                    <i class="fa-solid fa-chevron-down text-xs text-slate-500 transition-transform group-open:rotate-180"></i>
+                </summary>
+                <div class="px-6 pb-5 text-sm text-slate-600 dark:text-gray-300 leading-relaxed">Mark it sold from the dashboard or extension in one click — choose "Sold by Me," "Sold on Facebook," or "Sold by Other." The Facebook listing gets queued for removal automatically, points get awarded to the right rep, and the leaderboard updates right away.</div>
+            </details>
+
+            <details class="group bg-white dark:bg-gray-900/70 border border-slate-200 dark:border-gray-800 rounded-lg overflow-hidden">
+                <summary class="cursor-pointer px-6 py-4 flex justify-between items-center font-semibold text-slate-900 dark:text-white">
+                    Is there a contract or setup fee?
+                    <i class="fa-solid fa-chevron-down text-xs text-slate-500 transition-transform group-open:rotate-180"></i>
+                </summary>
+                <div class="px-6 pb-5 text-sm text-slate-600 dark:text-gray-300 leading-relaxed">No contracts and no setup fees. MarketSync is a month-to-month subscription. Start with the 7-day free trial, and if it's not for you, cancel before day 8 and you won't be charged anything.</div>
+            </details>
         </div>
+
+        <p class="text-center text-sm text-slate-500 dark:text-gray-400 mt-8">Have a different question? See the <a href="https://marketsync.link/faq.html" class="text-indigo-600 dark:text-indigo-400 font-semibold hover:underline">full FAQ page</a> or <a href="https://marketsync.link/support.html" class="text-indigo-600 dark:text-indigo-400 font-semibold hover:underline">contact support</a>.</p>
     </section>
 
     <section class="max-w-5xl mx-auto px-6 py-20 text-center">

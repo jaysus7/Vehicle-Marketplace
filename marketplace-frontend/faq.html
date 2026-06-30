@@ -18,6 +18,31 @@
   <title>MarketSync FAQ — Facebook Marketplace for Car Dealers</title>
   <meta name="description" content="Answers about MarketSync: the free 7-day trial, how one-click posting to Facebook Marketplace works, supported dealer website platforms, the sales leaderboard, and billing.">
   <link rel="canonical" href="https://marketsync.link/faq.html">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="MarketSync FAQ — Facebook Marketplace for Car Dealers">
+  <meta property="og:description" content="Answers about MarketSync: the free 7-day trial, how one-click posting to Facebook Marketplace works, supported dealer website platforms, the sales leaderboard, and billing.">
+  <meta property="og:url" content="https://marketsync.link/faq.html">
+  <meta property="og:image" content="https://marketsync.link/logo.png">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "FAQPage",
+    "mainEntity": [
+      { "@type": "Question", "name": "How does MarketSync actually post to Facebook Marketplace?", "acceptedAnswer": { "@type": "Answer", "text": "Facebook doesn't allow third-party sites to post listings via API. Our Chrome extension opens FB Marketplace's standard \"Create Listing\" page and fills in the year, make, model, color, price, mileage, photos, and description for you. You review and click Publish like normal." } },
+      { "@type": "Question", "name": "Will Facebook ban my account for using this?", "acceptedAnswer": { "@type": "Answer", "text": "MarketSync doesn't bypass any of Facebook's controls — it fills in the same form a human would, and you still click Publish yourself. Common-sense limits still apply: don't post the same vehicle hundreds of times, and don't post non-existent inventory." } },
+      { "@type": "Question", "name": "What inventory feeds do you support?", "acceptedAnswer": { "@type": "Answer", "text": "MarketSync auto-detects feeds from LeadBox, EDealer, Dealer.com, Sincro, DealerOn, CDK Global, Strathcom, Vicimus, SM360, DealerFire, Dealer Inspire, and other platforms using Schema.org structured data. For unrecognized sites, paste the direct JSON inventory feed URL or let Smart Detect find it." } },
+      { "@type": "Question", "name": "How does the 7-day free trial work?", "acceptedAnswer": { "@type": "Answer", "text": "You get 7 days of full access on either plan, no credit card required at signup. When the trial ends, the dashboard prompts you to add a payment method to keep using MarketSync. If you don't, your account simply pauses." } },
+      { "@type": "Question", "name": "Do my sales reps need to pay separately?", "acceptedAnswer": { "@type": "Answer", "text": "No. On the Dealer Plan, every sales rep on the team is included in one subscription. Solo reps not affiliated with a dealer have their own Individual Sales Rep plan." } },
+      { "@type": "Question", "name": "What insights does the dealer admin see?", "acceptedAnswer": { "@type": "Answer", "text": "Total inventory synced, listings posted overall and per rep, sold conversion rate, active days, daily posting velocity, a dealership-wide leaderboard, and a drill-down view per rep, plus full team management from one panel." } },
+      { "@type": "Question", "name": "What happens to my dealership data?", "acceptedAnswer": { "@type": "Answer", "text": "Inventory data is pulled from the dealer's own public feed and stored only to show it to the team in the extension. MarketSync does not sell, share, or use dealership data for advertising." } },
+      { "@type": "Question", "name": "Can I see a demo before I sign up?", "acceptedAnswer": { "@type": "Answer", "text": "Yes, book a 15-minute call and the team will walk through MarketSync live using the dealership's actual inventory." } },
+      { "@type": "Question", "name": "What if Facebook changes their UI?", "acceptedAnswer": { "@type": "Answer", "text": "The extension is maintained actively. When Facebook changes its layout, an update ships and active subscribers get it automatically through Chrome's auto-update." } },
+      { "@type": "Question", "name": "What is the sales leaderboard and how do points work?", "acceptedAnswer": { "@type": "Answer", "text": "Reps earn points for posting and selling vehicles, with bonus points for deals closed through a MarketSync-posted Facebook listing. Points move reps up tiers — Bronze, Silver, Gold, Platinum, Diamond, Legend — visible to the whole dealership." } },
+      { "@type": "Question", "name": "How is MarketSync different from a basic Facebook lister?", "acceptedAnswer": { "@type": "Answer", "text": "Basic listing tools fill in the Facebook form and stop. MarketSync also tracks sold vehicles per rep, awards points, runs a leaderboard, and gives the dealer admin a real-time view of posting and sales activity." } },
+      { "@type": "Question", "name": "Does MarketSync work on mobile?", "acceptedAnswer": { "@type": "Answer", "text": "The dashboard, leaderboard, and stats pages are fully responsive on phone or tablet. Posting to Facebook Marketplace requires desktop Chrome, since Facebook's own listing form behaves differently on mobile." } }
+    ]
+  }
+  </script>
   <style id="word-break-mobile-css">@media (max-width: 640px) { body { word-wrap: break-word; overflow-wrap: anywhere; } code { white-space: pre-wrap; word-break: break-all; } }</style>
   <script>tailwind = { config: { darkMode: 'media' } }</script>
   <script src="https://cdn.tailwindcss.com"></script>
@@ -90,7 +115,7 @@
         <svg class="w-4 h-4 text-slate-500 transition-transform group-open:rotate-180" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
       </summary>
       <div class="px-6 pb-5 text-sm text-slate-600 dark:text-slate-300 leading-relaxed">
-        No. On the Dealer Pro plan, every sales rep on your team is included in your subscription — invite as many as you need from the Sales Team page. Solo reps not affiliated with a dealer have their own Solo plan.
+        No. On the Dealer Plan, every sales rep on your team is included in your subscription — invite as many as you need from the Sales Team page. Solo reps not affiliated with a dealer have their own Individual Sales Rep plan.
       </div>
     </details>
 
@@ -131,6 +156,36 @@
       </summary>
       <div class="px-6 pb-5 text-sm text-slate-600 dark:text-slate-300 leading-relaxed">
         We maintain the extension actively — when FB shifts their layout, we ship an update. Active subscribers automatically get the new version through Chrome's auto-update.
+      </div>
+    </details>
+
+    <details class="group bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg overflow-hidden">
+      <summary class="cursor-pointer list-none px-6 py-4 flex justify-between items-center font-semibold text-slate-900 dark:text-white">
+        What is the sales leaderboard and how do points work?
+        <svg class="w-4 h-4 text-slate-500 transition-transform group-open:rotate-180" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+      </summary>
+      <div class="px-6 pb-5 text-sm text-slate-600 dark:text-slate-300 leading-relaxed">
+        Every rep earns points for posting and selling vehicles, with bonus points when a deal closes through a MarketSync-posted Facebook listing. Points move reps up tiers — Bronze, Silver, Gold, Platinum, Diamond, Legend — visible to the whole dealership on a live leaderboard. It's the part most listing tools don't have, and it's built specifically to keep a sales floor motivated.
+      </div>
+    </details>
+
+    <details class="group bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg overflow-hidden">
+      <summary class="cursor-pointer list-none px-6 py-4 flex justify-between items-center font-semibold text-slate-900 dark:text-white">
+        How is MarketSync different from a basic Facebook lister?
+        <svg class="w-4 h-4 text-slate-500 transition-transform group-open:rotate-180" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+      </summary>
+      <div class="px-6 pb-5 text-sm text-slate-600 dark:text-slate-300 leading-relaxed">
+        Basic listing tools fill in the Facebook form and stop. MarketSync also tracks sold vehicles per rep, awards points, runs the leaderboard, and gives the dealer admin a real-time view of who's posting and selling. You get inventory automation and a sales management layer in the same subscription.
+      </div>
+    </details>
+
+    <details class="group bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg overflow-hidden">
+      <summary class="cursor-pointer list-none px-6 py-4 flex justify-between items-center font-semibold text-slate-900 dark:text-white">
+        Does MarketSync work on mobile?
+        <svg class="w-4 h-4 text-slate-500 transition-transform group-open:rotate-180" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+      </summary>
+      <div class="px-6 pb-5 text-sm text-slate-600 dark:text-slate-300 leading-relaxed">
+        The dashboard, leaderboard, and stats pages are fully responsive and work great from a phone or tablet browser. Posting to Facebook Marketplace itself happens through the Chrome extension, which requires desktop Chrome — that's a Facebook limitation, not a MarketSync one, since Facebook's own listing form behaves differently on mobile.
       </div>
     </details>
 
