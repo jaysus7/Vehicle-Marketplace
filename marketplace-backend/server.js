@@ -2323,7 +2323,11 @@ app.post('/billing/checkout', requireAuth, async (req, res) => {
 })
 
 app.post('/billing/portal', requireAuth, async (req, res) => {
-  res.redirect(307, '/billing/checkout')
+  // Don't HTTP-redirect here — fetch() redirects drop the Authorization header,
+  // which causes a 401 on the second hop. Just run checkout's handler directly
+  // in-process instead, so auth context carries through correctly.
+  req.url = '/billing/checkout'
+  app._router.handle(req, res)
 })
 
 app.get('/billing/trial-status', requireAuth, async (req, res) => {
