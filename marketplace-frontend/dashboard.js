@@ -189,13 +189,18 @@ async function initializeDashboardEcosystem() {
     // is NOT proof the session is invalid. Logging out here is what causes the
     // dashboard <-> login flicker loop. Show an inline error and let the user retry
     // instead of nuking their session.
-    console.error('Dashboard init failed (non-auth error):', err);
+   console.error('Dashboard init failed (non-auth error):', err);
     const banner = document.createElement('div');
     banner.className = 'fixed top-0 left-0 right-0 z-50 bg-red-600 text-white text-sm text-center py-2';
     banner.innerHTML = `Something went wrong loading the dashboard. <button onclick="window.location.reload()" class="underline font-bold ml-2">Retry</button>`;
     document.body.prepend(banner);
     document.body.classList.add('ms-role-ready'); // reveal page instead of leaving it stuck hidden
   }
+}
+
+// Sidebar nav page switcher. Each page shows only its own content — no panel
+// mirroring, so Insights stays clean and each nav item lands on a focused view.
+function switchPage(pageId) {
 
 // Sidebar nav page switcher. Each page shows only its own content — no panel
 // mirroring, so Insights stays clean and each nav item lands on a focused view.
