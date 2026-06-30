@@ -1106,25 +1106,14 @@ if (isCreatePage) {
     const vehicleWithPoster = { ...pendingPost.vehicle, poster: pendingPost.poster || null };
     setTimeout(() => fillListingForm(vehicleWithPoster), 2500);
 
-    let autoMarkFired = false;
-    const startUrl = window.location.href;
-    const watcher = setInterval(() => {
-      if (autoMarkFired) { clearInterval(watcher); return; }
-      const href = window.location.href;
-      if (href !== startUrl && href.includes('/marketplace/item/')) {
-        autoMarkFired = true;
-        clearInterval(watcher);
-        const vehicleId = pendingPost.vehicle.id;
-        chrome.runtime.sendMessage(
-          { type: 'LISTING_POSTED', inventory_id: vehicleId, fb_listing_url: href },
-          (response) => {
-            if (response?.success) showStatus('✅ MarketSync: listing auto-saved to dashboard.', 'success');
-            else console.warn('Auto-mark posted failed:', response);
-          }
-        );
-      }
-    }, 1000);
-    setTimeout(() => clearInterval(watcher), 15 * 60 * 1000);
+// Tell background.js to watch THIS tab for the URL change to the final FB item
+    // page. Using chrome.tabs.onUpdated (not a content-script setInterval) means it
+    // still works even if the rep tabs away or the tab isn't focused — background
+    // tab timers get throttled by Chrome, tab-level URL watching does not.
+    chrome.runtime.sendMessage({
+      type: 'WATCH_FOR_LISTING_URL',
+      vehicleId: pendingPost.vehicle.id
+    });
   });
 }
 
