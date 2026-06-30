@@ -1128,6 +1128,12 @@ if (isCreatePage) {
   });
 }
 
+// ── FB sync action (full auto Mark Sold + Delete) ────────────────────────────
+// background.js opens this tab specifically to run a queued action. Check on load.
+if (window.location.href.includes('/marketplace/item/')) {
+  setTimeout(runFbSyncAction, 2500)
+}
+
 // ── FB-side sold detection ───────────────────────────────────────────────────
 // When user visits one of their own listing pages and FB shows "Sold", auto-mark
 // the corresponding listing as sold in MarketSync. Idempotent server-side.
@@ -1169,7 +1175,116 @@ if (window.location.href.includes('/marketplace/item/')) {
   // Stop observing after 60s to avoid leaks
   setTimeout(() => observer.disconnect(), 60000);
 }
+// ── Full auto Mark Sold + Delete ──────────────────────────────────────────────
+// Triggered when background.js opens a listing tab with a pending fbSyncQueue
+// entry whose action is 'sold' or 'delete'. Runs the FB UI clicks unattended.
 
+function waitForEl(selectorFn, timeout = 6000) {
+  return new Promise((resolve, reject) => {
+    const found = selectorFn()
+    if (found) return resolve(found)
+    const observer = new MutationObserver(() => {
+      const el = selectorFn()
+      if (el) { observer.disconnect(); resolve(el) }
+    })
+    observer.observe(document.body, { childList: true, subtree: true })
+    setTimeout(() => { observer.disconnect(); reject(new Error('timeout')) }, timeout)
+  })
+}
+
+function findByText(selector, text) {
+  const els = [...document.querySelectorAll(selector)]
+  return els.find(el => el.textContent.trim().toLowerCase() === text.toLowerCase())
+}
+
+async function autoMarkSold() {
+  try {
+    const btn = await waitForEl(() =>
+      document.querySelector('[aria-label="Mark as sold"]') ||
+      findByText('[role="button"]', 'Mark as sold')
+    )
+    btn.click()
+    await sleep(1200)
+
+    // Confirmation modal — click the "Mark as sold" confirm button if it appears
+    const confirmBtn = await waitForEl(() =>
+      findByText('div[role="dialog"] [role="button"]', 'Mark as sold')
+    , 3000).catch(() => null)
+    if (confirmBtn) {
+      confirmBtn.click()
+      await sleep(1200)
+    }
+
+    return { success: true }
+  } catch (e) {
+    return { success: false, error: e.message }
+  }
+}
+
+async function autoDeleteListing() {
+  try {
+    const menuBtn = await waitForEl(() =>
+      document.querySelector('[aria-label="More options"]') ||
+      document.querySelector('[aria-label="More"]')
+    )
+    menuBtn.click()
+    await sleep(900)
+
+    const deleteOpt = await waitForEl(() =>
+      findByText('[role="menuitem"]', 'Delete listing') ||
+      findByText('[role="option"]', 'Delete listing')
+    )
+    deleteOpt.click()
+    await sleep(900)
+
+    const confirmBtn = await waitForEl(() =>
+      findByText('div[role="dialog"] [role="button"]', 'Delete')
+    )
+    confirmBtn.click()
+    await sleep(1500)
+
+    return { success: true }
+  } catch (e) {
+    return { success: false, error: e.message }
+  }
+}
+
+async function runFbSyncAction() {
+  const itemId = (window.location.href.match(/\/marketplace\/item\/(\d+)/) || [])[1]
+  if (!itemId) return
+
+  const { fbSyncQueue = {} } = await new Promise(r => chrome.storage.local.get(['fbSyncQueue'], r))
+  const entry = fbSyncQueue[itemId]
+  if (!entry) return
+
+  await sleep(2000) // let the listing page fully settle before clicking anything
+
+  let result
+  if (entry.action === 'sold') {
+    result = await autoMarkSold()
+    // After marking sold, immediately follow with delete — that's the full lifecycle
+    if (result.success) {
+      await sleep(1500)
+      const delResult = await autoDeleteListing()
+      result = delResult.success ? delResult : result
+    }
+  } else if (entry.action === 'delete') {
+    result = await autoDeleteListing()
+  } else {
+    return
+  }
+
+  chrome.runtime.sendMessage({
+    type: 'FB_SYNC_REPORT',
+    listingId: entry.listingId,
+    itemId,
+    ok: !!result.success
+  })
+
+  if (!result.success) {
+    console.warn('[MarketSync] FB sync action failed:', result.error)
+  }
+}
 function detectFbSoldBadge() {
   const isVisible = (el) => {
     if (!el) return false;

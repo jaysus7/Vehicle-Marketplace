@@ -227,6 +227,45 @@ function fbItemIdFromUrl(url) {
 }
 
 async function pollFbSync() {
+  // ── Proactive sold scanner ────────────────────────────────────────────────────
+// Catches vehicles marked sold directly on Facebook (not through MarketSync).
+// Every 4 hours, open each active FB listing in a hidden background tab —
+// content.js's existing detectFbSoldBadge() + checkSold() logic does the rest
+// and reports back via POST /listings/sync-fb-sold automatically.
+const SOLD_SCAN_ALARM = 'soldScanPoll'
+const SOLD_SCAN_MAX_OPEN_PER_RUN = 5   // don't flood the user with tabs at once
+const SOLD_SCAN_TAB_LIFETIME_MS = 20000 // give content.js time to detect + report
+
+async function runSoldScan() {
+  const { token } = await chrome.storage.local.get(['token'])
+  if (!token) return
+
+  let listings
+  try {
+    const r = await fetch(`${API}/listings?status=posted`, {
+      headers: { Authorization: `Bearer ${token}` }
+    })
+    if (!r.ok) return
+    listings = await r.json()
+  } catch { return }
+
+  const toCheck = (Array.isArray(listings) ? listings : [])
+    .filter(l => l.fb_listing_url)
+    .slice(0, SOLD_SCAN_MAX_OPEN_PER_RUN)
+
+  if (!toCheck.length) return
+  console.log(`[MarketSync] Sold scan: checking ${toCheck.length} active FB listings`)
+
+  for (let i = 0; i < toCheck.length; i++) {
+    await new Promise(r => setTimeout(r, i * 8000)) // stagger to avoid FB rate limits
+    try {
+      const tab = await chrome.tabs.create({ url: toCheck[i].fb_listing_url, active: false })
+      setTimeout(() => chrome.tabs.remove(tab.id).catch(() => {}), SOLD_SCAN_TAB_LIFETIME_MS)
+    } catch (e) {
+      console.warn('[MarketSync] Sold scan tab error:', e.message)
+    }
+  }
+}
   const { token } = await chrome.storage.local.get(['token'])
   if (!token) return
 
@@ -271,10 +310,9 @@ async function pollFbSync() {
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   // Run a poll right now (e.g. popup just opened, or a sale was just recorded).
   if (msg.type === 'FB_SYNC_NOW') {
-    pollFbSync()
+    pollFbSync()       // processes pending mark-sold/delete queue from MarketSync
+    runSoldScan()       // proactively checks active FB listings for the sold badge
     sendResponse({ success: true })
-    runFbSyncQueue()      // existing — processes pending mark-sold/delete queue
-    runSoldScan()         // NEW — proactively check all active listings for sold badge
     return true
   }
 
@@ -307,14 +345,20 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 })
 
 // Poll on install, on browser startup, and every 5 minutes.
+// Sold scan runs less often (4 hours) since it opens visible-ish background tabs.
 chrome.runtime.onInstalled.addListener(() => {
   chrome.alarms.create(FB_SYNC_ALARM, { periodInMinutes: 5 })
+  chrome.alarms.create(SOLD_SCAN_ALARM, { periodInMinutes: 240 })
   pollFbSync()
+  setTimeout(runSoldScan, 10 * 60 * 1000) // wait 10 min after install/boot before first scan
 })
 chrome.runtime.onStartup.addListener(() => {
   chrome.alarms.create(FB_SYNC_ALARM, { periodInMinutes: 5 })
+  chrome.alarms.create(SOLD_SCAN_ALARM, { periodInMinutes: 240 })
   pollFbSync()
+  setTimeout(runSoldScan, 10 * 60 * 1000)
 })
 chrome.alarms.onAlarm.addListener((alarm) => {
   if (alarm.name === FB_SYNC_ALARM) pollFbSync()
+  if (alarm.name === SOLD_SCAN_ALARM) runSoldScan()
 })
