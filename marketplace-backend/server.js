@@ -2276,14 +2276,24 @@ app.post('/billing/checkout', requireAuth, async (req, res) => {
     return res.status(403).json({ error: 'Sales reps under a dealership do not manage billing.' })
   }
 
+  const existingCustomerId = isSolo
+    ? req.profile.stripe_customer_id
+    : req.profile.dealerships?.stripe_customer_id
+
+  // Complimentary / comped account: no Stripe customer was ever created, and the
+  // account isn't mid-trial either. Nothing to manage — tell the frontend so it can
+  // show a friendly message instead of bouncing them into a brand-new checkout.
+  const billingStatus = isSolo
+    ? req.profile.billing_status
+    : req.profile.dealerships?.billing_status
+  if (!existingCustomerId && billingStatus !== 'TRIALING') {
+    return res.status(200).json({ complimentary: true })
+  }
+
   const priceId = req.body?.priceId || (isSolo
     ? process.env.STRIPE_SOLO_PRICE_ID
     : process.env.STRIPE_DEALER_PRICE_ID)
   if (!priceId) return res.status(500).json({ error: 'Missing Stripe price ID env var' })
-
-  const existingCustomerId = isSolo
-    ? req.profile.stripe_customer_id
-    : req.profile.dealerships?.stripe_customer_id
 
   const metadata = isSolo
     ? { type: 'solo_rep', user_id: req.user.id }
