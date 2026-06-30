@@ -201,10 +201,6 @@ async function initializeDashboardEcosystem() {
 // Sidebar nav page switcher. Each page shows only its own content — no panel
 // mirroring, so Insights stays clean and each nav item lands on a focused view.
 function switchPage(pageId) {
-
-// Sidebar nav page switcher. Each page shows only its own content — no panel
-// mirroring, so Insights stays clean and each nav item lands on a focused view.
-function switchPage(pageId) {
   ensurePanelsInOriginalLocations();
 
   document.querySelectorAll('[data-page-content]').forEach(el => {
