@@ -33,7 +33,43 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     })
     return true
   }
+// ── Reliable FB listing URL capture ──────────────────────────────────────────
+  // Watches the SENDER'S tab (the one currently on the FB create-listing flow) for
+  // its URL to change to a /marketplace/item/... page — works in background tabs,
+  // unlike a content-script setInterval which Chrome throttles when unfocused.
+  if (msg.type === 'WATCH_FOR_LISTING_URL') {
+    const tabId = sender.tab?.id
+    const vehicleId = msg.vehicleId
+    if (!tabId || !vehicleId) { sendResponse({ success: false, error: 'missing tab or vehicleId' }); return true }
 
+    let done = false
+    const cleanup = () => {
+      chrome.tabs.onUpdated.removeListener(listener)
+      clearTimeout(giveUpTimer)
+    }
+
+    const listener = (updatedTabId, info, tab) => {
+      if (done || updatedTabId !== tabId) return
+      const url = tab.url || info.url
+      if (!url || !url.includes('/marketplace/item/')) return
+      done = true
+      cleanup()
+
+      chrome.runtime.sendMessage({ type: 'LISTING_POSTED', inventory_id: vehicleId, fb_listing_url: url })
+      // Also send the confirmation directly into that tab so it can show the status banner
+      chrome.tabs.sendMessage(tabId, { type: 'LISTING_URL_CAPTURED', fb_listing_url: url }).catch(() => {})
+    }
+
+    chrome.tabs.onUpdated.addListener(listener)
+
+    // Give up after 15 minutes — same ceiling as before — in case the rep abandons the post.
+    const giveUpTimer = setTimeout(() => {
+      if (!done) { done = true; cleanup() }
+    }, 15 * 60 * 1000)
+
+    sendResponse({ success: true })
+    return true
+  }
   // Download all vehicle photos
   if (msg.type === 'DOWNLOAD_PHOTOS') {
     const { imageUrls } = msg
