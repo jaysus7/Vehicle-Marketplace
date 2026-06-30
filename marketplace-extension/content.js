@@ -1092,7 +1092,15 @@ if (modelComboboxNow && (
   }
 
   console.log('✅ Automated pipeline processing successfully executed.');}
+// Receives confirmation from background.js once it captures the final FB listing URL
+chrome.runtime.onMessage.addListener((msg) => {
+  if (msg.type === 'LISTING_URL_CAPTURED') {
+    showStatus('✅ MarketSync: listing auto-saved to dashboard.', 'success');
+  }
+});
 
+// ── Boot ──────────────────────────────────────
+const isCreatePage = /\/marketplace\/create(\/|\?|$)/i.test(window.location.href);
 // ── Boot ──────────────────────────────────────
 const isCreatePage = /\/marketplace\/create(\/|\?|$)/i.test(window.location.href);
 console.log('[MarketSync] is marketplace create page?', isCreatePage);
