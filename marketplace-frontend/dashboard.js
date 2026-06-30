@@ -458,6 +458,31 @@ function showInviteResult(text, kind) {
 }
 
 // SALES DOMAIN: Real personal stats from /me/stats
+// Fetch ALL listings (not just the truncated "recent" set from /me/stats) filtered
+// by status. Reuses the same renderRecentListings() renderer.
+async function loadMyListingsFiltered(status) {
+  // Update active-tab styling
+  ['posted', 'sold', 'all'].forEach(s => {
+    const btn = document.getElementById(`rep-listings-filter-${s}`);
+    if (!btn) return;
+    if (s === status) {
+      btn.className = 'text-xs px-2 py-1 rounded border border-indigo-600 bg-indigo-600 text-white';
+    } else {
+      btn.className = 'text-xs px-2 py-1 rounded border border-slate-300 dark:border-slate-700 text-slate-500 dark:text-slate-400';
+    }
+  });
+
+  const el = document.getElementById('rep-recent-list');
+  el.innerHTML = '<div class="text-xs text-slate-500 italic">Loading...</div>';
+  try {
+    const res = await fetch(`${API}/listings?status=${status}`, { headers: { 'Authorization': `Bearer ${token}` } });
+    if (!res.ok) throw new Error('Failed to load listings');
+    const data = await res.json();
+    renderRecentListings('rep-recent-list', data);
+  } catch (e) {
+    el.innerHTML = `<div class="text-xs text-red-400">${e.message}</div>`;
+  }
+}
 async function loadMyStats() {
   try {
     const res = await fetch(`${API}/me/stats`, { headers: { 'Authorization': `Bearer ${token}` } });
