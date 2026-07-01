@@ -1,6 +1,7 @@
 import { supabaseAdmin } from '../shared.js'
 import { requireAuth } from '../middleware.js'
 import { validatePassword, rateLimit } from '../security.js'
+import { audit, AuditAction } from '../audit.js'
 import multer from 'multer'
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 2 * 1024 * 1024 } })
@@ -35,6 +36,7 @@ export function registerRoutes(app) {
     if (error) return res.status(500).json({ error: error.message })
     const { data: { publicUrl } } = supabaseAdmin.storage.from('avatars').getPublicUrl(path)
     await supabaseAdmin.from('profiles').update({ avatar_url: publicUrl }).eq('id', req.user.id)
+    audit(req, AuditAction.AVATAR_UPLOADED)
     res.json({ url: publicUrl })
   })
 
@@ -80,6 +82,9 @@ export function registerRoutes(app) {
         if (dealerError) throw dealerError
       }
 
+      audit(req, AuditAction.PROFILE_UPDATED, {
+        changed: Object.keys(profileUpdates).concat(Object.keys(authUpdates))
+      })
       res.json({ message: 'Workspace identity updated successfully' })
     } catch (err) {
       res.status(400).json({ error: err.message })
@@ -177,6 +182,7 @@ export function registerRoutes(app) {
       return res.status(500).json({ error: profileError.message })
     }
 
+    audit(req, AuditAction.TEAM_MEMBER_INVITED, { invited_email: email, invited_user_id: newUser.user.id })
     res.json({
       success: true,
       user_id: newUser.user.id,
@@ -232,6 +238,35 @@ export function registerRoutes(app) {
     } catch (err) {
       res.status(500).json({ error: err.message })
     }
+  })
+
+  // ── AUDIT LOG (SOC 2 evidence export) ────────────────────────────────────────
+  // Admins can pull their dealership's audit log via the dashboard or for compliance.
+  // The owner can pull the full platform log. Rows are read-only — no delete or update.
+  app.get('/audit-log', requireAuth, async (req, res) => {
+    const isOwner = (req.user.email || '').toLowerCase() === OWNER_EMAIL
+    const isAdmin = req.profile.role === 'DEALER_ADMIN' || req.profile.role === 'OWNER'
+    if (!isAdmin && !isOwner) return res.status(403).json({ error: 'Admins only' })
+
+    const limit = Math.min(Number(req.query.limit) || 100, 1000)
+    const offset = Number(req.query.offset) || 0
+    const action = req.query.action || null
+
+    let query = supabaseAdmin
+      .from('audit_log')
+      .select('id, action, actor_id, actor_email, dealership_id, ip, meta, created_at')
+      .order('created_at', { ascending: false })
+      .range(offset, offset + limit - 1)
+
+    // Owner sees all; admin sees only their own dealership
+    if (!isOwner) query = query.eq('dealership_id', req.dealershipId)
+    if (action) query = query.eq('action', action)
+
+    const { data, error } = await query
+    if (error) return res.status(500).json({ error: error.message })
+
+    audit(req, AuditAction.ADMIN_DATA_EXPORT, { type: 'audit_log', limit, offset })
+    res.json({ entries: data || [], count: (data || []).length })
   })
 
   app.get('/owner/newsletter-subscribers', requireAuth, async (req, res) => {
@@ -291,6 +326,7 @@ export function registerRoutes(app) {
 
     await supabaseAdmin.from('profiles').delete().eq('id', req.params.id)
     await supabaseAdmin.auth.admin.deleteUser(req.params.id)
+    audit(req, AuditAction.TEAM_MEMBER_REMOVED, { removed_user_id: req.params.id })
     res.json({ success: true })
   })
 }

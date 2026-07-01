@@ -4,6 +4,7 @@ import { supabase, supabaseAdmin, resend, EMAIL_FROM, FRONTEND_URL } from '../sh
 import { requireAuth } from '../middleware.js'
 import { validatePassword, rateLimit, getClientIp, generateRecoveryCodes, hashRecoveryCode } from '../security.js'
 import { maybeAlertSuspiciousLogin } from '../securityAlerts.js'
+import { audit, AuditAction } from '../audit.js'
 import {
   beginPasskeyRegistration, finishPasskeyRegistration,
   beginPasskeyLogin, finishPasskeyLogin,
@@ -82,6 +83,7 @@ export function registerRoutes(app) {
     const { data, error } = await supabase.auth.signInWithPassword({ email, password })
     if (error) {
       // Don't leak whether the email exists — Supabase already does this but we double-check
+      audit(req, AuditAction.USER_LOGIN_FAILED, { email })
       return res.status(401).json({ error: 'Invalid email or password.' })
     }
     // Require verified email before allowing the session through
@@ -131,6 +133,7 @@ export function registerRoutes(app) {
       })
     })
 
+    audit(req, AuditAction.USER_LOGIN, { method: 'password', user_id: data.user.id })
     res.json({
       access_token: data.session.access_token,
       user: { id: data.user.id, email: data.user.email }
@@ -282,6 +285,7 @@ export function registerRoutes(app) {
   })
 
   app.post('/auth/logout', requireAuth, async (req, res) => {
+    audit(req, AuditAction.USER_LOGOUT)
     await supabase.auth.signOut()
     res.json({ success: true })
   })
@@ -359,6 +363,7 @@ export function registerRoutes(app) {
       const { error: codeErr } = await supabaseAdmin.from('recovery_codes').insert(rows)
       if (codeErr) console.warn('recovery_codes insert failed:', codeErr.message)
 
+      audit(req, AuditAction.MFA_ENROLLED, { factor_id })
       res.json({
         success: true,
         message: 'Two-factor authentication is now active on this account.',
@@ -402,6 +407,7 @@ export function registerRoutes(app) {
       supabaseAdmin, userId: req.user.id, response, deviceName: device_name
     })
     if (!result.ok) return res.status(400).json({ error: result.error })
+    audit(req, AuditAction.PASSKEY_REGISTERED, { device_name: device_name || null })
     res.json({ success: true, message: 'Passkey registered.' })
   })
 
@@ -414,6 +420,7 @@ export function registerRoutes(app) {
   app.delete('/auth/passkey/:id', requireAuth, async (req, res) => {
     const ok = await deletePasskey({ supabaseAdmin, userId: req.user.id, passkeyId: req.params.id })
     if (!ok) return res.status(404).json({ error: 'Passkey not found' })
+    audit(req, AuditAction.PASSKEY_DELETED, { passkey_id: req.params.id })
     res.json({ success: true })
   })
 

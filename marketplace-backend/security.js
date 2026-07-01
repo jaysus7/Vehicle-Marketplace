@@ -141,49 +141,95 @@ export function hashRecoveryCode(code) {
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
-// RATE LIMITING (in-memory token bucket)
+// RATE LIMITING — Redis-backed (multi-node) with in-memory fallback
 // ──────────────────────────────────────────────────────────────────────────────
-// Lightweight per-IP rate limiter. No Redis, no extra dep — fine for single-node
-// deployments. If you scale to multi-node later, swap to a shared store.
+// When REDIS_URL is set, rate limit state is stored in Redis using a sliding
+// fixed-window counter (INCR + EXPIRE). This works correctly across multiple
+// instances — a restart or scale-out doesn't reset the counter.
 //
-// Each call to `rateLimit(name, max, windowMs)` returns express middleware that
-// allows `max` requests per `windowMs` window per IP, then 429s.
+// When REDIS_URL is not set (local dev / single-node), falls back to an
+// in-memory Map so no Redis dependency is needed during development.
+//
+// Call: rateLimit(name, max, windowMs) → Express middleware
 
-const buckets = new Map()  // key: `${name}:${ip}` → { count, resetAt }
+import Redis from 'ioredis'
 
-export function rateLimit(name, max, windowMs) {
-  return (req, res, next) => {
-    const ip = (req.headers['x-forwarded-for']?.toString().split(',')[0].trim())
-             || req.socket?.remoteAddress
-             || 'unknown'
-    const key = `${name}:${ip}`
-    const now = Date.now()
-    const bucket = buckets.get(key)
-
-    if (!bucket || bucket.resetAt < now) {
-      buckets.set(key, { count: 1, resetAt: now + windowMs })
-      return next()
-    }
-    if (bucket.count >= max) {
-      const retryAfter = Math.ceil((bucket.resetAt - now) / 1000)
-      res.set('Retry-After', String(retryAfter))
-      return res.status(429).json({
-        error: `Too many requests. Try again in ${retryAfter} seconds.`,
-        retry_after_seconds: retryAfter
-      })
-    }
-    bucket.count++
-    next()
-  }
+let redis = null
+if (process.env.REDIS_URL) {
+  redis = new Redis(process.env.REDIS_URL, {
+    maxRetriesPerRequest: 1,
+    enableReadyCheck: false,
+    lazyConnect: true
+  })
+  redis.on('error', (e) => {
+    // Log but don't crash — fall through to in-memory on Redis errors
+    console.warn('[rate-limit] Redis error, falling back to in-memory:', e.message)
+    redis = null
+  })
+  console.log('[rate-limit] Redis-backed rate limiting enabled (multi-node safe)')
+} else {
+  console.log('[rate-limit] No REDIS_URL — using in-memory rate limiting (single-node only)')
 }
 
-// Cleanup expired buckets every 10 minutes so the Map doesn't grow unbounded
+// In-memory fallback store
+const buckets = new Map()
 setInterval(() => {
   const now = Date.now()
   for (const [k, b] of buckets) {
     if (b.resetAt < now) buckets.delete(k)
   }
 }, 10 * 60 * 1000).unref?.()
+
+async function checkRateLimit(key, max, windowSecs) {
+  // Redis path: atomic INCR + EXPIRE (fixed window)
+  if (redis) {
+    try {
+      const count = await redis.incr(key)
+      if (count === 1) await redis.expire(key, windowSecs)
+      if (count > max) {
+        const ttl = await redis.ttl(key)
+        return { allowed: false, retryAfter: ttl > 0 ? ttl : windowSecs }
+      }
+      return { allowed: true }
+    } catch (e) {
+      console.warn('[rate-limit] Redis check failed, falling back:', e.message)
+    }
+  }
+
+  // In-memory fallback
+  const now = Date.now()
+  const windowMs = windowSecs * 1000
+  const bucket = buckets.get(key)
+  if (!bucket || bucket.resetAt < now) {
+    buckets.set(key, { count: 1, resetAt: now + windowMs })
+    return { allowed: true }
+  }
+  if (bucket.count >= max) {
+    const retryAfter = Math.ceil((bucket.resetAt - now) / 1000)
+    return { allowed: false, retryAfter }
+  }
+  bucket.count++
+  return { allowed: true }
+}
+
+export function rateLimit(name, max, windowMs) {
+  const windowSecs = Math.ceil(windowMs / 1000)
+  return async (req, res, next) => {
+    const ip = (req.headers['x-forwarded-for']?.toString().split(',')[0].trim())
+             || req.socket?.remoteAddress
+             || 'unknown'
+    const key = `rl:${name}:${ip}`
+    const { allowed, retryAfter } = await checkRateLimit(key, max, windowSecs)
+    if (!allowed) {
+      res.set('Retry-After', String(retryAfter))
+      return res.status(429).json({
+        error: `Too many requests. Try again in ${retryAfter} seconds.`,
+        retry_after_seconds: retryAfter
+      })
+    }
+    next()
+  }
+}
 
 // ──────────────────────────────────────────────────────────────────────────────
 // SECURITY HEADERS (helmet-lite)
