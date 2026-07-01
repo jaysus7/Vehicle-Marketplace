@@ -2,6 +2,9 @@
 # marketsync.link frontend. Matches the CSP set by the backend on API responses
 # so the entire surface is consistently locked down.
 
+/*.html
+  Cache-Control: no-cache, must-revalidate
+
 /*
   Strict-Transport-Security: max-age=63072000; includeSubDomains
   X-Content-Type-Options: nosniff
