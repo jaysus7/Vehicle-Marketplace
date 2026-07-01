@@ -33,6 +33,7 @@
     body:not(.ms-role-ready) [data-dealer-only] { display: none !important; }
   </style>
   <style id="ms-font-bump">html{font-size:17px}@media (max-width:640px){html{font-size:16px}}</style>
+  <style>.scrollbar-none{-ms-overflow-style:none;scrollbar-width:none}.scrollbar-none::-webkit-scrollbar{display:none}</style>
 </head>
 <body class="bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-slate-100 font-sans antialiased min-h-screen flex flex-col overflow-x-hidden">
 
@@ -239,8 +240,8 @@
         </div>
       </div>
 
-      <!-- Sidebar navigation — horizontal scrollable pills on mobile, stacked sidebar on desktop -->
-      <nav id="dashboard-nav" class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-3 text-sm order-1 md:order-2 flex flex-wrap md:flex-col gap-1.5 md:gap-0 md:space-y-1 md:sticky md:top-6 z-10">
+      <!-- Sidebar navigation — horizontal scroll on mobile, stacked sidebar on desktop -->
+      <nav id="dashboard-nav" class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-2 pb-2 text-sm order-1 md:order-2 flex overflow-x-auto md:overflow-visible md:flex-col gap-1 md:gap-0 md:space-y-1 md:p-3 md:sticky md:top-6 z-10 scrollbar-none">
         <button type="button" data-page="insights" class="nav-item flex-shrink-0 md:w-full text-left whitespace-nowrap px-3 py-2 rounded font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition flex items-center gap-2.5">
           <svg class="w-4 h-4 flex-shrink-0 opacity-60" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 13.5l5-5 4 4 5-6 4 3"/><path stroke-linecap="round" stroke-linejoin="round" d="M3 20h18"/></svg>
           Insights

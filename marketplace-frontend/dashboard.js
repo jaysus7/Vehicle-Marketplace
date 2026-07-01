@@ -2389,9 +2389,7 @@ async function loadAIActivity() {
   const upsell = document.getElementById('ai-boost-page-upsell');
   const activeContent = document.getElementById('ai-boost-active-content');
 
-  if (!list) return;
-
-  // Always show/hide the right section
+  // Always show/hide the right section regardless of list presence
   const active = !!__aiBoostActive;
   if (upsell) upsell.classList.toggle('hidden', active);
   if (activeContent) activeContent.classList.toggle('hidden', !active);
@@ -2399,6 +2397,8 @@ async function loadAIActivity() {
     if (loading) loading.classList.add('hidden');
     return;
   }
+
+  if (!list) return;
 
   if (loading) loading.classList.remove('hidden');
   if (empty) empty.classList.add('hidden');
