@@ -1708,16 +1708,17 @@ function renderCatalog() {
 
   const conditionRank = (v) => {
     const c = (v.condition || '').toLowerCase();
-    if (c === 'new') return 0;
+    if (c === 'used') return 0;
     if (c === 'demo') return 1;
-    return 2; // used / unknown
+    if (c === 'new') return 2;
+    return 3; // unknown
   };
   const catalogSortRank = (v) => {
     const s = v.status;
     if (s === 'sold') return 400 + conditionRank(v);
     if (s === 'pending') return 300 + conditionRank(v);
-    if (s === 'posted') return 200 + conditionRank(v);
-    return 100 + conditionRank(v); // available: New → Demo → Used
+    // available / posted: Used → Demo → New
+    return conditionRank(v);
   };
 
   const CONDITION_FILTERS = new Set(['new', 'used', 'demo']);
