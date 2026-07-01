@@ -313,7 +313,7 @@ async function loadInventory(token) {
       }
 
       // "View on FB" button for posted vehicles that have a real listing URL
-      const isValidFbUrl = url => url && /facebook\.com\/marketplace\/item\//.test(url)
+      const isValidFbUrl = url => url && /facebook\.com/.test(url)
       const viewFbBtn = isPosted && isValidFbUrl(fbUrl)
         ? `<button class="open-fb-btn" data-fb-url="${fbUrl}" style="background:none;border:1px solid #3b82f6;color:#3b82f6;padding:3px 8px;border-radius:5px;font-size:10px;font-weight:600;cursor:pointer;white-space:nowrap;">View ↗</button>`
         : ''
@@ -328,8 +328,8 @@ async function loadInventory(token) {
       const soldBtns = `<div style="display:flex;flex-direction:column;gap:3px;align-items:stretch;">
         ${pendingBadge}
         ${viewFbBtn}
-        <button class="sold-by-me-btn" data-listing-id="${listingId}" data-vehicle-name="${vehName}" style="background:#14532d;border:1px solid #22c55e;color:#86efac;padding:4px 8px;border-radius:6px;font-size:10px;font-weight:700;cursor:pointer;white-space:nowrap;">🤝 I Sold It</button>
-        <button class="sold-on-fb-btn" data-listing-id="${listingId}" data-vehicle-name="${vehName}" style="background:#172554;border:1px solid #3b82f6;color:#93c5fd;padding:4px 8px;border-radius:6px;font-size:10px;font-weight:700;cursor:pointer;white-space:nowrap;">📘 Sold on FB</button>
+        <button class="sold-by-me-btn" data-listing-id="${listingId}" data-vehicle-name="${vehName}" data-fb-url="${fbUrl}" style="background:#14532d;border:1px solid #22c55e;color:#86efac;padding:4px 8px;border-radius:6px;font-size:10px;font-weight:700;cursor:pointer;white-space:nowrap;">🤝 I Sold It</button>
+        <button class="sold-on-fb-btn" data-listing-id="${listingId}" data-vehicle-name="${vehName}" data-fb-url="${fbUrl}" style="background:#172554;border:1px solid #3b82f6;color:#93c5fd;padding:4px 8px;border-radius:6px;font-size:10px;font-weight:700;cursor:pointer;white-space:nowrap;">📘 Sold on FB</button>
         <button class="sold-by-other-btn" data-listing-id="${listingId}" data-vehicle-name="${vehName}" style="background:#3a1a1a;border:1px solid #ef4444;color:#fca5a5;padding:4px 8px;border-radius:6px;font-size:10px;font-weight:600;cursor:pointer;white-space:nowrap;">🔄 Someone Else</button>
       </div>`
 
@@ -395,10 +395,10 @@ async function loadInventory(token) {
       btn.addEventListener('click', () => postVehicle(btn.dataset.id, token))
     })
     document.querySelectorAll('.sold-by-me-btn').forEach(btn => {
-      btn.addEventListener('click', () => markSold(btn.dataset.listingId, btn.dataset.vehicleName, token, 'sold-by-me'))
+      btn.addEventListener('click', () => markSold(btn.dataset.listingId, btn.dataset.vehicleName, token, 'sold-by-me', btn.dataset.fbUrl))
     })
     document.querySelectorAll('.sold-on-fb-btn').forEach(btn => {
-      btn.addEventListener('click', () => markSold(btn.dataset.listingId, btn.dataset.vehicleName, token, 'sold-on-fb'))
+      btn.addEventListener('click', () => markSold(btn.dataset.listingId, btn.dataset.vehicleName, token, 'sold-on-fb', btn.dataset.fbUrl))
     })
     document.querySelectorAll('.sold-by-other-btn').forEach(btn => {
       btn.addEventListener('click', () => markSold(btn.dataset.listingId, btn.dataset.vehicleName, token, 'sold-by-other'))
@@ -413,21 +413,21 @@ async function loadInventory(token) {
     })
     document.querySelectorAll('.open-fb-btn').forEach(btn => {
       btn.addEventListener('click', () => {
-        const url = btn.dataset.fbUrl && /facebook\.com\/marketplace\/item\//.test(btn.dataset.fbUrl)
+        const url = btn.dataset.fbUrl && /facebook\.com/.test(btn.dataset.fbUrl)
           ? btn.dataset.fbUrl : 'https://www.facebook.com/marketplace/you/selling'
         chrome.tabs.create({ url })
       })
     })
     document.querySelectorAll('.delete-from-fb-btn').forEach(btn => {
       btn.addEventListener('click', () => {
-        const url = btn.dataset.fbUrl && /facebook\.com\/marketplace\/item\//.test(btn.dataset.fbUrl)
+        const url = btn.dataset.fbUrl && /facebook\.com/.test(btn.dataset.fbUrl)
           ? btn.dataset.fbUrl : 'https://www.facebook.com/marketplace/you/selling'
         chrome.tabs.create({ url })
       })
     })
     document.getElementById('open-sold-fb-listings')?.addEventListener('click', () => {
       soldNeedingFbDelete.forEach(l => {
-        const url = l.fb_listing_url && /facebook\.com\/marketplace\/item\//.test(l.fb_listing_url)
+        const url = l.fb_listing_url && /facebook\.com/.test(l.fb_listing_url)
           ? l.fb_listing_url : 'https://www.facebook.com/marketplace/you/selling'
         chrome.tabs.create({ url, active: false })
       })
@@ -584,7 +584,7 @@ async function checkExtensionSyncNeeded(token) {
   }
 }
 
-async function markSold(listingId, vehicleName, token, kind) {
+async function markSold(listingId, vehicleName, token, kind, fbUrl) {
   const msg = kind === 'sold-by-me'
     ? `You sold "${vehicleName}"? This credits you with the sale (500 pts).`
     : kind === 'sold-on-fb'
@@ -599,6 +599,21 @@ async function markSold(listingId, vehicleName, token, kind) {
     const data = await r.json().catch(() => ({}))
     if (!r.ok) throw new Error(data.error || 'Failed to mark sold')
     chrome.runtime.sendMessage({ type: 'FB_SYNC_NOW' })
+
+    // Option A: open FB listing so rep can manually mark sold there
+    // Option B: send message to content script to auto-click "Mark as Sold"
+    if (fbUrl && /facebook\.com/.test(fbUrl) && kind !== 'sold-by-other') {
+      chrome.tabs.create({ url: fbUrl }, (tab) => {
+        // Option B: once the tab loads, inject content script to click Mark as Sold
+        chrome.tabs.onUpdated.addListener(function listener(tabId, info) {
+          if (tabId === tab.id && info.status === 'complete') {
+            chrome.tabs.onUpdated.removeListener(listener)
+            chrome.tabs.sendMessage(tab.id, { type: 'MARK_SOLD_ON_FB' })
+          }
+        })
+      })
+    }
+
     loadInventory(token)
   } catch (err) {
     alert(`Could not mark sold: ${err.message}`)
