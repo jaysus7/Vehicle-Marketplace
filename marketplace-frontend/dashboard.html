@@ -914,9 +914,15 @@
                   Refresh Log
                 </button>
               </div>
-              <div id="ai-sync-status" class="hidden text-xs font-medium text-indigo-600 dark:text-indigo-400 flex items-center gap-2">
-                <svg class="w-3.5 h-3.5 animate-spin flex-shrink-0" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/></svg>
-                <span id="ai-sync-status-text">Starting scan…</span>
+              <div id="ai-sync-status" class="hidden space-y-2">
+                <div class="flex items-center gap-2 text-xs font-medium text-indigo-600 dark:text-indigo-400">
+                  <svg class="w-3.5 h-3.5 animate-spin flex-shrink-0" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/></svg>
+                  <span id="ai-sync-status-text">Starting scan…</span>
+                </div>
+                <div class="w-full h-2 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
+                  <div id="ai-sync-progress-bar" class="h-full bg-indigo-500 rounded-full transition-all duration-500" style="width:0%"></div>
+                </div>
+                <div class="text-xs text-slate-400" id="ai-sync-progress-label"></div>
               </div>
             </div>
           </div>
@@ -960,7 +966,7 @@
     </section>
   </main>
 
-  <script src="dashboard.js?v=20260701c"></script>
+  <script src="dashboard.js?v=20260701d"></script>
   <script src="tour.js"></script>
 </body>
 </html>

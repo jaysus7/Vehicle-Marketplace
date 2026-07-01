@@ -2622,10 +2622,23 @@ function setupAIBoostListeners() {
     const btn = document.getElementById('ai-sync-all-btn');
     const status = document.getElementById('ai-sync-status');
     const statusText = document.getElementById('ai-sync-status-text');
+    const progressBar = document.getElementById('ai-sync-progress-bar');
+    const progressLabel = document.getElementById('ai-sync-progress-label');
+
+    const resetBtn = () => {
+      btn.disabled = false;
+      btn.innerHTML = `<svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg> Scan All Inventory`;
+      if (status) status.classList.add('hidden');
+      if (progressBar) progressBar.style.width = '0%';
+    };
+
     btn.disabled = true;
     btn.textContent = 'Scanning…';
     if (status) status.classList.remove('hidden');
     if (statusText) statusText.textContent = 'Starting scan…';
+    if (progressBar) progressBar.style.width = '0%';
+    if (progressLabel) progressLabel.textContent = '';
+
     try {
       const res = await fetch(`${API}/ai/sync-all`, {
         method: 'POST',
@@ -2633,19 +2646,46 @@ function setupAIBoostListeners() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Sync failed');
-      if (statusText) statusText.textContent = data.message || 'Sync running…';
-      // Poll activity log after a short delay to show first results
-      setTimeout(() => loadAIActivity(), 4000);
-      setTimeout(() => loadAIActivity(), 12000);
-      setTimeout(() => {
-        if (status) status.classList.add('hidden');
-        btn.disabled = false;
-        btn.innerHTML = `<svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg> Scan All Inventory`;
-      }, 20000);
+
+      const total = data.queued || 0;
+      if (statusText) statusText.textContent = `Scanning ${total} vehicles…`;
+
+      // Get baseline activity count before scan results start arriving
+      let baseline = 0;
+      try {
+        const baseRes = await fetch(`${API}/ai/activity`, { headers: { 'Authorization': `Bearer ${token}` } });
+        const baseData = baseRes.ok ? await baseRes.json() : {};
+        baseline = (baseData.activity || []).length;
+      } catch {}
+
+      if (total === 0) { resetBtn(); return; }
+
+      // Poll every 3 seconds — compare new activity count against baseline
+      const pollInterval = setInterval(async () => {
+        try {
+          const r = await fetch(`${API}/ai/activity`, { headers: { 'Authorization': `Bearer ${token}` } });
+          const d = r.ok ? await r.json() : {};
+          const processed = Math.max(0, (d.activity || []).length - baseline);
+          const pct = Math.min(100, Math.round((processed / total) * 100));
+          if (progressBar) progressBar.style.width = pct + '%';
+          if (progressLabel) progressLabel.textContent = `${processed} of ${total} checked (${pct}%)`;
+          if (statusText) statusText.textContent = `Scanning ${total} vehicles…`;
+          loadAIActivity();
+          if (processed >= total) {
+            clearInterval(pollInterval);
+            if (statusText) statusText.textContent = `Done — ${total} vehicles scanned`;
+            if (progressBar) progressBar.style.width = '100%';
+            if (progressLabel) progressLabel.textContent = `${total} of ${total} checked (100%)`;
+            setTimeout(resetBtn, 3000);
+          }
+        } catch {}
+      }, 3000);
+
+      // Safety timeout — stop polling after 10 minutes regardless
+      setTimeout(() => { clearInterval(pollInterval); resetBtn(); }, 600000);
+
     } catch (err) {
-      if (status) status.classList.add('hidden');
-      btn.disabled = false;
-      btn.textContent = 'Scan All Inventory';
+      resetBtn();
       showToast('Scan failed: ' + err.message, 'error');
     }
   });

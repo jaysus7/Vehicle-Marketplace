@@ -115,8 +115,11 @@ export function registerAI(app) {
     }
 
     // ── Price comp check ──
+    // Current-year new vehicles sell at MSRP — skip comp flagging for them.
     let price_flag = null
-    if (vehicle.price && vehicle.make && vehicle.model && vehicle.year) {
+    const _currentYear = new Date().getFullYear()
+    const _isCurrentYearNew = vehicle.condition === 'new' && Number(vehicle.year) >= _currentYear
+    if (!_isCurrentYearNew && vehicle.price && vehicle.make && vehicle.model && vehicle.year) {
       const yearMin = vehicle.year - 2
       const yearMax = vehicle.year + 2
       const { data: comps } = await supabaseAdmin
@@ -227,7 +230,6 @@ Write a compelling listing in under 280 words. Include the year/make/model/trim,
       .select('id')
       .eq('dealership_id', req.dealershipId)
       .eq('status', 'available')
-      .limit(50) // cap to avoid runaway cost
 
     if (error) return res.status(500).json({ error: error.message })
     const ids = (vehicles || []).map(v => v.id)
@@ -249,7 +251,9 @@ Write a compelling listing in under 280 words. Include the year/make/model/trim,
           if (requiredFields.includes('description') && (!vehicle.description || vehicle.description.length < 20)) warnings.push('Description is missing or too short')
 
           let price_flag = null
-          if (vehicle.price && vehicle.make && vehicle.model && vehicle.year) {
+          const currentYear = new Date().getFullYear()
+          const isCurrentYearNew = vehicle.condition === 'new' && Number(vehicle.year) >= currentYear
+          if (!isCurrentYearNew && vehicle.price && vehicle.make && vehicle.model && vehicle.year) {
             const { data: comps } = await supabaseAdmin
               .from('inventory').select('price')
               .eq('dealership_id', req.dealershipId).eq('make', vehicle.make)
