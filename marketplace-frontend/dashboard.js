@@ -2483,6 +2483,10 @@ async function loadAIBoostSection() {
     const cfg = await res.json();
     __aiBoostActive = !!cfg.ai_boost_active;
     renderAIBoostSection(cfg);
+    // If the user is already on the AI Boost page (navigated there before config loaded),
+    // refresh the visible content now that __aiBoostActive is set correctly.
+    const aiPage = document.querySelector('[data-page-content="ai-boost"]');
+    if (aiPage && !aiPage.classList.contains('hidden')) loadAIActivity();
   } catch {}
 }
 
