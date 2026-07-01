@@ -18,7 +18,7 @@ export function registerRoutes(app) {
   app.get('/inventory/all', requireAuth, async (req, res) => {
     const { data, error } = await supabaseAdmin
       .from('inventory')
-      .select('id, vin, year, make, model, trim, price, mileage, condition, exterior_color, status, image_urls, source_url, description, last_synced_at')
+      .select('id, vin, stocknumber, year, make, model, trim, price, mileage, condition, exterior_color, status, image_urls, source_url, description, last_synced_at')
       .eq('dealership_id', req.dealershipId)
       .order('created_at', { ascending: false })
     if (error) return res.status(500).json({ error: error.message })

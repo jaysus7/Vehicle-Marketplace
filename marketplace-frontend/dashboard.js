@@ -1706,20 +1706,32 @@ function renderCatalog() {
   const q = document.getElementById('catalog-search').value.trim().toLowerCase();
   const statusFilter = document.getElementById('catalog-status').value;
 
+  const conditionRank = (v) => {
+    const c = (v.condition || '').toLowerCase();
+    if (c === 'new') return 0;
+    if (c === 'demo') return 1;
+    return 2; // used / unknown
+  };
   const catalogSortRank = (v) => {
     const s = v.status;
-    if (s === 'sold') return 40;
-    if (s === 'pending') return 30;
-    if (s === 'posted') return 20;
-    // available: New first, then used
-    return v.mileage && Number(v.mileage) > 0 ? 10 : 0;
+    if (s === 'sold') return 400 + conditionRank(v);
+    if (s === 'pending') return 300 + conditionRank(v);
+    if (s === 'posted') return 200 + conditionRank(v);
+    return 100 + conditionRank(v); // available: New → Demo → Used
   };
 
+  const CONDITION_FILTERS = new Set(['new', 'used', 'demo']);
   let filtered = __catalogCache;
-  if (statusFilter !== 'all') filtered = filtered.filter(v => v.status === statusFilter);
+  if (statusFilter !== 'all') {
+    if (CONDITION_FILTERS.has(statusFilter)) {
+      filtered = filtered.filter(v => (v.condition || '').toLowerCase() === statusFilter);
+    } else {
+      filtered = filtered.filter(v => v.status === statusFilter);
+    }
+  }
   if (q) {
     filtered = filtered.filter(v =>
-      `${v.year} ${v.make} ${v.model} ${v.trim || ''} ${v.vin || ''} ${v.exterior_color || ''}`
+      `${v.year} ${v.make} ${v.model} ${v.trim || ''} ${v.vin || ''} ${v.stocknumber || ''} ${v.exterior_color || ''}`
         .toLowerCase()
         .includes(q)
     );
@@ -1790,7 +1802,10 @@ function renderCatalog() {
         </div>
         <div class="flex items-center justify-between text-xs">
           <span class="font-bold text-indigo-600 dark:text-indigo-400">${price}</span>
-          <span class="text-slate-500">${mileage}</span>
+          <div class="flex items-center gap-2 text-slate-500">
+            ${v.stocknumber ? `<span class="font-mono">#${v.stocknumber}</span>` : ''}
+            <span>${mileage}</span>
+          </div>
         </div>
       </${tag}>
     `;
