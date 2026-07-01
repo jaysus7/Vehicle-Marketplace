@@ -371,8 +371,10 @@ export function registerRoutes(app) {
 
       const repsOut = reps.map((r, i) => ({
         rank: i + 1, points: r.points, sold: r.sold, posted: r.posted,
-        isYou: r.isYou, name: r.isYou ? (r.name || 'You') : `Rep #${i + 1}`,
-        avatar_url: r.isYou ? (r.avatar_url || null) : null
+        isYou: r.isYou,
+        // Show display_name if set (they opted in to be identified); otherwise anonymize
+        name: r.isYou ? (r.name || 'You') : (profById.get(r.uid)?.display_name || `Rep #${i + 1}`),
+        avatar_url: r.avatar_url || null
       }))
       const dealersOut = dealers.map((d, i) => ({
         rank: i + 1, points: d.points, sold: d.sold, posted: d.posted,

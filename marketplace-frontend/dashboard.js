@@ -1499,16 +1499,17 @@ function renderGlobalLeaderboard() {
     const nums = ['2', '1', '3'];
     podiumEl.innerHTML = order.map((r, i) => {
       const isFirst = nums[i] === '1';
+      const avatarSize = isFirst ? 'w-12 h-12' : 'w-9 h-9';
       const avatarHtml = r.avatar_url
-        ? `<img src="${r.avatar_url}" class="w-8 h-8 rounded-full object-cover border-2 border-white shadow mb-0.5" />`
-        : `<div class="w-8 h-8 rounded-full bg-indigo-200 dark:bg-indigo-700 flex items-center justify-center text-indigo-700 dark:text-indigo-200 font-bold text-sm mb-0.5">${(r.name || '?')[0].toUpperCase()}</div>`;
+        ? `<img src="${r.avatar_url}" class="${avatarSize} rounded-full object-cover border-2 border-white shadow mb-1" />`
+        : `<div class="${avatarSize} rounded-full bg-indigo-200 dark:bg-indigo-700 flex items-center justify-center text-indigo-700 dark:text-indigo-200 font-bold ${isFirst ? 'text-lg' : 'text-sm'} mb-1">${(r.name || '?')[0].toUpperCase()}</div>`;
       return `
         <div class="text-center flex flex-col items-center">
-          <div class="text-lg mb-0.5">${medals[i]}</div>
-          ${r.isYou ? avatarHtml : ''}
-          <div class="text-xs font-bold text-slate-900 dark:text-white mb-0.5 ${isFirst ? 'text-sm' : ''}">${r.name}</div>
+          <div class="${isFirst ? 'text-2xl' : 'text-lg'} mb-0.5">${medals[i]}</div>
+          ${avatarHtml}
+          <div class="${isFirst ? 'text-sm' : 'text-xs'} font-bold text-slate-900 dark:text-white mb-0.5">${r.name}</div>
           <div class="text-xs text-slate-500 mb-1">${(r.points || 0).toLocaleString()} pts</div>
-          <div class="w-full ${heights[i]} rounded-t-md bg-gradient-to-b ${gradients[i]} flex items-center justify-center text-white font-black text-lg shadow">${nums[i]}</div>
+          <div class="w-full ${heights[i]} rounded-t-md bg-gradient-to-b ${gradients[i]} flex items-center justify-center text-white font-black text-xl shadow">${nums[i]}</div>
         </div>`;
     }).join('');
   } else if (podiumEl) {
@@ -1527,9 +1528,9 @@ function renderGlobalLeaderboard() {
     const hl = r.isYou ? 'bg-indigo-50 dark:bg-indigo-950/40 font-semibold' : '';
     const rank = r.rank === 1 ? '🥇' : r.rank === 2 ? '🥈' : r.rank === 3 ? '🥉' : `#${r.rank}`;
     const sep = pinned ? '<tr><td colspan="5" class="py-0"><div class="border-t-2 border-dashed border-indigo-300 dark:border-indigo-700"></div></td></tr>' : '';
-    const avatarCell = r.isYou && r.avatar_url
-      ? `<img src="${r.avatar_url}" class="w-6 h-6 rounded-full object-cover inline-block mr-1.5 align-middle border border-indigo-300" />`
-      : '';
+    const avatarCell = r.avatar_url
+      ? `<img src="${r.avatar_url}" class="w-6 h-6 rounded-full object-cover inline-block mr-1.5 align-middle border ${r.isYou ? 'border-indigo-300' : 'border-slate-300 dark:border-slate-600'}" />`
+      : `<span class="inline-flex w-6 h-6 rounded-full bg-slate-200 dark:bg-slate-700 items-center justify-center text-xs font-bold text-slate-500 mr-1.5 align-middle">${(r.name || '?')[0].toUpperCase()}</span>`;
     return `${sep}<tr class="${hl}">
       <td class="py-2.5 px-3 text-left tabular-nums">${rank}</td>
       <td class="py-2.5 px-3 text-left text-slate-900 dark:text-white">${avatarCell}${r.name}${r.isYou ? ' <span class="text-xs text-indigo-500 font-normal">(you)</span>' : ''}</td>
