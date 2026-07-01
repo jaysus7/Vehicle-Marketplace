@@ -1,7 +1,7 @@
 import { supabaseAdmin, sleep, browserFetch } from '../shared.js'
 import { renderAndCaptureInventory, genericMapVehicle, inferUrlTemplate, renderUrlTemplate, fetchViaBrowser } from '../puppeteerRenderer.js'
 import { PLATFORM_PROBES, fetchConvertusInventory, fetchDealerPageInventory,
-         fetchEDealerInventoryFromSitemap, extractEDealerDetailUrls, extractEDealerDetailImageGroups,
+         fetchEDealerInventoryFromSitemap, extractEDealerDetailUrls, fetchEDealerDetailImageGroups,
          extractEDealerImageGroups, extractCarsFromJsonLd } from './platforms.js'
 import { mapFuel, buildDescription, fetchVehiclePhotos } from '../utils/description.js'
 
