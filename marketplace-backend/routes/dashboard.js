@@ -324,7 +324,7 @@ export function registerRoutes(app) {
     try {
       const [{ data: listings }, { data: profiles }] = await Promise.all([
         supabaseAdmin.from('listings').select('posted_by, status'),
-        supabaseAdmin.from('profiles').select('id, full_name, display_name, dealership_id, dealerships(name, is_personal)')
+        supabaseAdmin.from('profiles').select('id, full_name, display_name, avatar_url, dealership_id, dealerships(name, is_personal)')
       ])
       const profById = new Map((profiles || []).map(p => [p.id, p]))
 
@@ -343,10 +343,11 @@ export function registerRoutes(app) {
       const displayName = (p) => p?.display_name || p?.full_name || null
 
       // Reps board — every rep with activity (+ current user seeded above).
-      const reps = [...repTally.entries()].map(([uid, t]) => ({
-        uid, points: pts(t), sold: t.sold, posted: t.posted,
-        name: displayName(profById.get(uid)) || 'Rep', isYou: uid === req.user.id
-      })).sort((a, b) => b.points - a.points || b.sold - a.sold)
+      const reps = [...repTally.entries()].map(([uid, t]) => {
+        const p = profById.get(uid)
+        return { uid, points: pts(t), sold: t.sold, posted: t.posted,
+          name: displayName(p) || 'Rep', avatar_url: p?.avatar_url || null, isYou: uid === req.user.id }
+      }).sort((a, b) => b.points - a.points || b.sold - a.sold)
 
       // Dealers board — roll reps up into their (non-personal) dealership.
       const dealerTally = new Map()
@@ -371,7 +372,7 @@ export function registerRoutes(app) {
       const repsOut = reps.map((r, i) => ({
         rank: i + 1, points: r.points, sold: r.sold, posted: r.posted,
         isYou: r.isYou, name: r.isYou ? (r.name || 'You') : `Rep #${i + 1}`,
-        displayName: r.isYou ? (r.name || 'You') : null
+        avatar_url: r.isYou ? (r.avatar_url || null) : null
       }))
       const dealersOut = dealers.map((d, i) => ({
         rank: i + 1, points: d.points, sold: d.sold, posted: d.posted,

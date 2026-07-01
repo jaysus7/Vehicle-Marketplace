@@ -1476,9 +1476,13 @@ function renderGlobalLeaderboard() {
     const nums = ['2', '1', '3'];
     podiumEl.innerHTML = order.map((r, i) => {
       const isFirst = nums[i] === '1';
+      const avatarHtml = r.avatar_url
+        ? `<img src="${r.avatar_url}" class="w-8 h-8 rounded-full object-cover border-2 border-white shadow mb-0.5" />`
+        : `<div class="w-8 h-8 rounded-full bg-indigo-200 dark:bg-indigo-700 flex items-center justify-center text-indigo-700 dark:text-indigo-200 font-bold text-sm mb-0.5">${(r.name || '?')[0].toUpperCase()}</div>`;
       return `
         <div class="text-center flex flex-col items-center">
           <div class="text-lg mb-0.5">${medals[i]}</div>
+          ${r.isYou ? avatarHtml : ''}
           <div class="text-xs font-bold text-slate-900 dark:text-white mb-0.5 ${isFirst ? 'text-sm' : ''}">${r.name}</div>
           <div class="text-xs text-slate-500 mb-1">${(r.points || 0).toLocaleString()} pts</div>
           <div class="w-full ${heights[i]} rounded-t-md bg-gradient-to-b ${gradients[i]} flex items-center justify-center text-white font-black text-lg shadow">${nums[i]}</div>
@@ -1500,9 +1504,12 @@ function renderGlobalLeaderboard() {
     const hl = r.isYou ? 'bg-indigo-50 dark:bg-indigo-950/40 font-semibold' : '';
     const rank = r.rank === 1 ? '🥇' : r.rank === 2 ? '🥈' : r.rank === 3 ? '🥉' : `#${r.rank}`;
     const sep = pinned ? '<tr><td colspan="5" class="py-0"><div class="border-t-2 border-dashed border-indigo-300 dark:border-indigo-700"></div></td></tr>' : '';
+    const avatarCell = r.isYou && r.avatar_url
+      ? `<img src="${r.avatar_url}" class="w-6 h-6 rounded-full object-cover inline-block mr-1.5 align-middle border border-indigo-300" />`
+      : '';
     return `${sep}<tr class="${hl}">
       <td class="py-2.5 px-3 text-left tabular-nums">${rank}</td>
-      <td class="py-2.5 px-3 text-left text-slate-900 dark:text-white">${r.name}${r.isYou ? ' <span class="text-xs text-indigo-500 font-normal">(you)</span>' : ''}</td>
+      <td class="py-2.5 px-3 text-left text-slate-900 dark:text-white">${avatarCell}${r.name}${r.isYou ? ' <span class="text-xs text-indigo-500 font-normal">(you)</span>' : ''}</td>
       <td class="py-2.5 px-3 text-right font-mono">${(r.points || 0).toLocaleString()}</td>
       <td class="py-2.5 px-3 text-right font-mono text-slate-500 dark:text-slate-400">${r.posted ?? '—'}</td>
       <td class="py-2.5 px-3 text-right font-mono text-emerald-600 dark:text-emerald-400">${r.sold ?? '—'}</td>
