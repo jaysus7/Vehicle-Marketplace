@@ -2465,10 +2465,8 @@ async function verifyAIBoostSession(sessionId) {
       headers: { 'Authorization': `Bearer ${token}` }
     });
     if (!res.ok) return; // webhook will still handle it; fail silently
-    showToast('🎉 AI Boost activated! Configure your settings below.', 'success', 6000);
-    // Navigate to profile/settings so the user sees the AI Boost panel
-    const profileNav = document.querySelector('#dashboard-nav [data-page="profile"]');
-    if (profileNav) profileNav.click();
+    showToast('🎉 AI Boost activated! Your settings are ready below.', 'success', 6000);
+    switchPage('ai-boost');
   } catch {}
 }
 
@@ -2593,14 +2591,18 @@ function setupAIBoostListeners() {
 
   document.getElementById('ai-activity-refresh')?.addEventListener('click', loadAIActivity);
 
+  document.getElementById('ai-boost-goto-page-btn')?.addEventListener('click', () => {
+    switchPage('ai-boost');
+  });
+
   document.getElementById('ai-sync-all-btn')?.addEventListener('click', async () => {
     const btn = document.getElementById('ai-sync-all-btn');
     const status = document.getElementById('ai-sync-status');
     const statusText = document.getElementById('ai-sync-status-text');
     btn.disabled = true;
-    btn.textContent = 'Syncing…';
+    btn.textContent = 'Scanning…';
     if (status) status.classList.remove('hidden');
-    if (statusText) statusText.textContent = 'Starting sync…';
+    if (statusText) statusText.textContent = 'Starting scan…';
     try {
       const res = await fetch(`${API}/ai/sync-all`, {
         method: 'POST',
@@ -2615,13 +2617,13 @@ function setupAIBoostListeners() {
       setTimeout(() => {
         if (status) status.classList.add('hidden');
         btn.disabled = false;
-        btn.innerHTML = `<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg> Sync All`;
+        btn.innerHTML = `<svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg> Scan All Inventory`;
       }, 20000);
     } catch (err) {
       if (status) status.classList.add('hidden');
       btn.disabled = false;
-      btn.textContent = 'Sync All';
-      showToast('Sync failed: ' + err.message, 'error');
+      btn.textContent = 'Scan All Inventory';
+      showToast('Scan failed: ' + err.message, 'error');
     }
   });
 
@@ -2651,12 +2653,12 @@ function setupAIBoostListeners() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Save failed');
-      msg.textContent = 'AI settings saved.';
-      msg.className = 'text-xs rounded p-2 bg-emerald-100 dark:bg-emerald-900/50 border border-emerald-300 dark:border-emerald-700 text-emerald-700 dark:text-emerald-200';
+      msg.textContent = '✓ Saved';
+      msg.className = 'text-xs font-medium px-2.5 py-1 rounded-md bg-emerald-100 dark:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300';
       msg.classList.remove('hidden');
     } catch (err) {
       msg.textContent = err.message;
-      msg.className = 'text-xs rounded p-2 bg-red-100 dark:bg-red-900/50 border border-red-300 dark:border-red-700 text-red-700 dark:text-red-200';
+      msg.className = 'text-xs font-medium px-2.5 py-1 rounded-md bg-red-100 dark:bg-red-900/50 text-red-700 dark:text-red-300';
       msg.classList.remove('hidden');
     } finally {
       btn.disabled = false;

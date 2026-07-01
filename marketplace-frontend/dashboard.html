@@ -131,31 +131,12 @@
               <button id="ai-boost-upgrade-btn" class="w-full bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold py-2 rounded transition">Start 3-Day Free Trial — $199/month after</button>
             </div>
 
-            <!-- Active: show config form -->
-            <div id="ai-boost-active" class="hidden space-y-3">
-              <div id="ai-config-msg" class="hidden text-xs rounded p-2"></div>
-              <div>
-                <label class="block text-xs uppercase font-bold text-slate-500 dark:text-slate-400 mb-1 tracking-wider">Listing Tone</label>
-                <select id="ai-tone" class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded px-2.5 py-1.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:border-indigo-500">
-                  <option value="professional">Professional</option>
-                  <option value="friendly">Friendly</option>
-                  <option value="aggressive">Aggressive</option>
-                </select>
-              </div>
-              <div>
-                <label class="block text-xs uppercase font-bold text-slate-500 dark:text-slate-400 mb-1 tracking-wider">Manager Notification Email</label>
-                <input type="email" id="ai-manager-email" placeholder="manager@dealership.com" class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded px-2.5 py-1.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:border-indigo-500">
-              </div>
-              <div>
-                <label class="block text-xs uppercase font-bold text-slate-500 dark:text-slate-400 mb-2 tracking-wider">Required Fields (alerts if missing)</label>
-                <div class="space-y-1.5">
-                  <label class="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300 cursor-pointer"><input type="checkbox" id="ai-req-price" value="price" class="accent-indigo-500"> Price</label>
-                  <label class="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300 cursor-pointer"><input type="checkbox" id="ai-req-mileage" value="mileage" class="accent-indigo-500"> Mileage</label>
-                  <label class="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300 cursor-pointer"><input type="checkbox" id="ai-req-photos" value="image_urls" class="accent-indigo-500"> Photos</label>
-                  <label class="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300 cursor-pointer"><input type="checkbox" id="ai-req-description" value="description" class="accent-indigo-500"> Description</label>
-                </div>
-              </div>
-              <button id="ai-config-save-btn" class="w-full bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold py-2 rounded transition">Save AI Settings</button>
+            <!-- Active: show shortcut to AI Boost page -->
+            <div id="ai-boost-active" class="hidden">
+              <button id="ai-boost-goto-page-btn" class="w-full flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold py-2 rounded transition">
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z"/></svg>
+                Open AI Boost
+              </button>
             </div>
           </div>
 
@@ -815,69 +796,149 @@
         </div>
 
         <!-- Upsell if not active -->
-        <div id="ai-boost-page-upsell" class="hidden bg-indigo-600/10 dark:bg-indigo-900/30 border border-indigo-400/40 rounded-xl p-6 text-center space-y-3">
-          <div class="text-3xl">✨</div>
-          <p class="font-bold text-slate-900 dark:text-white">AI Boost is not active</p>
-          <p class="text-sm text-slate-500 dark:text-slate-400">Start a 3-day free trial to unlock AI listing copy, price checks, and missing-info alerts.</p>
-          <button id="ai-boost-page-upgrade-btn" class="bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-bold px-6 py-2.5 rounded-lg transition">Try Free for 3 Days</button>
+        <div id="ai-boost-page-upsell" class="hidden">
+          <div class="bg-gradient-to-br from-indigo-600 to-purple-700 rounded-xl p-6 sm:p-8 text-white space-y-4">
+            <div class="flex items-start gap-4">
+              <div class="flex-shrink-0 w-12 h-12 bg-white/20 rounded-xl flex items-center justify-center">
+                <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z"/></svg>
+              </div>
+              <div class="flex-1 min-w-0">
+                <h3 class="text-lg font-bold">Unlock AI Boost</h3>
+                <p class="text-indigo-200 text-sm mt-1 leading-relaxed">Auto-generate listing copy, get alerted to missing info, and catch pricing errors across your whole lot — automatically.</p>
+              </div>
+            </div>
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
+              <div class="bg-white/10 rounded-lg p-3">
+                <div class="text-sm font-bold">✦ AI Listing Copy</div>
+                <div class="text-xs text-indigo-200 mt-0.5">Facebook-ready descriptions written for you</div>
+              </div>
+              <div class="bg-white/10 rounded-lg p-3">
+                <div class="text-sm font-bold">⚠ Missing Info Alerts</div>
+                <div class="text-xs text-indigo-200 mt-0.5">Email alerts when photos, price, or mileage are absent</div>
+              </div>
+              <div class="bg-white/10 rounded-lg p-3">
+                <div class="text-sm font-bold">💰 Price Intelligence</div>
+                <div class="text-xs text-indigo-200 mt-0.5">Flag listings priced 15%+ off your median</div>
+              </div>
+            </div>
+            <div class="flex items-center gap-3 pt-1">
+              <button id="ai-boost-page-upgrade-btn" class="bg-white text-indigo-700 hover:bg-indigo-50 text-sm font-bold px-6 py-2.5 rounded-lg transition">Try Free for 3 Days</button>
+              <span class="text-xs text-indigo-200">No credit card required · $199/month after trial</span>
+            </div>
+          </div>
         </div>
 
         <!-- Active content -->
-        <div id="ai-boost-active-content" class="hidden space-y-6">
+        <div id="ai-boost-active-content" class="hidden space-y-5">
 
-          <!-- Sync controls -->
-          <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-4 sm:p-5">
-            <div class="flex items-start justify-between gap-4 flex-wrap">
-              <div>
-                <h3 class="text-sm font-bold text-slate-900 dark:text-white mb-0.5">Inventory Sync</h3>
-                <p class="text-xs text-slate-500 dark:text-slate-400">Run AI checks across your active inventory. AI will flag missing info, check pricing, and queue copy for each vehicle.</p>
+          <!-- Top row: Settings + Sync side by side on desktop -->
+          <div class="grid grid-cols-1 lg:grid-cols-3 gap-5">
+
+            <!-- AI Settings card (2/3 width) -->
+            <div class="lg:col-span-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-5 space-y-4">
+              <div class="flex items-center justify-between gap-3">
+                <h3 class="text-sm font-bold text-slate-900 dark:text-white">AI Settings</h3>
+                <div id="ai-config-msg" class="hidden text-xs font-medium px-2.5 py-1 rounded-md"></div>
               </div>
-              <div class="flex items-center gap-2 flex-shrink-0">
-                <button id="ai-sync-all-btn" class="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold px-4 py-2 rounded-lg transition">
-                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
-                  Sync All
+
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <!-- Tone -->
+                <div>
+                  <label class="block text-xs uppercase font-bold text-slate-400 dark:text-slate-500 mb-1.5 tracking-wider">Listing Tone</label>
+                  <select id="ai-tone" class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                    <option value="professional">Professional — clear &amp; factual</option>
+                    <option value="friendly">Friendly — warm &amp; approachable</option>
+                    <option value="aggressive">Aggressive — urgent &amp; deal-focused</option>
+                  </select>
+                  <p class="text-xs text-slate-400 mt-1">Controls the voice of AI-generated listing copy.</p>
+                </div>
+
+                <!-- Manager email -->
+                <div>
+                  <label class="block text-xs uppercase font-bold text-slate-400 dark:text-slate-500 mb-1.5 tracking-wider">Alert Email</label>
+                  <input type="email" id="ai-manager-email" placeholder="manager@example.com" class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                  <p class="text-xs text-slate-400 mt-1">Where to send missing-info alerts.</p>
+                </div>
+              </div>
+
+              <!-- Required fields -->
+              <div>
+                <label class="block text-xs uppercase font-bold text-slate-400 dark:text-slate-500 mb-2 tracking-wider">Flag listing if missing</label>
+                <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  <label class="flex items-center gap-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 cursor-pointer hover:bg-indigo-50 dark:hover:bg-indigo-950/50 transition has-[:checked]:bg-indigo-50 dark:has-[:checked]:bg-indigo-950/60 has-[:checked]:border-indigo-400">
+                    <input type="checkbox" id="ai-req-price" value="price" class="accent-indigo-500">
+                    <span class="text-sm text-slate-700 dark:text-slate-300 font-medium">Price</span>
+                  </label>
+                  <label class="flex items-center gap-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 cursor-pointer hover:bg-indigo-50 dark:hover:bg-indigo-950/50 transition has-[:checked]:bg-indigo-50 dark:has-[:checked]:bg-indigo-950/60 has-[:checked]:border-indigo-400">
+                    <input type="checkbox" id="ai-req-mileage" value="mileage" class="accent-indigo-500">
+                    <span class="text-sm text-slate-700 dark:text-slate-300 font-medium">Mileage</span>
+                  </label>
+                  <label class="flex items-center gap-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 cursor-pointer hover:bg-indigo-50 dark:hover:bg-indigo-950/50 transition has-[:checked]:bg-indigo-50 dark:has-[:checked]:bg-indigo-950/60 has-[:checked]:border-indigo-400">
+                    <input type="checkbox" id="ai-req-photos" value="image_urls" class="accent-indigo-500">
+                    <span class="text-sm text-slate-700 dark:text-slate-300 font-medium">Photos</span>
+                  </label>
+                  <label class="flex items-center gap-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 cursor-pointer hover:bg-indigo-50 dark:hover:bg-indigo-950/50 transition has-[:checked]:bg-indigo-50 dark:has-[:checked]:bg-indigo-950/60 has-[:checked]:border-indigo-400">
+                    <input type="checkbox" id="ai-req-description" value="description" class="accent-indigo-500">
+                    <span class="text-sm text-slate-700 dark:text-slate-300 font-medium">Description</span>
+                  </label>
+                </div>
+              </div>
+
+              <button id="ai-config-save-btn" class="bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-bold px-5 py-2 rounded-lg transition">Save Settings</button>
+            </div>
+
+            <!-- Sync card (1/3 width) -->
+            <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-5 flex flex-col gap-4">
+              <div>
+                <h3 class="text-sm font-bold text-slate-900 dark:text-white mb-1">Inventory Scan</h3>
+                <p class="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">Run AI checks across all active listings — flags missing info and price anomalies on every vehicle.</p>
+              </div>
+              <div class="space-y-2 mt-auto">
+                <button id="ai-sync-all-btn" class="w-full flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-bold px-4 py-2.5 rounded-lg transition">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+                  Scan All Inventory
                 </button>
-                <button id="ai-activity-refresh" class="flex items-center gap-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-xs font-bold px-4 py-2 rounded-lg transition border border-slate-200 dark:border-slate-700">
-                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+                <button id="ai-activity-refresh" class="w-full flex items-center justify-center gap-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-sm font-bold px-4 py-2.5 rounded-lg transition border border-slate-200 dark:border-slate-700">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
                   Refresh Log
                 </button>
               </div>
-            </div>
-            <div id="ai-sync-status" class="hidden mt-3 text-xs font-medium text-indigo-600 dark:text-indigo-400 flex items-center gap-2">
-              <svg class="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/></svg>
-              <span id="ai-sync-status-text">Starting sync…</span>
+              <div id="ai-sync-status" class="hidden text-xs font-medium text-indigo-600 dark:text-indigo-400 flex items-center gap-2">
+                <svg class="w-3.5 h-3.5 animate-spin flex-shrink-0" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/></svg>
+                <span id="ai-sync-status-text">Starting scan…</span>
+              </div>
             </div>
           </div>
 
-          <!-- Summary cards -->
+          <!-- Summary stat cards -->
           <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-4">
-              <div class="text-2xl font-black text-slate-900 dark:text-white" id="ai-stat-total">—</div>
-              <div class="text-xs text-slate-500 mt-0.5">Total Checks</div>
+            <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4">
+              <div class="text-xs uppercase font-bold tracking-wider text-slate-400 mb-1">Total Checks</div>
+              <div class="text-3xl font-black text-slate-900 dark:text-white" id="ai-stat-total">—</div>
             </div>
-            <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-4">
-              <div class="text-2xl font-black text-amber-500" id="ai-stat-warnings">—</div>
-              <div class="text-xs text-slate-500 mt-0.5">Missing Info Alerts</div>
+            <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4">
+              <div class="text-xs uppercase font-bold tracking-wider text-amber-500 mb-1">Missing Info</div>
+              <div class="text-3xl font-black text-amber-500" id="ai-stat-warnings">—</div>
             </div>
-            <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-4">
-              <div class="text-2xl font-black text-red-500" id="ai-stat-price-flags">—</div>
-              <div class="text-xs text-slate-500 mt-0.5">Price Flags</div>
+            <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4">
+              <div class="text-xs uppercase font-bold tracking-wider text-red-500 mb-1">Price Flags</div>
+              <div class="text-3xl font-black text-red-500" id="ai-stat-price-flags">—</div>
             </div>
-            <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-4">
-              <div class="text-2xl font-black text-emerald-500" id="ai-stat-copies">—</div>
-              <div class="text-xs text-slate-500 mt-0.5">Copies Generated</div>
+            <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4">
+              <div class="text-xs uppercase font-bold tracking-wider text-emerald-500 mb-1">Copies Written</div>
+              <div class="text-3xl font-black text-emerald-500" id="ai-stat-copies">—</div>
             </div>
           </div>
 
           <!-- Activity feed -->
-          <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg overflow-hidden">
-            <div class="px-4 py-3 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
+          <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden">
+            <div class="px-5 py-3.5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
               <h3 class="text-sm font-bold text-slate-900 dark:text-white">Recent Activity</h3>
               <span id="ai-activity-count" class="text-xs text-slate-400"></span>
             </div>
-            <div id="ai-activity-loading" class="py-10 text-center text-sm text-slate-400 italic">Loading…</div>
-            <div id="ai-activity-empty" class="hidden py-10 text-center text-sm text-slate-400 px-4">No AI activity yet. Click <strong>Sync All</strong> above to run the first check across your inventory.</div>
-            <div id="ai-activity-error" class="hidden py-6 px-4 text-sm text-red-500"></div>
+            <div id="ai-activity-loading" class="py-12 text-center text-sm text-slate-400 italic">Loading…</div>
+            <div id="ai-activity-empty" class="hidden py-12 text-center text-sm text-slate-400 px-6">No activity yet — click <strong class="text-slate-600 dark:text-slate-300">Scan All Inventory</strong> to run the first check.</div>
+            <div id="ai-activity-error" class="hidden py-6 px-5 text-sm text-red-500"></div>
             <ul id="ai-activity-list" class="hidden divide-y divide-slate-100 dark:divide-slate-800"></ul>
           </div>
 
