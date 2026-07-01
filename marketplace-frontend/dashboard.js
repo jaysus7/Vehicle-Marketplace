@@ -43,14 +43,11 @@ let __canSeeSalesTeam = false;
 
 // Run Engine Boot Lifecycle
 document.addEventListener('DOMContentLoaded', () => {
+  // Show insights immediately — mobile sees content before the auth fetch completes.
+  // role-gated items (data-admin-nav etc.) stay hidden until ms-role-ready is set inside init.
+  switchPage('insights');
   initializeDashboardEcosystem();
   setupActionListeners();
-  // Fallback: if nothing rendered after 1.5s (e.g. auth cold-start on mobile), show insights
-  setTimeout(() => {
-    const anyVisible = [...document.querySelectorAll('[data-page-content]')]
-      .some(el => !el.classList.contains('hidden'));
-    if (!anyVisible) switchPage('insights');
-  }, 1500);
 });
 
 
