@@ -118,6 +118,74 @@
             <button id="launch-portal-btn" class="w-full bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-900 dark:text-white text-xs font-bold py-2 rounded border border-slate-300 dark:border-slate-700 transition">Manage Billing</button>
           </div>
 
+          <!-- ── AI Boost Add-On ── (dealer admin only) -->
+          <div id="ai-boost-section" data-admin-only class="mt-5 pt-5 border-t border-slate-200 dark:border-slate-800">
+            <div class="flex items-center gap-2 mb-1">
+              <h3 class="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">AI Boost</h3>
+              <span id="ai-boost-badge" class="hidden text-xs font-bold px-2 py-0.5 rounded-full border"></span>
+            </div>
+            <p class="text-sm text-slate-500 leading-relaxed mb-3">AI-powered listing copy, missing-info alerts, and price comp checks — $199/month add-on.</p>
+
+            <!-- Not active: show upgrade button -->
+            <div id="ai-boost-inactive" class="hidden">
+              <button id="ai-boost-upgrade-btn" class="w-full bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold py-2 rounded transition">Upgrade to AI Boost — $199/month</button>
+            </div>
+
+            <!-- Active: show config form -->
+            <div id="ai-boost-active" class="hidden space-y-3">
+              <div id="ai-config-msg" class="hidden text-xs rounded p-2"></div>
+              <div>
+                <label class="block text-xs uppercase font-bold text-slate-500 dark:text-slate-400 mb-1 tracking-wider">Listing Tone</label>
+                <select id="ai-tone" class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded px-2.5 py-1.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:border-indigo-500">
+                  <option value="professional">Professional</option>
+                  <option value="friendly">Friendly</option>
+                  <option value="aggressive">Aggressive</option>
+                </select>
+              </div>
+              <div>
+                <label class="block text-xs uppercase font-bold text-slate-500 dark:text-slate-400 mb-1 tracking-wider">Manager Notification Email</label>
+                <input type="email" id="ai-manager-email" placeholder="manager@dealership.com" class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded px-2.5 py-1.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:border-indigo-500">
+              </div>
+              <div>
+                <label class="block text-xs uppercase font-bold text-slate-500 dark:text-slate-400 mb-2 tracking-wider">Required Fields (alerts if missing)</label>
+                <div class="space-y-1.5">
+                  <label class="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300 cursor-pointer"><input type="checkbox" id="ai-req-price" value="price" class="accent-indigo-500"> Price</label>
+                  <label class="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300 cursor-pointer"><input type="checkbox" id="ai-req-mileage" value="mileage" class="accent-indigo-500"> Mileage</label>
+                  <label class="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300 cursor-pointer"><input type="checkbox" id="ai-req-photos" value="image_urls" class="accent-indigo-500"> Photos</label>
+                  <label class="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300 cursor-pointer"><input type="checkbox" id="ai-req-description" value="description" class="accent-indigo-500"> Description</label>
+                </div>
+              </div>
+              <button id="ai-config-save-btn" class="w-full bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold py-2 rounded transition">Save AI Settings</button>
+            </div>
+          </div>
+
+          <!-- AI Enrichment Modal -->
+          <div id="ai-enrich-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+            <div class="bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 w-full max-w-lg max-h-[80vh] overflow-y-auto p-5 space-y-4">
+              <div class="flex items-center justify-between">
+                <h3 class="font-bold text-slate-900 dark:text-white">AI Enrichment</h3>
+                <button id="ai-enrich-close" class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 text-xl leading-none">&times;</button>
+              </div>
+              <div id="ai-enrich-loading" class="text-sm text-slate-500 italic">Generating...</div>
+              <div id="ai-enrich-content" class="hidden space-y-4">
+                <div id="ai-enrich-warnings" class="hidden">
+                  <div class="text-xs font-bold uppercase tracking-wider text-amber-600 dark:text-amber-400 mb-1">Missing Info Alerts</div>
+                  <ul id="ai-enrich-warnings-list" class="text-sm text-amber-700 dark:text-amber-300 space-y-1 list-disc list-inside"></ul>
+                </div>
+                <div id="ai-enrich-price-flag" class="hidden p-3 rounded border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20">
+                  <div class="text-xs font-bold uppercase tracking-wider text-amber-600 dark:text-amber-400 mb-1">Price Flag</div>
+                  <div id="ai-enrich-price-flag-text" class="text-sm text-amber-700 dark:text-amber-300"></div>
+                </div>
+                <div>
+                  <div class="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1">Generated Listing Copy</div>
+                  <div id="ai-enrich-copy" class="text-sm text-slate-800 dark:text-slate-200 whitespace-pre-wrap bg-slate-50 dark:bg-slate-950 rounded p-3 border border-slate-200 dark:border-slate-800"></div>
+                  <button id="ai-enrich-copy-btn" class="mt-2 text-xs text-indigo-600 dark:text-indigo-400 hover:underline">Copy to clipboard</button>
+                </div>
+              </div>
+              <div id="ai-enrich-error" class="hidden text-sm text-red-500"></div>
+            </div>
+          </div>
+
           <div id="security-section" class="mt-5 pt-5 border-t border-slate-200 dark:border-slate-800">
             <h3 class="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-3">Keep Your Account Safe</h3>
 

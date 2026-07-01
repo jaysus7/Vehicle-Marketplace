@@ -156,6 +156,8 @@ async function initializeDashboardEcosystem() {
 
     loadInsights();
     initSecurityPanel();
+    loadAIBoostSection();
+    setupAIBoostListeners();
 
     const isAdmin = role === 'DEALER_ADMIN' || role === 'OWNER';
     const inDealership = !!profileContext.dealership?.id;
@@ -1835,9 +1837,21 @@ function renderCatalog() {
           ${v.stocknumber ? `<span class="font-mono text-slate-400 dark:text-slate-500">#${v.stocknumber}</span>` : ''}
           <span class="text-slate-500">${mileage}</span>
         </div>
+        ${__aiBoostActive ? `<button class="ai-enrich-btn mt-1 w-full text-xs bg-indigo-900/40 hover:bg-indigo-800/60 border border-indigo-700 text-indigo-300 rounded py-1 transition" data-id="${v.id}">AI Enrichment</button>` : ''}
       </${tag}>
     `;
   }).join('');
+
+  // Attach AI Enrichment button listeners after render
+  if (__aiBoostActive) {
+    list.querySelectorAll('.ai-enrich-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        openAIEnrich(btn.dataset.id);
+      });
+    });
+  }
 }
 
 function setupActionListeners() {
@@ -2340,6 +2354,182 @@ async function loadSessions() {
     }).join('');
   } catch (err) {
     list.innerHTML = '<span class="text-red-500">Could not load sign-in history.</span>';
+  }
+}
+
+// ── AI BOOST ────────────────────────────────────────────────────────────────
+
+let __aiBoostActive = false;
+
+async function loadAIBoostSection() {
+  const section = document.getElementById('ai-boost-section');
+  if (!section) return;
+  try {
+    const res = await fetch(`${API}/ai/config`, { headers: { 'Authorization': `Bearer ${token}` } });
+    if (!res.ok) return;
+    const cfg = await res.json();
+    __aiBoostActive = !!cfg.ai_boost_active;
+    renderAIBoostSection(cfg);
+  } catch {}
+}
+
+function renderAIBoostSection(cfg) {
+  const badge = document.getElementById('ai-boost-badge');
+  const inactive = document.getElementById('ai-boost-inactive');
+  const activePanel = document.getElementById('ai-boost-active');
+  if (!badge || !inactive || !activePanel) return;
+
+  if (cfg.ai_boost_active) {
+    badge.textContent = 'Active';
+    badge.className = 'text-xs font-bold px-2 py-0.5 rounded-full border border-emerald-500 bg-emerald-900/30 text-emerald-300';
+    badge.classList.remove('hidden');
+    inactive.classList.add('hidden');
+    activePanel.classList.remove('hidden');
+
+    // Pre-fill form
+    const toneEl = document.getElementById('ai-tone');
+    if (toneEl) toneEl.value = cfg.ai_tone || 'professional';
+    const emailEl = document.getElementById('ai-manager-email');
+    if (emailEl) emailEl.value = cfg.ai_manager_email || '';
+
+    const reqFields = cfg.ai_required_fields || [];
+    ['price', 'mileage', 'image_urls', 'description'].forEach(f => {
+      const idMap = { price: 'ai-req-price', mileage: 'ai-req-mileage', image_urls: 'ai-req-photos', description: 'ai-req-description' };
+      const el = document.getElementById(idMap[f]);
+      if (el) el.checked = reqFields.includes(f);
+    });
+  } else {
+    badge.textContent = 'Not Active';
+    badge.className = 'text-xs font-bold px-2 py-0.5 rounded-full border border-slate-500 bg-slate-800 text-slate-400';
+    badge.classList.remove('hidden');
+    inactive.classList.remove('hidden');
+    activePanel.classList.add('hidden');
+  }
+}
+
+function setupAIBoostListeners() {
+  document.getElementById('ai-boost-upgrade-btn')?.addEventListener('click', async () => {
+    const btn = document.getElementById('ai-boost-upgrade-btn');
+    btn.disabled = true;
+    btn.textContent = 'Redirecting...';
+    try {
+      const res = await fetch(`${API}/billing/subscribe-ai-boost`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const data = await res.json();
+      if (data.url) { window.location.href = data.url; return; }
+      throw new Error(data.error || 'Failed to start checkout');
+    } catch (err) {
+      btn.disabled = false;
+      btn.textContent = 'Upgrade to AI Boost — $199/month';
+      alert('Could not start AI Boost checkout: ' + err.message);
+    }
+  });
+
+  document.getElementById('ai-config-save-btn')?.addEventListener('click', async () => {
+    const btn = document.getElementById('ai-config-save-btn');
+    const msg = document.getElementById('ai-config-msg');
+    btn.disabled = true;
+    btn.textContent = 'Saving...';
+
+    const reqFields = [];
+    if (document.getElementById('ai-req-price')?.checked) reqFields.push('price');
+    if (document.getElementById('ai-req-mileage')?.checked) reqFields.push('mileage');
+    if (document.getElementById('ai-req-photos')?.checked) reqFields.push('image_urls');
+    if (document.getElementById('ai-req-description')?.checked) reqFields.push('description');
+
+    const payload = {
+      ai_tone: document.getElementById('ai-tone')?.value || 'professional',
+      ai_manager_email: document.getElementById('ai-manager-email')?.value.trim() || null,
+      ai_required_fields: reqFields
+    };
+
+    try {
+      const res = await fetch(`${API}/ai/config`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Save failed');
+      msg.textContent = 'AI settings saved.';
+      msg.className = 'text-xs rounded p-2 bg-emerald-100 dark:bg-emerald-900/50 border border-emerald-300 dark:border-emerald-700 text-emerald-700 dark:text-emerald-200';
+      msg.classList.remove('hidden');
+    } catch (err) {
+      msg.textContent = err.message;
+      msg.className = 'text-xs rounded p-2 bg-red-100 dark:bg-red-900/50 border border-red-300 dark:border-red-700 text-red-700 dark:text-red-200';
+      msg.classList.remove('hidden');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Save AI Settings';
+      setTimeout(() => msg.classList.add('hidden'), 4000);
+    }
+  });
+
+  document.getElementById('ai-enrich-close')?.addEventListener('click', closeAIEnrichModal);
+  document.getElementById('ai-enrich-modal')?.addEventListener('click', (e) => {
+    if (e.target.id === 'ai-enrich-modal') closeAIEnrichModal();
+  });
+  document.getElementById('ai-enrich-copy-btn')?.addEventListener('click', () => {
+    const text = document.getElementById('ai-enrich-copy')?.textContent;
+    if (text) navigator.clipboard.writeText(text).catch(() => {});
+  });
+}
+
+function closeAIEnrichModal() {
+  document.getElementById('ai-enrich-modal')?.classList.add('hidden');
+}
+
+async function openAIEnrich(inventoryId) {
+  const modal = document.getElementById('ai-enrich-modal');
+  if (!modal) return;
+  modal.classList.remove('hidden');
+  document.getElementById('ai-enrich-loading').classList.remove('hidden');
+  document.getElementById('ai-enrich-content').classList.add('hidden');
+  document.getElementById('ai-enrich-error').classList.add('hidden');
+
+  try {
+    const res = await fetch(`${API}/ai/enrich-listing`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+      body: JSON.stringify({ inventory_id: inventoryId })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Enrichment failed');
+
+    document.getElementById('ai-enrich-loading').classList.add('hidden');
+    document.getElementById('ai-enrich-content').classList.remove('hidden');
+
+    // Warnings
+    const warningsBlock = document.getElementById('ai-enrich-warnings');
+    const warningsList = document.getElementById('ai-enrich-warnings-list');
+    if (data.warnings && data.warnings.length > 0) {
+      warningsList.innerHTML = data.warnings.map(w => `<li>${w}</li>`).join('');
+      warningsBlock.classList.remove('hidden');
+    } else {
+      warningsBlock.classList.add('hidden');
+    }
+
+    // Price flag
+    const priceFlag = document.getElementById('ai-enrich-price-flag');
+    const priceFlagText = document.getElementById('ai-enrich-price-flag-text');
+    if (data.price_flag?.flagged) {
+      const dir = data.price_flag.pct_diff > 0 ? 'above' : 'below';
+      const pct = Math.abs(data.price_flag.pct_diff);
+      priceFlagText.textContent = `This vehicle is priced ${pct}% ${dir} the median of ${data.price_flag.comp_count} comparable vehicle${data.price_flag.comp_count !== 1 ? 's' : ''} ($${Number(data.price_flag.median).toLocaleString()} median).`;
+      priceFlag.classList.remove('hidden');
+    } else {
+      priceFlag.classList.add('hidden');
+    }
+
+    // Copy
+    document.getElementById('ai-enrich-copy').textContent = data.copy || '(No copy generated)';
+  } catch (err) {
+    document.getElementById('ai-enrich-loading').classList.add('hidden');
+    const errEl = document.getElementById('ai-enrich-error');
+    errEl.textContent = err.message;
+    errEl.classList.remove('hidden');
   }
 }
 
