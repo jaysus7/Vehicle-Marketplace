@@ -461,116 +461,137 @@
 
       </div>
       <!-- ───────── LEADERBOARD PAGE ───────── -->
-      <div data-page-content="leaderboard" class="page-content hidden space-y-8">
+      <div data-page-content="leaderboard" class="page-content hidden space-y-6">
 
-      <div id="leaderboard-panel" class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-4 sm:p-6 space-y-8">
+      <!-- Single combined card with carousel tabs -->
+      <div id="leaderboard-panel" class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-4 sm:p-6 space-y-6">
 
-        <!-- Header -->
-        <div class="flex flex-wrap items-end justify-between gap-3">
+        <!-- Header row: title + team conversion + carousel tabs -->
+        <div class="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h2 class="text-lg font-bold text-slate-900 dark:text-white">🏆 Leaderboard</h2>
             <p class="text-slate-500 dark:text-slate-400 text-xs">100 pts / listing · 500 pts / sale · Climb the tiers, top the team.</p>
           </div>
-          <div class="text-right">
-            <div class="text-xs uppercase font-bold tracking-wider text-slate-500 dark:text-slate-400">Team Conversion</div>
-            <div class="text-2xl font-black text-indigo-600 dark:text-indigo-400 leading-none"><span id="lb-conv">—</span>%</div>
-            <div class="text-xs text-slate-500"><span id="lb-team-sold">0</span> sold of <span id="lb-team-total">0</span> posted</div>
+          <div class="flex items-center gap-3 flex-wrap">
+            <!-- Team conversion (hidden on global view) -->
+            <div id="lb-conv-wrap" class="text-right">
+              <div class="text-xs uppercase font-bold tracking-wider text-slate-500 dark:text-slate-400">Team Conversion</div>
+              <div class="text-2xl font-black text-indigo-600 dark:text-indigo-400 leading-none"><span id="lb-conv">—</span>%</div>
+              <div class="text-xs text-slate-500"><span id="lb-team-sold">0</span> sold of <span id="lb-team-total">0</span> posted</div>
+            </div>
+            <!-- Carousel tab pills -->
+            <div class="inline-flex bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg p-0.5 text-xs font-bold">
+              <button type="button" id="lb-tab-team" class="lb-view-tab px-3 py-1.5 rounded bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-sm transition">My Team</button>
+              <button type="button" id="lb-tab-global" class="lb-view-tab px-3 py-1.5 rounded text-slate-500 dark:text-slate-400 transition">🌎 Global</button>
+            </div>
           </div>
         </div>
 
-        <!-- Podium for top 3 -->
-        <div id="lb-podium" class="grid grid-cols-3 gap-2 sm:gap-3 items-end max-w-2xl mx-auto">
-          <div class="text-center text-xs text-slate-500 italic col-span-3 py-6">Loading podium...</div>
-        </div>
+        <!-- ── MY TEAM VIEW ── -->
+        <div id="lb-view-team">
+          <!-- Podium for top 3 -->
+          <div id="lb-podium" class="grid grid-cols-3 gap-2 sm:gap-3 items-end max-w-2xl mx-auto mb-6">
+            <div class="text-center text-xs text-slate-500 italic col-span-3 py-6">Loading podium...</div>
+          </div>
 
-        <!-- Your position / progress -->
-        <div id="lb-you" class="bg-gradient-to-br from-indigo-50 to-slate-50 dark:from-indigo-950/40 dark:to-slate-900 border border-indigo-200 dark:border-indigo-800 rounded-lg p-5 hidden">
-          <div class="flex items-center justify-between mb-3 gap-4 flex-wrap">
-            <div>
-              <div class="text-xs uppercase font-bold tracking-wider text-indigo-700 dark:text-indigo-300">Your position</div>
-              <div class="flex items-baseline gap-2 mt-1">
-                <span class="text-3xl font-black text-slate-900 dark:text-white">#<span id="lb-you-rank">—</span></span>
-                <span class="text-sm font-semibold text-slate-600 dark:text-slate-300">of <span id="lb-you-total">—</span></span>
+          <!-- Your position / progress -->
+          <div id="lb-you" class="bg-gradient-to-br from-indigo-50 to-slate-50 dark:from-indigo-950/40 dark:to-slate-900 border border-indigo-200 dark:border-indigo-800 rounded-lg p-5 hidden mb-6">
+            <div class="flex items-center justify-between mb-3 gap-4 flex-wrap">
+              <div>
+                <div class="text-xs uppercase font-bold tracking-wider text-indigo-700 dark:text-indigo-300">Your position</div>
+                <div class="flex items-baseline gap-2 mt-1">
+                  <span class="text-3xl font-black text-slate-900 dark:text-white">#<span id="lb-you-rank">—</span></span>
+                  <span class="text-sm font-semibold text-slate-600 dark:text-slate-300">of <span id="lb-you-total">—</span></span>
+                </div>
+              </div>
+              <div class="text-right">
+                <div id="lb-you-tier-badge" class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold"></div>
+                <div class="text-2xl font-black text-slate-900 dark:text-white mt-1"><span id="lb-you-points">0</span> <span class="text-xs font-medium text-slate-500">pts</span></div>
               </div>
             </div>
-            <div class="text-right">
-              <div id="lb-you-tier-badge" class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold"></div>
-              <div class="text-2xl font-black text-slate-900 dark:text-white mt-1"><span id="lb-you-points">0</span> <span class="text-xs font-medium text-slate-500">pts</span></div>
+            <div class="mt-2">
+              <div class="flex justify-between text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1">
+                <span id="lb-you-current-tier">—</span>
+                <span><span id="lb-you-progress-pct">0</span>% to <span id="lb-you-next-tier">—</span></span>
+              </div>
+              <div class="w-full h-2 bg-slate-200 dark:bg-slate-800 rounded-full overflow-hidden">
+                <div id="lb-you-progress-bar" class="h-full bg-gradient-to-r from-indigo-500 to-purple-500 transition-all duration-700" style="width:0%"></div>
+              </div>
+              <div class="text-xs text-slate-500 mt-1"><span id="lb-you-points-to-next">0</span> pts to next tier</div>
             </div>
           </div>
-          <div class="mt-2">
-            <div class="flex justify-between text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1">
-              <span id="lb-you-current-tier">—</span>
-              <span><span id="lb-you-progress-pct">0</span>% to <span id="lb-you-next-tier">—</span></span>
+
+          <!-- Full ranking table -->
+          <div>
+            <div class="text-xs uppercase font-bold tracking-wider text-slate-500 dark:text-slate-400 mb-2">Full rankings</div>
+            <div class="overflow-x-auto">
+              <table class="w-full text-sm border-collapse">
+                <thead>
+                  <tr class="border-b border-slate-200 dark:border-slate-800 text-slate-500 dark:text-slate-400 uppercase tracking-wider font-bold text-xs">
+                    <th class="py-3 px-3 text-left w-12">Rank</th>
+                    <th class="py-3 px-3 text-left">Player</th>
+                    <th class="py-3 px-3 text-left">Tier</th>
+                    <th class="py-3 px-3 text-right">Points</th>
+                    <th class="py-3 px-3 text-right">Listings</th>
+                    <th class="py-3 px-3 text-right">Sold</th>
+                    <th class="py-3 px-3 text-right">Conv.</th>
+                  </tr>
+                </thead>
+                <tbody id="leaderboard-body" class="divide-y divide-slate-100 dark:divide-slate-800/60">
+                  <tr><td colspan="7" class="p-6 text-center text-slate-500 italic">Loading leaderboard...</td></tr>
+                </tbody>
+              </table>
             </div>
-            <div class="w-full h-2 bg-slate-200 dark:bg-slate-800 rounded-full overflow-hidden">
-              <div id="lb-you-progress-bar" class="h-full bg-gradient-to-r from-indigo-500 to-purple-500 transition-all duration-700" style="width:0%"></div>
+          </div>
+
+          <!-- Activity feed -->
+          <div class="mt-6">
+            <div class="text-xs uppercase font-bold tracking-wider text-slate-500 dark:text-slate-400 mb-2">Recent activity</div>
+            <div id="lb-activity" class="space-y-2 max-h-72 overflow-y-auto pr-1">
+              <div class="text-xs text-slate-500 italic">Loading activity...</div>
             </div>
-            <div class="text-xs text-slate-500 mt-1"><span id="lb-you-points-to-next">0</span> pts to next tier</div>
           </div>
         </div>
 
-        <!-- Full ranking table -->
-        <div>
-          <div class="text-xs uppercase font-bold tracking-wider text-slate-500 dark:text-slate-400 mb-2">Full rankings</div>
+        <!-- ── GLOBAL VIEW ── (hidden by default) -->
+        <div id="lb-view-global" class="hidden" id="global-leaderboard-panel">
+          <div class="flex items-center justify-between mb-3">
+            <p class="text-xs text-slate-500 dark:text-slate-400">How you stack up across every dealer &amp; rep on MarketSync. Others are anonymized — only you see your name.</p>
+            <!-- Reps / Dealers toggle -->
+            <div class="inline-flex bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg p-0.5 text-xs font-bold flex-shrink-0 ml-3">
+              <button type="button" data-gl-tab="reps" class="gl-tab px-3 py-1.5 rounded bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 transition">Reps</button>
+              <button type="button" data-gl-tab="dealers" class="gl-tab px-3 py-1.5 rounded text-slate-600 dark:text-slate-300 transition">Dealers</button>
+            </div>
+          </div>
+          <div id="gl-you" class="hidden text-xs rounded bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800 text-indigo-800 dark:text-indigo-200 px-3 py-2 mb-3"></div>
           <div class="overflow-x-auto">
             <table class="w-full text-sm border-collapse">
               <thead>
                 <tr class="border-b border-slate-200 dark:border-slate-800 text-slate-500 dark:text-slate-400 uppercase tracking-wider font-bold text-xs">
                   <th class="py-3 px-3 text-left w-12">Rank</th>
-                  <th class="py-3 px-3 text-left">Player</th>
-                  <th class="py-3 px-3 text-left">Tier</th>
+                  <th class="py-3 px-3 text-left">Name</th>
                   <th class="py-3 px-3 text-right">Points</th>
                   <th class="py-3 px-3 text-right">Listings</th>
                   <th class="py-3 px-3 text-right">Sold</th>
-                  <th class="py-3 px-3 text-right">Conv.</th>
                 </tr>
               </thead>
-              <tbody id="leaderboard-body" class="divide-y divide-slate-100 dark:divide-slate-800/60">
-                <tr><td colspan="7" class="p-6 text-center text-slate-500 italic">Loading leaderboard...</td></tr>
+              <tbody id="gl-body" class="divide-y divide-slate-100 dark:divide-slate-800/60">
+                <tr><td colspan="5" class="p-6 text-center text-slate-500 italic">Loading global leaderboard…</td></tr>
               </tbody>
             </table>
           </div>
         </div>
 
-        <!-- Activity feed -->
-        <div>
-          <div class="text-xs uppercase font-bold tracking-wider text-slate-500 dark:text-slate-400 mb-2">Recent activity</div>
-          <div id="lb-activity" class="space-y-2 max-h-72 overflow-y-auto pr-1">
-            <div class="text-xs text-slate-500 italic">Loading activity...</div>
+        <!-- ── Legend (once, compact) ── -->
+        <div class="lb-legend border-t border-slate-200 dark:border-slate-800 pt-4 mt-2 grid grid-cols-2 gap-x-8 gap-y-1 text-xs text-slate-500 dark:text-slate-400">
+          <div class="col-span-2 flex gap-6 flex-wrap mb-1">
+            <span><span class="font-bold text-indigo-600 dark:text-indigo-400">+100</span> Post a car</span>
+            <span><span class="font-bold text-emerald-600 dark:text-emerald-400">+500</span> You sell it ("I Sold It")</span>
+            <span><span class="font-bold text-slate-400">0</span> Someone else sold it</span>
           </div>
+          <div id="lb-legend-tiers" class="col-span-2 flex flex-wrap gap-x-5 gap-y-0.5"></div>
         </div>
-      </div>
 
-      <!-- Global leaderboard — visible to EVERYONE (incl. solo reps). Anonymized. -->
-      <div id="global-leaderboard-panel" class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-4 sm:p-6 space-y-4">
-        <div class="flex flex-wrap items-end justify-between gap-3">
-          <div>
-            <h2 class="text-lg font-bold text-slate-900 dark:text-white">🌎 Global Leaderboard</h2>
-            <p class="text-slate-500 dark:text-slate-400 text-xs">How you stack up across every dealer &amp; rep on MarketSync. Others are anonymized — only you see your name.</p>
-          </div>
-          <div class="inline-flex bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg p-0.5 text-xs font-bold">
-            <button type="button" data-gl-tab="reps" class="gl-tab px-3 py-1.5 rounded bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 transition">Reps</button>
-            <button type="button" data-gl-tab="dealers" class="gl-tab px-3 py-1.5 rounded text-slate-600 dark:text-slate-300 transition">Dealers</button>
-          </div>
-        </div>
-        <div id="gl-you" class="hidden text-xs rounded bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800 text-indigo-800 dark:text-indigo-200 px-3 py-2"></div>
-        <div class="overflow-x-auto">
-          <table class="w-full text-sm border-collapse">
-            <thead>
-              <tr class="border-b border-slate-200 dark:border-slate-800 text-slate-500 dark:text-slate-400 uppercase tracking-wider font-bold text-xs">
-                <th class="py-3 px-3 text-left w-12">Rank</th>
-                <th class="py-3 px-3 text-left">Name</th>
-                <th class="py-3 px-3 text-right">Points</th>
-                <th class="py-3 px-3 text-right">Listings</th>
-                <th class="py-3 px-3 text-right">Sold</th>
-              </tr>
-            </thead>
-            <tbody id="gl-body" class="divide-y divide-slate-100 dark:divide-slate-800/60">
-              <tr><td colspan="5" class="p-6 text-center text-slate-500 italic">Loading global leaderboard…</td></tr>
-            </tbody>
-          </table>
-        </div>
       </div>
 
       </div>
