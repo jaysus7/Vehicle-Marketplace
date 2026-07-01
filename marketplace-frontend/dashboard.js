@@ -1724,7 +1724,9 @@ async function loadInventoryCatalog() {
   list.innerHTML = '<div class="text-xs text-slate-500 italic col-span-full">Loading catalog...</div>';
   try {
     const res = await fetch(`${API}/inventory/all`, { headers: { 'Authorization': `Bearer ${token}` } });
-    __catalogCache = res.ok ? await res.json() : [];
+    const body = await res.json().catch(() => []);
+    if (!res.ok) throw new Error(body?.error || `HTTP ${res.status}`);
+    __catalogCache = Array.isArray(body) ? body : [];
     renderCatalog();
   } catch (err) {
     list.innerHTML = `<div class="text-xs text-red-400 col-span-full">Failed to load catalog: ${err.message}</div>`;

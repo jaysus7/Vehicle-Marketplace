@@ -438,7 +438,8 @@ async function _runInventorySyncInner(dealershipId) {
   trim: v.trim || null,
   price: v.saleprice || v.price || 0,
   mileage: v.mileage || 0,
-  condition: v.condition || null,          // ← ADD THIS LINE
+  condition: v.condition || null,
+  stocknumber: v.stocknumber || null,
   exterior_color: v.exteriorcolor || null,
   interior_color: v.interiorcolor || null,
   transmission: v.transmission || null,
