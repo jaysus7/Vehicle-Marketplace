@@ -2,6 +2,8 @@ import Anthropic from '@anthropic-ai/sdk'
 import { supabaseAdmin, resend, EMAIL_FROM } from '../shared.js'
 import { requireAuth } from '../middleware.js'
 
+const OWNER_EMAIL = (process.env.OWNER_EMAIL || 'massiejay@gmail.com').toLowerCase()
+
 function requireDealerAdmin(req, res, next) {
   if (req.profile?.role !== 'DEALER_ADMIN') {
     return res.status(403).json({ error: 'DEALER_ADMIN role required' })
@@ -28,7 +30,8 @@ export function registerAI(app) {
       .eq('id', req.dealershipId)
       .single()
     if (error) return res.status(500).json({ error: error.message })
-    res.json(data)
+    const isOwner = (req.user.email || '').toLowerCase() === OWNER_EMAIL
+    res.json({ ...data, ai_boost_active: isOwner ? true : !!data.ai_boost_active })
   })
 
   // PUT /ai/config — update dealership AI config (DEALER_ADMIN only)
