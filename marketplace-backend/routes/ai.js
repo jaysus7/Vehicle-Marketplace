@@ -190,6 +190,33 @@ Write a compelling listing in under 280 words. Include the year/make/model/trim,
       return res.status(502).json({ error: `AI generation failed: ${aiErr.message}` })
     }
 
+    // Log activity so the dealer can see what AI found
+    supabaseAdmin.from('ai_activity').insert({
+      dealership_id: req.dealershipId,
+      inventory_id,
+      actor_id: req.user.id,
+      vehicle_label: [vehicle.year, vehicle.make, vehicle.model, vehicle.trim].filter(Boolean).join(' '),
+      warnings: warnings.length > 0 ? warnings : null,
+      price_flagged: !!(price_flag?.flagged),
+      price_pct_diff: price_flag?.pct_diff ?? null,
+      price_median: price_flag?.median ?? null,
+      copy_generated: !!copy
+    }).then(() => {}).catch(() => {}) // fire-and-forget
+
     res.json({ copy, warnings, price_flag })
+  })
+
+  // GET /ai/activity — recent AI enrichment log for the dealership
+  app.get('/ai/activity', requireAuth, async (req, res) => {
+    if (!req.dealershipId) return res.status(400).json({ error: 'No dealership associated' })
+    const limit = Math.min(Number(req.query.limit) || 50, 200)
+    const { data, error } = await supabaseAdmin
+      .from('ai_activity')
+      .select('id, vehicle_label, warnings, price_flagged, price_pct_diff, price_median, copy_generated, created_at, inventory_id')
+      .eq('dealership_id', req.dealershipId)
+      .order('created_at', { ascending: false })
+      .limit(limit)
+    if (error) return res.status(500).json({ error: error.message })
+    res.json({ activity: data || [] })
   })
 }

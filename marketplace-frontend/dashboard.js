@@ -2378,6 +2378,82 @@ async function loadSessions() {
 
 let __aiBoostActive = false;
 
+async function loadAIActivity() {
+  const loading = document.getElementById('ai-activity-loading');
+  const empty = document.getElementById('ai-activity-empty');
+  const errorEl = document.getElementById('ai-activity-error');
+  const list = document.getElementById('ai-activity-list');
+  const countEl = document.getElementById('ai-activity-count');
+  const upsell = document.getElementById('ai-boost-page-upsell');
+
+  if (!list) return;
+
+  // Show/hide upsell based on active state
+  if (upsell) upsell.classList.toggle('hidden', !!__aiBoostActive);
+  if (!__aiBoostActive) {
+    if (loading) loading.classList.add('hidden');
+    return;
+  }
+
+  if (loading) loading.classList.remove('hidden');
+  if (empty) empty.classList.add('hidden');
+  if (errorEl) errorEl.classList.add('hidden');
+  list.classList.add('hidden');
+
+  try {
+    const res = await fetch(`${API}/ai/activity`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Failed to load activity');
+
+    const items = data.activity || [];
+    if (loading) loading.classList.add('hidden');
+
+    // Summary stats
+    const totalEl = document.getElementById('ai-stat-total');
+    const warnEl = document.getElementById('ai-stat-warnings');
+    const priceEl = document.getElementById('ai-stat-price-flags');
+    const copyEl = document.getElementById('ai-stat-copies');
+    if (totalEl) totalEl.textContent = items.length;
+    if (warnEl) warnEl.textContent = items.filter(i => i.warnings?.length > 0).length;
+    if (priceEl) priceEl.textContent = items.filter(i => i.price_flagged).length;
+    if (copyEl) copyEl.textContent = items.filter(i => i.copy_generated).length;
+
+    if (items.length === 0) { if (empty) empty.classList.remove('hidden'); return; }
+
+    if (countEl) countEl.textContent = `${items.length} checks`;
+    list.innerHTML = items.map(item => {
+      const date = new Date(item.created_at).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+      const badges = [];
+      if (item.warnings?.length > 0) badges.push(`<span class="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300">⚠ ${item.warnings.length} alert${item.warnings.length > 1 ? 's' : ''}</span>`);
+      if (item.price_flagged) {
+        const dir = (item.price_pct_diff || 0) > 0 ? 'overpriced' : 'underpriced';
+        const pct = Math.abs(item.price_pct_diff || 0);
+        badges.push(`<span class="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300">💰 ${pct}% ${dir}</span>`);
+      }
+      if (item.copy_generated) badges.push(`<span class="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300">✦ Copy written</span>`);
+      const warningList = item.warnings?.length > 0
+        ? `<ul class="mt-1.5 text-xs text-amber-700 dark:text-amber-300 space-y-0.5 list-disc list-inside">${item.warnings.map(w => `<li>${w}</li>`).join('')}</ul>`
+        : '';
+      return `<li class="px-4 py-3.5">
+        <div class="flex items-start justify-between gap-3">
+          <div class="min-w-0">
+            <div class="font-semibold text-sm text-slate-900 dark:text-white truncate">${item.vehicle_label || 'Unknown vehicle'}</div>
+            <div class="flex flex-wrap gap-1.5 mt-1.5">${badges.join('') || '<span class="text-xs text-slate-400">No issues found</span>'}</div>
+            ${warningList}
+          </div>
+          <div class="text-xs text-slate-400 whitespace-nowrap flex-shrink-0 mt-0.5">${date}</div>
+        </div>
+      </li>`;
+    }).join('');
+    list.classList.remove('hidden');
+  } catch (err) {
+    if (loading) loading.classList.add('hidden');
+    if (errorEl) { errorEl.textContent = err.message; errorEl.classList.remove('hidden'); }
+  }
+}
+
 async function verifyAIBoostSession(sessionId) {
   try {
     const res = await fetch(`${API}/billing/ai-boost-verify?session_id=${encodeURIComponent(sessionId)}`, {
@@ -2438,8 +2514,8 @@ function renderAIBoostSection(cfg) {
       navBtn.classList.add('nav-item', 'nav-ai-boost-btn', 'flex-shrink-0', 'md:w-full', 'text-left', 'whitespace-nowrap', 'px-3', 'py-2', 'rounded', 'font-medium', 'text-slate-700', 'dark:text-slate-300', 'hover:bg-slate-100', 'dark:hover:bg-slate-800', 'transition', 'flex', 'items-center', 'justify-between', 'gap-2');
       navBtn.classList.remove('text-slate-400', 'dark:text-slate-600', 'hover:bg-indigo-50', 'dark:hover:bg-indigo-950/30', 'cursor-pointer');
       if (navPill) navPill.classList.add('hidden');
-      navBtn.dataset.page = 'profile';
-      navBtn.onclick = null;
+      navBtn.dataset.page = 'ai-boost';
+      navBtn.onclick = () => { switchPage('ai-boost'); loadAIActivity(); };
     } else if (isAdmin) {
       navBtn.classList.remove('hidden');
       navBtn.classList.add('nav-ai-boost-btn', 'flex-shrink-0', 'md:w-full', 'text-left', 'whitespace-nowrap', 'px-3', 'py-2', 'rounded', 'font-medium', 'text-slate-400', 'dark:text-slate-600', 'hover:bg-indigo-50', 'dark:hover:bg-indigo-950/30', 'transition', 'flex', 'items-center', 'justify-between', 'gap-2', 'cursor-pointer');
@@ -2502,8 +2578,14 @@ function setupAIBoostListeners() {
   });
 
   document.getElementById('ai-boost-upsell-btn')?.addEventListener('click', (e) => {
-    startAIBoostCheckout(e.currentTarget, 'Upgrade');
+    startAIBoostCheckout(e.currentTarget, 'Try Free for 3 Days');
   });
+
+  document.getElementById('ai-boost-page-upgrade-btn')?.addEventListener('click', (e) => {
+    startAIBoostCheckout(e.currentTarget, 'Try Free for 3 Days');
+  });
+
+  document.getElementById('ai-activity-refresh')?.addEventListener('click', loadAIActivity);
 
   document.getElementById('ai-config-save-btn')?.addEventListener('click', async () => {
     const btn = document.getElementById('ai-config-save-btn');
