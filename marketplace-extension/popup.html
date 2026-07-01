@@ -225,6 +225,22 @@
 
     /* ── Premium Sync bar ── */
     #premium-sync-bar { background:#0d1117; padding:12px 16px; border-top:1px solid #2a2a2a; display:none; }
+
+    /* ── AI Boost badge ── */
+    #ai-boost-badge {
+      display: none;
+      align-items: center;
+      gap: 4px;
+      background: linear-gradient(135deg, #4f46e5, #7c3aed);
+      color: #fff;
+      font-size: 10px;
+      font-weight: 700;
+      padding: 2px 7px;
+      border-radius: 999px;
+      letter-spacing: .03em;
+      white-space: nowrap;
+    }
+    #ai-boost-badge.visible { display: inline-flex; }
   </style>
 </head>
 <body>
@@ -270,7 +286,10 @@
     <!-- Header -->
     <div class="header">
       <div>
-        <h1 id="header-name">—</h1>
+        <div style="display:flex;align-items:center;gap:6px;">
+          <h1 id="header-name">—</h1>
+          <span id="ai-boost-badge">✦ AI Boost</span>
+        </div>
         <div class="dealer" id="header-dealer"></div>
       </div>
       <div class="header-right">

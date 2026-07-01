@@ -289,7 +289,7 @@ function switchPage(pageId) {
   document.querySelectorAll('[data-page-content]').forEach(el => {
     el.classList.toggle('hidden', el.dataset.pageContent !== pageId);
   });
-  document.querySelectorAll('#dashboard-nav .nav-item').forEach(btn => {
+  document.querySelectorAll('#dashboard-nav .nav-item, #nav-ai-boost').forEach(btn => {
     const active = btn.dataset.page === pageId;
     btn.classList.toggle('bg-indigo-100', active);
     btn.classList.toggle('dark:bg-indigo-950/50', active);
@@ -298,6 +298,8 @@ function switchPage(pageId) {
     btn.classList.toggle('text-slate-700', !active);
     btn.classList.toggle('dark:text-slate-300', !active);
   });
+
+  if (pageId === 'ai-boost') loadAIActivity();
 }
 
 // Idempotent restore: makes sure leaderboard / team-insights / sales-team panels live
@@ -2512,17 +2514,18 @@ function renderAIBoostSection(cfg) {
     const showNav = cfg.ai_boost_active || isAdmin;
     navBtn.classList.toggle('hidden', !showNav);
     if (cfg.ai_boost_active) {
-      navBtn.className = navBtn.className.replace(/\bhidden\b\s*/g, '');
-      navBtn.classList.remove('hidden');
-      navBtn.classList.add('nav-item', 'nav-ai-boost-btn', 'flex-shrink-0', 'md:w-full', 'text-left', 'whitespace-nowrap', 'px-3', 'py-2', 'rounded', 'font-medium', 'text-slate-700', 'dark:text-slate-300', 'hover:bg-slate-100', 'dark:hover:bg-slate-800', 'transition', 'flex', 'items-center', 'justify-between', 'gap-2');
-      navBtn.classList.remove('text-slate-400', 'dark:text-slate-600', 'hover:bg-indigo-50', 'dark:hover:bg-indigo-950/30', 'cursor-pointer');
+      navBtn.classList.remove('hidden', 'text-slate-400', 'dark:text-slate-600', 'hover:bg-indigo-50', 'dark:hover:bg-indigo-950/30');
+      navBtn.classList.add('text-slate-700', 'dark:text-slate-300', 'hover:bg-slate-100', 'dark:hover:bg-slate-800');
       if (navPill) navPill.classList.add('hidden');
       navBtn.dataset.page = 'ai-boost';
-      navBtn.onclick = () => { switchPage('ai-boost'); loadAIActivity(); };
+      navBtn.onclick = null;
+      if (!navBtn._clickWired) {
+        navBtn._clickWired = true;
+        navBtn.addEventListener('click', () => switchPage('ai-boost'));
+      }
     } else if (isAdmin) {
-      navBtn.classList.remove('hidden');
-      navBtn.classList.add('nav-ai-boost-btn', 'flex-shrink-0', 'md:w-full', 'text-left', 'whitespace-nowrap', 'px-3', 'py-2', 'rounded', 'font-medium', 'text-slate-400', 'dark:text-slate-600', 'hover:bg-indigo-50', 'dark:hover:bg-indigo-950/30', 'transition', 'flex', 'items-center', 'justify-between', 'gap-2', 'cursor-pointer');
-      navBtn.classList.remove('nav-item', 'text-slate-700', 'dark:text-slate-300', 'hover:bg-slate-100', 'dark:hover:bg-slate-800');
+      navBtn.classList.remove('hidden', 'text-slate-700', 'dark:text-slate-300', 'hover:bg-slate-100', 'dark:hover:bg-slate-800');
+      navBtn.classList.add('text-slate-400', 'dark:text-slate-600', 'hover:bg-indigo-50', 'dark:hover:bg-indigo-950/30', 'cursor-pointer');
       if (navPill) navPill.classList.remove('hidden');
       delete navBtn.dataset.page;
       navBtn.onclick = () => startAIBoostCheckout(navBtn, 'Try Free for 3 Days');

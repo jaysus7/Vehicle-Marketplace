@@ -463,6 +463,15 @@ async function showInventoryScreen(token, user) {
       if (err.message === 'SUBSCRIPTION_REQUIRED') handleSubscriptionGate(token)
     })
 
+  apiGet('/ai/config', token)
+    .then(cfg => {
+      if (cfg?.ai_boost_active) {
+        const badge = $('ai-boost-badge')
+        if (badge) badge.classList.add('visible')
+      }
+    })
+    .catch(() => {})
+
   $('logout-btn').onclick = () => chrome.storage.local.remove(['token', 'user'], () => location.reload())
   $('refresh-btn').onclick = () => loadInventory(token)
 
