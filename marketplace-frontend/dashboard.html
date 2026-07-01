@@ -300,6 +300,17 @@
       <!-- ───────── INSIGHTS PAGE ───────── -->
       <div data-page-content="insights" class="page-content space-y-8">
 
+      <!-- Loading skeleton — visible until JS resolves the profile and hides it -->
+      <div id="insights-skeleton" class="space-y-4">
+        <div class="h-7 w-40 bg-slate-200 dark:bg-slate-800 rounded animate-pulse"></div>
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div class="h-24 bg-slate-200 dark:bg-slate-800 rounded-lg animate-pulse"></div>
+          <div class="h-24 bg-slate-200 dark:bg-slate-800 rounded-lg animate-pulse"></div>
+          <div class="h-24 bg-slate-200 dark:bg-slate-800 rounded-lg animate-pulse"></div>
+          <div class="h-24 bg-slate-200 dark:bg-slate-800 rounded-lg animate-pulse"></div>
+        </div>
+      </div>
+
       <!-- AI Boost upsell banner — shown to dealer admins who haven't activated AI Boost -->
       <div id="ai-boost-upsell-banner" class="hidden" data-admin-only>
         <div class="flex items-start justify-between gap-4 bg-indigo-600/10 dark:bg-indigo-900/30 border border-indigo-400/40 dark:border-indigo-600/50 rounded-xl px-5 py-4">
@@ -948,7 +959,7 @@
     </section>
   </main>
 
-  <script src="dashboard.js?v=20260702"></script>
+  <script src="dashboard.js?v=20260703"></script>
   <script src="tour.js"></script>
 </body>
 </html>

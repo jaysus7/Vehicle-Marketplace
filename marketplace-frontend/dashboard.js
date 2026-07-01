@@ -218,6 +218,7 @@ async function initializeDashboardEcosystem() {
     // flashed for a solo rep). This happens synchronously after the hides, so the
     // browser paints the correct nav in one go.
     document.body.classList.add('ms-role-ready');
+    document.getElementById('insights-skeleton')?.classList.add('hidden');
 
     // Team leaderboard is for actual teams (admin + reps in a real dealership).
     // Solo reps / no-team users have nothing to rank against on a team, so we hide
