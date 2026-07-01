@@ -40,8 +40,11 @@ export function registerRoutes(app) {
         headers: { 'User-Agent': 'Mozilla/5.0 (compatible; MarketSync-Proxy/1.0)' },
         signal: AbortSignal.timeout(10000)
       })
+      const contentType = response.headers.get('content-type') || ''
+      if (!contentType.startsWith('image/')) {
+        return res.status(400).json({ error: 'Remote resource is not an image' })
+      }
       const buffer = await response.arrayBuffer()
-      const contentType = response.headers.get('content-type') || 'image/jpeg'
       res.set({
         'Content-Type': contentType,
         'Access-Control-Allow-Origin': '*',
