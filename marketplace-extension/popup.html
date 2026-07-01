@@ -7,12 +7,23 @@
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
 
-    body {
+    html, body {
       width: 420px;
-      min-height: 300px;
+      height: 580px; /* Chrome extension popup max ~600px */
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
       background: #0f0f0f;
       color: #fff;
+      overflow: hidden; /* no outer scroll — only the list scrolls */
+    }
+
+    /* Login/register screens don't need full-height flex */
+    #login-screen, #register-screen { overflow-y: auto; height: 100%; }
+
+    /* Inventory screen fills all remaining space and only scrolls the list */
+    #inventory-screen {
+      display: flex;
+      flex-direction: column;
+      height: 100%;
     }
 
     /* ── Header ── */
@@ -158,10 +169,11 @@
     .stat .num { font-size: 20px; font-weight: 700; color: #3b82f6; }
     .stat .label { font-size: 10px; color: #666; margin-top: 3px; text-transform: uppercase; letter-spacing: .04em; }
 
-    /* ── Vehicle list ── */
+    /* ── Vehicle list ── fills remaining height, only this scrolls ── */
     .vehicle-list {
-      max-height: 520px;
+      flex: 1;
       overflow-y: auto;
+      min-height: 0; /* required for flex children to shrink below content size */
     }
     .vehicle-list::-webkit-scrollbar { width: 4px; }
     .vehicle-list::-webkit-scrollbar-track { background: #0f0f0f; }
