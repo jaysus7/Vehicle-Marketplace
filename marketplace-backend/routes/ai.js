@@ -206,6 +206,83 @@ Write a compelling listing in under 280 words. Include the year/make/model/trim,
     res.json({ copy, warnings, price_flag })
   })
 
+  // POST /ai/sync-all — run AI enrichment on all active inventory for the dealership
+  // Runs in background; returns immediately with a count. Results appear in /ai/activity.
+  app.post('/ai/sync-all', requireAuth, async (req, res) => {
+    if (!req.dealershipId) return res.status(400).json({ error: 'No dealership associated' })
+
+    const { data: dealer } = await supabaseAdmin
+      .from('dealerships')
+      .select('ai_boost_active, ai_tone, ai_required_fields, ai_manager_email')
+      .eq('id', req.dealershipId)
+      .single()
+
+    const isOwner = (req.user.email || '').toLowerCase() === OWNER_EMAIL
+    if (!isOwner && !dealer?.ai_boost_active) {
+      return res.status(403).json({ error: 'AI Boost not active' })
+    }
+
+    const { data: vehicles, error } = await supabaseAdmin
+      .from('inventory')
+      .select('id')
+      .eq('dealership_id', req.dealershipId)
+      .eq('status', 'available')
+      .limit(50) // cap to avoid runaway cost
+
+    if (error) return res.status(500).json({ error: error.message })
+    const ids = (vehicles || []).map(v => v.id)
+    res.json({ queued: ids.length, message: `Running AI checks on ${ids.length} vehicles…` })
+
+    // Run enrichments in the background sequentially to avoid Anthropic rate limits
+    ;(async () => {
+      for (const inventory_id of ids) {
+        try {
+          const { data: vehicle } = await supabaseAdmin
+            .from('inventory').select('*').eq('id', inventory_id).single()
+          if (!vehicle) continue
+
+          const warnings = []
+          const requiredFields = dealer.ai_required_fields || ['price', 'mileage', 'image_urls']
+          if (requiredFields.includes('price') && (!vehicle.price || Number(vehicle.price) === 0)) warnings.push('Missing or zero price')
+          if (requiredFields.includes('mileage') && vehicle.mileage == null) warnings.push('Missing mileage')
+          if (requiredFields.includes('image_urls') && (!vehicle.image_urls || vehicle.image_urls.length === 0)) warnings.push('No photos attached')
+          if (requiredFields.includes('description') && (!vehicle.description || vehicle.description.length < 20)) warnings.push('Description is missing or too short')
+
+          let price_flag = null
+          if (vehicle.price && vehicle.make && vehicle.model && vehicle.year) {
+            const { data: comps } = await supabaseAdmin
+              .from('inventory').select('price')
+              .eq('dealership_id', req.dealershipId).eq('make', vehicle.make)
+              .eq('model', vehicle.model).eq('status', 'available')
+              .gte('year', vehicle.year - 2).lte('year', vehicle.year + 2)
+              .neq('id', inventory_id).not('price', 'is', null)
+            if (comps?.length > 0) {
+              const prices = comps.map(c => Number(c.price)).filter(p => p > 0).sort((a, b) => a - b)
+              const med = median(prices)
+              if (med) {
+                const pct_diff = ((Number(vehicle.price) - med) / med) * 100
+                price_flag = { flagged: Math.abs(pct_diff) > 15, median: med, pct_diff: Math.round(pct_diff * 10) / 10 }
+              }
+            }
+          }
+
+          await supabaseAdmin.from('ai_activity').insert({
+            dealership_id: req.dealershipId,
+            inventory_id,
+            actor_id: req.user.id,
+            vehicle_label: [vehicle.year, vehicle.make, vehicle.model, vehicle.trim].filter(Boolean).join(' '),
+            warnings: warnings.length > 0 ? warnings : null,
+            price_flagged: !!(price_flag?.flagged),
+            price_pct_diff: price_flag?.pct_diff ?? null,
+            price_median: price_flag?.median ?? null,
+            copy_generated: false
+          })
+        } catch {}
+        await new Promise(r => setTimeout(r, 300)) // gentle rate limiting between vehicles
+      }
+    })()
+  })
+
   // GET /ai/activity — recent AI enrichment log for the dealership
   app.get('/ai/activity', requireAuth, async (req, res) => {
     if (!req.dealershipId) return res.status(400).json({ error: 'No dealership associated' })

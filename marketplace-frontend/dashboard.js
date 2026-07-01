@@ -2385,12 +2385,15 @@ async function loadAIActivity() {
   const list = document.getElementById('ai-activity-list');
   const countEl = document.getElementById('ai-activity-count');
   const upsell = document.getElementById('ai-boost-page-upsell');
+  const activeContent = document.getElementById('ai-boost-active-content');
 
   if (!list) return;
 
-  // Show/hide upsell based on active state
-  if (upsell) upsell.classList.toggle('hidden', !!__aiBoostActive);
-  if (!__aiBoostActive) {
+  // Always show/hide the right section
+  const active = !!__aiBoostActive;
+  if (upsell) upsell.classList.toggle('hidden', active);
+  if (activeContent) activeContent.classList.toggle('hidden', !active);
+  if (!active) {
     if (loading) loading.classList.add('hidden');
     return;
   }
@@ -2586,6 +2589,38 @@ function setupAIBoostListeners() {
   });
 
   document.getElementById('ai-activity-refresh')?.addEventListener('click', loadAIActivity);
+
+  document.getElementById('ai-sync-all-btn')?.addEventListener('click', async () => {
+    const btn = document.getElementById('ai-sync-all-btn');
+    const status = document.getElementById('ai-sync-status');
+    const statusText = document.getElementById('ai-sync-status-text');
+    btn.disabled = true;
+    btn.textContent = 'Syncing…';
+    if (status) status.classList.remove('hidden');
+    if (statusText) statusText.textContent = 'Starting sync…';
+    try {
+      const res = await fetch(`${API}/ai/sync-all`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Sync failed');
+      if (statusText) statusText.textContent = data.message || 'Sync running…';
+      // Poll activity log after a short delay to show first results
+      setTimeout(() => loadAIActivity(), 4000);
+      setTimeout(() => loadAIActivity(), 12000);
+      setTimeout(() => {
+        if (status) status.classList.add('hidden');
+        btn.disabled = false;
+        btn.innerHTML = `<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg> Sync All`;
+      }, 20000);
+    } catch (err) {
+      if (status) status.classList.add('hidden');
+      btn.disabled = false;
+      btn.textContent = 'Sync All';
+      showToast('Sync failed: ' + err.message, 'error');
+    }
+  });
 
   document.getElementById('ai-config-save-btn')?.addEventListener('click', async () => {
     const btn = document.getElementById('ai-config-save-btn');
