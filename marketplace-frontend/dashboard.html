@@ -240,37 +240,35 @@
         </div>
       </div>
 
-      <!-- Sidebar navigation — horizontal scroll on mobile, stacked sidebar on desktop -->
-      <nav id="dashboard-nav" class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-2 pb-2 text-sm order-1 md:order-2 flex overflow-x-auto md:overflow-visible md:flex-col gap-1 md:gap-0 md:space-y-1 md:p-3 md:sticky md:top-6 z-10 scrollbar-none">
-        <button type="button" data-page="insights" class="nav-item flex-shrink-0 md:w-full text-left whitespace-nowrap px-3 py-2 rounded font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition flex items-center gap-2.5">
-          <svg class="w-4 h-4 flex-shrink-0 opacity-60" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 13.5l5-5 4 4 5-6 4 3"/><path stroke-linecap="round" stroke-linejoin="round" d="M3 20h18"/></svg>
-          Insights
+      <!-- Nav: icon-only pill row on mobile, labelled sidebar on desktop -->
+      <nav id="dashboard-nav" class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-1.5 md:p-3 text-sm order-1 md:order-2 flex md:flex-col gap-0.5 md:gap-0 md:space-y-1 md:sticky md:top-6 z-10">
+        <button type="button" data-page="insights" title="Insights" class="nav-item flex-1 md:flex-none md:w-full flex items-center justify-center md:justify-start gap-2.5 px-2 md:px-3 py-2.5 md:py-2 rounded font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition">
+          <svg class="w-5 h-5 md:w-4 md:h-4 flex-shrink-0 opacity-60" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 13.5l5-5 4 4 5-6 4 3"/><path stroke-linecap="round" stroke-linejoin="round" d="M3 20h18"/></svg>
+          <span class="hidden md:inline">Insights</span>
         </button>
-        <button type="button" data-page="inventory" class="nav-item flex-shrink-0 md:w-full text-left whitespace-nowrap px-3 py-2 rounded font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition flex items-center gap-2.5">
-          <svg class="w-4 h-4 flex-shrink-0 opacity-60" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><rect x="2" y="7" width="20" height="10" rx="2"/><path stroke-linecap="round" d="M6 17v1a1 1 0 001 1h2a1 1 0 001-1v-1M14 17v1a1 1 0 001 1h2a1 1 0 001-1v-1"/><circle cx="7.5" cy="12" r="1.5"/><path stroke-linecap="round" d="M11 12h6"/><path stroke-linecap="round" d="M11 9.5h4"/></svg>
-          Inventory
+        <button type="button" data-page="inventory" title="Inventory" class="nav-item flex-1 md:flex-none md:w-full flex items-center justify-center md:justify-start gap-2.5 px-2 md:px-3 py-2.5 md:py-2 rounded font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition">
+          <svg class="w-5 h-5 md:w-4 md:h-4 flex-shrink-0 opacity-60" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><rect x="2" y="7" width="20" height="10" rx="2"/><path stroke-linecap="round" d="M6 17v1a1 1 0 001 1h2a1 1 0 001-1v-1M14 17v1a1 1 0 001 1h2a1 1 0 001-1v-1"/><circle cx="7.5" cy="12" r="1.5"/><path stroke-linecap="round" d="M11 12h6"/><path stroke-linecap="round" d="M11 9.5h4"/></svg>
+          <span class="hidden md:inline">Inventory</span>
         </button>
-        <button type="button" data-page="leaderboard" class="nav-item flex-shrink-0 md:w-full text-left whitespace-nowrap px-3 py-2 rounded font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition flex items-center gap-2.5">
-          <svg class="w-4 h-4 flex-shrink-0 opacity-60" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M8 21V10M12 21V3M16 21v-6"/><path stroke-linecap="round" stroke-linejoin="round" d="M5 21h14"/></svg>
-          Leaderboard
+        <button type="button" data-page="leaderboard" title="Leaderboard" class="nav-item flex-1 md:flex-none md:w-full flex items-center justify-center md:justify-start gap-2.5 px-2 md:px-3 py-2.5 md:py-2 rounded font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition">
+          <svg class="w-5 h-5 md:w-4 md:h-4 flex-shrink-0 opacity-60" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M8 21V10M12 21V3M16 21v-6"/><path stroke-linecap="round" stroke-linejoin="round" d="M5 21h14"/></svg>
+          <span class="hidden md:inline">Leaderboard</span>
         </button>
-        <button type="button" data-page="sales-team" data-admin-nav class="nav-item flex-shrink-0 md:w-full text-left whitespace-nowrap px-3 py-2 rounded font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition flex items-center gap-2.5">
-          <svg class="w-4 h-4 flex-shrink-0 opacity-60" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M17 20c0-2.21-2.239-4-5-4S7 17.79 7 20"/><circle cx="12" cy="8" r="3" stroke-linecap="round"/><path stroke-linecap="round" stroke-linejoin="round" d="M21 20c0-1.864-1.567-3.411-3.646-3.837M3 20c0-1.864 1.567-3.411 3.646-3.837"/><circle cx="19" cy="7" r="2.5" stroke-linecap="round"/><circle cx="5" cy="7" r="2.5" stroke-linecap="round"/></svg>
-          Sales Team
+        <button type="button" data-page="sales-team" data-admin-nav title="Sales Team" class="nav-item flex-1 md:flex-none md:w-full flex items-center justify-center md:justify-start gap-2.5 px-2 md:px-3 py-2.5 md:py-2 rounded font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition">
+          <svg class="w-5 h-5 md:w-4 md:h-4 flex-shrink-0 opacity-60" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M17 20c0-2.21-2.239-4-5-4S7 17.79 7 20"/><circle cx="12" cy="8" r="3" stroke-linecap="round"/><path stroke-linecap="round" stroke-linejoin="round" d="M21 20c0-1.864-1.567-3.411-3.646-3.837M3 20c0-1.864 1.567-3.411 3.646-3.837"/><circle cx="19" cy="7" r="2.5" stroke-linecap="round"/><circle cx="5" cy="7" r="2.5" stroke-linecap="round"/></svg>
+          <span class="hidden md:inline">Sales Team</span>
         </button>
-        <button type="button" data-page="profile" class="nav-item flex-shrink-0 md:w-full text-left whitespace-nowrap px-3 py-2 rounded font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition flex items-center gap-2.5 md:mt-auto md:order-last">
-          <svg class="w-4 h-4 flex-shrink-0 opacity-60" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path stroke-linecap="round" stroke-linejoin="round" d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
-          Profile &amp; Settings
-        </button>
-        <!-- AI Boost nav item: hidden until AI config loads.
-             Admins see it always (greyed + Free Trial pill if not purchased, normal if purchased).
-             Reps only see it when the dealer has purchased AI Boost. -->
-        <button type="button" id="nav-ai-boost" class="hidden flex-shrink-0 md:w-full text-left whitespace-nowrap px-3 py-2 rounded font-medium transition flex items-center justify-between gap-2">
+        <!-- AI Boost: admins always see it (hidden only until JS resolves role) -->
+        <button type="button" id="nav-ai-boost" title="AI Boost" class="hidden flex-1 md:flex-none md:w-full flex items-center justify-center md:justify-start md:justify-between gap-2 px-2 md:px-3 py-2.5 md:py-2 rounded font-medium transition">
           <span id="nav-ai-boost-label" class="flex items-center gap-2.5">
-            <svg class="w-4 h-4 flex-shrink-0 opacity-60" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z"/><path stroke-linecap="round" stroke-linejoin="round" d="M18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 00-2.456 2.456z"/></svg>
-            AI Boost
+            <svg class="w-5 h-5 md:w-4 md:h-4 flex-shrink-0 opacity-60" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z"/><path stroke-linecap="round" stroke-linejoin="round" d="M18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 00-2.456 2.456z"/></svg>
+            <span class="hidden md:inline">AI Boost</span>
           </span>
-          <span id="nav-ai-boost-pill" class="hidden text-[9px] font-black uppercase tracking-wider bg-indigo-600 text-white px-1.5 py-0.5 rounded-full leading-none flex-shrink-0">Free Trial</span>
+          <span id="nav-ai-boost-pill" class="hidden text-[9px] font-black uppercase tracking-wider bg-indigo-600 text-white px-1.5 py-0.5 rounded-full leading-none flex-shrink-0">Trial</span>
+        </button>
+        <button type="button" data-page="profile" title="Settings" class="nav-item flex-1 md:flex-none md:w-full flex items-center justify-center md:justify-start gap-2.5 px-2 md:px-3 py-2.5 md:py-2 rounded font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition md:mt-auto">
+          <svg class="w-5 h-5 md:w-4 md:h-4 flex-shrink-0 opacity-60" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path stroke-linecap="round" stroke-linejoin="round" d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+          <span class="hidden md:inline">Profile &amp; Settings</span>
         </button>
       </nav>
 
