@@ -2379,6 +2379,9 @@ function renderAIBoostSection(cfg) {
   const activePanel = document.getElementById('ai-boost-active');
   if (!badge || !inactive || !activePanel) return;
 
+  const upsellBanner = document.getElementById('ai-boost-upsell-banner');
+  if (upsellBanner) upsellBanner.classList.toggle('hidden', !!cfg.ai_boost_active);
+
   if (cfg.ai_boost_active) {
     badge.textContent = 'Active';
     badge.className = 'text-xs font-bold px-2 py-0.5 rounded-full border border-emerald-500 bg-emerald-900/30 text-emerald-300';
@@ -2407,24 +2410,31 @@ function renderAIBoostSection(cfg) {
   }
 }
 
+async function startAIBoostCheckout(btn, resetLabel) {
+  btn.disabled = true;
+  btn.textContent = 'Redirecting...';
+  try {
+    const res = await fetch(`${API}/billing/subscribe-ai-boost`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    const data = await res.json();
+    if (data.url) { window.location.href = data.url; return; }
+    throw new Error(data.error || 'Failed to start checkout');
+  } catch (err) {
+    btn.disabled = false;
+    btn.textContent = resetLabel;
+    alert('Could not start AI Boost checkout: ' + err.message);
+  }
+}
+
 function setupAIBoostListeners() {
-  document.getElementById('ai-boost-upgrade-btn')?.addEventListener('click', async () => {
-    const btn = document.getElementById('ai-boost-upgrade-btn');
-    btn.disabled = true;
-    btn.textContent = 'Redirecting...';
-    try {
-      const res = await fetch(`${API}/billing/subscribe-ai-boost`, {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      const data = await res.json();
-      if (data.url) { window.location.href = data.url; return; }
-      throw new Error(data.error || 'Failed to start checkout');
-    } catch (err) {
-      btn.disabled = false;
-      btn.textContent = 'Upgrade to AI Boost — $199/month';
-      alert('Could not start AI Boost checkout: ' + err.message);
-    }
+  document.getElementById('ai-boost-upgrade-btn')?.addEventListener('click', (e) => {
+    startAIBoostCheckout(e.currentTarget, 'Upgrade to AI Boost — $199/month');
+  });
+
+  document.getElementById('ai-boost-upsell-btn')?.addEventListener('click', (e) => {
+    startAIBoostCheckout(e.currentTarget, 'Upgrade');
   });
 
   document.getElementById('ai-config-save-btn')?.addEventListener('click', async () => {

@@ -295,6 +295,20 @@
       <!-- ───────── INSIGHTS PAGE ───────── -->
       <div data-page-content="insights" class="page-content space-y-8">
 
+      <!-- AI Boost upsell banner — shown to dealer admins who haven't activated AI Boost -->
+      <div id="ai-boost-upsell-banner" class="hidden" data-admin-only>
+        <div class="flex items-start justify-between gap-4 bg-indigo-600/10 dark:bg-indigo-900/30 border border-indigo-400/40 dark:border-indigo-600/50 rounded-xl px-5 py-4">
+          <div class="flex items-start gap-3">
+            <span class="text-2xl leading-none mt-0.5">✨</span>
+            <div>
+              <p class="font-bold text-slate-900 dark:text-white text-sm">AI Boost — $199/month add-on</p>
+              <p class="text-xs text-slate-600 dark:text-slate-300 mt-0.5 leading-relaxed">Let AI write your listing copy, flag missing photos or price, and check if your vehicles are priced competitively — all before you post.</p>
+            </div>
+          </div>
+          <button id="ai-boost-upsell-btn" class="flex-shrink-0 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold px-4 py-2 rounded-lg transition whitespace-nowrap">Upgrade</button>
+        </div>
+      </div>
+
       <!-- Time range toggle. Reusable component — same markup is used on Team Insights too. -->
       <div class="range-toggle flex items-center justify-between flex-wrap gap-3">
         <h2 class="text-lg font-bold text-slate-900 dark:text-white">Insights · <span class="range-label font-normal text-slate-500 text-sm">lifetime</span></h2>
