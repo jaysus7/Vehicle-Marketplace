@@ -1004,7 +1004,7 @@ function renderRepCards(byRep, soldByRep, activeByRep) {
           <div class="flex items-center gap-2.5 min-w-0">
             <div class="w-9 h-9 rounded-full bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 flex items-center justify-center font-black text-sm flex-shrink-0">${initial}</div>
             <div class="min-w-0">
-              <div class="text-sm font-bold text-slate-900 dark:text-white truncate">${r.name}</div>
+              <div class="text-sm font-bold text-slate-900 dark:text-white leading-tight break-words">${r.name}</div>
               <div class="text-xs text-slate-500 font-mono">${points.toLocaleString()} pts</div>
             </div>
           </div>
@@ -1052,8 +1052,21 @@ function chartCommonOptions() {
     maintainAspectRatio: false,
     plugins: { legend: { display: false } },
     scales: {
-      x: { ticks: { color: tickColor, font: { size: 10 } }, grid: { color: gridColor } },
-      y: { ticks: { color: tickColor, font: { size: 10 }, precision: 0 }, grid: { color: gridColor }, beginAtZero: true }
+      x: {
+        ticks: {
+          color: tickColor,
+          font: { size: 11 },
+          maxRotation: 45,
+          minRotation: 30,
+          autoSkip: false
+        },
+        grid: { color: gridColor }
+      },
+      y: {
+        ticks: { color: tickColor, font: { size: 11 }, precision: 0 },
+        grid: { color: gridColor },
+        beginAtZero: true
+      }
     }
   };
 }
