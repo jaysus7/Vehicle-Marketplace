@@ -1782,7 +1782,7 @@ function renderCatalog() {
       pending: 'bg-amber-900/40 border-amber-700 text-amber-300',
       sold: 'bg-slate-100 dark:bg-slate-800 border-slate-300 dark:border-slate-700 text-slate-500 dark:text-slate-400'
     };
-    return `<span class="text-sm uppercase font-bold border px-1.5 py-0.5 rounded ${map[s] || map.sold}">${s || 'unknown'}</span>`;
+    return `<span class="text-xs uppercase font-bold border px-1.5 py-0.5 rounded ${map[s] || map.sold}">${s || 'unknown'}</span>`;
   };
   const conditionBadge = (c) => {
     if (!c) return '';
