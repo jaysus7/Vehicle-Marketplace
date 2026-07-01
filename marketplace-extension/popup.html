@@ -5,296 +5,543 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>MarketSync</title>
   <style>
+    /* ── Design tokens — light mode defaults ── */
+    :root {
+      --bg:          #f8fafc;
+      --bg-2:        #ffffff;
+      --bg-3:        #f1f5f9;
+      --border:      #e2e8f0;
+      --border-2:    #cbd5e1;
+      --text:        #0f172a;
+      --text-2:      #475569;
+      --text-3:      #94a3b8;
+      --accent:      #6366f1;
+      --accent-2:    #4f46e5;
+      --accent-bg:   #eef2ff;
+      --accent-text: #4338ca;
+      --green:       #16a34a;
+      --green-bg:    #f0fdf4;
+      --green-text:  #15803d;
+      --amber:       #d97706;
+      --amber-bg:    #fffbeb;
+      --red:         #dc2626;
+      --red-bg:      #fef2f2;
+      --purple:      #7c3aed;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg:          #0f172a;
+        --bg-2:        #1e293b;
+        --bg-3:        #0f172a;
+        --border:      #1e293b;
+        --border-2:    #334155;
+        --text:        #f1f5f9;
+        --text-2:      #94a3b8;
+        --text-3:      #475569;
+        --accent:      #818cf8;
+        --accent-2:    #6366f1;
+        --accent-bg:   #1e1b4b;
+        --accent-text: #a5b4fc;
+        --green:       #4ade80;
+        --green-bg:    #052e16;
+        --green-text:  #86efac;
+        --amber:       #fbbf24;
+        --amber-bg:    #1c1200;
+        --red:         #f87171;
+        --red-bg:      #1c0505;
+        --purple:      #a78bfa;
+      }
+    }
+
     * { margin: 0; padding: 0; box-sizing: border-box; }
 
     html, body {
       width: 420px;
-      height: 600px; /* Chrome extension popup max */
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-      background: #0f0f0f;
-      color: #fff;
-      overflow: hidden; /* no outer scroll — only the list scrolls */
+      height: 600px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Inter', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      overflow: hidden;
+      font-size: 13px;
     }
 
-    /* Login/register screens don't need full-height flex */
+    /* ── Screens ── */
     #login-screen, #register-screen { overflow-y: auto; height: 100%; }
-
-    /* Inventory screen fills all remaining space and only scrolls the list */
-    #inventory-screen {
-      display: flex;
-      flex-direction: column;
-      height: 100%;
-    }
+    #inventory-screen { display: flex; flex-direction: column; height: 100%; }
+    .view-screen { display: none; }
+    .view-screen.active { display: block; }
+    #inventory-screen.active { display: flex; }
 
     /* ── Header ── */
     .header {
-      background: #1a1a1a;
-      padding: 8px 14px;
+      background: var(--bg-2);
+      padding: 10px 14px;
       display: flex;
       align-items: center;
       justify-content: space-between;
-      border-bottom: 1px solid #2a2a2a;
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
     }
-    .header h1 { font-size: 14px; font-weight: 600; color: #fff; }
-    .header .dealer { font-size: 11px; color: #888; margin-top: 1px; }
-    .header-right { display: flex; align-items: center; gap: 8px; }
+    .header-brand {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .header-logo {
+      width: 28px;
+      height: 28px;
+      background: linear-gradient(135deg, var(--accent-2), var(--purple));
+      border-radius: 7px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+    .header-logo svg { width: 16px; height: 16px; color: #fff; }
+    .header-title-wrap { line-height: 1.2; }
+    .header-name-row { display: flex; align-items: center; gap: 6px; }
+    .header h1 { font-size: 13px; font-weight: 700; color: var(--text); }
+    .header .dealer { font-size: 11px; color: var(--text-3); margin-top: 1px; }
+    .header-right { display: flex; align-items: center; gap: 6px; }
+
     .dashboard-link {
-      background: none;
-      border: 1px solid #3b82f6;
-      color: #3b82f6;
+      background: var(--accent-bg);
+      border: 1px solid var(--accent);
+      color: var(--accent-text);
       padding: 4px 9px;
-      border-radius: 6px;
+      border-radius: 7px;
       font-size: 11px;
       font-weight: 600;
       cursor: pointer;
       text-decoration: none;
       display: inline-flex;
       align-items: center;
-      gap: 3px;
+      gap: 4px;
+      transition: opacity .15s;
     }
-    .dashboard-link:hover { background: #1e3a5f; }
+    .dashboard-link:hover { opacity: .8; }
+
     .logout-btn {
       background: none;
-      border: 1px solid #333;
-      color: #888;
-      padding: 4px 10px;
-      border-radius: 6px;
+      border: 1px solid var(--border-2);
+      color: var(--text-3);
+      padding: 4px 9px;
+      border-radius: 7px;
       font-size: 11px;
       cursor: pointer;
+      transition: all .15s;
     }
-    .logout-btn:hover { border-color: #555; color: #fff; }
-
-    /* ── Filter pills ── */
-    .filter-bar {
-      padding: 10px 14px 4px;
-      background: #111;
-      border-bottom: 1px solid #1e1e1e;
-    }
-    .filter-row {
-      display: flex;
-      gap: 6px;
-      flex-wrap: wrap;
-      margin-bottom: 9px;
-      align-items: center;
-    }
-    .filter-label {
-      font-size: 9px;
-      color: #444;
-      text-transform: uppercase;
-      letter-spacing: .06em;
-      margin-right: 2px;
-      white-space: nowrap;
-    }
-    .pill {
-      background: #1a1a1a;
-      border: 1px solid #2a2a2a;
-      color: #777;
-      padding: 4px 10px;
-      border-radius: 999px;
-      font-size: 11px;
-      font-weight: 600;
-      cursor: pointer;
-      transition: all 0.12s;
-      white-space: nowrap;
-    }
-    .pill:hover { border-color: #555; color: #ccc; }
-    .pill.active { background: #3b82f6; border-color: #3b82f6; color: #fff; }
-    .pill.active.status-available { background: #16a34a; border-color: #16a34a; }
-    .pill.active.status-posted   { background: #059669; border-color: #059669; }
-    .pill.active.status-pending  { background: #b45309; border-color: #b45309; }
-    .pill.active.status-sold     { background: #6b21a8; border-color: #6b21a8; }
-
-    /* search row */
-    .search-row {
-      padding: 8px 12px;
-      display: flex;
-      gap: 8px;
-      align-items: center;
-      border-bottom: 1px solid #1a1a1a;
-      background: #111;
-    }
-    .search-wrap { position: relative; flex: 1; }
-    .search-input {
-      width: 100%;
-      background: #1a1a1a;
-      border: 1px solid #2a2a2a;
-      color: #fff;
-      padding: 6px 26px 6px 28px;
-      border-radius: 999px;
-      font-size: 12px;
-      outline: none;
-    }
-    .search-input:focus { border-color: #3b82f6; }
-    .search-input::placeholder { color: #555; }
-    .search-wrap .search-icon { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); font-size: 12px; color: #555; pointer-events: none; }
-    .search-wrap .search-clear { position: absolute; right: 8px; top: 50%; transform: translateY(-50%); background: none; border: none; color: #555; font-size: 14px; cursor: pointer; line-height: 1; display: none; }
-    .search-wrap.has-value .search-clear { display: block; }
-    .refresh-btn {
-      background: none;
-      border: 1px solid #2a2a2a;
-      color: #777;
-      padding: 5px 11px;
-      border-radius: 6px;
-      font-size: 11px;
-      cursor: pointer;
-      white-space: nowrap;
-    }
-    .refresh-btn:hover { border-color: #444; color: #fff; }
-
-    /* ── View Controller ── */
-    .view-screen { display: none; }
-    .view-screen.active { display: block; }
-
-    /* ── Login Screen ── */
-    #login-screen { padding: 24px 20px; }
-    #login-screen h2, #register-screen h2 { font-size: 16px; font-weight: 600; margin-bottom: 4px; }
-    #login-screen p, #register-screen p { font-size: 12px; color: #888; margin-bottom: 20px; }
-    .form-group { margin-bottom: 12px; }
-    .form-group label { display: block; font-size: 11px; color: #888; margin-bottom: 5px; text-transform: uppercase; letter-spacing: .04em; }
-    .form-group input { width: 100%; background: #1a1a1a; border: 1px solid #2a2a2a; border-radius: 8px; padding: 10px 12px; color: #fff; font-size: 13px; outline: none; }
-    .form-group input:focus { border-color: #3b82f6; }
-    .btn-primary { width: 100%; background: #3b82f6; color: #fff; border: none; border-radius: 8px; padding: 11px; font-size: 13px; font-weight: 600; cursor: pointer; margin-top: 4px; }
-    .btn-primary:hover { background: #2563eb; }
-    .btn-primary:disabled { background: #1e3a5f; color: #555; cursor: not-allowed; }
-    .error-msg { color: #ef4444; font-size: 12px; margin-top: 10px; text-align: center; }
-    .success-msg { color: #22c55e; font-size: 12px; margin-top: 10px; text-align: center; }
-    .register-container { margin-top: 20px; padding-top: 16px; border-top: 1px solid #1a1a1a; text-align: center; }
-    .register-text { font-size: 11px; color: #666; margin-bottom: 6px; }
-    .btn-secondary { background: none; border: 1px dashed #3a3a3a; color: #a3a3a3; font-size: 11px; font-weight: 500; padding: 6px 12px; border-radius: 6px; cursor: pointer; transition: all 0.2s ease; }
-    .btn-secondary:hover { border-color: #3b82f6; color: #3b82f6; background: #0b1329; }
-
-    /* ── Stats bar ── */
-    .stats-bar { display: flex; gap: 1px; background: #2a2a2a; }
-    .stat { flex: 1; background: #1a1a1a; padding: 13px 10px; text-align: center; }
-    .stat .num { font-size: 20px; font-weight: 700; color: #3b82f6; }
-    .stat .label { font-size: 10px; color: #666; margin-top: 3px; text-transform: uppercase; letter-spacing: .04em; }
-
-    /* ── Vehicle list ── fills remaining height, only this scrolls ── */
-    .vehicle-list {
-      flex: 1;
-      overflow-y: auto;
-      min-height: 0; /* required for flex children to shrink below content size */
-    }
-    .vehicle-list::-webkit-scrollbar { width: 4px; }
-    .vehicle-list::-webkit-scrollbar-track { background: #0f0f0f; }
-    .vehicle-list::-webkit-scrollbar-thumb { background: #2a2a2a; border-radius: 2px; }
-
-    .group-divider {
-      padding: 5px 12px 3px;
-      font-size: 10px;
-      font-weight: 700;
-      letter-spacing: .06em;
-      text-transform: uppercase;
-      color: #444;
-      background: #0d0d0d;
-      border-bottom: 1px solid #1a1a1a;
-      position: sticky;
-      top: 0;
-      z-index: 1;
-    }
-
-    .vehicle-item {
-      padding: 10px 12px;
-      border-bottom: 1px solid #1a1a1a;
-      display: flex;
-      align-items: center;
-      gap: 10px;
-    }
-    .vehicle-item:hover { background: #141414; }
-    .vehicle-thumb { width: 52px; height: 38px; border-radius: 6px; object-fit: cover; background: #1a1a1a; flex-shrink: 0; }
-    .vehicle-info { flex: 1; min-width: 0; }
-    .vehicle-name { font-size: 12px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .vehicle-sub { font-size: 11px; color: #666; margin-top: 2px; }
-    .vehicle-price { font-size: 12px; font-weight: 700; color: #22c55e; }
-
-    .post-btn {
-      background: #1a3a1a;
-      border: 1px solid #22c55e;
-      color: #22c55e;
-      padding: 5px 10px;
-      border-radius: 6px;
-      font-size: 11px;
-      font-weight: 600;
-      cursor: pointer;
-      white-space: nowrap;
-      flex-shrink: 0;
-    }
-    .post-btn:hover { background: #22c55e; color: #000; }
-
-    .loading { padding: 40px 20px; text-align: center; color: #444; font-size: 13px; }
-
-    /* ── Premium Sync bar ── */
-    #premium-sync-bar { background:#0d1117; padding:12px 16px; border-top:1px solid #2a2a2a; display:none; }
+    .logout-btn:hover { border-color: var(--text-3); color: var(--text); }
 
     /* ── AI Boost badge ── */
     #ai-boost-badge {
       display: none;
       align-items: center;
-      gap: 4px;
-      background: linear-gradient(135deg, #4f46e5, #7c3aed);
+      gap: 3px;
+      background: linear-gradient(135deg, var(--accent-2), var(--purple));
       color: #fff;
-      font-size: 10px;
+      font-size: 9px;
       font-weight: 700;
-      padding: 2px 7px;
+      padding: 2px 6px;
       border-radius: 999px;
-      letter-spacing: .03em;
+      letter-spacing: .04em;
       white-space: nowrap;
     }
     #ai-boost-badge.visible { display: inline-flex; }
+
+    /* ── Stats bar ── */
+    .stats-bar {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+      background: var(--bg-2);
+    }
+    .stat {
+      padding: 10px 8px;
+      text-align: center;
+      border-right: 1px solid var(--border);
+    }
+    .stat:last-child { border-right: none; }
+    .stat .num { font-size: 18px; font-weight: 800; color: var(--accent); line-height: 1; }
+    .stat .label { font-size: 9px; color: var(--text-3); margin-top: 3px; text-transform: uppercase; letter-spacing: .06em; font-weight: 600; }
+
+    /* ── Filters ── */
+    .filter-bar {
+      padding: 9px 12px 6px;
+      background: var(--bg-2);
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+    .filter-row {
+      display: flex;
+      gap: 5px;
+      flex-wrap: wrap;
+      margin-bottom: 6px;
+      align-items: center;
+    }
+    .filter-row:last-child { margin-bottom: 0; }
+    .filter-label {
+      font-size: 9px;
+      color: var(--text-3);
+      text-transform: uppercase;
+      letter-spacing: .06em;
+      margin-right: 2px;
+      white-space: nowrap;
+      font-weight: 700;
+    }
+    .pill {
+      background: var(--bg-3);
+      border: 1px solid var(--border);
+      color: var(--text-2);
+      padding: 3px 10px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all .12s;
+      white-space: nowrap;
+    }
+    .pill:hover { border-color: var(--border-2); color: var(--text); }
+    .pill.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+    .pill.active.status-available { background: #16a34a; border-color: #16a34a; }
+    .pill.active.status-posted   { background: #059669; border-color: #059669; }
+    .pill.active.status-pending  { background: #d97706; border-color: #d97706; }
+    .pill.active.status-sold     { background: #7c3aed; border-color: #7c3aed; }
+
+    /* ── Search row ── */
+    .search-row {
+      padding: 8px 12px;
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      border-bottom: 1px solid var(--border);
+      background: var(--bg-2);
+      flex-shrink: 0;
+    }
+    .search-wrap { position: relative; flex: 1; }
+    .search-input {
+      width: 100%;
+      background: var(--bg-3);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 6px 26px 6px 30px;
+      border-radius: 999px;
+      font-size: 12px;
+      outline: none;
+      transition: border-color .15s;
+    }
+    .search-input:focus { border-color: var(--accent); }
+    .search-input::placeholder { color: var(--text-3); }
+    .search-wrap .search-icon {
+      position: absolute; left: 10px; top: 50%; transform: translateY(-50%);
+      color: var(--text-3); pointer-events: none; line-height: 1;
+    }
+    .search-wrap .search-icon svg { width: 13px; height: 13px; }
+    .search-wrap .search-clear {
+      position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
+      background: none; border: none; color: var(--text-3); font-size: 14px;
+      cursor: pointer; line-height: 1; display: none;
+    }
+    .search-wrap.has-value .search-clear { display: block; }
+
+    .refresh-btn {
+      background: var(--bg-3);
+      border: 1px solid var(--border);
+      color: var(--text-2);
+      padding: 5px 11px;
+      border-radius: 7px;
+      font-size: 11px;
+      cursor: pointer;
+      white-space: nowrap;
+      font-weight: 600;
+      transition: all .15s;
+    }
+    .refresh-btn:hover { border-color: var(--border-2); color: var(--text); }
+
+    /* ── Group dividers ── */
+    .group-divider {
+      padding: 5px 12px 3px;
+      font-size: 9px;
+      font-weight: 700;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+      color: var(--text-3);
+      background: var(--bg-3);
+      border-bottom: 1px solid var(--border);
+      position: sticky;
+      top: 0;
+      z-index: 1;
+    }
+
+    /* ── Vehicle list ── */
+    .vehicle-list {
+      flex: 1;
+      overflow-y: auto;
+      min-height: 0;
+      background: var(--bg);
+    }
+    .vehicle-list::-webkit-scrollbar { width: 4px; }
+    .vehicle-list::-webkit-scrollbar-track { background: transparent; }
+    .vehicle-list::-webkit-scrollbar-thumb { background: var(--border-2); border-radius: 2px; }
+
+    .vehicle-item {
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      background: var(--bg-2);
+      transition: background .1s;
+    }
+    .vehicle-item:hover { background: var(--bg-3); }
+
+    .vehicle-thumb {
+      width: 52px;
+      height: 38px;
+      border-radius: 7px;
+      object-fit: cover;
+      background: var(--bg-3);
+      flex-shrink: 0;
+      border: 1px solid var(--border);
+    }
+    .vehicle-info { flex: 1; min-width: 0; }
+    .vehicle-name { font-size: 12px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text); }
+    .vehicle-sub { font-size: 11px; color: var(--text-3); margin-top: 2px; }
+    .vehicle-price { font-size: 12px; font-weight: 700; color: var(--green); }
+
+    .post-btn {
+      background: var(--green-bg);
+      border: 1px solid var(--green);
+      color: var(--green-text);
+      padding: 5px 11px;
+      border-radius: 7px;
+      font-size: 11px;
+      font-weight: 700;
+      cursor: pointer;
+      white-space: nowrap;
+      flex-shrink: 0;
+      transition: all .15s;
+    }
+    .post-btn:hover { background: var(--green); color: #fff; }
+
+    .loading {
+      padding: 40px 20px;
+      text-align: center;
+      color: var(--text-3);
+      font-size: 13px;
+      line-height: 1.6;
+    }
+
+    /* ── Premium sync bar ── */
+    #premium-sync-bar {
+      background: var(--bg-2);
+      padding: 12px 14px;
+      border-top: 1px solid var(--border);
+      display: none;
+      flex-shrink: 0;
+    }
+    #premium-sync-bar div { font-size: 11px; color: var(--text-2); line-height: 1.5; }
+    #premium-sync-bar b { color: var(--text); }
+
+    /* ── Personal stats strip ── */
+    #my-stats-strip {
+      padding: 5px 14px;
+      font-size: 11px;
+      color: var(--text-3);
+      background: var(--bg-3);
+      border-bottom: 1px solid var(--border);
+      font-weight: 500;
+      flex-shrink: 0;
+    }
+
+    /* ── Auth screens ── */
+    #login-screen, #register-screen {
+      padding: 0;
+      background: var(--bg);
+    }
+    .auth-wrap {
+      padding: 28px 24px 24px;
+    }
+    .auth-logo-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 20px;
+    }
+    .auth-logo {
+      width: 36px; height: 36px;
+      background: linear-gradient(135deg, var(--accent-2), var(--purple));
+      border-radius: 10px;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .auth-logo svg { width: 20px; height: 20px; color: #fff; }
+    .auth-app-name { font-size: 17px; font-weight: 800; color: var(--text); letter-spacing: -.02em; }
+    .auth-app-sub { font-size: 11px; color: var(--text-3); margin-top: 1px; }
+
+    #login-screen h2, #register-screen h2 {
+      font-size: 15px;
+      font-weight: 700;
+      color: var(--text);
+      margin-bottom: 3px;
+    }
+    #login-screen > .auth-wrap > p,
+    #register-screen > .auth-wrap > p {
+      font-size: 12px;
+      color: var(--text-2);
+      margin-bottom: 18px;
+    }
+
+    .form-group { margin-bottom: 11px; }
+    .form-group label {
+      display: block;
+      font-size: 10px;
+      color: var(--text-3);
+      margin-bottom: 5px;
+      text-transform: uppercase;
+      letter-spacing: .06em;
+      font-weight: 700;
+    }
+    .form-group input {
+      width: 100%;
+      background: var(--bg-2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 9px 12px;
+      color: var(--text);
+      font-size: 13px;
+      outline: none;
+      transition: border-color .15s;
+    }
+    .form-group input:focus { border-color: var(--accent); }
+    .form-group input::placeholder { color: var(--text-3); }
+
+    .btn-primary {
+      width: 100%;
+      background: var(--accent-2);
+      color: #fff;
+      border: none;
+      border-radius: 9px;
+      padding: 11px;
+      font-size: 13px;
+      font-weight: 700;
+      cursor: pointer;
+      margin-top: 4px;
+      transition: opacity .15s;
+    }
+    .btn-primary:hover { opacity: .88; }
+    .btn-primary:disabled { opacity: .45; cursor: not-allowed; }
+
+    .error-msg { color: var(--red); font-size: 12px; margin-top: 10px; text-align: center; }
+    .success-msg { color: var(--green); font-size: 12px; margin-top: 10px; text-align: center; }
+
+    .register-container {
+      margin-top: 16px;
+      padding-top: 14px;
+      border-top: 1px solid var(--border);
+      text-align: center;
+    }
+    .register-text { font-size: 11px; color: var(--text-3); margin-bottom: 8px; }
+    .btn-secondary {
+      background: none;
+      border: 1px solid var(--border-2);
+      color: var(--text-2);
+      font-size: 12px;
+      font-weight: 600;
+      padding: 7px 16px;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: all .15s;
+    }
+    .btn-secondary:hover { border-color: var(--accent); color: var(--accent-text); }
   </style>
 </head>
 <body>
 
+  <!-- ── Login ── -->
   <div id="login-screen" class="view-screen active">
-    <h2>| MarketSync</h2>
-    <p>Sign in with your dealership or personal account</p>
-    <div class="form-group">
-      <label>Email</label>
-      <input type="email" id="email" placeholder="youname@yourdealership.com" />
-    </div>
-    <div class="form-group">
-      <label>Password</label>
-      <input type="password" id="password" placeholder="••••••••" />
-    </div>
-    <button class="btn-primary" id="login-btn">Sign In</button>
-    <div class="error-msg" id="login-error"></div>
-    <div class="register-container">
-      <div class="register-text">Start Free for 7 Days?</div>
-      <button type="button" class="btn-secondary" id="go-to-register-btn">Register You or your Dealership</button>
+    <div class="auth-wrap">
+      <div class="auth-logo-row">
+        <div class="auth-logo">
+          <svg fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z"/><path stroke-linecap="round" stroke-linejoin="round" d="M18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 00-2.456 2.456z"/></svg>
+        </div>
+        <div>
+          <div class="auth-app-name">MarketSync</div>
+          <div class="auth-app-sub">Dealer inventory on Facebook</div>
+        </div>
+      </div>
+      <h2>Sign in</h2>
+      <p>Access your dealership or personal account</p>
+      <div class="form-group">
+        <label>Email</label>
+        <input type="email" id="email" placeholder="you@yourdealership.com" autocomplete="email" />
+      </div>
+      <div class="form-group">
+        <label>Password</label>
+        <input type="password" id="password" placeholder="••••••••" autocomplete="current-password" />
+      </div>
+      <button class="btn-primary" id="login-btn">Sign In</button>
+      <div class="error-msg" id="login-error"></div>
+      <div class="register-container">
+        <div class="register-text">New to MarketSync? Start free for 7 days.</div>
+        <button type="button" class="btn-secondary" id="go-to-register-btn">Create Account</button>
+      </div>
     </div>
   </div>
 
+  <!-- ── Register ── -->
   <div id="register-screen" class="view-screen">
-    <h2>Create Workspace</h2>
-    <p>Configure automated inventory pipeline securely</p>
-    <div class="form-group"><label>Full Name</label><input type="text" id="reg-fullname" placeholder="Jane Doe" /></div>
-    <div class="form-group"><label>Email</label><input type="email" id="reg-email" placeholder="youremail@yourdealership.com" /></div>
-    <div class="form-group"><label>Password</label><input type="password" id="reg-password" placeholder="••••••••" /></div>
-    <div class="form-group"><label>Dealership Name</label><input type="text" id="reg-dealername" placeholder="Your Dealership Name" /></div>
-    <div class="form-group"><label>Website URL</label><input type="url" id="reg-website" placeholder="https://www.yourdealership.com" /></div>
-    <div class="form-group"><label>Inventory Feed URL</label><input type="url" id="reg-feed" placeholder="https://yourdealershipname.com/feed" /></div>
-    <button class="btn-primary" id="submit-register-btn">Submit & Verify Email</button>
-    <div class="error-msg" id="reg-error"></div>
-    <div class="success-msg" id="reg-success"></div>
-    <div class="register-container">
-      <button type="button" class="btn-secondary" id="go-to-login-btn">← Back to Sign In</button>
+    <div class="auth-wrap">
+      <div class="auth-logo-row">
+        <div class="auth-logo">
+          <svg fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z"/><path stroke-linecap="round" stroke-linejoin="round" d="M18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 00-2.456 2.456z"/></svg>
+        </div>
+        <div>
+          <div class="auth-app-name">MarketSync</div>
+          <div class="auth-app-sub">Set up your workspace</div>
+        </div>
+      </div>
+      <h2>Create Workspace</h2>
+      <p>Connect your dealership inventory in minutes</p>
+      <div class="form-group"><label>Full Name</label><input type="text" id="reg-fullname" placeholder="Jane Doe" autocomplete="name" /></div>
+      <div class="form-group"><label>Email</label><input type="email" id="reg-email" placeholder="you@yourdealership.com" autocomplete="email" /></div>
+      <div class="form-group"><label>Password</label><input type="password" id="reg-password" placeholder="••••••••" autocomplete="new-password" /></div>
+      <div class="form-group"><label>Dealership Name</label><input type="text" id="reg-dealername" placeholder="Your Dealership Name" /></div>
+      <div class="form-group"><label>Website URL</label><input type="url" id="reg-website" placeholder="https://www.yourdealership.com" /></div>
+      <div class="form-group"><label>Inventory Feed URL</label><input type="url" id="reg-feed" placeholder="https://yourdealership.com/feed" /></div>
+      <button class="btn-primary" id="submit-register-btn">Create Account &amp; Verify Email</button>
+      <div class="error-msg" id="reg-error"></div>
+      <div class="success-msg" id="reg-success"></div>
+      <div class="register-container">
+        <button type="button" class="btn-secondary" id="go-to-login-btn">← Back to Sign In</button>
+      </div>
     </div>
   </div>
 
+  <!-- ── Inventory ── -->
   <div id="inventory-screen" class="view-screen">
 
     <!-- Header -->
     <div class="header">
-      <div>
-        <div style="display:flex;align-items:center;gap:6px;">
-          <h1 id="header-name">—</h1>
-          <span id="ai-boost-badge">✦ AI Boost</span>
+      <div class="header-brand">
+        <div class="header-logo">
+          <svg fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z"/><path stroke-linecap="round" stroke-linejoin="round" d="M18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 00-2.456 2.456z"/></svg>
         </div>
-        <div class="dealer" id="header-dealer"></div>
+        <div class="header-title-wrap">
+          <div class="header-name-row">
+            <h1 id="header-name">—</h1>
+            <span id="ai-boost-badge">✦ AI</span>
+          </div>
+          <div class="dealer" id="header-dealer"></div>
+        </div>
       </div>
       <div class="header-right">
-        <button type="button" class="dashboard-link" id="open-dashboard-btn">⬡ Dashboard</button>
-        <button type="button" class="logout-btn" id="logout-btn">Sign Out</button>
+        <button type="button" class="dashboard-link" id="open-dashboard-btn">
+          <svg width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 13.5l5-5 4 4 5-6 4 3"/></svg>
+          Dashboard
+        </button>
+        <button type="button" class="logout-btn" id="logout-btn">Out</button>
       </div>
     </div>
 
@@ -328,8 +575,10 @@
     <!-- Search + Refresh -->
     <div class="search-row">
       <div class="search-wrap" id="search-wrap">
-        <span class="search-icon">🔍</span>
-        <input type="text" class="search-input" id="search-input" placeholder="Search make, model, year…" autocomplete="off">
+        <span class="search-icon">
+          <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path stroke-linecap="round" d="M21 21l-4.35-4.35"/></svg>
+        </span>
+        <input type="text" class="search-input" id="search-input" placeholder="Make, model, year, stock #…" autocomplete="off">
         <button type="button" class="search-clear" id="search-clear" title="Clear">×</button>
       </div>
       <button class="refresh-btn" id="refresh-btn">↻ Refresh</button>
@@ -337,24 +586,24 @@
 
     <!-- Premium Sync bar -->
     <div id="premium-sync-bar">
-      <div style="font-size:11px;color:#9aa4b2;line-height:1.5">
-        <b style="color:#c9d1d9">Cloudflare-protected dealer detected.</b><br>
-        Enable one-click capture once, then click <b>Pull Inventory</b> on your MarketSync dashboard.
+      <div>
+        <b>Cloudflare-protected dealer detected.</b><br>
+        Enable one-click capture, then click <b>Pull Inventory</b> on your MarketSync dashboard.
       </div>
-      <button id="enable-oneclick-btn" style="display:none;margin-top:10px;width:100%;background:#1f6feb;border:none;color:#fff;padding:9px 12px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer">
+      <button id="enable-oneclick-btn" style="display:none;margin-top:10px;width:100%;background:var(--accent-2);border:none;color:#fff;padding:9px 12px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer">
         ⚡ Enable one-click capture from dashboard
       </button>
-      <div id="enable-oneclick-note" style="display:none;margin-top:6px;font-size:10px;color:#7ee787;line-height:1.5">
-        ✓ Enabled — head to your MarketSync dashboard and click <b>Pull Inventory</b> on the feed.
+      <div id="enable-oneclick-note" style="display:none;margin-top:6px;font-size:10px;color:var(--green);line-height:1.5;font-weight:600;">
+        ✓ Enabled — go to your dashboard and click Pull Inventory.
       </div>
     </div>
 
     <!-- Personal stats strip -->
-    <div id="my-stats-strip" style="padding:6px 14px;font-size:11px;color:#555;background:#0d0d0d;border-bottom:1px solid #1a1a1a;"></div>
+    <div id="my-stats-strip"></div>
 
     <!-- Vehicle list -->
     <div class="vehicle-list" id="vehicle-list">
-      <div class="loading">Loading inventory...</div>
+      <div class="loading">Loading inventory…</div>
     </div>
 
   </div><!-- /#inventory-screen -->
