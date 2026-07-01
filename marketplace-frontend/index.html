@@ -217,8 +217,14 @@
         </nav>
 
         <div class="flex items-center space-x-3">
-            <a href="https://marketsync.link/login.html" class="hidden sm:inline-flex text-sm font-semibold text-slate-700 dark:text-gray-300 hover:text-indigo-600 dark:hover:text-white px-3 py-2 transition">Log in</a>
-            <a href="https://marketsync.link/register.html" class="hidden sm:inline-flex bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold px-4 py-2 rounded-lg transition">Sign up free</a>
+            <!-- Logged-out: shown by default, hidden by JS if token exists -->
+            <a id="nav-login" href="https://marketsync.link/login.html" class="hidden sm:inline-flex text-sm font-semibold text-slate-700 dark:text-gray-300 hover:text-indigo-600 dark:hover:text-white px-3 py-2 transition">Log in</a>
+            <a id="nav-signup" href="https://marketsync.link/register.html" class="hidden sm:inline-flex bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold px-4 py-2 rounded-lg transition">Sign up free</a>
+            <!-- Logged-in: hidden by default, shown by JS if token exists -->
+            <a id="nav-dashboard-btn" href="https://marketsync.link/dashboard.html" title="Go to your dashboard" style="display:none" class="hidden sm:inline-flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold px-4 py-2 rounded-lg transition">
+                <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor"><path d="M12 12c2.7 0 4.8-2.1 4.8-4.8S14.7 2.4 12 2.4 7.2 4.5 7.2 7.2 9.3 12 12 12zm0 2.4c-3.2 0-9.6 1.6-9.6 4.8v2.4h19.2v-2.4c0-3.2-6.4-4.8-9.6-4.8z"/></svg>
+                <span id="nav-user-name">Dashboard</span>
+            </a>
             <button id="ms-menu-btn" type="button" class="md:hidden inline-flex items-center justify-center w-10 h-10 rounded-lg border border-slate-200 dark:border-gray-800 text-slate-700 dark:text-gray-300" aria-label="Open menu" aria-expanded="false" aria-controls="ms-mobile-menu" onclick="msToggleMenu()">
                 <i class="fa-solid fa-bars text-lg" id="ms-menu-icon"></i>
             </button>
@@ -234,8 +240,9 @@
         <a href="#faq" class="block py-2.5 hover:text-indigo-600 dark:hover:text-white transition" onclick="msToggleMenu()">FAQ</a>
         <a href="https://marketsync.link/blog.html" class="block py-2.5 hover:text-indigo-600 dark:hover:text-white transition">Blog</a>
         <div class="pt-3 mt-2 border-t border-slate-200 dark:border-gray-800 flex flex-col gap-2">
-            <a href="https://marketsync.link/login.html" class="text-center py-2.5 font-semibold text-slate-700 dark:text-gray-300 hover:text-indigo-600 dark:hover:text-white transition">Log in</a>
-            <a href="https://marketsync.link/register.html" class="text-center py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold rounded-lg transition">Sign up free</a>
+            <a id="mob-login" href="https://marketsync.link/login.html" class="text-center py-2.5 font-semibold text-slate-700 dark:text-gray-300 hover:text-indigo-600 dark:hover:text-white transition">Log in</a>
+            <a id="mob-signup" href="https://marketsync.link/register.html" class="text-center py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold rounded-lg transition">Sign up free</a>
+            <a id="mob-dashboard" href="https://marketsync.link/dashboard.html" style="display:none" class="text-center py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold rounded-lg transition">My Dashboard</a>
         </div>
       </nav>
     </header>
@@ -250,6 +257,30 @@
             btn.setAttribute('aria-expanded', String(!isOpen))
             icon.className = isOpen ? 'fa-solid fa-bars text-lg' : 'fa-solid fa-xmark text-lg'
         }
+
+        // Swap Log in / Sign up for a user avatar button when already authenticated
+        ;(function() {
+            try {
+                const token = localStorage.getItem('token')
+                if (!token) return
+                // Show logged-in nav, hide logged-out nav
+                const show = (id) => { const el = document.getElementById(id); if (el) el.style.display = '' }
+                const hide = (id) => { const el = document.getElementById(id); if (el) el.style.display = 'none' }
+                hide('nav-login'); hide('nav-signup')
+                hide('mob-login'); hide('mob-signup')
+                show('nav-dashboard-btn'); show('mob-dashboard')
+                // Try to set the user's first name on the button
+                try {
+                    const user = JSON.parse(localStorage.getItem('user') || '{}')
+                    const name = user.user_metadata?.full_name || user.email || ''
+                    const first = name.split(/\s+/)[0]
+                    if (first) {
+                        const el = document.getElementById('nav-user-name')
+                        if (el) el.textContent = first
+                    }
+                } catch {}
+            } catch {}
+        })()
     </script>
 
     <section class="max-w-5xl mx-auto px-6 pt-16 pb-20 text-center">
