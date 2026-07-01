@@ -1097,10 +1097,21 @@ chrome.runtime.onMessage.addListener((msg) => {
   if (msg.type === 'LISTING_URL_CAPTURED') {
     showStatus('✅ MarketSync: listing auto-saved to dashboard.', 'success');
   }
+
+  if (msg.type === 'MARK_SOLD_ON_FB') {
+    const tryClick = () => {
+      const buttons = [...document.querySelectorAll('[role="button"], button')];
+      const btn = buttons.find(b => /mark\s+as\s+sold/i.test(b.textContent));
+      if (btn) { btn.click(); return true; }
+      return false;
+    };
+    let attempts = 0;
+    const interval = setInterval(() => {
+      if (tryClick() || ++attempts > 15) clearInterval(interval);
+    }, 800);
+  }
 });
 
-// ── Boot ──────────────────────────────────────
-const isCreatePage = /\/marketplace\/create(\/|\?|$)/i.test(window.location.href);
 // ── Boot ──────────────────────────────────────
 const isCreatePage = /\/marketplace\/create(\/|\?|$)/i.test(window.location.href);
 console.log('[MarketSync] is marketplace create page?', isCreatePage);
