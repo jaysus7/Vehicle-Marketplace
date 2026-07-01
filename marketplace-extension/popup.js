@@ -312,8 +312,8 @@ async function loadInventory(token) {
           : `<span style="color:#ef4444;font-size:10px;font-weight:700;">↑ ${pct}%</span>`
       }
 
-      // "View on FB" button for posted vehicles that have a real listing URL
-      const isValidFbUrl = url => url && /facebook\.com/.test(url)
+      // "View on FB" button only when we have an actual item URL (not create/other pages)
+      const isValidFbUrl = url => url && /facebook\.com\/marketplace\/item\/\d+/i.test(url)
       const viewFbBtn = isPosted && isValidFbUrl(fbUrl)
         ? `<button class="open-fb-btn" data-fb-url="${fbUrl}" style="background:none;border:1px solid #3b82f6;color:#3b82f6;padding:3px 8px;border-radius:5px;font-size:10px;font-weight:600;cursor:pointer;white-space:nowrap;">View ↗</button>`
         : ''
@@ -413,21 +413,21 @@ async function loadInventory(token) {
     })
     document.querySelectorAll('.open-fb-btn').forEach(btn => {
       btn.addEventListener('click', () => {
-        const url = btn.dataset.fbUrl && /facebook\.com/.test(btn.dataset.fbUrl)
+        const url = btn.dataset.fbUrl && /facebook\.com\/marketplace\/item\/\d+/i.test(btn.dataset.fbUrl)
           ? btn.dataset.fbUrl : 'https://www.facebook.com/marketplace/you/selling'
         chrome.tabs.create({ url })
       })
     })
     document.querySelectorAll('.delete-from-fb-btn').forEach(btn => {
       btn.addEventListener('click', () => {
-        const url = btn.dataset.fbUrl && /facebook\.com/.test(btn.dataset.fbUrl)
+        const url = btn.dataset.fbUrl && /facebook\.com\/marketplace\/item\/\d+/i.test(btn.dataset.fbUrl)
           ? btn.dataset.fbUrl : 'https://www.facebook.com/marketplace/you/selling'
         chrome.tabs.create({ url })
       })
     })
     document.getElementById('open-sold-fb-listings')?.addEventListener('click', () => {
       soldNeedingFbDelete.forEach(l => {
-        const url = l.fb_listing_url && /facebook\.com/.test(l.fb_listing_url)
+        const url = l.fb_listing_url && /facebook\.com\/marketplace\/item\/\d+/i.test(l.fb_listing_url)
           ? l.fb_listing_url : 'https://www.facebook.com/marketplace/you/selling'
         chrome.tabs.create({ url, active: false })
       })
@@ -602,7 +602,7 @@ async function markSold(listingId, vehicleName, token, kind, fbUrl) {
 
     // Option A: open FB listing so rep can manually mark sold there
     // Option B: send message to content script to auto-click "Mark as Sold"
-    if (fbUrl && /facebook\.com/.test(fbUrl) && kind !== 'sold-by-other') {
+    if (fbUrl && /facebook\.com\/marketplace\/item\/\d+/i.test(fbUrl) && kind !== 'sold-by-other') {
       chrome.tabs.create({ url: fbUrl }, (tab) => {
         // Option B: once the tab loads, inject content script to click Mark as Sold
         chrome.tabs.onUpdated.addListener(function listener(tabId, info) {
