@@ -1822,21 +1822,19 @@ function renderCatalog() {
     return `
       <${tag} ${linkAttrs} class="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded p-3 flex flex-col gap-2 ${href ? 'hover:border-indigo-400 dark:hover:border-indigo-500 transition no-underline' : ''}">
         ${img}
-        <div class="flex items-center justify-between gap-2">
-          <span class="text-xs font-bold text-slate-900 dark:text-white truncate flex-1" title="${v.year} ${v.make} ${v.model} ${v.trim || ''}">${v.year} ${v.make} ${v.model}</span>
-          <div class="flex items-center gap-1 flex-shrink-0">
-            ${conditionBadge(v.condition)}
-            ${statusBadge(v.status)}
-          </div>
+        <div class="text-xs font-bold text-slate-900 dark:text-white truncate" title="${v.year} ${v.make} ${v.model} ${v.trim || ''}">${v.year} ${v.make} ${v.model}</div>
+        <div class="flex items-center gap-1 flex-wrap">
+          ${conditionBadge(v.condition)}
+          ${statusBadge(v.status)}
         </div>
-        <div class="text-sm text-slate-500 dark:text-slate-400 truncate flex items-center gap-1">
+        <div class="text-xs text-slate-500 dark:text-slate-400 truncate flex items-center gap-1">
           <span class="truncate">${v.trim || ''} ${v.exterior_color ? '· ' + v.exterior_color : ''}</span>
           ${externalIcon}
         </div>
-        <div class="flex items-center justify-between text-xs">
+        <div class="flex items-center justify-between text-xs mt-auto">
           <span class="font-bold text-indigo-600 dark:text-indigo-400">${price}</span>
           <div class="flex items-center gap-2 text-slate-500">
-            ${v.stocknumber ? `<span class="font-mono">#${v.stocknumber}</span>` : ''}
+            ${v.stocknumber ? `<span class="font-mono text-slate-400">#${v.stocknumber}</span>` : ''}
             <span>${mileage}</span>
           </div>
         </div>
