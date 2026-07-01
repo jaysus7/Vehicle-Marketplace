@@ -22,7 +22,7 @@ export function registerRoutes(app) {
       .eq('dealership_id', req.dealershipId)
       .order('created_at', { ascending: false })
     if (error) return res.status(500).json({ error: error.message })
-    res.json(data)
+    res.json(data || [])
   })
 
   app.get('/inventory/:id', requireAuth, async (req, res) => {
