@@ -487,6 +487,14 @@
           </div>
         </div>
 
+        <!-- ── Legend (compact, always visible at top) ── -->
+        <div class="lb-legend border-b border-slate-200 dark:border-slate-800 pb-3 flex flex-wrap gap-x-6 gap-y-1 text-xs text-slate-500 dark:text-slate-400">
+          <span><span class="font-bold text-indigo-600 dark:text-indigo-400">+100</span> Post a car</span>
+          <span><span class="font-bold text-emerald-600 dark:text-emerald-400">+500</span> You sell it ("I Sold It")</span>
+          <span><span class="font-bold text-slate-400">0</span> Someone else sold it</span>
+          <div id="lb-legend-tiers" class="w-full flex flex-wrap gap-x-5 gap-y-0.5 mt-0.5"></div>
+        </div>
+
         <!-- ── MY TEAM VIEW ── -->
         <div id="lb-view-team">
           <!-- Podium for top 3 -->
@@ -580,16 +588,6 @@
               </tbody>
             </table>
           </div>
-        </div>
-
-        <!-- ── Legend (once, compact) ── -->
-        <div class="lb-legend border-t border-slate-200 dark:border-slate-800 pt-4 mt-2 grid grid-cols-2 gap-x-8 gap-y-1 text-xs text-slate-500 dark:text-slate-400">
-          <div class="col-span-2 flex gap-6 flex-wrap mb-1">
-            <span><span class="font-bold text-indigo-600 dark:text-indigo-400">+100</span> Post a car</span>
-            <span><span class="font-bold text-emerald-600 dark:text-emerald-400">+500</span> You sell it ("I Sold It")</span>
-            <span><span class="font-bold text-slate-400">0</span> Someone else sold it</span>
-          </div>
-          <div id="lb-legend-tiers" class="col-span-2 flex flex-wrap gap-x-5 gap-y-0.5"></div>
         </div>
 
       </div>
