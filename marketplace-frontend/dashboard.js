@@ -3436,7 +3436,7 @@ async function applyVinDecode() {
     msg.textContent = `✓ Applied ${data.updated?.length || 0} fields`;
     msg.className = 'text-xs font-medium px-2.5 py-1 rounded-md bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300';
     msg.classList.remove('hidden');
-    loadInventory?.();
+    loadVinStickerInventory?.();
   } catch (e) {
     msg.textContent = e.message;
     msg.className = 'text-xs font-medium px-2.5 py-1 rounded-md bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300';
