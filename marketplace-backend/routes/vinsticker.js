@@ -29,11 +29,12 @@ function pick(obj, ...keys) {
 }
 
 async function loadDealershipData(dealershipId) {
-  const { data } = await supabaseAdmin
+  const { data, error } = await supabaseAdmin
     .from('dealerships')
-    .select('id, name, phone, website, address, city, province, postal_code, branding, vin_sticker_active')
+    .select('id, name, website_url, branding, vin_sticker_active')
     .eq('id', dealershipId)
     .single()
+  if (error) console.error('[loadDealershipData]', error.message)
   return data
 }
 
@@ -163,7 +164,7 @@ function buildWindowStickerHtml(vehicle, dealer, branding, recalls) {
       <div style="font-size:12px;line-height:1.8;color:#374151;">
         ${dealer.name ? `<div style="font-weight:700;">${dealer.name}</div>` : ''}
         ${dealer.phone ? `<div>📞 ${dealer.phone}</div>` : ''}
-        ${dealer.website ? `<div>🌐 ${dealer.website}</div>` : ''}
+        ${dealer.website_url ? `<div>🌐 ${dealer.website_url}</div>` : ''}
         ${dealer.address ? `<div>📍 ${dealer.address}${dealer.city ? ', ' + dealer.city : ''}${dealer.province ? ', ' + dealer.province : ''}</div>` : ''}
         ${branding.tagline ? `<div style="margin-top:8px;font-style:italic;color:#6b7280;">"${branding.tagline}"</div>` : ''}
       </div>
@@ -276,7 +277,7 @@ function buildBrochureHtml(vehicle, dealer, branding, recalls) {
     </div>
     <div style="color:#fff;font-size:12px;text-align:right;">
       ${dealer.phone ? `<div>📞 ${dealer.phone}</div>` : ''}
-      ${dealer.website ? `<div>🌐 ${dealer.website}</div>` : ''}
+      ${dealer.website_url ? `<div>🌐 ${dealer.website_url}</div>` : ''}
     </div>
   </div>
 
@@ -361,7 +362,7 @@ function buildBrochureHtml(vehicle, dealer, branding, recalls) {
         ${dealer.address ? `<div>📍 ${dealer.address}</div>` : ''}
         ${dealer.city ? `<div>${dealer.city}${dealer.province ? ', ' + dealer.province : ''}${dealer.postal_code ? ' ' + dealer.postal_code : ''}</div>` : ''}
         ${dealer.phone ? `<div>📞 ${dealer.phone}</div>` : ''}
-        ${dealer.website ? `<div>🌐 ${dealer.website}</div>` : ''}
+        ${dealer.website_url ? `<div>🌐 ${dealer.website_url}</div>` : ''}
         ${branding.tagline ? `<div style="margin-top:8px;font-style:italic;color:#6b7280;">"${branding.tagline}"</div>` : ''}
       </div>
 
@@ -465,7 +466,7 @@ export function registerRoutes(app) {
     if (!req.dealershipId) return res.status(400).json({ error: 'No dealership' })
     const { data, error } = await supabaseAdmin
       .from('dealerships')
-      .select('name, phone, website, address, city, province, postal_code, branding, vin_sticker_active')
+      .select('name, website_url, branding, vin_sticker_active')
       .eq('id', req.dealershipId)
       .single()
     if (error) return res.status(500).json({ error: error.message })
