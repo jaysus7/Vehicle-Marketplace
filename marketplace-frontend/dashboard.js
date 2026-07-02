@@ -2953,7 +2953,7 @@ async function openPriceReport(inventoryId) {
           },
           scales: {
             y: {
-              beginAtZero: false,
+              beginAtZero: true,
               ticks: { callback: v => '$' + Number(v).toLocaleString(), font: { size: 10 } },
               grid: { color: 'rgba(148,163,184,0.15)' }
             },

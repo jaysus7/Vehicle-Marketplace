@@ -122,8 +122,18 @@ function normaliseListings(raw) {
 
 function summarise(listings) {
   if (!listings.length) return null
-  const prices = listings.map(l => l.price)
-  const mileages = listings.map(l => l.mileage)
+
+  // Remove statistical outliers: prices below 40% or above 250% of the median
+  // price are almost certainly wrong-year comps or salvage titles bleeding in.
+  const rawPrices = listings.map(l => l.price).sort((a, b) => a - b)
+  const rawMedian = rawPrices.length % 2 !== 0
+    ? rawPrices[Math.floor(rawPrices.length / 2)]
+    : (rawPrices[rawPrices.length / 2 - 1] + rawPrices[rawPrices.length / 2]) / 2
+  const filtered = listings.filter(l => l.price >= rawMedian * 0.4 && l.price <= rawMedian * 2.5)
+  const use = filtered.length >= 3 ? filtered : listings
+
+  const prices = use.map(l => l.price)
+  const mileages = use.map(l => l.mileage)
 
   // Only include listings where we have a real days-online value
   const withDays = listings.filter(l => l.daysOnline != null)
