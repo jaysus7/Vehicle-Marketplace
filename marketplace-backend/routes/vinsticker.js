@@ -38,348 +38,382 @@ async function loadDealershipData(dealershipId) {
   return data
 }
 
-function buildWindowStickerHtml(vehicle, dealer, branding, recalls) {
+function buildWindowStickerHtml(vehicle, dealer, branding, recalls, photoDataUri, logoDataUri) {
   const primary = branding.primary_color || '#1a2e4a'
   const secondary = branding.secondary_color || '#c8a84b'
-  const logoHtml = branding.logo_url
-    ? `<img src="${branding.logo_url}" alt="Dealer Logo" style="max-height:70px;max-width:220px;object-fit:contain;">`
-    : `<span style="font-size:22px;font-weight:800;color:${primary};">${dealer.name || 'Your Dealership'}</span>`
+
+  const logoSrc = logoDataUri || branding.logo_url || null
+  const logoHtml = logoSrc
+    ? `<img src="${logoSrc}" alt="${dealer.name || ''}" style="max-height:56px;max-width:200px;object-fit:contain;display:block;">`
+    : `<span style="font-size:18px;font-weight:900;color:#fff;letter-spacing:-0.5px;">${dealer.name || 'Your Dealership'}</span>`
+
+  const photoHtml = photoDataUri
+    ? `<img src="${photoDataUri}" style="width:100%;height:100%;object-fit:cover;" alt="Vehicle">`
+    : `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;background:#e5e7eb;color:#9ca3af;font-size:13px;">No Photo Available</div>`
 
   const features = buildFeatureList(vehicle)
-  const recallBadge = recalls?.length
-    ? `<div style="background:#dc2626;color:#fff;padding:8px 16px;border-radius:6px;font-size:13px;font-weight:700;margin-top:8px;">⚠ ${recalls.length} Open Recall${recalls.length > 1 ? 's' : ''} — See dealer for details</div>`
-    : `<div style="background:#16a34a;color:#fff;padding:8px 16px;border-radius:6px;font-size:13px;font-weight:700;margin-top:8px;">✓ No Open Recalls</div>`
+  const price = vehicle.price ? `$${Number(vehicle.price).toLocaleString()}` : 'Call for Price'
+  const mileage = vehicle.mileage ? `${Number(vehicle.mileage).toLocaleString()} km` : vehicle.condition === 'new' ? 'New' : '—'
+  const cap = s => s ? s.charAt(0).toUpperCase() + s.slice(1) : '—'
 
-  const price = vehicle.price ? `$${Number(vehicle.price).toLocaleString()}` : 'Contact for Price'
-  const mileage = vehicle.mileage ? `${Number(vehicle.mileage).toLocaleString()} km` : '—'
+  const specs = [
+    ['Year',         vehicle.year         || '—'],
+    ['Make',         vehicle.make         || '—'],
+    ['Model',        vehicle.model        || '—'],
+    ['Trim',         vehicle.trim         || '—'],
+    ['Condition',    cap(vehicle.condition)],
+    ['Mileage',      mileage],
+    ['Body Style',   vehicle.body_style   || '—'],
+    ['Fuel Type',    vehicle.fuel_type    || '—'],
+    ['Drivetrain',   vehicle.drivetrain   || '—'],
+    ['Transmission', vehicle.transmission || '—'],
+    ['Engine',       vehicle.engine       || '—'],
+    ['Doors',        vehicle.doors        ? String(vehicle.doors) : '—'],
+    ['Ext. Colour',  vehicle.exterior_color || '—'],
+    ['Int. Colour',  vehicle.interior_color || '—'],
+  ]
 
   return `<!DOCTYPE html>
 <html lang="en">
-<head>
-<meta charset="UTF-8">
+<head><meta charset="UTF-8">
 <style>
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { font-family: Arial, Helvetica, sans-serif; width: 816px; background: #fff; color: #1a1a1a; }
-  .header { background: ${primary}; color: #fff; padding: 18px 28px; display: flex; align-items: center; justify-content: space-between; }
-  .header-logo { }
-  .header-title { text-align: right; }
-  .header-title h1 { font-size: 13px; letter-spacing: 2px; text-transform: uppercase; opacity: 0.8; }
-  .header-title h2 { font-size: 22px; font-weight: 800; }
-  .vehicle-name { background: ${secondary}; color: #fff; text-align: center; padding: 14px; font-size: 20px; font-weight: 800; letter-spacing: 0.5px; }
-  .main { display: flex; gap: 0; padding: 0; }
-  .left { flex: 1; padding: 20px 24px; border-right: 2px solid #e5e7eb; }
-  .right { width: 260px; padding: 20px 20px; }
-  .photo-box { width: 100%; aspect-ratio: 16/9; background: #f3f4f6; border-radius: 8px; overflow: hidden; margin-bottom: 16px; }
-  .photo-box img { width: 100%; height: 100%; object-fit: cover; }
-  .photo-placeholder { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; color: #9ca3af; font-size: 14px; }
-  .specs-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 16px; }
-  .spec { background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 6px; padding: 8px 10px; }
-  .spec-label { font-size: 10px; color: #6b7280; text-transform: uppercase; letter-spacing: 0.5px; }
-  .spec-value { font-size: 13px; font-weight: 700; color: #111; margin-top: 2px; }
-  .section-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: ${primary}; border-bottom: 2px solid ${secondary}; padding-bottom: 4px; margin-bottom: 10px; }
-  .feature-list { list-style: none; }
-  .feature-list li { font-size: 12px; padding: 3px 0; color: #374151; display: flex; align-items: flex-start; gap: 6px; }
-  .feature-list li::before { content: "✓"; color: ${secondary}; font-weight: 700; flex-shrink: 0; }
-  .price-box { background: ${primary}; color: #fff; border-radius: 10px; padding: 16px; text-align: center; margin-bottom: 14px; }
-  .price-label { font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase; opacity: 0.75; }
-  .price-value { font-size: 28px; font-weight: 900; line-height: 1.1; margin-top: 2px; }
-  .vin-box { background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px; padding: 10px; margin-bottom: 12px; text-align: center; }
-  .vin-label { font-size: 10px; color: #6b7280; text-transform: uppercase; letter-spacing: 0.5px; }
-  .vin-value { font-size: 11px; font-weight: 700; font-family: monospace; margin-top: 2px; letter-spacing: 1px; word-break: break-all; }
-  .footer { background: ${primary}; color: rgba(255,255,255,0.9); padding: 12px 28px; display: flex; align-items: center; justify-content: space-between; font-size: 11px; }
-  .footer strong { color: #fff; }
+  *{margin:0;padding:0;box-sizing:border-box;}
+  body{font-family:'Arial',Helvetica,sans-serif;width:816px;background:#fff;color:#111;}
+  /* ── Header ── */
+  .hdr{background:${primary};display:flex;align-items:center;justify-content:space-between;padding:14px 24px;}
+  .hdr-right{text-align:right;color:#fff;}
+  .hdr-right .label{font-size:10px;letter-spacing:2.5px;text-transform:uppercase;opacity:.7;}
+  .hdr-right .title{font-size:20px;font-weight:900;letter-spacing:-.5px;}
+  /* ── Title bar ── */
+  .title-bar{background:${secondary};padding:10px 24px;display:flex;align-items:center;justify-content:space-between;}
+  .title-bar .vname{font-size:18px;font-weight:900;color:#fff;letter-spacing:-.3px;}
+  .title-bar .stock{font-size:11px;color:rgba(255,255,255,.8);font-weight:600;}
+  /* ── Body ── */
+  .body{display:flex;}
+  /* LEFT column */
+  .left{flex:1;padding:18px 20px;border-right:1px solid #e5e7eb;}
+  .photo{width:100%;aspect-ratio:16/9;background:#f1f5f9;border-radius:6px;overflow:hidden;margin-bottom:14px;}
+  .specs-grid{display:grid;grid-template-columns:1fr 1fr;gap:5px;margin-bottom:14px;}
+  .spec{background:#f8fafc;border:1px solid #e2e8f0;border-radius:5px;padding:7px 10px;}
+  .spec .slabel{font-size:9px;color:#94a3b8;text-transform:uppercase;letter-spacing:.6px;}
+  .spec .sval{font-size:12px;font-weight:700;color:#0f172a;margin-top:1px;}
+  /* Features */
+  .sec-title{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:1.2px;color:${primary};border-bottom:2px solid ${secondary};padding-bottom:3px;margin-bottom:8px;}
+  .feat-grid{display:grid;grid-template-columns:1fr 1fr;gap:0;}
+  .feat-item{font-size:11px;color:#334155;padding:3px 0;display:flex;gap:5px;align-items:flex-start;}
+  .feat-item::before{content:"✓";color:${secondary};font-weight:800;flex-shrink:0;font-size:10px;}
+  /* RIGHT column */
+  .right{width:230px;padding:18px 16px;display:flex;flex-direction:column;gap:12px;}
+  .price-card{background:${primary};color:#fff;border-radius:8px;padding:14px;text-align:center;}
+  .price-card .plabel{font-size:9px;letter-spacing:2px;text-transform:uppercase;opacity:.7;}
+  .price-card .pval{font-size:26px;font-weight:900;line-height:1.1;margin-top:2px;}
+  .price-card .pmile{font-size:11px;opacity:.8;margin-top:3px;}
+  .vin-card{background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:10px;text-align:center;}
+  .vin-card .vlabel{font-size:9px;color:#94a3b8;text-transform:uppercase;letter-spacing:.5px;}
+  .vin-card .vval{font-size:10px;font-weight:700;font-family:monospace;letter-spacing:.8px;word-break:break-all;margin-top:2px;color:#0f172a;}
+  .recall-ok{background:#f0fdf4;border:1px solid #86efac;border-radius:6px;padding:8px 10px;text-align:center;font-size:11px;font-weight:700;color:#15803d;}
+  .recall-bad{background:#fef2f2;border:1px solid #fca5a5;border-radius:6px;padding:8px 10px;text-align:center;font-size:11px;font-weight:700;color:#dc2626;}
+  .recall-detail{background:#fef2f2;border:1px solid #fca5a5;border-radius:5px;padding:7px 9px;font-size:10px;color:#374151;margin-top:4px;}
+  .recall-detail b{color:#dc2626;display:block;}
+  .contact-card{background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:10px;}
+  .contact-card .cname{font-size:13px;font-weight:800;color:${primary};margin-bottom:4px;}
+  .contact-card .cline{font-size:11px;color:#475569;line-height:1.7;}
+  .tagline{font-size:10px;font-style:italic;color:#94a3b8;margin-top:6px;text-align:center;}
+  /* Footer */
+  .footer{background:${primary};color:rgba(255,255,255,.85);padding:9px 24px;display:flex;justify-content:space-between;font-size:10px;margin-top:auto;}
+  .footer b{color:#fff;}
 </style>
 </head>
 <body>
-<div class="header">
-  <div class="header-logo">${logoHtml}</div>
-  <div class="header-title">
-    <h1>Vehicle Information</h1>
-    <h2>Window Sticker</h2>
+
+<div class="hdr">
+  <div>${logoHtml}</div>
+  <div class="hdr-right">
+    <div class="label">Vehicle Information</div>
+    <div class="title">Window Sticker</div>
   </div>
 </div>
 
-<div class="vehicle-name">${vehicle.year} ${vehicle.make} ${vehicle.model}${vehicle.trim ? ' ' + vehicle.trim : ''}</div>
+<div class="title-bar">
+  <div class="vname">${vehicle.year || ''} ${vehicle.make || ''} ${vehicle.model || ''}${vehicle.trim ? ' ' + vehicle.trim : ''}</div>
+  <div class="stock">Stock&nbsp;#&nbsp;${vehicle.stocknumber || '—'}</div>
+</div>
 
-<div class="main">
+<div class="body">
   <div class="left">
-    <div class="photo-box">
-      ${vehicle.image_urls?.[0]
-        ? `<img src="${vehicle.image_urls[0]}" alt="Vehicle Photo">`
-        : `<div class="photo-placeholder">No Photo Available</div>`}
-    </div>
+    <div class="photo">${photoHtml}</div>
 
     <div class="specs-grid">
-      ${[
-        ['Year', vehicle.year],
-        ['Make', vehicle.make],
-        ['Model', vehicle.model],
-        ['Trim', vehicle.trim || '—'],
-        ['Condition', vehicle.condition ? (vehicle.condition.charAt(0).toUpperCase() + vehicle.condition.slice(1)) : '—'],
-        ['Mileage', mileage],
-        ['Body Style', vehicle.body_style || vehicle.bodystyle || '—'],
-        ['Fuel Type', vehicle.fuel_type || vehicle.fueltype || '—'],
-        ['Drivetrain', vehicle.drivetrain || '—'],
-        ['Transmission', vehicle.transmission || '—'],
-        ['Ext. Colour', vehicle.exterior_color || '—'],
-        ['Int. Colour', vehicle.interior_color || '—'],
-      ].map(([label, value]) => `
-        <div class="spec">
-          <div class="spec-label">${label}</div>
-          <div class="spec-value">${value || '—'}</div>
-        </div>`).join('')}
+      ${specs.map(([l, v]) => `<div class="spec"><div class="slabel">${l}</div><div class="sval">${v}</div></div>`).join('')}
     </div>
 
-    <div class="section-title">Standard Features</div>
-    <ul class="feature-list">
-      ${features.map(f => `<li>${f}</li>`).join('')}
-    </ul>
+    <div class="sec-title">Features &amp; Equipment</div>
+    <div class="feat-grid">
+      ${features.map(f => `<div class="feat-item">${f}</div>`).join('')}
+    </div>
+
+    ${vehicle.description ? `
+    <div class="sec-title" style="margin-top:12px;">Vehicle Description</div>
+    <div style="font-size:11px;line-height:1.65;color:#475569;">${vehicle.description.slice(0, 400)}${vehicle.description.length > 400 ? '…' : ''}</div>
+    ` : ''}
   </div>
 
   <div class="right">
-    <div class="price-box">
-      <div class="price-label">Asking Price</div>
-      <div class="price-value">${price}</div>
+    <div class="price-card">
+      <div class="plabel">Asking Price</div>
+      <div class="pval">${price}</div>
+      <div class="pmile">${mileage}</div>
     </div>
 
-    <div class="vin-box">
-      <div class="vin-label">VIN</div>
-      <div class="vin-value">${vehicle.vin || 'Not Available'}</div>
+    <div class="vin-card">
+      <div class="vlabel">Vehicle Identification Number</div>
+      <div class="vval">${vehicle.vin || 'Not Available'}</div>
     </div>
 
-    ${recallBadge}
+    ${recalls?.length
+      ? `<div class="recall-bad">⚠ ${recalls.length} Open Recall${recalls.length > 1 ? 's' : ''} — See Dealer</div>
+         ${recalls.slice(0, 2).map(r => `<div class="recall-detail"><b>${r.Component || 'Component'}</b>${(r.Summary || r.Consequence || '').slice(0, 100)}…</div>`).join('')}`
+      : `<div class="recall-ok">✓ No Open Recalls on Record</div>`}
 
-    ${recalls?.length ? `
-    <div style="margin-top:12px;">
-      <div class="section-title">Recall Details</div>
-      ${recalls.slice(0, 3).map(r => `
-        <div style="background:#fef2f2;border:1px solid #fecaca;border-radius:6px;padding:8px;margin-bottom:6px;font-size:11px;">
-          <div style="font-weight:700;color:#dc2626;">${r.Component || 'Component'}</div>
-          <div style="color:#374151;margin-top:2px;">${(r.Summary || r.Consequence || '').slice(0, 120)}${(r.Summary || '').length > 120 ? '…' : ''}</div>
-        </div>`).join('')}
-    </div>` : ''}
-
-    <div style="margin-top:16px;">
-      <div class="section-title">Contact Us</div>
-      <div style="font-size:12px;line-height:1.8;color:#374151;">
-        ${dealer.name ? `<div style="font-weight:700;">${dealer.name}</div>` : ''}
-        ${dealer.phone ? `<div>📞 ${dealer.phone}</div>` : ''}
-        ${dealer.website_url ? `<div>🌐 ${dealer.website_url}</div>` : ''}
-        ${dealer.address ? `<div>📍 ${dealer.address}${dealer.city ? ', ' + dealer.city : ''}${dealer.province ? ', ' + dealer.province : ''}</div>` : ''}
-        ${branding.tagline ? `<div style="margin-top:8px;font-style:italic;color:#6b7280;">"${branding.tagline}"</div>` : ''}
-      </div>
+    <div class="contact-card">
+      <div class="cname">${dealer.name || 'Your Dealership'}</div>
+      ${dealer.website_url ? `<div class="cline">🌐 ${dealer.website_url}</div>` : ''}
+      ${branding.tagline ? `<div class="tagline">"${branding.tagline}"</div>` : ''}
     </div>
   </div>
 </div>
 
 <div class="footer">
-  <span>Stock #: <strong>${vehicle.stocknumber || '—'}</strong></span>
+  <span>Stock #: <b>${vehicle.stocknumber || '—'}</b></span>
   <span>${dealer.name || ''}</span>
   <span>Generated ${new Date().toLocaleDateString('en-CA')}</span>
 </div>
-</body>
-</html>`
+</body></html>`
 }
 
-function buildBrochureHtml(vehicle, dealer, branding, recalls) {
+function buildBrochureHtml(vehicle, dealer, branding, recalls, photosDataUris, logoDataUri) {
   const primary = branding.primary_color || '#1a2e4a'
   const secondary = branding.secondary_color || '#c8a84b'
-  const logoHtml = branding.logo_url
-    ? `<img src="${branding.logo_url}" alt="Dealer Logo" style="max-height:60px;max-width:200px;object-fit:contain;">`
-    : `<span style="font-size:20px;font-weight:800;color:#fff;">${dealer.name || 'Your Dealership'}</span>`
 
-  const price = vehicle.price ? `$${Number(vehicle.price).toLocaleString()}` : 'Contact for Price'
-  const mileage = vehicle.mileage ? `${Number(vehicle.mileage).toLocaleString()} km` : '—'
+  const logoSrc = logoDataUri || branding.logo_url || null
+  const logoHtml = logoSrc
+    ? `<img src="${logoSrc}" alt="${dealer.name || ''}" style="max-height:52px;max-width:180px;object-fit:contain;display:block;">`
+    : `<span style="font-size:17px;font-weight:900;color:#fff;">${dealer.name || 'Your Dealership'}</span>`
+
+  const price = vehicle.price ? `$${Number(vehicle.price).toLocaleString()}` : 'Call for Price'
+  const mileage = vehicle.mileage ? `${Number(vehicle.mileage).toLocaleString()} km` : vehicle.condition === 'new' ? 'New' : '—'
   const features = buildFeatureList(vehicle)
-  const photos = (vehicle.image_urls || []).slice(0, 4)
+  const cap = s => s ? s.charAt(0).toUpperCase() + s.slice(1) : null
+
+  // Use pre-fetched base64 uris; fallback to raw URLs (may not render in Puppeteer)
+  const rawPhotos = (vehicle.image_urls || []).slice(0, 4)
+  const getPhoto = i => photosDataUris?.[i] || rawPhotos[i] || null
 
   return `<!DOCTYPE html>
 <html lang="en">
-<head>
-<meta charset="UTF-8">
+<head><meta charset="UTF-8">
 <style>
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { font-family: Arial, Helvetica, sans-serif; width: 816px; background: #fff; color: #1a1a1a; }
+  *{margin:0;padding:0;box-sizing:border-box;}
+  body{font-family:'Arial',Helvetica,sans-serif;width:816px;background:#fff;color:#111;}
+  .page{width:816px;min-height:1056px;position:relative;display:flex;flex-direction:column;page-break-after:always;}
 
-  /* PAGE 1 */
-  .page { width: 816px; min-height: 1056px; position: relative; overflow: hidden; page-break-after: always; }
+  /* ── PAGE 1 ── */
+  .hero{position:relative;height:400px;background:${primary};overflow:hidden;flex-shrink:0;}
+  .hero img{width:100%;height:100%;object-fit:cover;}
+  .hero-grad{position:absolute;inset:0;background:linear-gradient(to bottom,rgba(0,0,0,.05) 0%,rgba(0,0,0,.72) 100%);}
+  .hero-content{position:absolute;bottom:0;left:0;right:0;padding:22px 30px;color:#fff;}
+  .hero-accent{font-size:11px;letter-spacing:3px;text-transform:uppercase;color:${secondary};margin-bottom:5px;}
+  .hero-name{font-size:30px;font-weight:900;line-height:1.05;}
+  .hero-sub{font-size:15px;opacity:.85;margin-top:3px;}
 
-  /* Hero */
-  .hero { position: relative; height: 420px; background: ${primary}; overflow: hidden; }
-  .hero-img { width: 100%; height: 100%; object-fit: cover; opacity: 0.85; }
-  .hero-overlay { position: absolute; inset: 0; background: linear-gradient(to bottom, rgba(0,0,0,0.1) 0%, rgba(0,0,0,0.65) 100%); }
-  .hero-content { position: absolute; bottom: 0; left: 0; right: 0; padding: 24px 32px; color: #fff; }
-  .hero-tagline { font-size: 12px; letter-spacing: 3px; text-transform: uppercase; color: ${secondary}; margin-bottom: 6px; }
-  .hero-name { font-size: 32px; font-weight: 900; line-height: 1.1; }
-  .hero-sub { font-size: 16px; opacity: 0.85; margin-top: 4px; }
+  .strip{background:${secondary};display:flex;align-items:center;justify-content:space-between;padding:10px 30px;flex-shrink:0;}
+  .strip .logo-area{}
+  .strip .price-area{text-align:center;color:#fff;}
+  .strip .price-area .pv{font-size:22px;font-weight:900;}
+  .strip .price-area .mv{font-size:12px;opacity:.85;}
+  .strip .contact-area{text-align:right;color:rgba(255,255,255,.9);font-size:11px;line-height:1.7;}
 
-  /* Header strip */
-  .header-strip { background: ${secondary}; display: flex; align-items: center; justify-content: space-between; padding: 10px 32px; }
-  .header-strip .price { font-size: 22px; font-weight: 900; color: #fff; }
-  .header-strip .mileage { font-size: 14px; color: rgba(255,255,255,0.9); font-weight: 600; }
+  .specbar{display:flex;border-bottom:1px solid #e5e7eb;flex-shrink:0;}
+  .sb-item{flex:1;padding:10px 12px;border-right:1px solid #e5e7eb;text-align:center;}
+  .sb-item:last-child{border-right:none;}
+  .sb-label{font-size:8px;color:#94a3b8;text-transform:uppercase;letter-spacing:.5px;}
+  .sb-val{font-size:12px;font-weight:700;color:#0f172a;margin-top:2px;}
 
-  /* Specs row */
-  .specs-row { display: flex; gap: 0; border-bottom: 1px solid #e5e7eb; }
-  .spec-item { flex: 1; padding: 12px 16px; border-right: 1px solid #e5e7eb; text-align: center; }
-  .spec-item:last-child { border-right: none; }
-  .spec-label { font-size: 9px; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.5px; }
-  .spec-value { font-size: 13px; font-weight: 700; color: #111; margin-top: 3px; }
+  .gallery{display:grid;grid-template-columns:1fr 1fr;gap:6px;padding:14px 20px;flex:1;}
+  .gallery .gp{border-radius:6px;overflow:hidden;aspect-ratio:16/9;background:#f1f5f9;display:flex;align-items:center;justify-content:center;color:#9ca3af;font-size:12px;}
+  .gallery img{width:100%;height:100%;object-fit:cover;}
 
-  /* Gallery */
-  .gallery { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; padding: 16px 24px; }
-  .gallery img { width: 100%; aspect-ratio: 16/9; object-fit: cover; border-radius: 6px; }
-  .gallery-placeholder { width: 100%; aspect-ratio: 16/9; background: #f3f4f6; border-radius: 6px; display: flex; align-items: center; justify-content: center; color: #9ca3af; font-size: 12px; }
+  .p1-footer{background:${primary};padding:9px 30px;display:flex;justify-content:space-between;font-size:10px;color:rgba(255,255,255,.8);}
+  .p1-footer b{color:#fff;}
 
-  /* PAGE 2 */
-  .page2-header { background: ${primary}; padding: 16px 32px; display: flex; align-items: center; justify-content: space-between; }
-  .page2-header-title { color: #fff; font-size: 16px; font-weight: 700; }
-  .content-grid { display: flex; gap: 0; }
-  .content-left { flex: 1; padding: 24px 28px; border-right: 2px solid #e5e7eb; }
-  .content-right { width: 260px; padding: 24px 20px; }
-  .section-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: ${primary}; border-bottom: 2px solid ${secondary}; padding-bottom: 4px; margin-bottom: 12px; margin-top: 20px; }
-  .section-title:first-child { margin-top: 0; }
-  .feature-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
-  .feature-item { font-size: 11px; padding: 4px 0; color: #374151; display: flex; align-items: flex-start; gap: 5px; }
-  .feature-item::before { content: "✓"; color: ${secondary}; font-weight: 700; flex-shrink: 0; }
-  .description { font-size: 12px; line-height: 1.7; color: #374151; }
-  .price-card { background: ${primary}; color: #fff; border-radius: 10px; padding: 20px; text-align: center; margin-bottom: 16px; }
-  .price-card-label { font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase; opacity: 0.7; }
-  .price-card-value { font-size: 30px; font-weight: 900; margin-top: 4px; }
-  .contact-block { background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px; padding: 14px; font-size: 12px; line-height: 2; }
-  .contact-block .name { font-size: 14px; font-weight: 800; color: ${primary}; }
-  .recall-warn { background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; padding: 10px 12px; font-size: 11px; margin-bottom: 12px; }
-  .recall-warn-title { font-weight: 700; color: #dc2626; margin-bottom: 4px; }
-  .recall-ok { background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; padding: 10px 12px; font-size: 11px; margin-bottom: 12px; color: #15803d; font-weight: 700; }
-  .footer { background: ${primary}; color: rgba(255,255,255,0.8); padding: 10px 32px; display: flex; justify-content: space-between; font-size: 10px; }
+  /* ── PAGE 2 ── */
+  .p2-hdr{background:${primary};padding:14px 28px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0;}
+  .p2-hdr-title{color:#fff;font-size:15px;font-weight:700;}
+  .p2-body{display:flex;flex:1;}
+  .p2-left{flex:1;padding:20px 24px;border-right:1px solid #e5e7eb;}
+  .p2-right{width:240px;padding:20px 18px;display:flex;flex-direction:column;gap:12px;}
+
+  .sec{margin-bottom:16px;}
+  .sec-hdr{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:1.2px;color:${primary};border-bottom:2px solid ${secondary};padding-bottom:3px;margin-bottom:8px;}
+  .desc{font-size:11px;line-height:1.7;color:#475569;}
+  .feat-grid{display:grid;grid-template-columns:1fr 1fr;gap:2px;}
+  .fi{font-size:11px;color:#334155;padding:3px 0;display:flex;gap:5px;align-items:flex-start;}
+  .fi::before{content:"✓";color:${secondary};font-weight:800;flex-shrink:0;font-size:10px;}
+  .full-specs{display:grid;grid-template-columns:1fr 1fr;gap:5px;}
+  .fs-item{background:#f8fafc;border:1px solid #e2e8f0;border-radius:4px;padding:6px 8px;}
+  .fs-label{font-size:8px;color:#94a3b8;text-transform:uppercase;letter-spacing:.5px;}
+  .fs-val{font-size:11px;font-weight:700;color:#0f172a;margin-top:1px;}
+
+  .price-card{background:${primary};color:#fff;border-radius:8px;padding:16px;text-align:center;}
+  .pc-label{font-size:9px;letter-spacing:2px;text-transform:uppercase;opacity:.7;}
+  .pc-val{font-size:28px;font-weight:900;line-height:1.1;margin-top:2px;}
+  .pc-mile{font-size:11px;opacity:.75;margin-top:3px;}
+
+  .recall-ok{background:#f0fdf4;border:1px solid #86efac;border-radius:6px;padding:8px 10px;text-align:center;font-size:11px;font-weight:700;color:#15803d;}
+  .recall-bad{background:#fef2f2;border:1px solid #fca5a5;border-radius:6px;padding:8px 10px;font-size:11px;}
+  .recall-bad b{display:block;color:#dc2626;font-size:12px;margin-bottom:2px;}
+
+  .contact-card{background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:12px;}
+  .cc-name{font-size:14px;font-weight:800;color:${primary};margin-bottom:5px;}
+  .cc-line{font-size:11px;color:#475569;line-height:1.8;}
+  .cc-tagline{font-size:10px;font-style:italic;color:#94a3b8;margin-top:8px;}
+
+  .vin-box{background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:8px;text-align:center;}
+  .vin-label{font-size:9px;color:#94a3b8;text-transform:uppercase;letter-spacing:.5px;}
+  .vin-val{font-size:10px;font-weight:700;font-family:monospace;letter-spacing:.8px;word-break:break-all;margin-top:2px;}
+
+  .p2-footer{background:${primary};padding:9px 28px;display:flex;justify-content:space-between;font-size:10px;color:rgba(255,255,255,.8);flex-shrink:0;margin-top:auto;}
+  .p2-footer b{color:#fff;}
 </style>
 </head>
 <body>
 
-<!-- PAGE 1 -->
+<!-- ══ PAGE 1 ══ -->
 <div class="page">
   <div class="hero">
-    ${photos[0]
-      ? `<img class="hero-img" src="${photos[0]}" alt="Vehicle">`
-      : `<div style="width:100%;height:100%;background:linear-gradient(135deg,${primary},${secondary});"></div>`}
-    <div class="hero-overlay"></div>
+    ${getPhoto(0) ? `<img src="${getPhoto(0)}" alt="Vehicle">` : `<div style="width:100%;height:100%;background:linear-gradient(135deg,${primary} 0%,${secondary} 100%);"></div>`}
+    <div class="hero-grad"></div>
     <div class="hero-content">
-      ${branding.tagline ? `<div class="hero-tagline">${branding.tagline}</div>` : ''}
-      <div class="hero-name">${vehicle.year} ${vehicle.make} ${vehicle.model}</div>
-      <div class="hero-sub">${vehicle.trim || ''} ${vehicle.condition ? '· ' + vehicle.condition.charAt(0).toUpperCase() + vehicle.condition.slice(1) : ''}</div>
+      ${branding.tagline ? `<div class="hero-accent">${branding.tagline}</div>` : ''}
+      <div class="hero-name">${vehicle.year || ''} ${vehicle.make || ''} ${vehicle.model || ''}</div>
+      <div class="hero-sub">${[vehicle.trim, cap(vehicle.condition)].filter(Boolean).join(' · ')}</div>
     </div>
   </div>
 
-  <div class="header-strip">
-    ${logoHtml}
-    <div style="text-align:center;">
-      <div class="price">${price}</div>
-      ${vehicle.mileage ? `<div class="mileage">${mileage}</div>` : ''}
+  <div class="strip">
+    <div class="logo-area">${logoHtml}</div>
+    <div class="price-area">
+      <div class="pv">${price}</div>
+      <div class="mv">${mileage}</div>
     </div>
-    <div style="color:#fff;font-size:12px;text-align:right;">
-      ${dealer.phone ? `<div>📞 ${dealer.phone}</div>` : ''}
+    <div class="contact-area">
       ${dealer.website_url ? `<div>🌐 ${dealer.website_url}</div>` : ''}
+      <div>${dealer.name || ''}</div>
     </div>
   </div>
 
-  <div class="specs-row">
+  <div class="specbar">
     ${[
-      ['Year', vehicle.year],
-      ['Drivetrain', vehicle.drivetrain || '—'],
-      ['Fuel Type', vehicle.fuel_type || vehicle.fueltype || '—'],
-      ['Trans.', vehicle.transmission || '—'],
-      ['Colour', vehicle.exterior_color || '—'],
-      ['Stock #', vehicle.stocknumber || '—'],
-    ].map(([label, value]) => `
-      <div class="spec-item">
-        <div class="spec-label">${label}</div>
-        <div class="spec-value">${value}</div>
-      </div>`).join('')}
+      ['Drivetrain',   vehicle.drivetrain   || '—'],
+      ['Fuel Type',    vehicle.fuel_type    || '—'],
+      ['Transmission', vehicle.transmission || '—'],
+      ['Body Style',   vehicle.body_style   || '—'],
+      ['Ext. Colour',  vehicle.exterior_color || '—'],
+      ['Stock #',      vehicle.stocknumber  || '—'],
+    ].map(([l,v]) => `<div class="sb-item"><div class="sb-label">${l}</div><div class="sb-val">${v}</div></div>`).join('')}
   </div>
 
   <div class="gallery">
-    ${[0, 1, 2, 3].map(i => photos[i]
-      ? `<img src="${photos[i]}" alt="Photo ${i + 1}">`
-      : `<div class="gallery-placeholder">Photo ${i + 1}</div>`
+    ${[0,1,2,3].map(i => getPhoto(i)
+      ? `<div class="gp"><img src="${getPhoto(i)}" alt="Photo ${i+1}"></div>`
+      : `<div class="gp">Photo ${i+1}</div>`
     ).join('')}
+  </div>
+
+  <div class="p1-footer">
+    <span>Stock #: <b>${vehicle.stocknumber || '—'}</b></span>
+    <span>${dealer.name || ''}</span>
+    <span>Generated ${new Date().toLocaleDateString('en-CA')}</span>
   </div>
 </div>
 
-<!-- PAGE 2 -->
+<!-- ══ PAGE 2 ══ -->
 <div class="page">
-  <div class="page2-header">
+  <div class="p2-hdr">
     ${logoHtml}
-    <div class="page2-header-title">${vehicle.year} ${vehicle.make} ${vehicle.model}${vehicle.trim ? ' ' + vehicle.trim : ''}</div>
+    <div class="p2-hdr-title">${vehicle.year || ''} ${vehicle.make || ''} ${vehicle.model || ''}${vehicle.trim ? ' — ' + vehicle.trim : ''}</div>
   </div>
 
-  <div class="content-grid">
-    <div class="content-left">
+  <div class="p2-body">
+    <div class="p2-left">
       ${vehicle.description ? `
-        <div class="section-title">About This Vehicle</div>
-        <div class="description">${vehicle.description.slice(0, 600)}${vehicle.description.length > 600 ? '…' : ''}</div>
-      ` : ''}
+      <div class="sec">
+        <div class="sec-hdr">About This Vehicle</div>
+        <div class="desc">${vehicle.description.slice(0, 650)}${vehicle.description.length > 650 ? '…' : ''}</div>
+      </div>` : ''}
 
-      <div class="section-title">Features & Equipment</div>
-      <div class="feature-grid">
-        ${features.map(f => `<div class="feature-item">${f}</div>`).join('')}
+      <div class="sec">
+        <div class="sec-hdr">Features &amp; Equipment</div>
+        <div class="feat-grid">
+          ${features.map(f => `<div class="fi">${f}</div>`).join('')}
+        </div>
       </div>
 
-      <div class="section-title">Full Specifications</div>
-      <div class="feature-grid">
-        ${[
-          ['Engine', vehicle.engine || vehicle.engine_displacement || null],
-          ['Cylinders', vehicle.cylinders || null],
-          ['Displacement', vehicle.displacement || null],
-          ['Body Style', vehicle.body_style || vehicle.bodystyle || null],
-          ['Doors', vehicle.doors || null],
-          ['Seats', vehicle.seats || null],
-          ['GVWR', vehicle.gvwr || null],
-          ['Plant City', vehicle.plant_city || null],
-        ].filter(([, v]) => v).map(([label, value]) => `
-          <div class="feature-item" style="flex-direction:column;gap:0;">
-            <span style="font-size:9px;color:#9ca3af;text-transform:uppercase;">${label}</span>
-            <span style="font-size:12px;font-weight:700;">${value}</span>
-          </div>`).join('')}
-      </div>
+      ${[
+        ['Engine',       vehicle.engine],
+        ['Body Style',   vehicle.body_style],
+        ['Doors',        vehicle.doors ? String(vehicle.doors) : null],
+        ['Int. Colour',  vehicle.interior_color],
+        ['Condition',    cap(vehicle.condition)],
+        ['VIN',          vehicle.vin],
+      ].filter(([,v]) => v).length ? `
+      <div class="sec">
+        <div class="sec-hdr">Full Specifications</div>
+        <div class="full-specs">
+          ${[
+            ['Engine',       vehicle.engine],
+            ['Body Style',   vehicle.body_style],
+            ['Doors',        vehicle.doors ? String(vehicle.doors) : null],
+            ['Int. Colour',  vehicle.interior_color],
+            ['Condition',    cap(vehicle.condition)],
+          ].filter(([,v]) => v).map(([l,v]) => `
+          <div class="fs-item"><div class="fs-label">${l}</div><div class="fs-val">${v}</div></div>`).join('')}
+        </div>
+      </div>` : ''}
     </div>
 
-    <div class="content-right">
+    <div class="p2-right">
       <div class="price-card">
-        <div class="price-card-label">Asking Price</div>
-        <div class="price-card-value">${price}</div>
-        ${vehicle.mileage ? `<div style="opacity:0.75;font-size:12px;margin-top:4px;">${mileage}</div>` : ''}
+        <div class="pc-label">Asking Price</div>
+        <div class="pc-val">${price}</div>
+        <div class="pc-mile">${mileage}</div>
       </div>
 
       ${recalls?.length
-        ? `<div class="recall-warn">
-            <div class="recall-warn-title">⚠ ${recalls.length} Open Recall${recalls.length > 1 ? 's' : ''}</div>
-            <div>See dealer for recall information and remedies.</div>
-          </div>`
+        ? `<div class="recall-bad"><b>⚠ ${recalls.length} Open Recall${recalls.length > 1 ? 's' : ''}</b>See dealer for details &amp; remedy.</div>`
         : `<div class="recall-ok">✓ No Open Recalls on Record</div>`}
 
-      <div class="section-title">Contact Us</div>
-      <div class="contact-block">
-        ${dealer.name ? `<div class="name">${dealer.name}</div>` : ''}
-        ${dealer.address ? `<div>📍 ${dealer.address}</div>` : ''}
-        ${dealer.city ? `<div>${dealer.city}${dealer.province ? ', ' + dealer.province : ''}${dealer.postal_code ? ' ' + dealer.postal_code : ''}</div>` : ''}
-        ${dealer.phone ? `<div>📞 ${dealer.phone}</div>` : ''}
-        ${dealer.website_url ? `<div>🌐 ${dealer.website_url}</div>` : ''}
-        ${branding.tagline ? `<div style="margin-top:8px;font-style:italic;color:#6b7280;">"${branding.tagline}"</div>` : ''}
+      <div class="contact-card">
+        <div class="cc-name">${dealer.name || 'Your Dealership'}</div>
+        ${dealer.website_url ? `<div class="cc-line">🌐 ${dealer.website_url}</div>` : ''}
+        ${branding.tagline ? `<div class="cc-tagline">"${branding.tagline}"</div>` : ''}
       </div>
 
-      <div class="section-title" style="margin-top:16px;">VIN</div>
-      <div style="font-family:monospace;font-size:11px;word-break:break-all;background:#f9fafb;border:1px solid #e5e7eb;border-radius:6px;padding:8px;letter-spacing:1px;">${vehicle.vin || 'Not Available'}</div>
+      <div class="vin-box">
+        <div class="vin-label">VIN</div>
+        <div class="vin-val">${vehicle.vin || 'Not Available'}</div>
+      </div>
     </div>
   </div>
 
-  <div class="footer">
-    <span>${dealer.name || ''} · Stock #${vehicle.stocknumber || '—'}</span>
+  <div class="p2-footer">
+    <span>Stock #: <b>${vehicle.stocknumber || '—'}</b></span>
     <span>VIN: ${vehicle.vin || '—'}</span>
     <span>Generated ${new Date().toLocaleDateString('en-CA')}</span>
   </div>
 </div>
 
-</body>
-</html>`
+</body></html>`
 }
 
 function buildFeatureList(vehicle) {
@@ -410,6 +444,17 @@ function buildFeatureList(vehicle) {
   }
 
   return features.length ? features : ['See dealer for full equipment list']
+}
+
+// Fetch an image URL and return a base64 data URI so Puppeteer can render it
+async function imgToDataUri(url) {
+  try {
+    const res = await fetch(url, { signal: AbortSignal.timeout(8000) })
+    if (!res.ok) return null
+    const buf = await res.arrayBuffer()
+    const mime = res.headers.get('content-type') || 'image/jpeg'
+    return `data:${mime};base64,${Buffer.from(buf).toString('base64')}`
+  } catch { return null }
 }
 
 async function generatePdf(html) {
@@ -571,11 +616,16 @@ export function registerRoutes(app) {
     if (!decoded) return res.status(400).json({ error: 'No decoded data' })
 
     const update = {}
-    // Only update columns that exist in the inventory table
     if (decoded.year) update.year = decoded.year
     if (decoded.make) update.make = decoded.make
     if (decoded.model) update.model = decoded.model
     if (decoded.trim) update.trim = decoded.trim
+    if (decoded.body_style) update.body_style = decoded.body_style
+    if (decoded.fuel_type) update.fuel_type = decoded.fuel_type
+    if (decoded.drivetrain) update.drivetrain = decoded.drivetrain
+    if (decoded.transmission) update.transmission = decoded.transmission
+    if (decoded.engine) update.engine = decoded.engine
+    if (decoded.doors) update.doors = decoded.doors
     if (recalls) {
       update.recalls = recalls
       update.recalls_checked_at = new Date().toISOString()
@@ -611,7 +661,12 @@ export function registerRoutes(app) {
     }
 
     try {
-      const html = buildWindowStickerHtml(vehicle, dealer, dealer.branding || {}, vehicle.recalls || [])
+      const branding = dealer.branding || {}
+      const [photoDataUri, logoDataUri] = await Promise.all([
+        vehicle.image_urls?.[0] ? imgToDataUri(vehicle.image_urls[0]) : Promise.resolve(null),
+        branding.logo_url ? imgToDataUri(branding.logo_url) : Promise.resolve(null),
+      ])
+      const html = buildWindowStickerHtml(vehicle, dealer, branding, vehicle.recalls || [], photoDataUri, logoDataUri)
       const pdf = await generatePdf(html)
       const path = `${req.dealershipId}/${vehicle.id}/window-sticker.pdf`
       const url = await uploadPdf(pdf, path)
@@ -643,7 +698,13 @@ export function registerRoutes(app) {
     }
 
     try {
-      const html = buildBrochureHtml(vehicle, dealer, dealer.branding || {}, vehicle.recalls || [])
+      const branding = dealer.branding || {}
+      const imageUrls = (vehicle.image_urls || []).slice(0, 4)
+      const [photosDataUris, logoDataUri] = await Promise.all([
+        Promise.all(imageUrls.map(u => imgToDataUri(u))),
+        branding.logo_url ? imgToDataUri(branding.logo_url) : Promise.resolve(null),
+      ])
+      const html = buildBrochureHtml(vehicle, dealer, branding, vehicle.recalls || [], photosDataUris, logoDataUri)
       const pdf = await generatePdf(html)
       const path = `${req.dealershipId}/${vehicle.id}/brochure.pdf`
       const url = await uploadPdf(pdf, path)
