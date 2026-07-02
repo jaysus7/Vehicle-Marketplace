@@ -720,6 +720,12 @@
             <button data-type="used" class="catalog-type-pill px-3 py-1 rounded-full text-xs font-semibold border border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition">Used</button>
             <button data-type="demo" class="catalog-type-pill px-3 py-1 rounded-full text-xs font-semibold border border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition">Demo</button>
           </div>
+          <!-- Segment pill row (AI Boost only — hidden until caches load) -->
+          <div class="flex flex-wrap gap-1.5 hidden" id="catalog-segment-pills">
+            <button data-seg="all"  class="catalog-segment-pill active px-3 py-1 rounded-full text-xs font-semibold bg-indigo-600 text-white transition">All</button>
+            <button data-seg="hot"  class="catalog-segment-pill px-3 py-1 rounded-full text-xs font-semibold border border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition">🔥 Hot</button>
+            <button data-seg="cold" class="catalog-segment-pill px-3 py-1 rounded-full text-xs font-semibold border border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition">❄️ Cold</button>
+          </div>
           <!-- hidden select kept for JS compatibility -->
           <select id="catalog-status" class="hidden"></select>
         </div>
@@ -1914,7 +1920,7 @@
     </div>
   </div>
 
-  <script src="dashboard.js?v=20260703w"></script>
+  <script src="dashboard.js?v=20260703x"></script>
   <script src="tour.js"></script>
 </body>
 </html>

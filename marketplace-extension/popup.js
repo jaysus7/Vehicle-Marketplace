@@ -199,6 +199,7 @@ async function loadInventory(token) {
     // Apply status filter
     const activeStatus = window.__msStatusFilter || 'all'
     const activeCond = window.__msCondFilter || 'all'
+    const activeSeg = window.__msSegFilter || 'all'
 
     let filtered = displayList.filter(v => {
       const isPosted = postedMap.has(v.id)
@@ -214,6 +215,13 @@ async function loadInventory(token) {
 
       // condition filter
       if (activeCond !== 'all' && cond !== activeCond) return false
+
+      // segment filter
+      if (activeSeg !== 'all') {
+        const mm = `${v.make} ${v.model}`.toLowerCase()
+        if (activeSeg === 'hot' && !window.__msHotMakeModels?.has(mm)) return false
+        if (activeSeg === 'cold' && !window.__msColdMakeModels?.has(mm)) return false
+      }
 
       return true
     })
@@ -356,6 +364,14 @@ async function loadInventory(token) {
       // Condition badge on vehicle name line
       const condBadge = v.condition ? `<span style="font-size:9px;font-weight:700;text-transform:uppercase;color:#555;margin-left:4px;">${v.condition}</span>` : ''
 
+      // Hot/cold segment tag
+      const mm = `${v.make} ${v.model}`.toLowerCase()
+      const segTag = window.__msHotMakeModels?.has(mm)
+        ? `<span style="font-size:9px;font-weight:700;padding:1px 5px;border-radius:99px;background:#fff7ed;color:#c2410c;margin-left:4px;">🔥 Hot</span>`
+        : window.__msColdMakeModels?.has(mm)
+          ? `<span style="font-size:9px;font-weight:700;padding:1px 5px;border-radius:99px;background:#f0f9ff;color:#0369a1;margin-left:4px;">❄️ Cold</span>`
+          : ''
+
       // Group divider
       let divider = ''
       if (rank !== lastRank && groupLabels[rank]) {
@@ -375,7 +391,7 @@ async function loadInventory(token) {
         <div class="vehicle-item" data-id="${v.id}">
           ${thumb}
           <div class="vehicle-info">
-            <div class="vehicle-name">${vehName}${condBadge}</div>
+            <div class="vehicle-name">${vehName}${condBadge}${segTag}</div>
             <div class="vehicle-sub">${subParts.join(' · ')}</div>
           </div>
           <div style="display:flex;flex-direction:column;align-items:flex-end;gap:2px;">
@@ -503,6 +519,29 @@ async function showInventoryScreen(token, user) {
       loadInventory(token)
     })
   })
+
+  // Segment filter pills
+  document.querySelectorAll('[data-seg]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      window.__msSegFilter = btn.dataset.seg
+      document.querySelectorAll('[data-seg]').forEach(b => {
+        b.classList.toggle('active', b === btn)
+      })
+      loadInventory(token)
+    })
+  })
+
+  // Pre-fetch intel caches for hot/cold segment filter
+  apiGet('/ai/inventory-intelligence', token)
+    .then(data => {
+      if (!data || !data.hot_segments) return
+      window.__msHotMakeModels = new Set((data.hot_segments || []).map(s => `${s.make} ${s.model}`.toLowerCase()))
+      window.__msColdMakeModels = new Set((data.cold_segments || []).map(s => `${s.make} ${s.model}`.toLowerCase()))
+      if (window.__msHotMakeModels.size > 0 || window.__msColdMakeModels.size > 0) {
+        document.getElementById('segment-filter-row')?.classList.remove('hidden')
+      }
+    })
+    .catch(() => {})
 
   // Search
   const searchInput = $('search-input')

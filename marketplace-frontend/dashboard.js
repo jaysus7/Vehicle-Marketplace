@@ -1784,12 +1784,14 @@ async function loadInventoryCatalog() {
 
 let __catalogStatusFilter = 'all';
 let __catalogTypeFilter = 'all';
+let __catalogSegmentFilter = 'all';
 
 function renderCatalog() {
   const list = document.getElementById('catalog-list');
   const q = document.getElementById('catalog-search').value.trim().toLowerCase();
   const statusFilter = __catalogStatusFilter;
   const typeFilter = __catalogTypeFilter;
+  const segmentFilter = __catalogSegmentFilter;
 
   const conditionRank = (v) => {
     const c = (v.condition || '').toLowerCase();
@@ -1812,6 +1814,12 @@ function renderCatalog() {
   }
   if (typeFilter !== 'all') {
     filtered = filtered.filter(v => (v.condition || '').toLowerCase() === typeFilter);
+  }
+  if (segmentFilter !== 'all') {
+    filtered = filtered.filter(v => {
+      const mm = `${v.make} ${v.model}`.toLowerCase();
+      return segmentFilter === 'hot' ? __hotMakeModels.has(mm) : __coldMakeModels.has(mm);
+    });
   }
   if (q) {
     filtered = filtered.filter(v =>
@@ -2033,6 +2041,19 @@ function setupActionListeners() {
       b.className = active
         ? 'catalog-type-pill active px-3 py-1 rounded-full text-xs font-semibold bg-indigo-600 text-white transition'
         : 'catalog-type-pill px-3 py-1 rounded-full text-xs font-semibold border border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition';
+    });
+    renderCatalog();
+  });
+
+  document.getElementById('catalog-segment-pills')?.addEventListener('click', (e) => {
+    const btn = e.target.closest('.catalog-segment-pill');
+    if (!btn) return;
+    __catalogSegmentFilter = btn.dataset.seg;
+    document.querySelectorAll('.catalog-segment-pill').forEach(b => {
+      const active = b.dataset.seg === __catalogSegmentFilter;
+      b.className = active
+        ? 'catalog-segment-pill active px-3 py-1 rounded-full text-xs font-semibold bg-indigo-600 text-white transition'
+        : 'catalog-segment-pill px-3 py-1 rounded-full text-xs font-semibold border border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition';
     });
     renderCatalog();
   });
@@ -3012,7 +3033,10 @@ async function loadAIBoostSection() {
           __hotMakeModels = new Set((data.hot_segments || []).map(s => `${s.make} ${s.model}`.toLowerCase()));
           __coldMakeModels = new Set((data.cold_segments || []).map(s => `${s.make} ${s.model}`.toLowerCase()));
           __vehicleHealthScores = Object.fromEntries((data.vehicles || []).map(v => [v.id, v.score]));
-          // Re-render inventory cards now that caches are populated
+          // Show segment filter row and re-render cards now that caches are populated
+          if (__hotMakeModels.size > 0 || __coldMakeModels.size > 0) {
+            document.getElementById('catalog-segment-pills')?.classList.remove('hidden');
+          }
           if (typeof renderCatalog === 'function' && document.getElementById('catalog-list')) renderCatalog();
         })
         .catch(() => {});
@@ -4801,6 +4825,9 @@ document.addEventListener('DOMContentLoaded', () => {
     __hotMakeModels = new Set(hot_segments.map(s => `${s.make} ${s.model}`.toLowerCase()))
     __coldMakeModels = new Set(cold_segments.map(s => `${s.make} ${s.model}`.toLowerCase()))
     __vehicleHealthScores = Object.fromEntries(vehicles.map(v => [v.id, v.score]))
+    if (__hotMakeModels.size > 0 || __coldMakeModels.size > 0) {
+      document.getElementById('catalog-segment-pills')?.classList.remove('hidden');
+    }
 
     // Stats
     const sa = summary.avg_score
