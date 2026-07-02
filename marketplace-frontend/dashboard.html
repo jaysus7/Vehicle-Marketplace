@@ -802,44 +802,180 @@
               <svg class="w-5 h-5 text-indigo-500" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z"/><path stroke-linecap="round" stroke-linejoin="round" d="M18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 00-2.456 2.456z"/></svg>
               AI Boost
             </h2>
-            <p class="text-sm text-slate-500 dark:text-slate-400 mt-0.5">AI analyses your listings and logs every check here in real time.</p>
+            <p class="text-sm text-slate-500 dark:text-slate-400 mt-0.5">AI-powered tools that keep your lot priced right, stocked well, and selling fast.</p>
           </div>
         </div>
 
-        <!-- Upsell if not active -->
-        <div id="ai-boost-page-upsell" class="hidden">
-          <div class="bg-gradient-to-br from-indigo-600 to-purple-700 rounded-xl p-6 sm:p-8 text-white space-y-4">
-            <div class="flex items-start gap-4">
-              <div class="flex-shrink-0 w-12 h-12 bg-white/20 rounded-xl flex items-center justify-center">
-                <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z"/></svg>
-              </div>
-              <div class="flex-1 min-w-0">
-                <h3 class="text-lg font-bold">Unlock AI Boost</h3>
-                <p class="text-indigo-200 text-sm mt-1 leading-relaxed">Auto-generate listing copy, get alerted to missing info, and catch pricing errors across your whole lot — automatically.</p>
-              </div>
+        <!-- ── What's included — ALWAYS VISIBLE ───────────────────────────── -->
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-5">
+
+          <!-- Active features (left 2 cols) -->
+          <div class="lg:col-span-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden">
+            <div class="px-5 py-3.5 border-b border-slate-200 dark:border-slate-800 flex items-center gap-2">
+              <span class="w-2 h-2 rounded-full bg-indigo-500 flex-shrink-0"></span>
+              <h3 class="text-sm font-bold text-slate-900 dark:text-white">What's Included</h3>
             </div>
-            <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
-              <div class="bg-white/10 rounded-lg p-3">
-                <div class="text-sm font-bold">✦ AI Listing Copy</div>
-                <div class="text-xs text-indigo-200 mt-0.5">Facebook-ready descriptions written for you</div>
+            <div class="divide-y divide-slate-100 dark:divide-slate-800">
+
+              <div class="flex items-start gap-3.5 px-5 py-4">
+                <div class="flex-shrink-0 w-8 h-8 bg-indigo-100 dark:bg-indigo-900/40 rounded-lg flex items-center justify-center mt-0.5">
+                  <svg class="w-4 h-4 text-indigo-600 dark:text-indigo-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931z"/></svg>
+                </div>
+                <div class="min-w-0">
+                  <div class="text-sm font-bold text-slate-900 dark:text-white">AI Listing Copy</div>
+                  <div class="text-xs text-slate-500 dark:text-slate-400 mt-0.5 leading-relaxed">Generates Facebook Marketplace-ready descriptions for every vehicle — tuned to your chosen tone (professional, friendly, or aggressive). Writes in seconds; saves hours a week.</div>
+                </div>
               </div>
-              <div class="bg-white/10 rounded-lg p-3">
-                <div class="text-sm font-bold">⚠ Missing Info Alerts</div>
-                <div class="text-xs text-indigo-200 mt-0.5">Email alerts when photos, price, or mileage are absent</div>
+
+              <div class="flex items-start gap-3.5 px-5 py-4">
+                <div class="flex-shrink-0 w-8 h-8 bg-amber-100 dark:bg-amber-900/40 rounded-lg flex items-center justify-center mt-0.5">
+                  <svg class="w-4 h-4 text-amber-600 dark:text-amber-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126z"/></svg>
+                </div>
+                <div class="min-w-0">
+                  <div class="text-sm font-bold text-slate-900 dark:text-white">Missing Info Alerts</div>
+                  <div class="text-xs text-slate-500 dark:text-slate-400 mt-0.5 leading-relaxed">Catches listings with no photos, missing price, or absent mileage and sends an email alert to your manager instantly. Configure exactly which fields trigger an alert.</div>
+                </div>
               </div>
-              <div class="bg-white/10 rounded-lg p-3">
-                <div class="text-sm font-bold">💰 Price Intelligence</div>
-                <div class="text-xs text-indigo-200 mt-0.5">Flag listings priced 15%+ off your median</div>
+
+              <div class="flex items-start gap-3.5 px-5 py-4">
+                <div class="flex-shrink-0 w-8 h-8 bg-red-100 dark:bg-red-900/40 rounded-lg flex items-center justify-center mt-0.5">
+                  <svg class="w-4 h-4 text-red-600 dark:text-red-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/></svg>
+                </div>
+                <div class="min-w-0">
+                  <div class="text-sm font-bold text-slate-900 dark:text-white">Price Intelligence Flags</div>
+                  <div class="text-xs text-slate-500 dark:text-slate-400 mt-0.5 leading-relaxed">Automatically flags any vehicle priced 15% or more above or below the median of comparable listings. Surfaces mispriced units before they sit too long or leave money on the table.</div>
+                </div>
               </div>
-            </div>
-            <div class="flex items-center gap-3 pt-1">
-              <button id="ai-boost-page-upgrade-btn" class="bg-white text-indigo-700 hover:bg-indigo-50 text-sm font-bold px-6 py-2.5 rounded-lg transition">Try Free for 3 Days</button>
-              <span class="text-xs text-indigo-200">No credit card required · $199/month after trial</span>
+
+              <div class="flex items-start gap-3.5 px-5 py-4">
+                <div class="flex-shrink-0 w-8 h-8 bg-purple-100 dark:bg-purple-900/40 rounded-lg flex items-center justify-center mt-0.5">
+                  <svg class="w-4 h-4 text-purple-600 dark:text-purple-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z"/></svg>
+                </div>
+                <div class="min-w-0">
+                  <div class="text-sm font-bold text-slate-900 dark:text-white">vAuto-Style Market Price Report</div>
+                  <div class="text-xs text-slate-500 dark:text-slate-400 mt-0.5 leading-relaxed">Per-vehicle one-pager with live-scraped data from AutoTrader Canada and CarGurus Canada. Shows retail price range, price-to-market %, mileage analysis, avg days on market, and marketplace-by-marketplace breakdowns. Exports to PDF.</div>
+                </div>
+              </div>
+
+              <div class="flex items-start gap-3.5 px-5 py-4">
+                <div class="flex-shrink-0 w-8 h-8 bg-emerald-100 dark:bg-emerald-900/40 rounded-lg flex items-center justify-center mt-0.5">
+                  <svg class="w-4 h-4 text-emerald-600 dark:text-emerald-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z"/></svg>
+                </div>
+                <div class="min-w-0">
+                  <div class="text-sm font-bold text-slate-900 dark:text-white">Live Auction Reference Data</div>
+                  <div class="text-xs text-slate-500 dark:text-slate-400 mt-0.5 leading-relaxed">Pulls Copart Canada auction results automatically — wholesale salvage reference pricing shown alongside retail comparables. Connect your Manheim MMR, ADESA, or TradeRev API key to unlock full wholesale auction data.</div>
+                </div>
+              </div>
+
+              <div class="flex items-start gap-3.5 px-5 py-4">
+                <div class="flex-shrink-0 w-8 h-8 bg-sky-100 dark:bg-sky-900/40 rounded-lg flex items-center justify-center mt-0.5">
+                  <svg class="w-4 h-4 text-sky-600 dark:text-sky-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25m19.5 0v.243a2.25 2.25 0 01-1.07 1.916l-7.5 4.615a2.25 2.25 0 01-2.36 0L3.32 8.91a2.25 2.25 0 01-1.07-1.916V6.75"/></svg>
+                </div>
+                <div class="min-w-0">
+                  <div class="text-sm font-bold text-slate-900 dark:text-white">Inventory Scan &amp; Activity Log</div>
+                  <div class="text-xs text-slate-500 dark:text-slate-400 mt-0.5 leading-relaxed">One-click scan across your entire lot. Every AI check is timestamped and logged — price flags, missing fields, and copy generation all appear in the live activity feed.</div>
+                </div>
+              </div>
+
             </div>
           </div>
-        </div>
 
-        <!-- Active content -->
+          <!-- Coming soon (right 1 col) -->
+          <div class="flex flex-col gap-5">
+
+            <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden">
+              <div class="px-5 py-3.5 border-b border-slate-200 dark:border-slate-800 flex items-center gap-2">
+                <span class="w-2 h-2 rounded-full bg-indigo-500 flex-shrink-0"></span>
+                <h3 class="text-sm font-bold text-slate-900 dark:text-white">Also Included</h3>
+              </div>
+              <div class="divide-y divide-slate-100 dark:divide-slate-800">
+
+                <div class="px-5 py-3.5 flex items-start gap-3">
+                  <div class="flex-shrink-0 w-7 h-7 bg-indigo-100 dark:bg-indigo-900/40 rounded-lg flex items-center justify-center mt-0.5">
+                    <svg class="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99"/></svg>
+                  </div>
+                  <div class="min-w-0">
+                    <div class="text-sm font-semibold text-slate-800 dark:text-slate-200">Automated Repricing Rules</div>
+                    <div class="text-xs text-slate-400 mt-0.5 leading-relaxed">Set thresholds and let AI flag or adjust prices when a vehicle drifts from market — by days on lot or % from median.</div>
+                  </div>
+                </div>
+
+                <div class="px-5 py-3.5 flex items-start gap-3">
+                  <div class="flex-shrink-0 w-7 h-7 bg-indigo-100 dark:bg-indigo-900/40 rounded-lg flex items-center justify-center mt-0.5">
+                    <svg class="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M2.25 18L9 11.25l4.306 4.307a11.95 11.95 0 015.814-5.519l2.74-1.22m0 0l-5.94-2.28m5.94 2.28l-2.28 5.941"/></svg>
+                  </div>
+                  <div class="min-w-0">
+                    <div class="text-sm font-semibold text-slate-800 dark:text-slate-200">Stocking Recommendations</div>
+                    <div class="text-xs text-slate-400 mt-0.5 leading-relaxed">AI analyses your sell-through history and regional demand to recommend which makes and models to acquire next.</div>
+                  </div>
+                </div>
+
+                <div class="px-5 py-3.5 flex items-start gap-3">
+                  <div class="flex-shrink-0 w-7 h-7 bg-indigo-100 dark:bg-indigo-900/40 rounded-lg flex items-center justify-center mt-0.5">
+                    <svg class="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 21a9.004 9.004 0 008.716-6.747M12 21a9.004 9.004 0 01-8.716-6.747M12 21c2.485 0 4.5-4.03 4.5-9S14.485 3 12 3m0 18c-2.485 0-4.5-4.03-4.5-9S9.515 3 12 3m0 0a8.997 8.997 0 017.843 4.582M12 3a8.997 8.997 0 00-7.843 4.582m15.686 0A11.953 11.953 0 0112 10.5c-2.998 0-5.74-1.1-7.843-2.918m15.686 0A8.959 8.959 0 0121 12c0 .778-.099 1.533-.284 2.253m0 0A17.919 17.919 0 0112 16.5c-3.162 0-6.133-.815-8.716-2.247m0 0A9.015 9.015 0 013 12c0-1.605.42-3.113 1.157-4.418"/></svg>
+                  </div>
+                  <div class="min-w-0">
+                    <div class="text-sm font-semibold text-slate-800 dark:text-slate-200">US Market Reports</div>
+                    <div class="text-xs text-slate-400 mt-0.5 leading-relaxed">AutoTrader.com, CarGurus.com, and Cars.com data for US dealerships. Copart US auction reference included.</div>
+                  </div>
+                </div>
+
+                <div class="px-5 py-3.5 flex items-start gap-3">
+                  <div class="flex-shrink-0 w-7 h-7 bg-indigo-100 dark:bg-indigo-900/40 rounded-lg flex items-center justify-center mt-0.5">
+                    <svg class="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z"/><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+                  </div>
+                  <div class="min-w-0">
+                    <div class="text-sm font-semibold text-slate-800 dark:text-slate-200">Competitor Lot Monitoring</div>
+                    <div class="text-xs text-slate-400 mt-0.5 leading-relaxed">Track nearby dealerships' listings, price changes, and new arrivals. Know when a competitor undercuts you on a similar unit.</div>
+                  </div>
+                </div>
+
+                <div class="px-5 py-3.5 flex items-start gap-3">
+                  <div class="flex-shrink-0 w-7 h-7 bg-indigo-100 dark:bg-indigo-900/40 rounded-lg flex items-center justify-center mt-0.5">
+                    <svg class="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 17.25v1.007a3 3 0 01-.879 2.122L7.5 21h9l-.621-.621A3 3 0 0115 18.257V17.25m6-12V15a2.25 2.25 0 01-2.25 2.25H5.25A2.25 2.25 0 013 15V5.25m18 0A2.25 2.25 0 0018.75 3H5.25A2.25 2.25 0 003 5.25m18 0H3"/></svg>
+                  </div>
+                  <div class="min-w-0">
+                    <div class="text-sm font-semibold text-slate-800 dark:text-slate-200">Chrome Extension Deep Scan</div>
+                    <div class="text-xs text-slate-400 mt-0.5 leading-relaxed">AI market context on any AutoTrader or Kijiji listing page — instant price check while you browse, without opening MarketSync.</div>
+                  </div>
+                </div>
+
+                <div class="px-5 py-3.5 flex items-start gap-3">
+                  <div class="flex-shrink-0 w-7 h-7 bg-indigo-100 dark:bg-indigo-900/40 rounded-lg flex items-center justify-center mt-0.5">
+                    <svg class="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M7.5 14.25v2.25m3-4.5v4.5m3-6.75v6.75m3-9v9M6 20.25h12A2.25 2.25 0 0020.25 18V6A2.25 2.25 0 0018 3.75H6A2.25 2.25 0 003.75 6v12A2.25 2.25 0 006 20.25z"/></svg>
+                  </div>
+                  <div class="min-w-0">
+                    <div class="text-sm font-semibold text-slate-800 dark:text-slate-200">Weekly Lot Health Report</div>
+                    <div class="text-xs text-slate-400 mt-0.5 leading-relaxed">Monday-morning email digest: aging units, price drift alerts, slow movers, and acquisition opportunities — delivered automatically.</div>
+                  </div>
+                </div>
+
+                <div class="px-5 py-3.5 flex items-start gap-3">
+                  <div class="flex-shrink-0 w-7 h-7 bg-indigo-100 dark:bg-indigo-900/40 rounded-lg flex items-center justify-center mt-0.5">
+                    <svg class="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6v12m-3-2.818l.879.659c1.171.879 3.07.879 4.242 0 1.172-.879 1.172-2.303 0-3.182C13.536 12.219 12.768 12 12 12c-.725 0-1.45-.22-2.003-.659-1.106-.879-1.106-2.303 0-3.182s2.9-.879 4.006 0l.415.33M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                  </div>
+                  <div class="min-w-0">
+                    <div class="text-sm font-semibold text-slate-800 dark:text-slate-200">Manheim MMR &amp; ADESA Integration</div>
+                    <div class="text-xs text-slate-400 mt-0.5 leading-relaxed">Connect your auction platform API key under AI Settings to pull real wholesale MMR values directly into every price report — no estimates.</div>
+                  </div>
+                </div>
+
+              </div>
+            </div>
+
+            <!-- Upsell CTA — only shown when not subscribed -->
+            <div id="ai-boost-page-upsell" class="hidden">
+              <div class="bg-gradient-to-br from-indigo-600 to-purple-700 rounded-xl p-5 text-white space-y-3">
+                <div class="text-base font-bold leading-snug">Unlock everything above for $199/month</div>
+                <p class="text-xs text-indigo-200 leading-relaxed">Start with a free 3-day trial — no credit card required. Cancel any time.</p>
+                <button id="ai-boost-page-upgrade-btn" class="w-full bg-white text-indigo-700 hover:bg-indigo-50 text-sm font-bold px-4 py-2.5 rounded-lg transition">Try Free for 3 Days</button>
+              </div>
+            </div>
+
+          </div>
+        </div><!-- /what's included grid -->
+
+        <!-- Active content — settings, stats, log -->
         <div id="ai-boost-active-content" class="space-y-5">
 
           <!-- Top row: Settings + Sync side by side on desktop -->
@@ -1114,7 +1250,7 @@
     </section>
   </main>
 
-  <script src="dashboard.js?v=20260702i"></script>
+  <script src="dashboard.js?v=20260702j"></script>
   <script src="tour.js"></script>
 </body>
 </html>
