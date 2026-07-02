@@ -1,0 +1,308 @@
+/**
+ * Market data scraper — AutoTrader Canada & CarGurus Canada (or .com for US).
+ *
+ * Both sites embed listing JSON in their HTML pages; we parse it out.
+ * If a scrape fails for any reason the caller falls back to the AI estimate
+ * and we fire an alert email so the failure is visible.
+ *
+ * NOTE: These sites do not provide official APIs for this use. Page structure
+ * can change without notice; keep an eye on the alert emails.
+ */
+
+import { browserFetch, resend, EMAIL_FROM } from './shared.js'
+
+const ALERT_TO = 'noreply@marketsync.link'
+
+// ── Alert email ────────────────────────────────────────────────────────────
+
+export async function sendScrapeAlert({ source, vehicleLabel, error, url }) {
+  if (!resend) return
+  try {
+    await resend.emails.send({
+      from: EMAIL_FROM,
+      to: ALERT_TO,
+      subject: `Scrape failure: ${source} — ${vehicleLabel}`,
+      html: `
+        <p>The <strong>${source}</strong> scraper failed for <strong>${vehicleLabel}</strong>.</p>
+        <p><strong>Error:</strong> ${String(error?.message || error)}</p>
+        ${url ? `<p><strong>URL attempted:</strong> <code>${url}</code></p>` : ''}
+        <p>The AI estimate fallback was used instead. Check if the site's page structure has changed.</p>
+        <hr>
+        <p style="color:#94a3b8;font-size:12px">MarketSync AI Boost — scraper monitor</p>
+      `
+    })
+  } catch {}
+}
+
+// ── Helpers ────────────────────────────────────────────────────────────────
+
+function median(arr) {
+  if (!arr.length) return null
+  const s = [...arr].sort((a, b) => a - b)
+  const m = Math.floor(s.length / 2)
+  return s.length % 2 !== 0 ? s[m] : (s[m - 1] + s[m]) / 2
+}
+
+function extractJsonFromScriptTag(html, patterns) {
+  for (const pattern of patterns) {
+    const match = html.match(pattern)
+    if (match?.[1]) {
+      try { return JSON.parse(match[1]) } catch {}
+    }
+  }
+  return null
+}
+
+// Walk an object tree looking for arrays of objects that have both a price
+// and a mileage field — used as a last-resort fallback parser.
+function findListingArrays(obj, depth = 0) {
+  if (depth > 8 || !obj || typeof obj !== 'object') return []
+  if (Array.isArray(obj) && obj.length > 0) {
+    const sample = obj[0]
+    if (sample && typeof sample === 'object') {
+      const keys = Object.keys(sample)
+      const hasPrice = keys.some(k => /price|amount|msrp/i.test(k))
+      const hasMileage = keys.some(k => /mileage|kilometre|kilometer|odometer|miles/i.test(k))
+      if (hasPrice && hasMileage) return [obj]
+    }
+  }
+  const results = []
+  for (const val of Object.values(obj)) {
+    results.push(...findListingArrays(val, depth + 1))
+  }
+  return results
+}
+
+function normaliseListings(raw) {
+  return raw
+    .map(l => {
+      // Try many common field name variants
+      const price = Number(
+        l.price ?? l.listPrice ?? l.askingPrice ?? l.displayPrice ?? l.amount ?? 0
+      )
+      const mileage = Number(
+        l.mileage ?? l.kilometres ?? l.kilometers ?? l.odometer ??
+        l.mileageKm ?? l.kms ?? l.miles ?? 0
+      )
+      return { price, mileage }
+    })
+    .filter(l => l.price > 1000 && l.mileage > 0)
+}
+
+function summarise(listings) {
+  if (!listings.length) return null
+  const prices = listings.map(l => l.price)
+  const mileages = listings.map(l => l.mileage)
+  return {
+    count: listings.length,
+    avg_price: Math.round(prices.reduce((a, b) => a + b, 0) / prices.length),
+    median_price: Math.round(median(prices)),
+    avg_mileage: Math.round(mileages.reduce((a, b) => a + b, 0) / mileages.length),
+    median_mileage: Math.round(median(mileages)),
+    min_price: Math.min(...prices),
+    max_price: Math.max(...prices),
+  }
+}
+
+// ── AutoTrader Canada / AutoTrader.com ─────────────────────────────────────
+
+export async function scrapeAutoTrader({ make, model, year, trim, postalCode, province, isUS }) {
+  const domain = isUS ? 'autotrader.com' : 'autotrader.ca'
+  let url
+
+  if (isUS) {
+    const params = new URLSearchParams({
+      zip: postalCode || '10001',
+      startYear: year,
+      endYear: year,
+      makeCodeList: make.toUpperCase(),
+      modelCodeList: model.toUpperCase(),
+      ...(trim ? { trimCodeList: trim.toUpperCase() } : {}),
+      searchRadius: 150,
+      listingType: 'USED',
+      numRecords: 25,
+      firstRecord: 0,
+    })
+    url = `https://www.autotrader.com/cars-for-sale/used-cars/${encodeURIComponent(make.toLowerCase())}/${encodeURIComponent(model.toLowerCase())}/?${params}`
+  } else {
+    const prov = (province || 'on').toLowerCase()
+    const params = new URLSearchParams({
+      rcp: '25',
+      rcs: '0',
+      srt: '35',
+      yRng: `${year},${year}`,
+      mak: make,
+      mdl: model,
+      ...(trim ? { trim } : {}),
+      prx: '150',
+      ...(postalCode ? { loc: postalCode } : {}),
+      sts: 'Used',
+    })
+    url = `https://www.autotrader.ca/cars/${prov}/?${params}`
+  }
+
+  const res = await browserFetch(url, {
+    headers: { 'Accept-Language': isUS ? 'en-US,en;q=0.9' : 'en-CA,en;q=0.9' }
+  })
+  if (!res.ok) throw new Error(`AutoTrader HTTP ${res.status}`)
+  const html = await res.text()
+
+  // AutoTrader CA embeds data in __NEXT_DATA__; AT.com in window.__PRELOADED_STATE__ or __NEXT_DATA__
+  const data = extractJsonFromScriptTag(html, [
+    /<script id="__NEXT_DATA__" type="application\/json">([\s\S]*?)<\/script>/,
+    /window\.__NEXT_DATA__\s*=\s*({[\s\S]*?});\s*<\/script>/,
+    /window\.__PRELOADED_STATE__\s*=\s*({[\s\S]*?});\s*<\/script>/,
+    /<script type="application\/json" data-id="listing-results">([\s\S]*?)<\/script>/,
+  ])
+
+  if (!data) throw new Error('AutoTrader: could not parse page JSON')
+
+  // Try known path first, then walk tree
+  const knownPaths = [
+    data?.props?.pageProps?.searchResults?.listings,
+    data?.props?.pageProps?.listings,
+    data?.props?.pageProps?.initialState?.srp?.listings,
+    data?.initialState?.srp?.listings,
+    data?.listings,
+  ].filter(Boolean)
+
+  let raw = []
+  for (const p of knownPaths) {
+    if (Array.isArray(p) && p.length) { raw = p; break }
+  }
+
+  if (!raw.length) {
+    const arrays = findListingArrays(data)
+    raw = arrays[0] || []
+  }
+
+  const listings = normaliseListings(raw)
+  if (!listings.length) throw new Error('AutoTrader: no usable listings parsed')
+
+  return { source: isUS ? 'AutoTrader.com' : 'AutoTrader Canada', ...summarise(listings), listings }
+}
+
+// ── CarGurus Canada / CarGurus.com ─────────────────────────────────────────
+
+export async function scrapeCarGurus({ make, model, year, trim, postalCode, province, isUS }) {
+  const domain = isUS ? 'cargurus.com' : 'cargurus.ca'
+  // CarGurus uses zip/postal for radius search
+  const zip = postalCode || (isUS ? '10001' : 'M5V 3A8')
+
+  // CarGurus search URL — they accept zip + free-text params
+  const params = new URLSearchParams({
+    zip,
+    showNegotiable: 'true',
+    sortDir: 'ASC',
+    sortType: 'PRICE',
+    trim: trim || '',
+    // CarGurus uses entity IDs internally; the plain search URL still works for HTML scraping
+  })
+
+  // CarGurus search URLs include make/model in the path slug
+  const makeSlug = encodeURIComponent(make.toLowerCase().replace(/\s+/g, '-'))
+  const modelSlug = encodeURIComponent(model.toLowerCase().replace(/\s+/g, '-'))
+  const url = `https://www.${domain}/Cars/l-Used-${make}-${model}-d0#listing=eyJzb3J0VHlwZSI6IlBSSUNFIiwic29ydERpciI6IkFTQyIsImxpc3RpbmdUeXBlIjoiVVNFRCIsInppcCI6IiR7emlwfSIsInllYXJNaW4iOiR7eWVhcn0sInllYXJNYXgiOiR7eWVhcn19`
+
+  // CarGurus also exposes a JSON-returning search endpoint used by their own frontend
+  const apiUrl = `https://www.${domain}/Cars/searchResults.action?zip=${encodeURIComponent(zip)}&trim=${encodeURIComponent(trim || '')}&startYear=${year}&endYear=${year}&entitySelectingHelper.selectedEntity.seoType=D&entitySelectingHelper.selectedEntity.makeModelSubfilterType=MAKE_MODEL_TRIM&sortType=PRICE&sortDir=ASC&maxResults=25&offset=0&includePrivateSellers=true&searchId=&isDepressionBanner=false&isFiltered=false&nonShippable=false&isMobile=false&searchView=LIST&feedbackIsOpen=false`
+
+  let html = ''
+  let usedUrl = apiUrl
+  try {
+    const res = await browserFetch(apiUrl, {
+      headers: {
+        'Accept': 'application/json, text/html, */*',
+        'X-Requested-With': 'XMLHttpRequest',
+        'Referer': `https://www.${domain}/`
+      }
+    })
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    html = await res.text()
+  } catch {
+    // Fall back to the main search page
+    usedUrl = `https://www.${domain}/Cars/l-Used-${encodeURIComponent(make)}-${encodeURIComponent(model)}/?zip=${zip}&trim=${encodeURIComponent(trim || '')}&startYear=${year}&endYear=${year}&maxResults=25`
+    const res2 = await browserFetch(usedUrl)
+    if (!res2.ok) throw new Error(`CarGurus HTTP ${res2.status}`)
+    html = await res2.text()
+  }
+
+  // CarGurus embeds data in window.prefetchedData, window.CarGurus, or __NEXT_DATA__
+  let data = null
+
+  // Try direct JSON parse first (if searchResults.action returned JSON)
+  try { data = JSON.parse(html) } catch {}
+
+  if (!data) {
+    data = extractJsonFromScriptTag(html, [
+      /window\.prefetchedData\s*=\s*({[\s\S]*?});\s*(?:window|<\/script>)/,
+      /window\._cg_app_config\s*=\s*({[\s\S]*?});\s*<\/script>/,
+      /<script id="__NEXT_DATA__" type="application\/json">([\s\S]*?)<\/script>/,
+      /window\.__CarGurus_Listings__\s*=\s*({[\s\S]*?});\s*<\/script>/,
+      /"listings"\s*:\s*(\[[\s\S]*?\])\s*,\s*"(?:total|count|numListings)"/,
+    ])
+  }
+
+  if (!data) throw new Error('CarGurus: could not parse page data')
+
+  // Try known paths
+  const knownPaths = [
+    data?.listings,
+    data?.searchResults?.listings,
+    data?.props?.pageProps?.searchResults?.listings,
+    data?.initialState?.listings,
+    data?.data?.listings,
+  ].filter(Boolean)
+
+  let raw = []
+  for (const p of knownPaths) {
+    if (Array.isArray(p) && p.length) { raw = p; break }
+  }
+
+  if (!raw.length) {
+    // Walk for listing arrays
+    const arrays = findListingArrays(data)
+    raw = arrays[0] || []
+  }
+
+  const listings = normaliseListings(raw)
+  if (!listings.length) throw new Error('CarGurus: no usable listings parsed')
+
+  return { source: isUS ? 'CarGurus.com' : 'CarGurus Canada', ...summarise(listings), listings }
+}
+
+// ── Main entry point ────────────────────────────────────────────────────────
+
+/**
+ * Scrape market data from AutoTrader and CarGurus.
+ * Returns { autotrader, cargurus } — either may be null if scraping failed.
+ * Sends alert email for each failure.
+ */
+export async function scrapeMarketData({ make, model, year, trim, postalCode, province, city, isUS, vehicleLabel }) {
+  const opts = { make, model, year, trim, postalCode, province, isUS }
+  const label = vehicleLabel || `${year} ${make} ${model}${trim ? ' ' + trim : ''}`
+
+  const [atResult, cgResult] = await Promise.allSettled([
+    scrapeAutoTrader(opts),
+    scrapeCarGurus(opts),
+  ])
+
+  let autotrader = null
+  let cargurus = null
+
+  if (atResult.status === 'fulfilled') {
+    autotrader = atResult.value
+  } else {
+    console.error('[scraper] AutoTrader failed:', atResult.reason?.message)
+    sendScrapeAlert({ source: 'AutoTrader', vehicleLabel: label, error: atResult.reason })
+  }
+
+  if (cgResult.status === 'fulfilled') {
+    cargurus = cgResult.value
+  } else {
+    console.error('[scraper] CarGurus failed:', cgResult.reason?.message)
+    sendScrapeAlert({ source: 'CarGurus', vehicleLabel: label, error: cgResult.reason })
+  }
+
+  return { autotrader, cargurus }
+}

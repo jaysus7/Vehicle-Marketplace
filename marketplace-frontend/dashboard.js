@@ -1,15 +1,39 @@
 const API = 'https://vehicle-marketplace-s0e4.onrender.com';
 
+function showToast(message, type = 'info', duration = 4000) {
+  const el = document.createElement('div');
+  const colors = { success: 'bg-emerald-600', error: 'bg-red-600', info: 'bg-indigo-600' };
+  el.className = `fixed bottom-6 left-1/2 -translate-x-1/2 z-[99999] px-5 py-3 rounded-xl text-white text-sm font-semibold shadow-xl transition-opacity ${colors[type] || colors.info}`;
+  el.textContent = message;
+  document.body.appendChild(el);
+  setTimeout(() => { el.style.opacity = '0'; setTimeout(() => el.remove(), 400); }, duration);
+}
+
+// If the extension passed a token in the URL hash (#tk=...), store it into
+// localStorage so the user is automatically logged in, then strip the hash.
+;(function bootstrapExtensionToken() {
+  try {
+    const hash = window.location.hash
+    const match = hash.match(/[#&]tk=([^&]+)/)
+    if (match) {
+      const tk = decodeURIComponent(match[1])
+      localStorage.setItem('token', tk)
+      // Replace hash without reloading so the token isn't left in browser history
+      history.replaceState(null, '', window.location.pathname + window.location.search)
+    }
+  } catch {}
+})()
+
 // Local Security Handshake Validations
 const token = localStorage.getItem('token');
 const userRaw = localStorage.getItem('user');
 
-if (!token || !userRaw) {
+if (!token) {
   localStorage.clear();
   window.location.href = 'login.html';
 }
 
-const user = JSON.parse(userRaw);
+const user = userRaw ? JSON.parse(userRaw) : {};
 let profileContext = null;
 
 // Page permission flags (set after profile loads, read by switchPage to mirror panels into Insights)
@@ -19,6 +43,12 @@ let __canSeeSalesTeam = false;
 
 // Run Engine Boot Lifecycle
 document.addEventListener('DOMContentLoaded', () => {
+  // Show insights immediately — mobile sees content before the auth fetch completes.
+  // role-gated items (data-admin-nav etc.) stay hidden until ms-role-ready is set inside init.
+  // Wire AI Boost nav immediately — before the async /ai/config fetch completes —
+  // so clicking the sparkle always opens the page regardless of timing.
+  document.getElementById('nav-ai-boost')?.addEventListener('click', () => switchPage('ai-boost'));
+  switchPage('insights');
   initializeDashboardEcosystem();
   setupActionListeners();
 });
@@ -71,6 +101,56 @@ async function initializeDashboardEcosystem() {
     document.getElementById('prof-email').value = profileContext.email || user.email || '';
     document.getElementById('prof-dealername').value = profileContext.dealership?.name || '';
     document.getElementById('prof-website').value = profileContext.dealership?.website_url || '';
+    document.getElementById('prof-display-name').value = profileContext.display_name || '';
+
+    // Avatar preview
+    const avatarImg = document.getElementById('prof-avatar-img');
+    const avatarInitial = document.getElementById('prof-avatar-initial');
+    const avatarRemove = document.getElementById('prof-avatar-remove');
+    const setAvatarPreview = (url) => {
+      if (url) {
+        avatarImg.src = url; avatarImg.classList.remove('hidden');
+        avatarInitial.classList.add('hidden'); avatarRemove.classList.remove('hidden');
+      } else {
+        avatarImg.classList.add('hidden'); avatarInitial.classList.remove('hidden');
+        avatarRemove.classList.add('hidden');
+        avatarInitial.textContent = (profileContext.full_name || '?').trim().charAt(0).toUpperCase();
+      }
+    };
+    setAvatarPreview(profileContext.avatar_url || null);
+
+    document.getElementById('prof-avatar-file').addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      if (file.size > 2 * 1024 * 1024) { alert('Image must be under 2 MB'); e.target.value = ''; return; }
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        // Compress: resize to max 256px and convert to JPEG at 70% quality
+        const img = new Image();
+        img.onload = () => {
+          const MAX = 256;
+          const scale = Math.min(1, MAX / Math.max(img.width, img.height));
+          const canvas = document.createElement('canvas');
+          canvas.width = Math.round(img.width * scale);
+          canvas.height = Math.round(img.height * scale);
+          canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+          const dataUrl = canvas.toDataURL('image/jpeg', 0.70);
+          setAvatarPreview(dataUrl);
+          // Replace file input with compressed blob for upload
+          canvas.toBlob(blob => {
+            const dt = new DataTransfer();
+            dt.items.add(new File([blob], 'avatar.jpg', { type: 'image/jpeg' }));
+            document.getElementById('prof-avatar-file').files = dt.files;
+          }, 'image/jpeg', 0.70);
+        };
+        img.src = ev.target.result;
+      };
+      reader.readAsDataURL(file);
+    });
+    avatarRemove.addEventListener('click', () => {
+      document.getElementById('prof-avatar-file').value = '';
+      setAvatarPreview(null);
+    });
 
     // Route Workspace Rendering Logic based on Account Role
     const role = profileContext.role || 'SALES_REP'; // Standard safe fallback role assignment
@@ -91,6 +171,16 @@ async function initializeDashboardEcosystem() {
 
     loadInsights();
     initSecurityPanel();
+
+    // If returning from Stripe checkout, verify payment then load AI config
+    const aiSessionId = new URLSearchParams(window.location.search).get('ai_boost_session');
+    if (aiSessionId) {
+      window.history.replaceState({}, '', window.location.pathname);
+      await verifyAIBoostSession(aiSessionId);
+    }
+
+    loadAIBoostSection();
+    setupAIBoostListeners();
 
     const isAdmin = role === 'DEALER_ADMIN' || role === 'OWNER';
     const inDealership = !!profileContext.dealership?.id;
@@ -131,6 +221,7 @@ async function initializeDashboardEcosystem() {
     // flashed for a solo rep). This happens synchronously after the hides, so the
     // browser paints the correct nav in one go.
     document.body.classList.add('ms-role-ready');
+    document.getElementById('insights-skeleton')?.classList.add('hidden');
 
     // Team leaderboard is for actual teams (admin + reps in a real dealership).
     // Solo reps / no-team users have nothing to rank against on a team, so we hide
@@ -152,9 +243,8 @@ async function initializeDashboardEcosystem() {
     });
     switchPage('insights');
 
-    // Global leaderboard — available to EVERYONE (solo reps included).
+    // Global leaderboard — available to EVERYONE (solo reps included). Loaded lazily on first carousel switch.
     initGlobalLeaderboard();
-    loadGlobalLeaderboard();
 
     if (isAdmin) {
       document.getElementById('leaderboard-panel')?.classList.remove('hidden');
@@ -206,7 +296,7 @@ function switchPage(pageId) {
   document.querySelectorAll('[data-page-content]').forEach(el => {
     el.classList.toggle('hidden', el.dataset.pageContent !== pageId);
   });
-  document.querySelectorAll('#dashboard-nav .nav-item').forEach(btn => {
+  document.querySelectorAll('#dashboard-nav .nav-item, #nav-ai-boost').forEach(btn => {
     const active = btn.dataset.page === pageId;
     btn.classList.toggle('bg-indigo-100', active);
     btn.classList.toggle('dark:bg-indigo-950/50', active);
@@ -215,6 +305,8 @@ function switchPage(pageId) {
     btn.classList.toggle('text-slate-700', !active);
     btn.classList.toggle('dark:text-slate-300', !active);
   });
+
+  if (pageId === 'ai-boost') loadAIActivity();
 }
 
 // Idempotent restore: makes sure leaderboard / team-insights / sales-team panels live
@@ -374,19 +466,18 @@ async function loadDealerManagementMatrix() {
       const action = (isSelf || isAdmin)
         ? `<span class="text-xs text-slate-600">—</span>`
         : `<button class="rep-remove-btn text-red-400 hover:text-red-300 text-xs font-bold" data-rep-id="${m.id}" data-rep-name="${m.full_name || m.email || 'this rep'}">Remove</button>`;
-      const nameCell = isAdmin && isSelf
-        ? `<span class="font-bold text-slate-900 dark:text-white">${m.full_name || '(no name)'}</span><span class="text-xs text-slate-500 ml-1">(you)</span>`
-        : `<button class="rep-detail-btn text-left font-bold text-slate-900 dark:text-white hover:text-indigo-300" data-rep-id="${m.id}">${m.full_name || '(no name)'}</button>`;
+      const youTag = isSelf ? ' <span class="text-xs text-slate-500 font-normal">(you)</span>' : '';
+      const nameCell = `<button class="rep-detail-btn text-left font-bold text-slate-900 dark:text-white hover:text-indigo-400 transition" data-rep-id="${m.id}">${m.full_name || '(no name)'}${youTag}</button>`;
       return `
         <tr class="border-b border-slate-200/60 dark:border-slate-800/40 hover:bg-white/60 dark:bg-slate-900/40 transition">
-          <td class="py-3 px-4">${nameCell}</td>
-          <td class="py-3 px-4 text-slate-600 dark:text-slate-300">${m.email || '—'}</td>
-          <td class="py-3 px-4">${roleBadge}</td>
-          <td class="py-3 px-4 text-indigo-600 dark:text-indigo-400 font-mono">${m.listings_posted}</td>
-          <td class="py-3 px-4 text-emerald-600 dark:text-emerald-400 font-mono">${m.listings_sold ?? 0}</td>
-          <td class="py-3 px-4 text-amber-600 dark:text-amber-400 font-mono">${m.conversion_rate ?? 0}%</td>
-          <td class="py-3 px-4 text-slate-600 dark:text-slate-300 font-mono">${m.logins_30d ?? 0}</td>
-          <td class="py-3 px-4 text-right">${action}</td>
+          <td class="py-3 px-3">${nameCell}</td>
+          <td class="py-3 px-3 text-slate-600 dark:text-slate-300 max-w-[160px] truncate">${m.email || '—'}</td>
+          <td class="py-3 px-3">${roleBadge}</td>
+          <td class="py-3 px-3 text-right text-indigo-600 dark:text-indigo-400 font-mono">${m.listings_posted}</td>
+          <td class="py-3 px-3 text-right text-emerald-600 dark:text-emerald-400 font-mono">${m.listings_sold ?? 0}</td>
+          <td class="py-3 px-3 text-right text-amber-600 dark:text-amber-400 font-mono">${m.conversion_rate ?? 0}%</td>
+          <td class="py-3 px-3 text-right text-slate-600 dark:text-slate-300 font-mono">${m.logins_30d ?? 0}</td>
+          <td class="py-3 px-3 text-right">${action}</td>
         </tr>
       `;
     }).join('');
@@ -498,7 +589,7 @@ async function loadMyListingsFiltered(status) {
     const res = await fetch(`${API}/listings?status=${status}`, { headers: { 'Authorization': `Bearer ${token}` } });
     if (!res.ok) throw new Error('Failed to load listings');
     const data = await res.json();
-    renderRecentListings('rep-recent-list', data);
+    renderRecentListings('rep-recent-list', data, { canEditUrl: true });
   } catch (e) {
     el.innerHTML = `<div class="text-xs text-red-400">${e.message}</div>`;
   }
@@ -512,7 +603,7 @@ async function loadMyStats() {
     document.getElementById('rep-stat-active').textContent = data.totals.active;
     document.getElementById('rep-stat-sold').textContent = data.totals.sold;
     document.getElementById('rep-stat-deleted').textContent = data.totals.deleted;
-    renderRecentListings('rep-recent-list', data.recent);
+    renderRecentListings('rep-recent-list', data.recent, { canEditUrl: true });
   } catch (e) {
     document.getElementById('rep-recent-list').innerHTML = `<div class="text-xs text-red-400">${e.message}</div>`;
   }
@@ -626,7 +717,6 @@ const nextTierFor = (points) => LB_TIERS.find(t => t.min > points) || null;
 async function loadLeaderboard() {
   const body = document.getElementById('leaderboard-body');
   if (!body) return;
-  ensureLeaderboardLegend('leaderboard-panel');
   body.innerHTML = `<tr><td colspan="7" class="p-6 text-center text-slate-500 italic">Loading leaderboard...</td></tr>`;
   try {
     const res = await fetch(`${API}/dealership/leaderboard`, { headers: { 'Authorization': `Bearer ${token}` } });
@@ -989,7 +1079,7 @@ function renderRepCards(byRep, soldByRep, activeByRep) {
           <div class="flex items-center gap-2.5 min-w-0">
             <div class="w-9 h-9 rounded-full bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 flex items-center justify-center font-black text-sm flex-shrink-0">${initial}</div>
             <div class="min-w-0">
-              <div class="text-sm font-bold text-slate-900 dark:text-white truncate">${r.name}</div>
+              <button class="rep-card-btn text-sm font-bold text-slate-900 dark:text-white leading-tight break-words hover:text-indigo-500 dark:hover:text-indigo-400 text-left" data-rep-id="${r.id}">${r.name}</button>
               <div class="text-xs text-slate-500 font-mono">${points.toLocaleString()} pts</div>
             </div>
           </div>
@@ -1000,15 +1090,15 @@ function renderRepCards(byRep, soldByRep, activeByRep) {
 
         <div class="grid grid-cols-3 gap-2 text-center">
           <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded p-2">
-            <div class="text-sm uppercase font-bold text-slate-500 dark:text-slate-400 tracking-wider">Listings</div>
+            <div class="text-xs uppercase font-bold text-slate-500 dark:text-slate-400 tracking-wide leading-tight">Listed</div>
             <div class="text-base font-black text-indigo-600 dark:text-indigo-400">${listings}</div>
           </div>
           <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded p-2">
-            <div class="text-sm uppercase font-bold text-slate-500 dark:text-slate-400 tracking-wider">Sold</div>
+            <div class="text-xs uppercase font-bold text-slate-500 dark:text-slate-400 tracking-wide leading-tight">Sold</div>
             <div class="text-base font-black text-emerald-600 dark:text-emerald-400">${sold}</div>
           </div>
           <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded p-2">
-            <div class="text-sm uppercase font-bold text-slate-500 dark:text-slate-400 tracking-wider">Conv</div>
+            <div class="text-xs uppercase font-bold text-slate-500 dark:text-slate-400 tracking-wide leading-tight">Conv</div>
             <div class="text-base font-black text-amber-600 dark:text-amber-400">${conv}%</div>
           </div>
         </div>
@@ -1026,6 +1116,10 @@ function renderRepCards(byRep, soldByRep, activeByRep) {
       </div>
     `;
   }).join('');
+
+  el.querySelectorAll('.rep-card-btn').forEach(btn => {
+    btn.addEventListener('click', () => openRepDetail(btn.dataset.repId));
+  });
 }
 
 function chartCommonOptions() {
@@ -1037,8 +1131,22 @@ function chartCommonOptions() {
     maintainAspectRatio: false,
     plugins: { legend: { display: false } },
     scales: {
-      x: { ticks: { color: tickColor, font: { size: 10 } }, grid: { color: gridColor } },
-      y: { ticks: { color: tickColor, font: { size: 10 }, precision: 0 }, grid: { color: gridColor }, beginAtZero: true }
+      x: {
+        ticks: {
+          color: tickColor,
+          font: { size: 11 },
+          maxRotation: 45,
+          minRotation: 30,
+          autoSkip: true,
+          maxTicksLimit: 10
+        },
+        grid: { color: gridColor }
+      },
+      y: {
+        ticks: { color: tickColor, font: { size: 11 }, precision: 0 },
+        grid: { color: gridColor },
+        beginAtZero: true
+      }
     }
   };
 }
@@ -1050,7 +1158,7 @@ if (typeof window !== 'undefined' && window.matchMedia) {
   });
 }
 
-function renderRecentListings(containerId, items) {
+function renderRecentListings(containerId, items, { canEditUrl = false } = {}) {
   const el = document.getElementById(containerId);
   if (!items?.length) {
     el.innerHTML = '<div class="text-xs text-slate-500 italic">No listings yet.</div>';
@@ -1062,42 +1170,65 @@ function renderRecentListings(containerId, items) {
       sold: 'bg-indigo-900/40 border-indigo-700 text-indigo-300',
       deleted: 'bg-slate-100 dark:bg-slate-800 border-slate-300 dark:border-slate-700 text-slate-500 dark:text-slate-400'
     };
-    return `<span class="text-sm uppercase font-bold border px-1.5 py-0.5 rounded ${map[s] || map.deleted}">${s}</span>`;
+    return `<span class="text-xs uppercase font-bold border px-1.5 py-0.5 rounded ${map[s] || map.deleted}">${s}</span>`;
   };
-el.innerHTML = items.map(l => {
-    const v = l.vehicle || {};
+  el.innerHTML = items.map(l => {
+    const v = l.inventory || l.vehicle || {};
     const thumb = v.image_urls?.[0]
       ? `<img src="${API}/proxy-image?url=${encodeURIComponent(v.image_urls[0])}" class="w-16 h-12 rounded object-cover bg-slate-50 dark:bg-slate-950" loading="lazy">`
       : `<div class="w-16 h-12 rounded bg-slate-50 dark:bg-slate-950 flex items-center justify-center text-slate-700">⌀</div>`;
     const when = l.posted_at ? new Date(l.posted_at).toLocaleDateString() : '—';
-
-    // Fallback label when the joined inventory row is gone (vehicle deleted from
-    // dealer feed / sold + cleaned up) but the listing record itself still exists.
     const vehicleLabel = (v.year || v.make || v.model)
       ? `${v.year || ''} ${v.make || ''} ${v.model || ''} ${v.trim || ''}`.trim()
       : (l.vehicle_label || 'Vehicle no longer in inventory');
-
-    // Only link out if we captured the real posted-item permalink — never the
-    // create-form URL (older listings may have it saved from before the fix).
-    const hasFbLink = l.fb_listing_url && l.fb_listing_url.includes('/marketplace/item/');
-    const fbLink = hasFbLink
-      ? `<span class="text-xs text-indigo-600 dark:text-indigo-400">View on FB ↗</span>`
-      : '';
-
+    const hasFbLink = l.fb_listing_url && /facebook\.com\/marketplace\/item\/\d+/i.test(l.fb_listing_url);
+    const canAdd = canEditUrl && l.id && l.status === 'posted';
+    const subtext = hasFbLink
+      ? `Posted ${when} · <span class="text-indigo-500">View on FB ↗</span>`
+      : canAdd
+        ? `Posted ${when} · <span class="text-amber-500">+ Add FB link</span>`
+        : `Posted ${when}`;
+    const meta = `<div class="text-xs text-slate-500 dark:text-slate-400">${subtext}</div>`;
     const rowContent = `
         ${thumb}
         <div class="flex-1 min-w-0">
           <div class="text-xs font-bold text-slate-900 dark:text-white truncate">${vehicleLabel}</div>
-          <div class="text-xs text-slate-500 dark:text-slate-400">Posted ${when} ${fbLink ? '· ' + fbLink : ''}</div>
+          ${meta}
         </div>
         ${badge(l.status)}
     `;
-
-    // Wrap the whole row in an <a> if we have a real FB link, otherwise a plain div.
-    return hasFbLink
-      ? `<a href="${l.fb_listing_url}" target="_blank" class="flex items-center gap-3 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded p-2 hover:border-indigo-400 dark:hover:border-indigo-600 transition-colors cursor-pointer">${rowContent}</a>`
-      : `<div class="flex items-center gap-3 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded p-2">${rowContent}</div>`;
+    const rowCls = (hasFbLink || canAdd) ? 'cursor-pointer hover:border-indigo-400 dark:hover:border-indigo-500 transition-colors' : '';
+    return `<div class="listing-row flex items-center gap-3 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded p-2 ${rowCls}" data-listing-id="${l.id || ''}" data-fb-url="${hasFbLink ? l.fb_listing_url : ''}" data-can-add="${canAdd ? '1' : ''}">${rowContent}</div>`;
   }).join('');
+
+  // Row clicks: open FB URL, or prompt to add one
+  el.querySelectorAll('.listing-row').forEach(row => {
+    const fbUrl = row.dataset.fbUrl;
+    const canAdd = row.dataset.canAdd === '1';
+    if (fbUrl) {
+      row.addEventListener('click', () => window.open(fbUrl, '_blank', 'noopener'));
+    } else if (canAdd) {
+      row.addEventListener('click', async () => {
+        const url = prompt('Paste the Facebook Marketplace listing URL:\n(e.g. https://www.facebook.com/marketplace/item/1234567890)');
+        if (!url) return;
+        if (!/facebook\.com\/marketplace\/item\/\d+/i.test(url)) {
+          alert('That doesn\'t look like a valid Facebook Marketplace item URL.\nIt should look like: https://www.facebook.com/marketplace/item/1234567890');
+          return;
+        }
+        try {
+          const r = await fetch(`${API}/listings/${row.dataset.listingId}/fb-url`, {
+            method: 'PATCH',
+            headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ fb_listing_url: url })
+          });
+          if (!r.ok) { const d = await r.json().catch(() => ({})); throw new Error(d.error || 'Failed'); }
+          const item = items.find(i => i.id === row.dataset.listingId);
+          if (item) item.fb_listing_url = url;
+          renderRecentListings(containerId, items, { canEditUrl });
+        } catch (e) { alert('Could not save URL: ' + e.message); }
+      });
+    }
+  });
 }
 
 // INVENTORY FEEDS: list, add, remove, manual sync
@@ -1288,9 +1419,50 @@ let __glData = null;
 let __glTab = 'reps';
 
 function initGlobalLeaderboard() {
-  ensureLeaderboardLegend('global-leaderboard-panel');
   if (window.__glWired) return;
   window.__glWired = true;
+
+  // Populate compact tier dots in #lb-legend-tiers
+  const tiersEl = document.getElementById('lb-legend-tiers');
+  if (tiersEl && !tiersEl.children.length) {
+    tiersEl.innerHTML = LB_TIERS.map(t => {
+      const isLegend = t.name === 'Legend';
+      const marker = isLegend
+        ? '<span class="text-indigo-500">👑</span>'
+        : `<span class="inline-block w-2 h-2 rounded-full" style="background:${TIER_DOT[t.name] || '#94a3b8'}"></span>`;
+      return `<span class="flex items-center gap-1 text-xs text-slate-600 dark:text-slate-400">${marker}${t.name} <span class="text-slate-400">${t.min >= 1000 ? (t.min/1000)+'k' : t.min}pts</span></span>`;
+    }).join('');
+  }
+
+  // Carousel: My Team ↔ Global
+  let __glLoaded = false;
+  const tabTeam = document.getElementById('lb-tab-team');
+  const tabGlobal = document.getElementById('lb-tab-global');
+  const viewTeam = document.getElementById('lb-view-team');
+  const viewGlobal = document.getElementById('lb-view-global');
+  const convWrap = document.getElementById('lb-conv-wrap');
+
+  function setCarouselTab(tab) {
+    const onTeam = tab === 'team';
+    [tabTeam, tabGlobal].forEach(b => {
+      if (!b) return;
+      b.classList.toggle('bg-white', b.id === (onTeam ? 'lb-tab-team' : 'lb-tab-global'));
+      b.classList.toggle('dark:bg-slate-800', b.id === (onTeam ? 'lb-tab-team' : 'lb-tab-global'));
+      b.classList.toggle('text-indigo-600', b.id === (onTeam ? 'lb-tab-team' : 'lb-tab-global'));
+      b.classList.toggle('dark:text-indigo-400', b.id === (onTeam ? 'lb-tab-team' : 'lb-tab-global'));
+      b.classList.toggle('text-slate-600', b.id !== (onTeam ? 'lb-tab-team' : 'lb-tab-global'));
+      b.classList.toggle('dark:text-slate-300', b.id !== (onTeam ? 'lb-tab-team' : 'lb-tab-global'));
+    });
+    if (viewTeam) viewTeam.classList.toggle('hidden', !onTeam);
+    if (viewGlobal) viewGlobal.classList.toggle('hidden', onTeam);
+    if (convWrap) convWrap.classList.toggle('hidden', !onTeam);
+    if (!onTeam && !__glLoaded) { __glLoaded = true; loadGlobalLeaderboard(); }
+  }
+
+  if (tabTeam) tabTeam.addEventListener('click', () => setCarouselTab('team'));
+  if (tabGlobal) tabGlobal.addEventListener('click', () => setCarouselTab('global'));
+  setCarouselTab('team'); // default active
+
   document.querySelectorAll('.gl-tab').forEach(btn => {
     btn.addEventListener('click', () => {
       __glTab = btn.dataset.glTab;
@@ -1330,29 +1502,75 @@ function renderGlobalLeaderboard() {
   const rows = __glTab === 'dealers' ? __glData.dealers : __glData.reps;
   const you = __glTab === 'dealers' ? __glData.you_dealer : __glData.you_rep;
   const total = __glTab === 'dealers' ? __glData.total_dealers : __glData.total_reps;
+  const avgPts = __glTab === 'dealers' ? __glData.avg_dealer_points : __glData.avg_rep_points;
+  const avgPosted = __glTab === 'dealers' ? __glData.avg_dealer_posted : __glData.avg_rep_posted;
+  const avgConv = __glTab === 'dealers' ? __glData.avg_dealer_conv : __glData.avg_rep_conv;
 
-  if (you && youEl) {
-    youEl.classList.remove('hidden');
-    youEl.innerHTML = `You're ranked <b>#${you.rank}</b> of ${total} ${__glTab} · <b>${(you.points || 0).toLocaleString()}</b> pts · ${you.sold} sold`;
-  } else if (youEl) {
-    youEl.classList.add('hidden');
+  // Update avg strip
+  const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v ?? '—'; };
+  const yourConv = you && you.posted > 0 ? Math.round((you.sold / you.posted) * 100) : (you ? 0 : null);
+  set('gl-your-pts', you != null ? (you.points || 0).toLocaleString() : '—');
+  set('gl-avg-pts', avgPts != null ? avgPts.toLocaleString() : '—');
+  set('gl-your-posted', you != null ? (you.posted ?? 0) : '—');
+  set('gl-avg-posted', avgPosted != null ? avgPosted : '—');
+  set('gl-your-conv', yourConv != null ? yourConv + '%' : '—');
+  set('gl-avg-conv', avgConv != null ? avgConv + '%' : '—');
+
+  // Render global podium (top 3)
+  const podiumEl = document.getElementById('gl-podium');
+  if (podiumEl && rows && rows.length) {
+    const top3 = rows.slice(0, 3);
+    const order = [top3[1], top3[0], top3[2]].filter(Boolean); // 2nd, 1st, 3rd
+    const heights = ['h-20', 'h-28', 'h-16'];
+    const medals = ['🥈', '👑', '🥉'];
+    const gradients = ['from-slate-300 to-slate-400', 'from-yellow-300 to-amber-500', 'from-orange-300 to-orange-500'];
+    const nums = ['2', '1', '3'];
+    podiumEl.innerHTML = order.map((r, i) => {
+      const avatarHtml = r.avatar_url
+        ? `<img src="${r.avatar_url}" class="w-10 h-10 rounded-full object-cover border-2 border-white shadow mb-1 mt-1" />`
+        : `<div class="w-10 h-10 rounded-full bg-indigo-200 dark:bg-indigo-700 flex items-center justify-center text-indigo-700 dark:text-indigo-200 font-bold text-base mb-1 mt-1">${(r.name || '?')[0].toUpperCase()}</div>`;
+      return `
+        <div class="flex flex-col items-center text-center">
+          <div class="text-3xl mb-1">${medals[i]}</div>
+          ${avatarHtml}
+          <div class="font-bold text-sm text-slate-900 dark:text-white truncate w-full">${r.name}${r.isYou ? ' <span class="text-xs text-indigo-500 font-normal">(you)</span>' : ''}</div>
+          <div class="text-xs font-mono text-slate-600 dark:text-slate-300 mt-1 mb-2">${(r.points || 0).toLocaleString()} pts</div>
+          <div class="w-full mt-2 rounded-t-lg bg-gradient-to-b ${gradients[i]} ${heights[i]} flex items-start justify-center pt-2 text-white font-black text-xl shadow-inner">${nums[i]}</div>
+        </div>`;
+    }).join('');
+  } else if (podiumEl) {
+    podiumEl.innerHTML = '';
   }
+
+  if (youEl) youEl.classList.add('hidden');
 
   if (!rows || !rows.length) {
     body.innerHTML = `<tr><td colspan="5" class="p-6 text-center text-slate-500 italic">No ${__glTab} on the board yet.</td></tr>`;
     return;
   }
-  body.innerHTML = rows.map(r => {
-    const hl = r.isYou ? 'bg-indigo-50 dark:bg-indigo-950/40 font-bold' : '';
-    const rank = r.rank === 1 ? '🥇' : r.rank === 2 ? '🥈' : r.rank === 3 ? '🥉' : r.rank;
-    return `<tr class="${hl}">
-      <td class="py-2.5 px-3 text-left">${rank}</td>
-      <td class="py-2.5 px-3 text-left text-slate-900 dark:text-white">${r.name}${r.isYou ? ' <span class="text-xs text-indigo-500">(you)</span>' : ''}</td>
+
+  const youInList = rows.some(r => r.isYou);
+  const makeRow = (r, pinned) => {
+    const hl = r.isYou ? 'bg-indigo-50 dark:bg-indigo-950/40 font-semibold' : '';
+    const rank = r.rank === 1 ? '🥇' : r.rank === 2 ? '🥈' : r.rank === 3 ? '🥉' : `#${r.rank}`;
+    const sep = pinned ? '<tr><td colspan="5" class="py-0"><div class="border-t-2 border-dashed border-indigo-300 dark:border-indigo-700"></div></td></tr>' : '';
+    const avatarCell = r.avatar_url
+      ? `<img src="${r.avatar_url}" class="w-6 h-6 rounded-full object-cover inline-block mr-1.5 align-middle border ${r.isYou ? 'border-indigo-300' : 'border-slate-300 dark:border-slate-600'}" />`
+      : `<span class="inline-flex w-6 h-6 rounded-full bg-slate-200 dark:bg-slate-700 items-center justify-center text-xs font-bold text-slate-500 mr-1.5 align-middle">${(r.name || '?')[0].toUpperCase()}</span>`;
+    return `${sep}<tr class="${hl}">
+      <td class="py-2.5 px-3 text-left tabular-nums">${rank}</td>
+      <td class="py-2.5 px-3 text-left text-slate-900 dark:text-white">${avatarCell}${r.name}${r.isYou ? ' <span class="text-xs text-indigo-500 font-normal">(you)</span>' : ''}</td>
       <td class="py-2.5 px-3 text-right font-mono">${(r.points || 0).toLocaleString()}</td>
-      <td class="py-2.5 px-3 text-right font-mono text-slate-500 dark:text-slate-400">${r.posted}</td>
-      <td class="py-2.5 px-3 text-right font-mono text-emerald-600 dark:text-emerald-400">${r.sold}</td>
+      <td class="py-2.5 px-3 text-right font-mono text-slate-500 dark:text-slate-400">${r.posted ?? '—'}</td>
+      <td class="py-2.5 px-3 text-right font-mono text-emerald-600 dark:text-emerald-400">${r.sold ?? '—'}</td>
     </tr>`;
-  }).join('');
+  };
+
+  let html = rows.map(r => makeRow(r, false)).join('');
+  if (!youInList && you) {
+    html += makeRow({ ...you, isYou: true }, true);
+  }
+  body.innerHTML = html;
 }
 
 async function deleteFeed(id) {
@@ -1533,7 +1751,9 @@ async function loadInventoryCatalog() {
   list.innerHTML = '<div class="text-xs text-slate-500 italic col-span-full">Loading catalog...</div>';
   try {
     const res = await fetch(`${API}/inventory/all`, { headers: { 'Authorization': `Bearer ${token}` } });
-    __catalogCache = res.ok ? await res.json() : [];
+    const body = await res.json().catch(() => []);
+    if (!res.ok) throw new Error(body?.error || `HTTP ${res.status}`);
+    __catalogCache = Array.isArray(body) ? body : [];
     renderCatalog();
   } catch (err) {
     list.innerHTML = `<div class="text-xs text-red-400 col-span-full">Failed to load catalog: ${err.message}</div>`;
@@ -1545,15 +1765,38 @@ function renderCatalog() {
   const q = document.getElementById('catalog-search').value.trim().toLowerCase();
   const statusFilter = document.getElementById('catalog-status').value;
 
+  const conditionRank = (v) => {
+    const c = (v.condition || '').toLowerCase();
+    if (c === 'used') return 0;
+    if (c === 'demo') return 1;
+    if (c === 'new') return 2;
+    return 3; // unknown
+  };
+  const catalogSortRank = (v) => {
+    const s = v.status;
+    if (s === 'sold') return 400 + conditionRank(v);
+    if (s === 'pending') return 300 + conditionRank(v);
+    // available / posted: Used → Demo → New
+    return conditionRank(v);
+  };
+
+  const CONDITION_FILTERS = new Set(['new', 'used', 'demo']);
   let filtered = __catalogCache;
-  if (statusFilter !== 'all') filtered = filtered.filter(v => v.status === statusFilter);
+  if (statusFilter !== 'all') {
+    if (CONDITION_FILTERS.has(statusFilter)) {
+      filtered = filtered.filter(v => (v.condition || '').toLowerCase() === statusFilter);
+    } else {
+      filtered = filtered.filter(v => v.status === statusFilter);
+    }
+  }
   if (q) {
     filtered = filtered.filter(v =>
-      `${v.year} ${v.make} ${v.model} ${v.trim || ''} ${v.vin || ''} ${v.exterior_color || ''}`
+      `${v.year} ${v.make} ${v.model} ${v.trim || ''} ${v.vin || ''} ${v.stocknumber || ''} ${v.exterior_color || ''}`
         .toLowerCase()
         .includes(q)
     );
   }
+  filtered = [...filtered].sort((a, b) => catalogSortRank(a) - catalogSortRank(b));
 
   if (!filtered.length) {
     list.innerHTML = '<div class="text-xs text-slate-500 italic col-span-full">No vehicles match.</div>';
@@ -1566,7 +1809,17 @@ function renderCatalog() {
       pending: 'bg-amber-900/40 border-amber-700 text-amber-300',
       sold: 'bg-slate-100 dark:bg-slate-800 border-slate-300 dark:border-slate-700 text-slate-500 dark:text-slate-400'
     };
-    return `<span class="text-sm uppercase font-bold border px-1.5 py-0.5 rounded ${map[s] || map.sold}">${s || 'unknown'}</span>`;
+    return `<span class="text-xs uppercase font-bold border px-1.5 py-0.5 rounded ${map[s] || map.sold}">${s || 'unknown'}</span>`;
+  };
+  const conditionBadge = (c) => {
+    if (!c) return '';
+    const lc = c.toLowerCase();
+    const cls = lc === 'new'
+      ? 'bg-blue-900/40 border-blue-700 text-blue-300'
+      : lc === 'demo'
+        ? 'bg-purple-900/40 border-purple-700 text-purple-300'
+        : 'bg-orange-900/40 border-orange-700 text-orange-300';
+    return `<span class="text-xs uppercase font-bold border px-1.5 py-0.5 rounded ${cls}">${c}</span>`;
   };
 
   list.innerHTML = filtered.map(v => {
@@ -1596,21 +1849,35 @@ function renderCatalog() {
     return `
       <${tag} ${linkAttrs} class="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded p-3 flex flex-col gap-2 ${href ? 'hover:border-indigo-400 dark:hover:border-indigo-500 transition no-underline' : ''}">
         ${img}
-        <div class="flex items-center justify-between gap-2">
-          <span class="text-xs font-bold text-slate-900 dark:text-white truncate flex-1" title="${v.year} ${v.make} ${v.model} ${v.trim || ''}">${v.year} ${v.make} ${v.model}</span>
+        <div class="text-xs font-bold text-slate-900 dark:text-white truncate" title="${v.year} ${v.make} ${v.model} ${v.trim || ''}">${v.year} ${v.make} ${v.model}</div>
+        <div class="flex items-center gap-1 flex-wrap">
+          ${conditionBadge(v.condition)}
           ${statusBadge(v.status)}
         </div>
-        <div class="text-sm text-slate-500 dark:text-slate-400 truncate flex items-center gap-1">
+        <div class="text-xs text-slate-500 dark:text-slate-400 truncate flex items-center gap-1">
           <span class="truncate">${v.trim || ''} ${v.exterior_color ? '· ' + v.exterior_color : ''}</span>
           ${externalIcon}
         </div>
-        <div class="flex items-center justify-between text-xs">
+        <div class="flex items-center justify-between text-xs mt-auto">
           <span class="font-bold text-indigo-600 dark:text-indigo-400">${price}</span>
+          ${v.stocknumber ? `<span class="font-mono text-slate-400 dark:text-slate-500">#${v.stocknumber}</span>` : ''}
           <span class="text-slate-500">${mileage}</span>
         </div>
+        ${__aiBoostActive ? `<button class="ai-enrich-btn mt-1 w-full text-xs bg-indigo-900/40 hover:bg-indigo-800/60 border border-indigo-700 text-indigo-300 rounded py-1 transition" data-id="${v.id}">AI Enrichment</button>` : ''}
       </${tag}>
     `;
   }).join('');
+
+  // Attach AI Enrichment button listeners after render
+  if (__aiBoostActive) {
+    list.querySelectorAll('.ai-enrich-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        openAIEnrich(btn.dataset.id);
+      });
+    });
+  }
 }
 
 function setupActionListeners() {
@@ -1622,12 +1889,37 @@ function setupActionListeners() {
   document.getElementById('profile-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     const msg = document.getElementById('profile-msg');
+    // Handle avatar upload if a new file was selected
+    let avatarUrl = profileContext.avatar_url || null;
+    const avatarFile = document.getElementById('prof-avatar-file').files[0];
+    if (avatarFile) {
+      try {
+        const fd = new FormData(); fd.append('avatar', avatarFile);
+        const upRes = await fetch(`${API}/profile/avatar`, {
+          method: 'POST', headers: { 'Authorization': `Bearer ${token}` }, body: fd
+        });
+        const upData = await upRes.json().catch(() => ({}));
+        if (upRes.ok) avatarUrl = upData.url;
+        else {
+          showMsg(`Avatar upload failed: ${upData.error || upRes.status}`, 'err');
+          return;
+        }
+      } catch (e) {
+        showMsg(`Avatar upload error: ${e.message}`, 'err');
+        return;
+      }
+    } else if (!document.getElementById('prof-avatar-img').src && profileContext.avatar_url) {
+      avatarUrl = null; // user removed it
+    }
+
     const payload = {
       fullName: document.getElementById('prof-name').value.trim(),
+      displayName: document.getElementById('prof-display-name').value.trim(),
       email: document.getElementById('prof-email').value.trim(),
       password: document.getElementById('prof-password').value,
       dealershipName: document.getElementById('prof-dealername').value.trim(),
-      websiteUrl: document.getElementById('prof-website').value.trim()
+      websiteUrl: document.getElementById('prof-website').value.trim(),
+      avatarUrl,
     };
     // Strip empties so we only send fields the user actually changed
     Object.keys(payload).forEach(k => { if (!payload[k]) delete payload[k]; });
@@ -1743,16 +2035,20 @@ async function launchStripeLifecycle() {
     }
 
     const data = await res.json();
+    if (data.complimentary) {
+      alert("You're on a complimentary MarketSync plan — there's nothing to manage in billing. Reach out if you have questions.");
+      return;
+    }
     if (data.url) {
-      window.location.href = data.url;
+      window.open(data.url, '_blank', 'noopener,noreferrer');
     } else {
       throw new Error(data.error || 'No billing URL returned');
     }
   } catch (err) {
-    if (btn) {
-      btn.textContent = "Connection Failure";
-      btn.disabled = false;
-    }
+    alert('Could not open billing settings. Please contact support.');
+    if (btn) { btn.disabled = false; }
+  } finally {
+    if (btn) btn.textContent = 'Manage Billing';
   }
 }
 async function fetchInsights() {
@@ -2087,6 +2383,845 @@ async function loadSessions() {
   }
 }
 
+// ── AI BOOST ────────────────────────────────────────────────────────────────
+
+let __aiBoostActive = false;
+let __aiBoostConfigLoaded = false;
+
+async function loadAIActivity() {
+  const loading = document.getElementById('ai-activity-loading');
+  const empty = document.getElementById('ai-activity-empty');
+  const errorEl = document.getElementById('ai-activity-error');
+  const list = document.getElementById('ai-activity-list');
+  const countEl = document.getElementById('ai-activity-count');
+  const upsell = document.getElementById('ai-boost-page-upsell');
+  const activeContent = document.getElementById('ai-boost-active-content');
+
+  // Don't flip visibility until the /ai/config fetch has resolved.
+  // If the user lands here before config loads, show the activity loading
+  // spinner inside the activeContent and wait — loadAIBoostSection() will
+  // call loadAIActivity() again once it has the real value.
+  if (!__aiBoostConfigLoaded) {
+    if (upsell) upsell.classList.add('hidden');
+    if (activeContent) activeContent.classList.remove('hidden');
+    if (loading) loading.classList.remove('hidden');
+    return;
+  }
+
+  const active = !!__aiBoostActive;
+  if (upsell) upsell.classList.toggle('hidden', active);
+  if (activeContent) activeContent.classList.toggle('hidden', !active);
+  if (!active) {
+    if (loading) loading.classList.add('hidden');
+    return;
+  }
+
+  if (!list) return;
+
+  if (loading) loading.classList.remove('hidden');
+  if (empty) empty.classList.add('hidden');
+  if (errorEl) errorEl.classList.add('hidden');
+  list.classList.add('hidden');
+
+  try {
+    const res = await fetch(`${API}/ai/activity`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Failed to load activity');
+
+    const items = data.activity || [];
+    if (loading) loading.classList.add('hidden');
+
+    // Summary stats
+    const totalEl = document.getElementById('ai-stat-total');
+    const warnEl = document.getElementById('ai-stat-warnings');
+    const priceEl = document.getElementById('ai-stat-price-flags');
+    const copyEl = document.getElementById('ai-stat-copies');
+    if (totalEl) totalEl.textContent = items.length;
+    if (warnEl) warnEl.textContent = items.filter(i => i.warnings?.length > 0).length;
+    if (priceEl) priceEl.textContent = items.filter(i => i.price_flagged).length;
+    if (copyEl) copyEl.textContent = items.filter(i => i.copy_generated).length;
+
+    if (items.length === 0) { if (empty) empty.classList.remove('hidden'); return; }
+
+    if (countEl) countEl.textContent = `${items.length} checks`;
+    list.innerHTML = items.map(item => {
+      const date = new Date(item.created_at).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+      const badges = [];
+      if (item.warnings?.length > 0) badges.push(`<span class="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300">⚠ ${item.warnings.length} alert${item.warnings.length > 1 ? 's' : ''}</span>`);
+      if (item.price_flagged) {
+        const dir = (item.price_pct_diff || 0) > 0 ? 'overpriced' : 'underpriced';
+        const pct = Math.abs(item.price_pct_diff || 0);
+        badges.push(`<span class="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300">💰 ${pct}% ${dir}</span>`);
+      }
+      if (item.copy_generated) badges.push(`<span class="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300">✦ Copy written</span>`);
+      const warningList = item.warnings?.length > 0
+        ? `<ul class="mt-1.5 text-xs text-amber-700 dark:text-amber-300 space-y-0.5 list-disc list-inside">${item.warnings.map(w => `<li>${w}</li>`).join('')}</ul>`
+        : '';
+      const clickable = item.price_flagged && item.inventory_id;
+      return `<li class="px-4 py-3.5 ${clickable ? 'cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/60 transition-colors' : ''}" ${clickable ? `data-price-report="${item.inventory_id}"` : ''}>
+        <div class="flex items-start justify-between gap-3">
+          <div class="min-w-0">
+            <div class="font-semibold text-sm text-slate-900 dark:text-white truncate">${item.vehicle_label || 'Unknown vehicle'}</div>
+            <div class="flex flex-wrap gap-1.5 mt-1.5">${badges.join('') || '<span class="text-xs text-slate-400">No issues found</span>'}</div>
+            ${warningList}
+            ${clickable ? '<div class="text-[10px] text-indigo-500 dark:text-indigo-400 mt-1">Click for full price report →</div>' : ''}
+          </div>
+          <div class="text-xs text-slate-400 whitespace-nowrap flex-shrink-0 mt-0.5">${date}</div>
+        </div>
+      </li>`;
+    }).join('');
+    list.classList.remove('hidden');
+
+    // Wire price-report click handlers
+    list.querySelectorAll('[data-price-report]').forEach(li => {
+      li.addEventListener('click', () => openPriceReport(li.dataset.priceReport));
+    });
+  } catch (err) {
+    if (loading) loading.classList.add('hidden');
+    if (errorEl) { errorEl.textContent = err.message; errorEl.classList.remove('hidden'); }
+  }
+}
+
+// ── Price Report Modal ──────────────────────────────────────────────────────
+
+let __prChart = null;
+let __prData = null; // store last report data for PDF export
+
+document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('pr-close')?.addEventListener('click', closePriceReport);
+  document.getElementById('price-report-modal')?.addEventListener('click', e => {
+    if (e.target === e.currentTarget) closePriceReport();
+  });
+  document.getElementById('pr-pdf-btn')?.addEventListener('click', exportPriceReportPDF);
+});
+
+function closePriceReport() {
+  document.getElementById('price-report-modal')?.classList.add('hidden');
+  if (__prChart) { __prChart.destroy(); __prChart = null; }
+  __prData = null;
+}
+
+function exportPriceReportPDF() {
+  if (!__prData) return;
+  const { vehicle, estimate, pct_diff, label, currency } = __prData;
+  const cl = currency === 'USD' ? 'USD' : 'CAD';
+  const distUnit = cl === 'USD' ? 'mi' : 'km';
+  const fmt = n => n != null ? '$' + Number(n).toLocaleString() + ' ' + cl : '—';
+  const fmtMi = n => n != null ? Number(n).toLocaleString() + ' ' + distUnit : '—';
+
+  const over = pct_diff != null && pct_diff > 0;
+  const diffColor = pct_diff == null ? '#94a3b8' : over ? '#ef4444' : '#7c3aed';
+  const diffText = pct_diff != null ? (over ? '+' : '') + pct_diff + '%' : '—';
+
+  const avgs = estimate?.marketplace_averages || [];
+  const sourceNames = avgs.length ? avgs.map(m => m.name) : [];
+  const ma = estimate?.mileage_analysis;
+  const isNew = vehicle.condition === 'new' || Number(vehicle.year) >= new Date().getFullYear();
+
+  const ptm = estimate?.price_to_market_pct;
+  const ptmColor = ptm == null ? '#94a3b8' : ptm > 105 ? '#ef4444' : ptm < 95 ? '#7c3aed' : '#0f172a';
+  const dom = estimate?.days_on_market_estimate;
+
+  const ratingColorMap = {
+    'well below average': '#7c3aed', 'below average': '#c4b5fd',
+    'average': '#94a3b8', 'above average': '#f59e0b', 'well above average': '#ef4444'
+  };
+  const mileageImpact = ma?.mileage_price_impact != null ? Number(ma.mileage_price_impact) : null;
+  const mileageImpactColor = mileageImpact == null ? '#94a3b8' : mileageImpact > 0 ? '#7c3aed' : '#ef4444';
+  const mileageImpactText = mileageImpact != null
+    ? (mileageImpact >= 0 ? '+' : '') + '$' + Math.abs(mileageImpact).toLocaleString() + ' ' + cl
+    : '—';
+
+  const canvas = document.getElementById('pr-chart');
+  const chartImg = canvas ? canvas.toDataURL('image/png') : null;
+
+  const win = window.open('', '_blank');
+  if (!win) return;
+
+  const html = `<!DOCTYPE html><html><head>
+<title>Market Price Report – ${label}</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+@page{size:letter portrait;margin:13mm 13mm 11mm}
+body{font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;color:#0f172a;font-size:10.5px;line-height:1.35;background:#fff}
+.header{display:flex;align-items:flex-start;justify-content:space-between;border-bottom:2.5px solid #6366f1;padding-bottom:7px;margin-bottom:8px}
+.header h1{font-size:14px;font-weight:900;letter-spacing:-.3px;margin-bottom:1px}
+.header .sub{font-size:9.5px;color:#64748b}
+.header-right{text-align:right;font-size:8.5px;color:#94a3b8;line-height:1.7}
+.badge{display:inline-block;background:#eef2ff;color:#6366f1;font-size:7.5px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;padding:2px 6px;border-radius:99px;border:1px solid #c7d2fe}
+.sl{font-size:7.5px;font-weight:800;text-transform:uppercase;letter-spacing:.09em;color:#94a3b8;margin:7px 0 4px}
+.strip5{display:grid;grid-template-columns:repeat(5,1fr);gap:5px;margin-bottom:7px}
+.tile{background:#f8fafc;border:1px solid #e2e8f0;border-radius:5px;padding:6px 5px;text-align:center}
+.tile .tl{font-size:7px;text-transform:uppercase;font-weight:700;letter-spacing:.06em;color:#94a3b8;margin-bottom:2px}
+.tile .tv{font-size:13px;font-weight:900}
+.mkt3{display:grid;grid-template-columns:repeat(3,1fr);gap:5px;margin-bottom:7px}
+.mkt-card{background:#f8fafc;border:1px solid #e2e8f0;border-radius:5px;padding:6px 7px}
+.mkt-name{font-size:7.5px;font-weight:800;color:#6366f1;text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px;border-bottom:1px solid #e2e8f0;padding-bottom:2px}
+.mkt-row{display:flex;justify-content:space-between;align-items:center;padding:1.5px 0}
+.mkt-lbl{font-size:8px;color:#64748b}
+.mkt-val{font-size:9px;font-weight:800}
+.mkt-cnt{font-size:7.5px;color:#94a3b8;margin-top:2px}
+.two-col{display:grid;grid-template-columns:3fr 2fr;gap:7px;margin-bottom:7px}
+.chart-wrap{border:1px solid #e2e8f0;border-radius:5px;padding:5px;background:#fafafa}
+.chart-wrap img{width:100%;display:block;max-height:150px;object-fit:contain}
+.mi-panel{background:#f8fafc;border:1px solid #e2e8f0;border-radius:5px;padding:7px}
+.mi-row{display:flex;justify-content:space-between;align-items:center;padding:2.5px 0;border-bottom:1px solid #f1f5f9}
+.mi-row:last-of-type{border-bottom:none}
+.mi-key{font-size:8px;color:#64748b}
+.mi-val{font-size:9px;font-weight:800}
+.mi-note{font-size:7.5px;color:#64748b;margin-top:4px;line-height:1.5;border-top:1px solid #f1f5f9;padding-top:4px}
+.range-header{display:flex;justify-content:space-between;font-size:8.5px;color:#64748b;font-family:monospace;margin-bottom:2px}
+.range-track{height:9px;border-radius:99px;background:#e2e8f0;position:relative;overflow:visible;margin-bottom:2px}
+.range-band{position:absolute;top:0;height:100%;border-radius:99px}
+.range-marker{position:absolute;top:50%;transform:translate(-50%,-50%);width:11px;height:11px;border-radius:50%;border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.3)}
+.range-ends{display:flex;justify-content:space-between;font-size:7.5px;color:#94a3b8;margin-bottom:7px}
+.insight{background:#eef2ff;border:1px solid #c7d2fe;border-radius:5px;padding:7px 9px;margin-bottom:6px}
+.insight .il{font-size:7.5px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:#6366f1;margin-bottom:2px}
+.insight p{font-size:9.5px;color:#1e293b;line-height:1.5}
+.insight .ic{font-size:8px;color:#94a3b8;margin-top:2px}
+.footer{border-top:1px solid #e2e8f0;padding-top:5px;margin-top:5px;font-size:7.5px;color:#94a3b8;line-height:1.55;display:flex;justify-content:space-between;gap:10px}
+.footer .fl{flex:1}
+.footer .fr{text-align:right;white-space:nowrap}
+</style></head><body>
+
+<div class="header">
+  <div>
+    <h1>${label}</h1>
+    <div class="sub">${[
+      vehicle.stocknumber ? 'Stock #' + vehicle.stocknumber : null,
+      vehicle.condition ? vehicle.condition.charAt(0).toUpperCase() + vehicle.condition.slice(1) : null,
+      vehicle.mileage ? fmtMi(vehicle.mileage) : null,
+      vehicle.exterior_color || null
+    ].filter(Boolean).join(' · ')}</div>
+  </div>
+  <div class="header-right">
+    <div class="badge">AI Market Report</div><br>
+    ${new Date().toLocaleDateString('en-CA', { year:'numeric', month:'long', day:'numeric' })}<br>
+    MarketSync AI Boost
+  </div>
+</div>
+
+<div class="sl">Price Summary</div>
+<div class="strip5">
+  <div class="tile"><div class="tl">Your Price</div><div class="tv">${fmt(vehicle.price)}</div></div>
+  <div class="tile"><div class="tl">Market Average</div><div class="tv">${fmt(estimate?.mid)}</div></div>
+  <div class="tile"><div class="tl">Difference</div><div class="tv" style="color:${diffColor}">${diffText}</div></div>
+  <div class="tile"><div class="tl">Price to Market</div><div class="tv" style="color:${ptmColor}">${ptm != null ? ptm + '%' : '—'}</div></div>
+  <div class="tile"><div class="tl">Est. Days to Sell</div><div class="tv">${dom != null ? dom + 'd' : '—'}</div></div>
+</div>
+
+${avgs.length ? `
+<div class="sl">Average Price by Marketplace</div>
+<div class="mkt3">
+  ${avgs.map(m => {
+    const mAvg = Number(m.avg);
+    const vp = Number(vehicle.price);
+    const vs = mAvg ? Math.round(((vp - mAvg) / mAvg) * 100) : null;
+    const vsColor = vs == null ? '#94a3b8' : vs > 0 ? '#ef4444' : '#7c3aed';
+    return `<div class="mkt-card">
+      <div class="mkt-name">${m.name}</div>
+      <div class="mkt-row"><span class="mkt-lbl">Avg Price</span><span class="mkt-val">${fmt(m.avg)}</span></div>
+      ${m.avg_mileage ? `<div class="mkt-row"><span class="mkt-lbl">Avg Mileage</span><span class="mkt-val">${fmtMi(m.avg_mileage)}</span></div>` : ''}
+      <div class="mkt-row"><span class="mkt-lbl">Your vs Avg</span><span class="mkt-val" style="color:${vsColor}">${vs != null ? (vs > 0 ? '+' : '') + vs + '%' : '—'}</span></div>
+      <div class="mkt-cnt">${m.estimated_listings || ''}</div>
+    </div>`;
+  }).join('')}
+</div>` : ''}
+
+<div class="two-col">
+  <div>
+    <div class="sl">Marketplace Averages vs Your Price</div>
+    <div class="chart-wrap">${chartImg ? `<img src="${chartImg}" alt="Price chart"/>` : '<div style="height:130px;display:flex;align-items:center;justify-content:center;color:#94a3b8;font-size:9px">Chart unavailable</div>'}</div>
+  </div>
+  <div>
+    <div class="sl">Mileage Analysis</div>
+    <div class="mi-panel">
+      <div class="mi-row"><span class="mi-key">Your Mileage</span><span class="mi-val">${vehicle.mileage ? fmtMi(vehicle.mileage) : 'N/A'}</span></div>
+      <div class="mi-row"><span class="mi-key">Market Avg</span><span class="mi-val">${ma?.market_avg_mileage ? fmtMi(ma.market_avg_mileage) : '—'}</span></div>
+      ${avgs.filter(m => m.avg_mileage).map(m =>
+        `<div class="mi-row"><span class="mi-key">${m.name}</span><span class="mi-val">${fmtMi(m.avg_mileage)}</span></div>`
+      ).join('')}
+      <div class="mi-row"><span class="mi-key">Rating</span><span class="mi-val" style="color:${ratingColorMap[ma?.mileage_rating] || '#94a3b8'}">${ma?.mileage_rating ? ma.mileage_rating.charAt(0).toUpperCase() + ma.mileage_rating.slice(1) : '—'}</span></div>
+      <div class="mi-row"><span class="mi-key">Price Impact</span><span class="mi-val" style="color:${mileageImpactColor}">${mileageImpactText}</span></div>
+      ${ma?.mileage_note ? `<div class="mi-note">${ma.mileage_note}</div>` : ''}
+    </div>
+  </div>
+</div>
+
+${estimate ? `
+<div class="sl">Overall Market Range (${cl})</div>
+<div class="range-header">
+  <span>${fmt(estimate.low)}</span>
+  <span style="font-weight:700;color:#0f172a">${fmt(estimate.mid)}&nbsp;avg</span>
+  <span>${fmt(estimate.high)}</span>
+</div>
+${(() => {
+  const lo = estimate.low, hi = estimate.high, vp = Number(vehicle.price);
+  const span = (hi - lo) || 1;
+  const markerPct = Math.min(97, Math.max(3, ((vp - lo) / span) * 100));
+  return `<div class="range-track"><div class="range-band" style="left:0%;width:100%;background:#c7d2fe"></div><div class="range-marker" style="left:${markerPct}%;background:#6366f1"></div></div>`;
+})()}
+<div class="range-ends"><span>Market Low</span><span style="font-weight:700;color:#6366f1">▲ Your Price</span><span>Market High</span></div>` : ''}
+
+${estimate?.note ? `
+<div class="insight">
+  <div class="il">AI Market Insight</div>
+  <p>${estimate.note}</p>
+  ${estimate.confidence ? `<div class="ic">Confidence: ${estimate.confidence.charAt(0).toUpperCase() + estimate.confidence.slice(1)}</div>` : ''}
+</div>` : ''}
+
+<div class="footer">
+  <div class="fl"><strong>Sources:</strong> ${sourceNames.join(' · ') || 'AI market analysis'}&nbsp;&nbsp;·&nbsp;&nbsp;AI-analyzed from marketplace listings. Not a live data feed. ${isNew ? 'New vehicles matched by same year.' : 'Used vehicles matched by same year and trim.'} Not a guarantee of resale value.</div>
+  <div class="fr">Generated ${new Date().toLocaleDateString('en-CA', { year:'numeric', month:'short', day:'numeric' })}</div>
+</div>
+
+</body></html>`;
+
+  win.document.write(html);
+  win.document.close();
+  win.focus();
+  setTimeout(() => { win.print(); win.close(); }, 600);
+}
+
+async function openPriceReport(inventoryId) {
+  const modal = document.getElementById('price-report-modal');
+  const loading = document.getElementById('pr-loading');
+  const content = document.getElementById('pr-content');
+  if (!modal) return;
+
+  modal.classList.remove('hidden');
+  loading.classList.remove('hidden');
+  loading.textContent = 'Generating AI market estimate…';
+  content.classList.add('hidden');
+  if (__prChart) { __prChart.destroy(); __prChart = null; }
+  __prData = null;
+
+  try {
+    const res = await fetch(`${API}/ai/price-report/${inventoryId}`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    if (!res.ok) throw new Error('Could not load report');
+    const { vehicle, estimate, pct_diff, data_source } = await res.json();
+
+    const currency = estimate?.currency || 'CAD';
+    const currencyLabel = currency === 'USD' ? 'USD' : 'CAD';
+    const fmt = n => n != null ? '$' + Number(n).toLocaleString() + ' ' + currencyLabel : '—';
+    const label = [vehicle.year, vehicle.make, vehicle.model, vehicle.trim].filter(Boolean).join(' ');
+    __prData = { vehicle, estimate, pct_diff, label, currency, data_source };
+
+    document.getElementById('pr-title').textContent = label;
+    document.getElementById('pr-subtitle').textContent =
+      vehicle.stocknumber ? `Stock #${vehicle.stocknumber} · ${vehicle.condition || ''}` : (vehicle.condition || '');
+
+    document.getElementById('pr-your-price').textContent = fmt(vehicle.price);
+    document.getElementById('pr-median').textContent = fmt(estimate?.mid);
+
+    const diffEl = document.getElementById('pr-diff');
+    if (pct_diff != null) {
+      const over = pct_diff > 0;
+      diffEl.textContent = (over ? '+' : '') + pct_diff + '%';
+      diffEl.className = 'text-xl font-black ' + (over ? 'text-red-500' : 'text-amber-500');
+      diffEl.title = over ? 'Priced above AI market estimate' : 'Priced below AI market estimate';
+    } else {
+      diffEl.textContent = '—';
+      diffEl.className = 'text-xl font-black text-slate-400';
+    }
+
+    // Range bar
+    if (estimate) {
+      document.getElementById('pr-range-low').textContent = fmt(estimate.low);
+      document.getElementById('pr-range-mid').textContent = fmt(estimate.mid);
+      document.getElementById('pr-range-high').textContent = fmt(estimate.high);
+
+      const lo = estimate.low, hi = estimate.high;
+      const span = (hi - lo) || 1;
+      const vp = Number(vehicle.price);
+      const markerPct = Math.min(100, Math.max(0, ((vp - lo) / span) * 100));
+      document.getElementById('pr-range-band').style.cssText = 'left:0%;width:100%';
+      document.getElementById('pr-price-marker').style.left = markerPct + '%';
+    }
+
+    // Market velocity
+    const ptmEl = document.getElementById('pr-ptm');
+    const daysEl = document.getElementById('pr-days');
+    if (ptmEl) {
+      const ptm = estimate?.price_to_market_pct;
+      ptmEl.textContent = ptm != null ? ptm + '%' : '—';
+      ptmEl.className = 'text-xl font-black ' + (ptm == null ? 'text-slate-400' : ptm > 105 ? 'text-red-500' : ptm < 95 ? 'text-emerald-500' : 'text-slate-900 dark:text-white');
+    }
+    if (daysEl) daysEl.textContent = estimate?.days_on_market_estimate != null ? estimate.days_on_market_estimate + ' days' : '—';
+
+    // Mileage panel
+    const ma = estimate?.mileage_analysis;
+    const distUnit = currencyLabel === 'USD' ? 'mi' : 'km';
+    const fmtMi = n => n != null ? Number(n).toLocaleString() + ' ' + distUnit : '—';
+    document.getElementById('pr-your-mileage').textContent = vehicle.mileage ? fmtMi(vehicle.mileage) : 'N/A';
+    document.getElementById('pr-market-mileage').textContent = ma?.market_avg_mileage ? fmtMi(ma.market_avg_mileage) : '—';
+
+    const ratingEl = document.getElementById('pr-mileage-rating');
+    const ratingColorMap = {
+      'well below average': 'text-emerald-500', 'below average': 'text-emerald-400',
+      'average': 'text-slate-500', 'above average': 'text-amber-500', 'well above average': 'text-red-500'
+    };
+    if (ratingEl && ma?.mileage_rating) {
+      ratingEl.textContent = ma.mileage_rating.charAt(0).toUpperCase() + ma.mileage_rating.slice(1);
+      ratingEl.className = 'text-xs font-bold ' + (ratingColorMap[ma.mileage_rating] || 'text-slate-400');
+    }
+
+    const impactEl = document.getElementById('pr-mileage-impact');
+    if (impactEl && ma?.mileage_price_impact != null) {
+      const imp = Number(ma.mileage_price_impact);
+      impactEl.textContent = (imp >= 0 ? '+' : '') + '$' + Math.abs(imp).toLocaleString() + ' ' + currencyLabel;
+      impactEl.className = 'text-xs font-bold ' + (imp > 0 ? 'text-emerald-500' : imp < 0 ? 'text-red-500' : 'text-slate-400');
+      if (imp > 0) impactEl.title = 'Premium for low mileage vs market average';
+      else if (imp < 0) impactEl.title = 'Discount for high mileage vs market average';
+    }
+    document.getElementById('pr-mileage-note').textContent = ma?.mileage_note || '';
+
+    // Mileage range bar: position marker at your mileage vs market avg
+    if (ma?.market_avg_mileage && vehicle.mileage) {
+      const marketAvgMi = Number(ma.market_avg_mileage);
+      const yourMi = Number(vehicle.mileage);
+      // Range: 0 to 2x market avg
+      const rangeMax = marketAvgMi * 2;
+      const markerPct = Math.min(100, Math.max(0, (yourMi / rangeMax) * 100));
+      const marker = document.getElementById('pr-mileage-marker');
+      if (marker) {
+        marker.style.left = markerPct + '%';
+        marker.className = 'absolute top-1/2 -translate-y-1/2 w-3 h-3 rounded-full border-2 border-white shadow ' +
+          (yourMi < marketAvgMi * 0.8 ? 'bg-emerald-500' : yourMi > marketAvgMi * 1.2 ? 'bg-red-500' : 'bg-amber-400');
+      }
+    }
+
+    // AI insight
+    document.getElementById('pr-ai-note').textContent = estimate?.note || '—';
+    const confLabel = document.getElementById('pr-confidence-label');
+    if (estimate?.confidence) {
+      const confMap = { high: 'High confidence', medium: 'Medium confidence', low: 'Low confidence — limited comparable data' };
+      const srcBadge = data_source === 'live'
+        ? '<span class="ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300">● Live data</span>'
+        : '<span class="ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400">AI estimate</span>';
+      confLabel.innerHTML = (confMap[estimate.confidence] || estimate.confidence) + srcBadge;
+    } else {
+      confLabel.textContent = '';
+    }
+
+    // Per-marketplace average cards
+    const cardsEl = document.getElementById('pr-marketplace-cards');
+    const marketplaceAvgs = estimate?.marketplace_averages || [];
+    if (cardsEl && marketplaceAvgs.length) {
+      const yourPrice = Number(vehicle.price);
+      cardsEl.innerHTML = marketplaceAvgs.map(m => {
+        const mAvg = Number(m.avg);
+        const vs = mAvg ? Math.round(((yourPrice - mAvg) / mAvg) * 100) : null;
+        const vsColor = vs == null ? 'text-slate-400' : vs > 5 ? 'text-red-500' : vs < -5 ? 'text-emerald-500' : 'text-amber-500';
+        const vsText = vs != null ? (vs > 0 ? '+' : '') + vs + '% vs avg' : '';
+        return `<div class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg p-3 text-center shadow-sm">
+          <div class="text-[10px] font-bold text-indigo-500 dark:text-indigo-400 uppercase tracking-wider mb-1 truncate">${m.name}</div>
+          <div class="text-lg font-black text-slate-900 dark:text-white">${fmt(m.avg)}</div>
+          <div class="text-[10px] text-slate-400 mt-0.5">${m.estimated_listings || ''}</div>
+          ${vs != null ? `<div class="text-[10px] font-bold mt-1 ${vsColor}">${vsText}</div>` : ''}
+        </div>`;
+      }).join('');
+    }
+
+    // Methodology note
+    const isNew = vehicle.condition === 'new' || Number(vehicle.year) >= new Date().getFullYear();
+    document.getElementById('pr-match-note').textContent = isNew
+      ? `new ${vehicle.year} ${vehicle.make} ${vehicle.model} (same year)`
+      : `used ${vehicle.year} ${vehicle.make} ${vehicle.model}${vehicle.trim ? ' ' + vehicle.trim : ''} (same year and trim)`;
+
+    // Chart — marketplace averages + your price
+    const ctx = document.getElementById('pr-chart');
+    if (ctx && typeof Chart !== 'undefined' && estimate) {
+      const yourPrice = Number(vehicle.price);
+      const avgs = estimate.marketplace_averages || [];
+
+      // Build labels and data: one bar per marketplace avg, then Your Price
+      const chartLabels = [...avgs.map(m => m.name), 'Your Price'];
+      const chartData = [...avgs.map(m => Number(m.avg)), yourPrice];
+      const chartColors = [
+        'rgba(99,102,241,0.25)', 'rgba(99,102,241,0.35)', 'rgba(99,102,241,0.20)',
+        '#6366f1' // your price always solid indigo
+      ].slice(0, chartData.length);
+      // Last bar (Your Price) is always solid indigo
+      chartColors[chartData.length - 1] = '#6366f1';
+      const chartBorders = chartColors.map((_, i) => i === chartData.length - 1 ? '#4f46e5' : '#818cf8');
+
+      // Overall market mid as a reference line
+      const midLine = chartData.map(() => estimate.mid);
+
+      __prChart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels: chartLabels,
+          datasets: [
+            {
+              label: `Price (${currencyLabel})`,
+              data: chartData,
+              backgroundColor: chartColors,
+              borderColor: chartBorders,
+              borderWidth: 2,
+              borderRadius: 6,
+              order: 2
+            },
+            {
+              label: 'Market Average',
+              data: midLine,
+              type: 'line',
+              borderColor: '#f59e0b',
+              borderWidth: 2,
+              borderDash: [5, 4],
+              pointRadius: 0,
+              fill: false,
+              tension: 0,
+              order: 1
+            }
+          ]
+        },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          plugins: {
+            legend: { display: true, labels: { boxWidth: 12, font: { size: 10 }, padding: 12 } },
+            tooltip: { callbacks: { label: c => '$' + Number(c.raw).toLocaleString() + ' ' + currencyLabel } }
+          },
+          scales: {
+            y: {
+              beginAtZero: false,
+              ticks: { callback: v => '$' + Number(v).toLocaleString(), font: { size: 10 } },
+              grid: { color: 'rgba(148,163,184,0.15)' }
+            },
+            x: { ticks: { font: { size: 10 } }, grid: { display: false } }
+          }
+        }
+      });
+    }
+
+    loading.classList.add('hidden');
+    content.classList.remove('hidden');
+  } catch (err) {
+    loading.textContent = 'Failed to load report: ' + err.message;
+  }
+}
+
+async function verifyAIBoostSession(sessionId) {
+  try {
+    const res = await fetch(`${API}/billing/ai-boost-verify?session_id=${encodeURIComponent(sessionId)}`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    if (!res.ok) return; // webhook will still handle it; fail silently
+    showToast('🎉 AI Boost activated! Your settings are ready below.', 'success', 6000);
+    switchPage('ai-boost');
+  } catch {}
+}
+
+async function loadAIBoostSection() {
+  const section = document.getElementById('ai-boost-section');
+  if (!section) return;
+  try {
+    const res = await fetch(`${API}/ai/config`, { headers: { 'Authorization': `Bearer ${token}` } });
+    if (!res.ok) return;
+    const cfg = await res.json();
+    __aiBoostActive = !!cfg.ai_boost_active;
+    __aiBoostConfigLoaded = true;
+    renderAIBoostSection(cfg);
+    // If the user is already on the AI Boost page (navigated there before config loaded),
+    // refresh the visible content now that __aiBoostActive is set correctly.
+    const aiPage = document.querySelector('[data-page-content="ai-boost"]');
+    if (aiPage && !aiPage.classList.contains('hidden')) loadAIActivity();
+  } catch {}
+}
+
+function renderAIBoostSection(cfg) {
+  const badge = document.getElementById('ai-boost-badge');
+  const inactive = document.getElementById('ai-boost-inactive');
+  const activePanel = document.getElementById('ai-boost-active');
+  if (!badge || !inactive || !activePanel) return;
+
+  const upsellBanner = document.getElementById('ai-boost-upsell-banner');
+  if (upsellBanner) {
+    const isAdmin = profileContext?.role === 'DEALER_ADMIN' || profileContext?.role === 'OWNER';
+    const dismissed = (() => { try { return localStorage.getItem('ms_ai_boost_banner_dismissed') === '1'; } catch { return false; } })();
+    const showBanner = isAdmin && !cfg.ai_boost_active && !dismissed;
+    upsellBanner.classList.toggle('hidden', !showBanner);
+    const closeBtn = document.getElementById('ai-boost-upsell-close');
+    if (closeBtn && !closeBtn._wired) {
+      closeBtn._wired = true;
+      closeBtn.addEventListener('click', () => {
+        upsellBanner.classList.add('hidden');
+        try { localStorage.setItem('ms_ai_boost_banner_dismissed', '1'); } catch {}
+      });
+    }
+  }
+
+  // Sidebar nav item — reps only see it when the dealer has purchased AI Boost
+  const navBtn = document.getElementById('nav-ai-boost');
+  const navPill = document.getElementById('nav-ai-boost-pill');
+  if (navBtn) {
+    const isAdmin = profileContext?.role === 'DEALER_ADMIN' || profileContext?.role === 'OWNER';
+    const showNav = cfg.ai_boost_active || isAdmin;
+    navBtn.classList.toggle('hidden', !showNav);
+    if (cfg.ai_boost_active) {
+      navBtn.classList.remove('hidden', 'text-slate-400', 'dark:text-slate-600', 'hover:bg-indigo-50', 'dark:hover:bg-indigo-950/30');
+      navBtn.classList.add('text-slate-700', 'dark:text-slate-300', 'hover:bg-slate-100', 'dark:hover:bg-slate-800');
+      if (navPill) navPill.classList.add('hidden');
+      navBtn.dataset.page = 'ai-boost';
+      navBtn.onclick = null;
+      if (!navBtn._clickWired) {
+        navBtn._clickWired = true;
+        navBtn.addEventListener('click', () => switchPage('ai-boost'));
+      }
+    } else if (isAdmin) {
+      navBtn.classList.remove('hidden', 'text-slate-700', 'dark:text-slate-300', 'hover:bg-slate-100', 'dark:hover:bg-slate-800');
+      navBtn.classList.add('text-slate-400', 'dark:text-slate-600', 'hover:bg-indigo-50', 'dark:hover:bg-indigo-950/30', 'cursor-pointer');
+      if (navPill) navPill.classList.remove('hidden');
+      navBtn.dataset.page = 'ai-boost';
+      navBtn.onclick = null; // early DOMContentLoaded listener handles the click
+    }
+  }
+
+  if (cfg.ai_boost_active) {
+    badge.textContent = 'Active';
+    badge.className = 'text-xs font-bold px-2 py-0.5 rounded-full border border-emerald-500 bg-emerald-900/30 text-emerald-300';
+    badge.classList.remove('hidden');
+    inactive.classList.add('hidden');
+    activePanel.classList.remove('hidden');
+
+    // Pre-fill form
+    const toneEl = document.getElementById('ai-tone');
+    if (toneEl) toneEl.value = cfg.ai_tone || 'professional';
+    const emailEl = document.getElementById('ai-manager-email');
+    if (emailEl) emailEl.value = cfg.ai_manager_email || '';
+
+    const reqFields = cfg.ai_required_fields || [];
+    ['price', 'mileage', 'image_urls', 'description'].forEach(f => {
+      const idMap = { price: 'ai-req-price', mileage: 'ai-req-mileage', image_urls: 'ai-req-photos', description: 'ai-req-description' };
+      const el = document.getElementById(idMap[f]);
+      if (el) el.checked = reqFields.includes(f);
+    });
+  } else {
+    badge.textContent = 'Not Active';
+    badge.className = 'text-xs font-bold px-2 py-0.5 rounded-full border border-slate-500 bg-slate-800 text-slate-400';
+    badge.classList.remove('hidden');
+    inactive.classList.remove('hidden');
+    activePanel.classList.add('hidden');
+  }
+}
+
+async function startAIBoostCheckout(btn, resetLabel) {
+  btn.disabled = true;
+  btn.textContent = 'Redirecting...';
+  try {
+    const res = await fetch(`${API}/billing/subscribe-ai-boost`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    const data = await res.json();
+    if (data.url) { window.location.href = data.url; return; }
+    throw new Error(data.error || 'Failed to start checkout');
+  } catch (err) {
+    btn.disabled = false;
+    btn.textContent = resetLabel;
+    alert('Could not start AI Boost checkout: ' + err.message);
+  }
+}
+
+function setupAIBoostListeners() {
+  document.getElementById('ai-boost-upgrade-btn')?.addEventListener('click', (e) => {
+    startAIBoostCheckout(e.currentTarget, 'Start 3-Day Free Trial — $199/month after');
+  });
+
+  document.getElementById('ai-boost-upsell-btn')?.addEventListener('click', (e) => {
+    startAIBoostCheckout(e.currentTarget, 'Try Free for 3 Days');
+  });
+
+  document.getElementById('ai-boost-page-upgrade-btn')?.addEventListener('click', (e) => {
+    startAIBoostCheckout(e.currentTarget, 'Try Free for 3 Days');
+  });
+
+  document.getElementById('ai-activity-refresh')?.addEventListener('click', loadAIActivity);
+
+  document.getElementById('ai-boost-goto-page-btn')?.addEventListener('click', () => {
+    switchPage('ai-boost');
+  });
+
+  document.getElementById('ai-sync-all-btn')?.addEventListener('click', async () => {
+    const btn = document.getElementById('ai-sync-all-btn');
+    const status = document.getElementById('ai-sync-status');
+    const statusText = document.getElementById('ai-sync-status-text');
+    const progressBar = document.getElementById('ai-sync-progress-bar');
+    const progressLabel = document.getElementById('ai-sync-progress-label');
+
+    const resetBtn = () => {
+      btn.disabled = false;
+      btn.innerHTML = `<svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg> Scan All Inventory`;
+      if (status) status.classList.add('hidden');
+      if (progressBar) progressBar.style.width = '0%';
+    };
+
+    btn.disabled = true;
+    btn.textContent = 'Scanning…';
+    if (status) status.classList.remove('hidden');
+    if (statusText) statusText.textContent = 'Starting scan…';
+    if (progressBar) progressBar.style.width = '0%';
+    if (progressLabel) progressLabel.textContent = '';
+
+    try {
+      const res = await fetch(`${API}/ai/sync-all`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Sync failed');
+
+      const total = data.queued || 0;
+      if (statusText) statusText.textContent = `Scanning ${total} vehicles…`;
+
+      if (total === 0) { resetBtn(); return; }
+
+      // Record timestamp just before scan results start arriving.
+      // Filter by created_at so progress is immune to pre-existing activity records
+      // and the endpoint's return limit.
+      const scanStartedAt = new Date();
+
+      // Poll every 3 seconds — count only activity items newer than scan start
+      const pollInterval = setInterval(async () => {
+        try {
+          const r = await fetch(`${API}/ai/activity?limit=500`, { headers: { 'Authorization': `Bearer ${token}` } });
+          const d = r.ok ? await r.json() : {};
+          const processed = (d.activity || []).filter(a => new Date(a.created_at) >= scanStartedAt).length;
+          const pct = Math.min(100, Math.round((processed / total) * 100));
+          if (progressBar) progressBar.style.width = pct + '%';
+          if (progressLabel) progressLabel.textContent = `${processed} of ${total} checked (${pct}%)`;
+          if (statusText) statusText.textContent = `Scanning ${total} vehicles…`;
+          loadAIActivity();
+          if (processed >= total) {
+            clearInterval(pollInterval);
+            if (statusText) statusText.textContent = `Done — ${total} vehicles scanned`;
+            if (progressBar) progressBar.style.width = '100%';
+            if (progressLabel) progressLabel.textContent = `${total} of ${total} checked (100%)`;
+            setTimeout(resetBtn, 3000);
+          }
+        } catch {}
+      }, 3000);
+
+      // Safety timeout — stop polling after 10 minutes regardless
+      setTimeout(() => { clearInterval(pollInterval); resetBtn(); }, 600000);
+
+    } catch (err) {
+      resetBtn();
+      showToast('Scan failed: ' + err.message, 'error');
+    }
+  });
+
+  document.getElementById('ai-config-save-btn')?.addEventListener('click', async () => {
+    const btn = document.getElementById('ai-config-save-btn');
+    const msg = document.getElementById('ai-config-msg');
+    btn.disabled = true;
+    btn.textContent = 'Saving...';
+
+    const reqFields = [];
+    if (document.getElementById('ai-req-price')?.checked) reqFields.push('price');
+    if (document.getElementById('ai-req-mileage')?.checked) reqFields.push('mileage');
+    if (document.getElementById('ai-req-photos')?.checked) reqFields.push('image_urls');
+    if (document.getElementById('ai-req-description')?.checked) reqFields.push('description');
+
+    const payload = {
+      ai_tone: document.getElementById('ai-tone')?.value || 'professional',
+      ai_manager_email: document.getElementById('ai-manager-email')?.value.trim() || null,
+      ai_required_fields: reqFields
+    };
+
+    try {
+      const res = await fetch(`${API}/ai/config`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Save failed');
+      msg.textContent = '✓ Saved';
+      msg.className = 'text-xs font-medium px-2.5 py-1 rounded-md bg-emerald-100 dark:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300';
+      msg.classList.remove('hidden');
+    } catch (err) {
+      msg.textContent = err.message;
+      msg.className = 'text-xs font-medium px-2.5 py-1 rounded-md bg-red-100 dark:bg-red-900/50 text-red-700 dark:text-red-300';
+      msg.classList.remove('hidden');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Save AI Settings';
+      setTimeout(() => msg.classList.add('hidden'), 4000);
+    }
+  });
+
+  document.getElementById('ai-enrich-close')?.addEventListener('click', closeAIEnrichModal);
+  document.getElementById('ai-enrich-modal')?.addEventListener('click', (e) => {
+    if (e.target.id === 'ai-enrich-modal') closeAIEnrichModal();
+  });
+  document.getElementById('ai-enrich-copy-btn')?.addEventListener('click', () => {
+    const text = document.getElementById('ai-enrich-copy')?.textContent;
+    if (text) navigator.clipboard.writeText(text).catch(() => {});
+  });
+}
+
+function closeAIEnrichModal() {
+  document.getElementById('ai-enrich-modal')?.classList.add('hidden');
+}
+
+async function openAIEnrich(inventoryId) {
+  const modal = document.getElementById('ai-enrich-modal');
+  if (!modal) return;
+  modal.classList.remove('hidden');
+  document.getElementById('ai-enrich-loading').classList.remove('hidden');
+  document.getElementById('ai-enrich-content').classList.add('hidden');
+  document.getElementById('ai-enrich-error').classList.add('hidden');
+
+  try {
+    const res = await fetch(`${API}/ai/enrich-listing`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+      body: JSON.stringify({ inventory_id: inventoryId })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Enrichment failed');
+
+    document.getElementById('ai-enrich-loading').classList.add('hidden');
+    document.getElementById('ai-enrich-content').classList.remove('hidden');
+
+    // Warnings
+    const warningsBlock = document.getElementById('ai-enrich-warnings');
+    const warningsList = document.getElementById('ai-enrich-warnings-list');
+    if (data.warnings && data.warnings.length > 0) {
+      warningsList.innerHTML = data.warnings.map(w => `<li>${w}</li>`).join('');
+      warningsBlock.classList.remove('hidden');
+    } else {
+      warningsBlock.classList.add('hidden');
+    }
+
+    // Price flag
+    const priceFlag = document.getElementById('ai-enrich-price-flag');
+    const priceFlagText = document.getElementById('ai-enrich-price-flag-text');
+    if (data.price_flag?.flagged) {
+      const dir = data.price_flag.pct_diff > 0 ? 'above' : 'below';
+      const pct = Math.abs(data.price_flag.pct_diff);
+      priceFlagText.textContent = `This vehicle is priced ${pct}% ${dir} the median of ${data.price_flag.comp_count} comparable vehicle${data.price_flag.comp_count !== 1 ? 's' : ''} ($${Number(data.price_flag.median).toLocaleString()} median).`;
+      priceFlag.classList.remove('hidden');
+    } else {
+      priceFlag.classList.add('hidden');
+    }
+
+    // Copy
+    document.getElementById('ai-enrich-copy').textContent = data.copy || '(No copy generated)';
+  } catch (err) {
+    document.getElementById('ai-enrich-loading').classList.add('hidden');
+    const errEl = document.getElementById('ai-enrich-error');
+    errEl.textContent = err.message;
+    errEl.classList.remove('hidden');
+  }
+}
+
 // "5 minutes ago", "2 days ago", etc — easier to scan than a date string
 function friendlyAgo(date) {
   const seconds = Math.floor((Date.now() - date.getTime()) / 1000);
@@ -2095,66 +3230,4 @@ function friendlyAgo(date) {
   if (seconds < 86400) return Math.floor(seconds / 3600) + ' hr ago';
   if (seconds < 604800) return Math.floor(seconds / 86400) + ' days ago';
   return date.toLocaleDateString();
-}
-document.addEventListener('DOMContentLoaded', () => {
-  const billingBtn = document.getElementById('launch-portal-btn');
-
-  if (billingBtn) {
-    billingBtn.addEventListener('click', openBillingPortal);
-  }
-});
-
-async function openBillingPortal() {
-  const billingBtn = document.getElementById('launch-portal-btn');
-  const originalText = billingBtn.textContent;
-  
-  // Extract token from your authentication layer (adjust key name if stored differently)
-  const token = localStorage.getItem('token'); 
-  
-  if (!token) {
-    console.error('Billing Portal Error: User session token not found.');
-    alert('Session expired. Please sign out and sign back in.');
-    return;
-  }
-
-  try {
-    // 1. Set UI loading state to block multi-clicks
-    billingBtn.disabled = true;
-    billingBtn.textContent = 'Connecting...';
-
-    // 2. Fetch the billing session from Render API
-    const res = await fetch('https://vehicle-marketplace-s0e4.onrender.com/billing/portal', {
-      method: 'POST',
-      headers: { 
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json'
-      }
-    });
-
-   if (!res.ok) throw new Error(`Server returned HTTP status ${res.status}`);
-
-    const body = await res.json();
-
-    // Complimentary account — nothing to manage in Stripe. Show a friendly message
-    // instead of opening a brand-new checkout/subscribe page.
-    if (body.complimentary) {
-      alert("You're on a complimentary MarketSync plan — there's no billing to manage. Reach out if you have any questions.");
-      return;
-    }
-
-    if (body.url) {
-      window.open(body.url, '_blank', 'noopener,noreferrer');
-    } else {
-      throw new Error('No redirect URL returned by the billing service.');
-    }
-
-  } catch (err) {
-    console.error('Billing Portal Error:', err);
-    alert('Could not open billing settings. Please contact support.');
-  } finally {
-    
-    // 4. Restore UI state
-    billingBtn.disabled = false;
-    billingBtn.textContent = originalText;
-  }
 }

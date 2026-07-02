@@ -33,6 +33,7 @@
     body:not(.ms-role-ready) [data-dealer-only] { display: none !important; }
   </style>
   <style id="ms-font-bump">html{font-size:17px}@media (max-width:640px){html{font-size:16px}}</style>
+  <style>.scrollbar-none{-ms-overflow-style:none;scrollbar-width:none}.scrollbar-none::-webkit-scrollbar{display:none}</style>
 </head>
 <body class="bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-slate-100 font-sans antialiased min-h-screen flex flex-col overflow-x-hidden">
 
@@ -54,9 +55,9 @@
     </div>
   </header>
 
-  <main class="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8 grid grid-cols-1 md:grid-cols-4 gap-6 sm:gap-8 items-start">
+  <main class="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8 flex flex-col md:grid md:grid-cols-4 gap-4 md:gap-8 md:items-start">
 
-    <section class="flex flex-col gap-4 sm:gap-6 md:col-span-1 min-w-0">
+    <section class="flex flex-col md:col-span-1">
 
       <div id="profile-card" class="hidden bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg overflow-hidden">
         <div class="px-5 pt-5">
@@ -66,9 +67,32 @@
         <div id="profile-panel" class="p-5">
           <div id="profile-msg" class="hidden mb-3 p-2 text-xs rounded"></div>
           <form id="profile-form" class="space-y-3">
+            <!-- Avatar upload -->
+            <div class="flex items-center gap-4 pb-3 border-b border-slate-200 dark:border-slate-800">
+              <div class="relative flex-shrink-0">
+                <div id="prof-avatar-preview" class="w-16 h-16 rounded-full bg-indigo-100 dark:bg-indigo-900/50 flex items-center justify-center text-indigo-700 dark:text-indigo-300 font-black text-2xl overflow-hidden">
+                  <span id="prof-avatar-initial">?</span>
+                  <img id="prof-avatar-img" class="hidden w-full h-full object-cover" alt="avatar">
+                </div>
+                <label for="prof-avatar-file" class="absolute -bottom-1 -right-1 w-6 h-6 bg-indigo-600 hover:bg-indigo-500 rounded-full flex items-center justify-center cursor-pointer shadow transition">
+                  <svg class="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+                </label>
+                <input type="file" id="prof-avatar-file" accept="image/*" class="hidden">
+              </div>
+              <div class="flex-1 min-w-0">
+                <div class="text-xs font-bold text-slate-700 dark:text-slate-200 mb-0.5">Profile Photo</div>
+                <div class="text-xs text-slate-500">JPG, PNG or GIF · max 2 MB</div>
+                <button type="button" id="prof-avatar-remove" class="hidden text-xs text-red-400 hover:text-red-300 mt-1 transition">Remove photo</button>
+              </div>
+            </div>
+
             <div>
               <label class="block text-xs uppercase font-bold text-slate-500 dark:text-slate-400 mb-1 tracking-wider">Full Name</label>
               <input type="text" id="prof-name" placeholder="John Doe" class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded px-2.5 py-1.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:border-indigo-500">
+            </div>
+            <div>
+              <label class="block text-xs uppercase font-bold text-slate-500 dark:text-slate-400 mb-1 tracking-wider">Display Name <span class="normal-case font-normal text-slate-400">(shown on leaderboard instead of real name)</span></label>
+              <input type="text" id="prof-display-name" placeholder="e.g. TopSeller or SilverFox" class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded px-2.5 py-1.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:border-indigo-500">
             </div>
             <div>
               <label class="block text-xs uppercase font-bold text-slate-500 dark:text-slate-400 mb-1 tracking-wider">Email Address</label>
@@ -93,6 +117,55 @@
             <h3 class="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-2">Billing &amp; Subscription</h3>
             <p class="text-sm text-slate-500 leading-relaxed mb-3">Manage your plan, download invoices, or update payment method.</p>
             <button id="launch-portal-btn" class="w-full bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-900 dark:text-white text-xs font-bold py-2 rounded border border-slate-300 dark:border-slate-700 transition">Manage Billing</button>
+          </div>
+
+          <!-- ── AI Boost Add-On ── (dealer admin only) -->
+          <div id="ai-boost-section" data-admin-only class="mt-5 pt-5 border-t border-slate-200 dark:border-slate-800">
+            <div class="flex items-center gap-2 mb-1">
+              <h3 class="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">AI Boost</h3>
+              <span id="ai-boost-badge" class="hidden text-xs font-bold px-2 py-0.5 rounded-full border"></span>
+            </div>
+            <p class="text-sm text-slate-500 leading-relaxed mb-3">AI-powered listing copy, missing-info alerts, and price comp checks — $199/month add-on.</p>
+
+            <!-- Not active: show upgrade button -->
+            <div id="ai-boost-inactive" class="hidden">
+              <button id="ai-boost-upgrade-btn" class="w-full bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold py-2 rounded transition">Start 3-Day Free Trial — $199/month after</button>
+            </div>
+
+            <!-- Active: show shortcut to AI Boost page -->
+            <div id="ai-boost-active" class="hidden">
+              <button id="ai-boost-goto-page-btn" class="w-full flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold py-2 rounded transition">
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z"/></svg>
+                Open AI Boost
+              </button>
+            </div>
+          </div>
+
+          <!-- AI Enrichment Modal -->
+          <div id="ai-enrich-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+            <div class="bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 w-full max-w-lg max-h-[80vh] overflow-y-auto p-5 space-y-4">
+              <div class="flex items-center justify-between">
+                <h3 class="font-bold text-slate-900 dark:text-white">AI Enrichment</h3>
+                <button id="ai-enrich-close" class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 text-xl leading-none">&times;</button>
+              </div>
+              <div id="ai-enrich-loading" class="text-sm text-slate-500 italic">Generating...</div>
+              <div id="ai-enrich-content" class="hidden space-y-4">
+                <div id="ai-enrich-warnings" class="hidden">
+                  <div class="text-xs font-bold uppercase tracking-wider text-amber-600 dark:text-amber-400 mb-1">Missing Info Alerts</div>
+                  <ul id="ai-enrich-warnings-list" class="text-sm text-amber-700 dark:text-amber-300 space-y-1 list-disc list-inside"></ul>
+                </div>
+                <div id="ai-enrich-price-flag" class="hidden p-3 rounded border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20">
+                  <div class="text-xs font-bold uppercase tracking-wider text-amber-600 dark:text-amber-400 mb-1">Price Flag</div>
+                  <div id="ai-enrich-price-flag-text" class="text-sm text-amber-700 dark:text-amber-300"></div>
+                </div>
+                <div>
+                  <div class="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1">Generated Listing Copy</div>
+                  <div id="ai-enrich-copy" class="text-sm text-slate-800 dark:text-slate-200 whitespace-pre-wrap bg-slate-50 dark:bg-slate-950 rounded p-3 border border-slate-200 dark:border-slate-800"></div>
+                  <button id="ai-enrich-copy-btn" class="mt-2 text-xs text-indigo-600 dark:text-indigo-400 hover:underline">Copy to clipboard</button>
+                </div>
+              </div>
+              <div id="ai-enrich-error" class="hidden text-sm text-red-500"></div>
+            </div>
           </div>
 
           <div id="security-section" class="mt-5 pt-5 border-t border-slate-200 dark:border-slate-800">
@@ -167,18 +240,41 @@
         </div>
       </div>
 
-      <!-- Sidebar navigation — horizontal scrollable pills on mobile, stacked sidebar on desktop -->
-      <nav id="dashboard-nav" class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-3 text-sm order-1 md:order-2 flex flex-wrap md:flex-col gap-1.5 md:gap-0 md:space-y-1 md:sticky md:top-6 z-10">
-        <button type="button" data-page="insights" class="nav-item flex-shrink-0 md:w-full text-left whitespace-nowrap px-3 py-2 rounded font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition">Insights</button>
-        <button type="button" data-page="inventory" class="nav-item flex-shrink-0 md:w-full text-left whitespace-nowrap px-3 py-2 rounded font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition">Inventory</button>
-        <button type="button" data-page="leaderboard" class="nav-item flex-shrink-0 md:w-full text-left whitespace-nowrap px-3 py-2 rounded font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition">Leaderboard</button>
-        <button type="button" data-page="sales-team" data-admin-nav class="nav-item flex-shrink-0 md:w-full text-left whitespace-nowrap px-3 py-2 rounded font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition">Sales Team</button>
-        <button type="button" data-page="profile" class="nav-item flex-shrink-0 md:w-full text-left whitespace-nowrap px-3 py-2 rounded font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition">Profile &amp; Settings</button>
+      <!-- Nav: icon-only pill row on mobile, labelled sidebar on desktop -->
+      <nav id="dashboard-nav" class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-1.5 md:p-3 text-sm order-1 md:order-2 flex md:flex-col gap-0.5 md:gap-0 md:space-y-1 md:sticky md:top-6 z-10">
+        <button type="button" data-page="insights" title="Insights" class="nav-item flex-1 md:flex-none md:w-full flex items-center justify-center md:justify-start gap-2.5 px-2 md:px-3 py-2.5 md:py-2 rounded font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition">
+          <svg class="w-5 h-5 md:w-4 md:h-4 flex-shrink-0 opacity-60" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 13.5l5-5 4 4 5-6 4 3"/><path stroke-linecap="round" stroke-linejoin="round" d="M3 20h18"/></svg>
+          <span class="hidden md:inline">Insights</span>
+        </button>
+        <button type="button" data-page="inventory" title="Inventory" class="nav-item flex-1 md:flex-none md:w-full flex items-center justify-center md:justify-start gap-2.5 px-2 md:px-3 py-2.5 md:py-2 rounded font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition">
+          <svg class="w-5 h-5 md:w-4 md:h-4 flex-shrink-0 opacity-60" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><rect x="2" y="7" width="20" height="10" rx="2"/><path stroke-linecap="round" d="M6 17v1a1 1 0 001 1h2a1 1 0 001-1v-1M14 17v1a1 1 0 001 1h2a1 1 0 001-1v-1"/><circle cx="7.5" cy="12" r="1.5"/><path stroke-linecap="round" d="M11 12h6"/><path stroke-linecap="round" d="M11 9.5h4"/></svg>
+          <span class="hidden md:inline">Inventory</span>
+        </button>
+        <button type="button" data-page="leaderboard" title="Leaderboard" class="nav-item flex-1 md:flex-none md:w-full flex items-center justify-center md:justify-start gap-2.5 px-2 md:px-3 py-2.5 md:py-2 rounded font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition">
+          <svg class="w-5 h-5 md:w-4 md:h-4 flex-shrink-0 opacity-60" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M8 21V10M12 21V3M16 21v-6"/><path stroke-linecap="round" stroke-linejoin="round" d="M5 21h14"/></svg>
+          <span class="hidden md:inline">Leaderboard</span>
+        </button>
+        <button type="button" data-page="sales-team" data-admin-nav title="Sales Team" class="nav-item flex-1 md:flex-none md:w-full flex items-center justify-center md:justify-start gap-2.5 px-2 md:px-3 py-2.5 md:py-2 rounded font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition">
+          <svg class="w-5 h-5 md:w-4 md:h-4 flex-shrink-0 opacity-60" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M17 20c0-2.21-2.239-4-5-4S7 17.79 7 20"/><circle cx="12" cy="8" r="3" stroke-linecap="round"/><path stroke-linecap="round" stroke-linejoin="round" d="M21 20c0-1.864-1.567-3.411-3.646-3.837M3 20c0-1.864 1.567-3.411 3.646-3.837"/><circle cx="19" cy="7" r="2.5" stroke-linecap="round"/><circle cx="5" cy="7" r="2.5" stroke-linecap="round"/></svg>
+          <span class="hidden md:inline">Sales Team</span>
+        </button>
+        <!-- AI Boost: admins always see it (hidden only until JS resolves role) -->
+        <button type="button" id="nav-ai-boost" title="AI Boost" class="hidden flex-1 md:flex-none md:w-full flex items-center justify-center md:justify-start md:justify-between gap-2 px-2 md:px-3 py-2.5 md:py-2 rounded font-medium transition">
+          <span id="nav-ai-boost-label" class="flex items-center gap-2.5">
+            <svg class="w-5 h-5 md:w-4 md:h-4 flex-shrink-0 opacity-60" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z"/><path stroke-linecap="round" stroke-linejoin="round" d="M18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 00-2.456 2.456z"/></svg>
+            <span class="hidden md:inline">AI Boost</span>
+          </span>
+          <span id="nav-ai-boost-pill" class="hidden text-[9px] font-black uppercase tracking-wider bg-indigo-600 text-white px-1.5 py-0.5 rounded-full leading-none flex-shrink-0">Trial</span>
+        </button>
+        <button type="button" data-page="profile" title="Settings" class="nav-item flex-1 md:flex-none md:w-full flex items-center justify-center md:justify-start gap-2.5 px-2 md:px-3 py-2.5 md:py-2 rounded font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition md:mt-auto">
+          <svg class="w-5 h-5 md:w-4 md:h-4 flex-shrink-0 opacity-60" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path stroke-linecap="round" stroke-linejoin="round" d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+          <span class="hidden md:inline">Profile &amp; Settings</span>
+        </button>
       </nav>
 
     </section>
 
-    <section class="md:col-span-3 min-w-0">
+    <section class="w-full md:col-span-3 min-w-0 flex-1 md:flex-none min-h-[50vh] md:min-h-0">
 
       <!-- Extension CTA — sits at the top of the dashboard (all pages) until dismissed.
            Dismissal is remembered forever (localStorage), then a compact "Install
@@ -203,6 +299,34 @@
 
       <!-- ───────── INSIGHTS PAGE ───────── -->
       <div data-page-content="insights" class="page-content space-y-8">
+
+      <!-- Loading skeleton — visible until JS resolves the profile and hides it -->
+      <div id="insights-skeleton" class="space-y-4">
+        <div class="h-7 w-40 bg-slate-200 dark:bg-slate-800 rounded animate-pulse"></div>
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div class="h-24 bg-slate-200 dark:bg-slate-800 rounded-lg animate-pulse"></div>
+          <div class="h-24 bg-slate-200 dark:bg-slate-800 rounded-lg animate-pulse"></div>
+          <div class="h-24 bg-slate-200 dark:bg-slate-800 rounded-lg animate-pulse"></div>
+          <div class="h-24 bg-slate-200 dark:bg-slate-800 rounded-lg animate-pulse"></div>
+        </div>
+      </div>
+
+      <!-- AI Boost upsell banner — shown to dealer admins who haven't activated AI Boost -->
+      <div id="ai-boost-upsell-banner" class="hidden" data-admin-only>
+        <div class="flex items-start justify-between gap-4 bg-indigo-600/10 dark:bg-indigo-900/30 border border-indigo-400/40 dark:border-indigo-600/50 rounded-xl px-5 py-4">
+          <div class="flex items-start gap-3">
+            <span class="text-2xl leading-none mt-0.5">✨</span>
+            <div>
+              <p class="font-bold text-slate-900 dark:text-white text-sm">AI Boost — $199/month add-on</p>
+              <p class="text-xs text-slate-600 dark:text-slate-300 mt-0.5 leading-relaxed">Let AI write your listing copy, flag missing photos or price, and check if your vehicles are priced competitively — all before you post.</p>
+            </div>
+          </div>
+          <div class="flex items-center gap-2 flex-shrink-0">
+            <button id="ai-boost-upsell-btn" class="bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold px-4 py-2 rounded-lg transition whitespace-nowrap">Try Free for 3 Days</button>
+            <button id="ai-boost-upsell-close" aria-label="Dismiss" class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 text-xl leading-none p-1 transition">×</button>
+          </div>
+        </div>
+      </div>
 
       <!-- Time range toggle. Reusable component — same markup is used on Team Insights too. -->
       <div class="range-toggle flex items-center justify-between flex-wrap gap-3">
@@ -294,254 +418,35 @@
         <div class="text-xs uppercase font-bold tracking-wider text-slate-500 dark:text-slate-400 mb-3">Trends</div>
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div class="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded p-3">
-            <div class="text-xs font-bold text-slate-600 dark:text-slate-300 mb-2">📈 Listings posted (daily)</div>
-            <div class="relative h-48"><canvas id="chart-listings-daily"></canvas></div>
+            <div class="text-sm font-bold text-slate-800 dark:text-slate-200 mb-2">📈 Listings posted (daily)</div>
+            <div class="relative h-72"><canvas id="chart-listings-daily"></canvas></div>
           </div>
           <div class="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded p-3">
-            <div class="text-xs font-bold text-slate-600 dark:text-slate-300 mb-2">🚗 Listings by rep</div>
-            <div class="relative h-48"><canvas id="chart-listings-by-rep"></canvas></div>
+            <div class="text-sm font-bold text-slate-800 dark:text-slate-200 mb-2">🚗 Listings by rep</div>
+            <div class="relative h-72"><canvas id="chart-listings-by-rep"></canvas></div>
           </div>
           <div class="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded p-3">
-            <div class="text-xs font-bold text-slate-600 dark:text-slate-300 mb-2">🏆 Sold by rep</div>
-            <div class="relative h-48"><canvas id="chart-sold-by-rep"></canvas></div>
+            <div class="text-sm font-bold text-slate-800 dark:text-slate-200 mb-2">🏆 Sold by rep</div>
+            <div class="relative h-72"><canvas id="chart-sold-by-rep"></canvas></div>
           </div>
           <div class="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded p-3">
-            <div class="text-xs font-bold text-slate-600 dark:text-slate-300 mb-2">📅 Active days by rep</div>
-            <div class="relative h-48"><canvas id="chart-active-by-rep"></canvas></div>
+            <div class="text-sm font-bold text-slate-800 dark:text-slate-200 mb-2">📅 Active days by rep</div>
+            <div class="relative h-72"><canvas id="chart-active-by-rep"></canvas></div>
           </div>
           <div class="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded p-3">
-            <div class="text-xs font-bold text-slate-600 dark:text-slate-300 mb-2">📊 Sell-through % by rep</div>
-            <div class="relative h-48"><canvas id="chart-sell-through-by-rep"></canvas></div>
+            <div class="text-sm font-bold text-slate-800 dark:text-slate-200 mb-2">📊 Sell-through % by rep</div>
+            <div class="relative h-72"><canvas id="chart-sell-through-by-rep"></canvas></div>
           </div>
           <div class="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded p-3">
-            <div class="text-xs font-bold text-slate-600 dark:text-slate-300 mb-2">⏱ Avg time to sell by rep (days)</div>
-            <div class="relative h-48"><canvas id="chart-time-to-sell-by-rep"></canvas></div>
+            <div class="text-sm font-bold text-slate-800 dark:text-slate-200 mb-2">⏱ Avg time to sell by rep (days)</div>
+            <div class="relative h-72"><canvas id="chart-time-to-sell-by-rep"></canvas></div>
           </div>
         </div>
       </div>
 
       </div>
 
-      </div>
-      <!-- ───────── INVENTORY PAGE ───────── -->
-      <div data-page-content="inventory" class="page-content hidden space-y-8">
-
-      <div id="feeds-panel" class="hidden bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-4 sm:p-6">
-        <div class="flex flex-wrap justify-between items-start mb-4 gap-3">
-          <div>
-            <h2 class="text-lg font-bold text-slate-900 dark:text-white">Inventory Feeds</h2>
-            <p class="text-slate-500 dark:text-slate-400 text-xs">Manage data feed sources and pull the latest inventory.</p>
-          </div>
-          <button id="sync-now-btn" class="bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold px-4 py-2 rounded transition whitespace-nowrap">
-            Sync Now
-          </button>
-        </div>
-        <div id="sync-status" class="hidden mb-3 p-2 text-xs rounded"></div>
-        <div id="feeds-list" class="space-y-2 mb-4">
-          <div class="text-xs text-slate-500 italic">Loading feeds...</div>
-        </div>
-        <form id="add-feed-form" data-admin-only class="flex flex-col sm:flex-row sm:flex-wrap gap-2 sm:items-center pt-3 border-t border-slate-200 dark:border-slate-800">
-          <select id="add-feed-type" class="bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded px-2 py-2 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-indigo-500">
-            <option value="all">All Inventory</option>
-            <option value="new">New</option>
-            <option value="used">Used</option>
-            <option value="demo">Demo</option>
-            <option value="fleet">Fleet</option>
-          </select>
-          <input type="url" id="add-feed-url" placeholder="https://.../inventory.json" required class="w-full sm:flex-1 sm:min-w-[200px] min-w-0 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded px-3 py-2 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-indigo-500">
-          <button type="submit" class="bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-900 dark:text-white text-xs font-bold px-3 py-2 rounded border border-slate-300 dark:border-slate-700 transition">Add Feed</button>
-        </form>
-      </div>
-
-      <div id="catalog-panel" class="hidden bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-4 sm:p-6">
-        <div class="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-4 gap-3">
-          <div>
-            <h2 class="text-lg font-bold text-slate-900 dark:text-white">Inventory Catalog</h2>
-            <p class="text-slate-500 dark:text-slate-400 text-xs">Browse every vehicle synced from your feeds.</p>
-          </div>
-          <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full sm:w-auto">
-            <input type="text" id="catalog-search" placeholder="Search make, model, VIN, stock..." class="bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded px-3 py-1.5 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-indigo-500 w-full sm:w-64">
-            <select id="catalog-status" class="bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded px-2 py-1.5 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-indigo-500 w-full sm:w-auto">
-              <option value="all">All statuses</option>
-              <option value="available">Available</option>
-              <option value="pending">Sale Pending</option>
-              <option value="sold">Sold</option>
-            </select>
-          </div>
-        </div>
-        <div id="catalog-list" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 max-h-[600px] overflow-y-auto pr-1">
-          <div class="text-xs text-slate-500 italic col-span-full">Loading catalog...</div>
-        </div>
-      </div>
-
-      </div>
-      <!-- ───────── LEADERBOARD PAGE ───────── -->
-      <div data-page-content="leaderboard" class="page-content hidden space-y-8">
-
-      <div id="leaderboard-panel" class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-4 sm:p-6 space-y-8">
-
-        <!-- Header -->
-        <div class="flex flex-wrap items-end justify-between gap-3">
-          <div>
-            <h2 class="text-lg font-bold text-slate-900 dark:text-white">🏆 Leaderboard</h2>
-            <p class="text-slate-500 dark:text-slate-400 text-xs">100 pts / listing · 500 pts / sale · Climb the tiers, top the team.</p>
-          </div>
-          <div class="text-right">
-            <div class="text-xs uppercase font-bold tracking-wider text-slate-500 dark:text-slate-400">Team Conversion</div>
-            <div class="text-2xl font-black text-indigo-600 dark:text-indigo-400 leading-none"><span id="lb-conv">—</span>%</div>
-            <div class="text-xs text-slate-500"><span id="lb-team-sold">0</span> sold of <span id="lb-team-total">0</span> posted</div>
-          </div>
-        </div>
-
-        <!-- Podium for top 3 -->
-        <div id="lb-podium" class="grid grid-cols-3 gap-2 sm:gap-3 items-end max-w-2xl mx-auto">
-          <div class="text-center text-xs text-slate-500 italic col-span-3 py-6">Loading podium...</div>
-        </div>
-
-        <!-- Your position / progress -->
-        <div id="lb-you" class="bg-gradient-to-br from-indigo-50 to-slate-50 dark:from-indigo-950/40 dark:to-slate-900 border border-indigo-200 dark:border-indigo-800 rounded-lg p-5 hidden">
-          <div class="flex items-center justify-between mb-3 gap-4 flex-wrap">
-            <div>
-              <div class="text-xs uppercase font-bold tracking-wider text-indigo-700 dark:text-indigo-300">Your position</div>
-              <div class="flex items-baseline gap-2 mt-1">
-                <span class="text-3xl font-black text-slate-900 dark:text-white">#<span id="lb-you-rank">—</span></span>
-                <span class="text-sm font-semibold text-slate-600 dark:text-slate-300">of <span id="lb-you-total">—</span></span>
-              </div>
-            </div>
-            <div class="text-right">
-              <div id="lb-you-tier-badge" class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold"></div>
-              <div class="text-2xl font-black text-slate-900 dark:text-white mt-1"><span id="lb-you-points">0</span> <span class="text-xs font-medium text-slate-500">pts</span></div>
-            </div>
-          </div>
-          <div class="mt-2">
-            <div class="flex justify-between text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1">
-              <span id="lb-you-current-tier">—</span>
-              <span><span id="lb-you-progress-pct">0</span>% to <span id="lb-you-next-tier">—</span></span>
-            </div>
-            <div class="w-full h-2 bg-slate-200 dark:bg-slate-800 rounded-full overflow-hidden">
-              <div id="lb-you-progress-bar" class="h-full bg-gradient-to-r from-indigo-500 to-purple-500 transition-all duration-700" style="width:0%"></div>
-            </div>
-            <div class="text-xs text-slate-500 mt-1"><span id="lb-you-points-to-next">0</span> pts to next tier</div>
-          </div>
-        </div>
-
-        <!-- Full ranking table -->
-        <div>
-          <div class="text-xs uppercase font-bold tracking-wider text-slate-500 dark:text-slate-400 mb-2">Full rankings</div>
-          <div class="overflow-x-auto">
-            <table class="w-full text-sm border-collapse">
-              <thead>
-                <tr class="border-b border-slate-200 dark:border-slate-800 text-slate-500 dark:text-slate-400 uppercase tracking-wider font-bold text-xs">
-                  <th class="py-3 px-3 text-left w-12">Rank</th>
-                  <th class="py-3 px-3 text-left">Player</th>
-                  <th class="py-3 px-3 text-left">Tier</th>
-                  <th class="py-3 px-3 text-right">Points</th>
-                  <th class="py-3 px-3 text-right">Listings</th>
-                  <th class="py-3 px-3 text-right">Sold</th>
-                  <th class="py-3 px-3 text-right">Conv.</th>
-                </tr>
-              </thead>
-              <tbody id="leaderboard-body" class="divide-y divide-slate-100 dark:divide-slate-800/60">
-                <tr><td colspan="7" class="p-6 text-center text-slate-500 italic">Loading leaderboard...</td></tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        <!-- Activity feed -->
-        <div>
-          <div class="text-xs uppercase font-bold tracking-wider text-slate-500 dark:text-slate-400 mb-2">Recent activity</div>
-          <div id="lb-activity" class="space-y-2 max-h-72 overflow-y-auto pr-1">
-            <div class="text-xs text-slate-500 italic">Loading activity...</div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Global leaderboard — visible to EVERYONE (incl. solo reps). Anonymized. -->
-      <div id="global-leaderboard-panel" class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-4 sm:p-6 space-y-4">
-        <div class="flex flex-wrap items-end justify-between gap-3">
-          <div>
-            <h2 class="text-lg font-bold text-slate-900 dark:text-white">🌎 Global Leaderboard</h2>
-            <p class="text-slate-500 dark:text-slate-400 text-xs">How you stack up across every dealer &amp; rep on MarketSync. Others are anonymized — only you see your name.</p>
-          </div>
-          <div class="inline-flex bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg p-0.5 text-xs font-bold">
-            <button type="button" data-gl-tab="reps" class="gl-tab px-3 py-1.5 rounded bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 transition">Reps</button>
-            <button type="button" data-gl-tab="dealers" class="gl-tab px-3 py-1.5 rounded text-slate-600 dark:text-slate-300 transition">Dealers</button>
-          </div>
-        </div>
-        <div id="gl-you" class="hidden text-xs rounded bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800 text-indigo-800 dark:text-indigo-200 px-3 py-2"></div>
-        <div class="overflow-x-auto">
-          <table class="w-full text-sm border-collapse">
-            <thead>
-              <tr class="border-b border-slate-200 dark:border-slate-800 text-slate-500 dark:text-slate-400 uppercase tracking-wider font-bold text-xs">
-                <th class="py-3 px-3 text-left w-12">Rank</th>
-                <th class="py-3 px-3 text-left">Name</th>
-                <th class="py-3 px-3 text-right">Points</th>
-                <th class="py-3 px-3 text-right">Listings</th>
-                <th class="py-3 px-3 text-right">Sold</th>
-              </tr>
-            </thead>
-            <tbody id="gl-body" class="divide-y divide-slate-100 dark:divide-slate-800/60">
-              <tr><td colspan="5" class="p-6 text-center text-slate-500 italic">Loading global leaderboard…</td></tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      </div>
-      <!-- ───────── SALES TEAM PAGE ───────── -->
-      <div data-page-content="sales-team" class="page-content hidden space-y-8">
-
-      <div id="dealer-view-panel" class="hidden bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-4 sm:p-6">
-        <div class="flex justify-between items-start mb-4 gap-4 flex-wrap">
-          <div>
-            <h2 class="text-lg font-bold text-slate-900 dark:text-white">Sales Team</h2>
-            <p class="text-slate-500 dark:text-slate-400 text-xs">Add or remove sales reps for your dealership.</p>
-          </div>
-          <button id="invite-rep-btn" class="bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold px-4 py-2 rounded transition whitespace-nowrap">
-            + Invite Rep
-          </button>
-        </div>
-
-        <form id="invite-rep-form" class="hidden mb-4 p-3 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded space-y-2">
-          <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
-            <input type="text" id="invite-name" required placeholder="Full name" class="bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-3 py-2 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-indigo-500">
-            <input type="email" id="invite-email" required placeholder="rep@dealership.com" class="bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-3 py-2 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-indigo-500">
-          </div>
-          <input type="password" id="invite-password" placeholder="Temporary password (leave blank to auto-generate)" class="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-3 py-2 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-indigo-500">
-          <div class="flex gap-2 justify-end">
-            <button type="button" id="invite-cancel-btn" class="text-xs text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white dark:hover:text-slate-700 dark:text-slate-200 px-3 py-2">Cancel</button>
-            <button type="submit" class="bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold px-4 py-2 rounded transition">Create Rep</button>
-          </div>
-        </form>
-
-        <div id="invite-result" class="hidden mb-3 p-2 text-xs rounded"></div>
-
-        <div class="overflow-x-auto">
-          <table class="w-full text-left text-xs border-collapse">
-            <thead>
-              <tr class="border-b border-slate-200 dark:border-slate-800 text-slate-500 dark:text-slate-400 uppercase tracking-wider font-bold text-xs">
-                <th class="py-3 px-4">Name</th>
-                <th class="py-3 px-4">Email</th>
-                <th class="py-3 px-4">Role</th>
-                <th class="py-3 px-4">Listings</th>
-                <th class="py-3 px-4">Sold</th>
-                <th class="py-3 px-4">Conv.</th>
-                <th class="py-3 px-4">Logins (30d)</th>
-                <th class="py-3 px-4 text-right">Action</th>
-              </tr>
-            </thead>
-            <tbody id="dealer-team-table-body" class="divide-y divide-slate-800/60 text-slate-700 dark:text-slate-200">
-              <tr><td colspan="8" class="p-4 text-slate-500 italic">Loading team...</td></tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      </div>
-      <!-- rep-view-panel belongs on the Insights page (only visible for reps) -->
-      <div data-page-content="insights" class="page-content space-y-8">
-
+      <!-- rep-view-panel: My Performance (reps only) -->
       <div id="rep-view-panel" class="hidden bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-4 sm:p-6">
         <h2 class="text-lg font-bold text-slate-900 dark:text-white mb-1">My Performance</h2>
         <p class="text-slate-500 dark:text-slate-400 text-xs mb-4">Your personal listing activity.</p>
@@ -626,10 +531,580 @@
         </div>
       </div>
 
+      </div>
+      <!-- ───────── INVENTORY PAGE ───────── -->
+      <div data-page-content="inventory" class="page-content hidden space-y-8">
+
+      <div id="feeds-panel" class="hidden bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-4 sm:p-6">
+        <div class="flex flex-wrap justify-between items-start mb-4 gap-3">
+          <div>
+            <h2 class="text-lg font-bold text-slate-900 dark:text-white">Inventory Feeds</h2>
+            <p class="text-slate-500 dark:text-slate-400 text-xs">Manage data feed sources and pull the latest inventory.</p>
+          </div>
+          <button id="sync-now-btn" class="bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold px-4 py-2 rounded transition whitespace-nowrap">
+            Sync Now
+          </button>
+        </div>
+        <div id="sync-status" class="hidden mb-3 p-2 text-xs rounded"></div>
+        <div id="feeds-list" class="space-y-2 mb-4">
+          <div class="text-xs text-slate-500 italic">Loading feeds...</div>
+        </div>
+        <form id="add-feed-form" data-admin-only class="flex flex-col sm:flex-row sm:flex-wrap gap-2 sm:items-center pt-3 border-t border-slate-200 dark:border-slate-800">
+          <select id="add-feed-type" class="bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded px-2 py-2 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-indigo-500">
+            <option value="all">All Inventory</option>
+            <option value="new">New</option>
+            <option value="used">Used</option>
+            <option value="demo">Demo</option>
+            <option value="fleet">Fleet</option>
+          </select>
+          <input type="url" id="add-feed-url" placeholder="https://.../inventory.json" required class="w-full sm:flex-1 sm:min-w-[200px] min-w-0 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded px-3 py-2 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-indigo-500">
+          <button type="submit" class="bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-900 dark:text-white text-xs font-bold px-3 py-2 rounded border border-slate-300 dark:border-slate-700 transition">Add Feed</button>
+        </form>
+      </div>
+
+      <div id="catalog-panel" class="hidden bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-4 sm:p-6">
+        <div class="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-4 gap-3">
+          <div>
+            <h2 class="text-lg font-bold text-slate-900 dark:text-white">Inventory Catalog</h2>
+            <p class="text-slate-500 dark:text-slate-400 text-xs">Browse every vehicle synced from your feeds.</p>
+          </div>
+          <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full sm:w-auto">
+            <input type="text" id="catalog-search" placeholder="Search make, model, VIN, stock..." class="bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded px-3 py-1.5 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-indigo-500 w-full sm:w-64">
+            <select id="catalog-status" class="bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded px-2 py-1.5 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-indigo-500 w-full sm:w-auto">
+              <option value="all">All</option>
+              <option value="new">New</option>
+              <option value="used">Used</option>
+              <option value="demo">Demo</option>
+              <option value="available">Available</option>
+              <option value="pending">Sale Pending</option>
+              <option value="sold">Sold</option>
+            </select>
+          </div>
+        </div>
+        <div id="catalog-list" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 max-h-[600px] overflow-y-auto pr-1">
+          <div class="text-xs text-slate-500 italic col-span-full">Loading catalog...</div>
+        </div>
+      </div>
+
+      </div>
+      <!-- ───────── LEADERBOARD PAGE ───────── -->
+      <div data-page-content="leaderboard" class="page-content hidden space-y-6">
+
+      <!-- Single combined card with carousel tabs -->
+      <div id="leaderboard-panel" class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-4 sm:p-6 space-y-6">
+
+        <!-- Header row: title + team conversion + carousel tabs -->
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 class="text-lg font-bold text-slate-900 dark:text-white">🏆 Leaderboard</h2>
+            <p class="text-slate-500 dark:text-slate-400 text-xs">100 pts / listing · 500 pts / sale · Climb the tiers, top the team.</p>
+          </div>
+          <div class="flex items-center gap-3 flex-wrap">
+            <!-- Team conversion (hidden on global view) -->
+            <div id="lb-conv-wrap" class="text-right">
+              <div class="text-xs uppercase font-bold tracking-wider text-slate-500 dark:text-slate-400">Team Conversion</div>
+              <div class="text-2xl font-black text-indigo-600 dark:text-indigo-400 leading-none"><span id="lb-conv">—</span>%</div>
+              <div class="text-xs text-slate-500"><span id="lb-team-sold">0</span> sold of <span id="lb-team-total">0</span> posted</div>
+            </div>
+            <!-- Carousel tab pills -->
+            <div class="inline-flex bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg p-0.5 text-xs font-bold">
+              <button type="button" id="lb-tab-team" class="lb-view-tab px-3 py-1.5 rounded bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-sm transition">My Team</button>
+              <button type="button" id="lb-tab-global" class="lb-view-tab px-3 py-1.5 rounded text-slate-500 dark:text-slate-400 transition">🌎 Global</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- ── Legend (compact, always visible at top) ── -->
+        <div class="lb-legend border-b border-slate-200 dark:border-slate-800 pb-3 flex flex-wrap gap-x-6 gap-y-1 text-xs text-slate-500 dark:text-slate-400">
+          <span><span class="font-bold text-indigo-600 dark:text-indigo-400">+100</span> Post a car</span>
+          <span><span class="font-bold text-emerald-600 dark:text-emerald-400">+500</span> You sell it ("I Sold It")</span>
+          <span><span class="font-bold text-slate-400">0</span> Someone else sold it</span>
+          <div id="lb-legend-tiers" class="w-full flex flex-wrap gap-x-5 gap-y-0.5 mt-0.5"></div>
+        </div>
+
+        <!-- ── MY TEAM VIEW ── -->
+        <div id="lb-view-team">
+          <!-- Podium for top 3 -->
+          <div id="lb-podium" class="grid grid-cols-3 gap-2 sm:gap-3 items-end max-w-2xl mx-auto mb-6">
+            <div class="text-center text-xs text-slate-500 italic col-span-3 py-6">Loading podium...</div>
+          </div>
+
+          <!-- Your position / progress -->
+          <div id="lb-you" class="bg-gradient-to-br from-indigo-50 to-slate-50 dark:from-indigo-950/40 dark:to-slate-900 border border-indigo-200 dark:border-indigo-800 rounded-lg p-5 hidden mb-6">
+            <div class="flex items-center justify-between mb-3 gap-4 flex-wrap">
+              <div>
+                <div class="text-xs uppercase font-bold tracking-wider text-indigo-700 dark:text-indigo-300">Your position</div>
+                <div class="flex items-baseline gap-2 mt-1">
+                  <span class="text-3xl font-black text-slate-900 dark:text-white">#<span id="lb-you-rank">—</span></span>
+                  <span class="text-sm font-semibold text-slate-600 dark:text-slate-300">of <span id="lb-you-total">—</span></span>
+                </div>
+              </div>
+              <div class="text-right">
+                <div id="lb-you-tier-badge" class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold"></div>
+                <div class="text-2xl font-black text-slate-900 dark:text-white mt-1"><span id="lb-you-points">0</span> <span class="text-xs font-medium text-slate-500">pts</span></div>
+              </div>
+            </div>
+            <div class="mt-2">
+              <div class="flex justify-between text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1">
+                <span id="lb-you-current-tier">—</span>
+                <span><span id="lb-you-progress-pct">0</span>% to <span id="lb-you-next-tier">—</span></span>
+              </div>
+              <div class="w-full h-2 bg-slate-200 dark:bg-slate-800 rounded-full overflow-hidden">
+                <div id="lb-you-progress-bar" class="h-full bg-gradient-to-r from-indigo-500 to-purple-500 transition-all duration-700" style="width:0%"></div>
+              </div>
+              <div class="text-xs text-slate-500 mt-1"><span id="lb-you-points-to-next">0</span> pts to next tier</div>
+            </div>
+          </div>
+
+          <!-- Full ranking table -->
+          <div>
+            <div class="text-xs uppercase font-bold tracking-wider text-slate-500 dark:text-slate-400 mb-2">Full rankings</div>
+            <div class="overflow-x-auto">
+              <table class="w-full text-sm border-collapse">
+                <thead>
+                  <tr class="border-b border-slate-200 dark:border-slate-800 text-slate-500 dark:text-slate-400 uppercase tracking-wider font-bold text-xs">
+                    <th class="py-3 px-3 text-left w-12">Rank</th>
+                    <th class="py-3 px-3 text-left">Player</th>
+                    <th class="py-3 px-3 text-left">Tier</th>
+                    <th class="py-3 px-3 text-right">Points</th>
+                    <th class="py-3 px-3 text-right">Listings</th>
+                    <th class="py-3 px-3 text-right">Sold</th>
+                    <th class="py-3 px-3 text-right">Conv.</th>
+                  </tr>
+                </thead>
+                <tbody id="leaderboard-body" class="divide-y divide-slate-100 dark:divide-slate-800/60">
+                  <tr><td colspan="7" class="p-6 text-center text-slate-500 italic">Loading leaderboard...</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Activity feed -->
+          <div class="mt-6">
+            <div class="text-xs uppercase font-bold tracking-wider text-slate-500 dark:text-slate-400 mb-2">Recent activity</div>
+            <div id="lb-activity" class="space-y-2 max-h-72 overflow-y-auto pr-1">
+              <div class="text-xs text-slate-500 italic">Loading activity...</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ── GLOBAL VIEW ── (hidden by default) -->
+        <div id="lb-view-global" class="hidden" id="global-leaderboard-panel">
+          <div class="flex items-center justify-between mb-3">
+            <p class="text-xs text-slate-500 dark:text-slate-400">How you stack up across every dealer &amp; rep on MarketSync. Others are anonymized — only you see your name.</p>
+            <!-- Reps / Dealers toggle -->
+            <div class="inline-flex bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg p-0.5 text-xs font-bold flex-shrink-0 ml-3">
+              <button type="button" data-gl-tab="reps" class="gl-tab px-3 py-1.5 rounded bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 transition">Reps</button>
+              <button type="button" data-gl-tab="dealers" class="gl-tab px-3 py-1.5 rounded text-slate-600 dark:text-slate-300 transition">Dealers</button>
+            </div>
+          </div>
+          <!-- Global podium -->
+          <div id="gl-podium" class="grid grid-cols-3 gap-2 sm:gap-3 items-end max-w-2xl mx-auto mb-5"></div>
+
+          <!-- Global avg comparison strip -->
+          <div id="gl-avg-strip" class="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-4">
+            <div class="bg-slate-50 dark:bg-slate-800/60 rounded-lg px-4 py-3 text-center">
+              <div class="text-xs uppercase font-bold tracking-wider text-slate-400 mb-1">Your Points</div>
+              <div id="gl-your-pts" class="text-xl font-black text-indigo-600 dark:text-indigo-400">—</div>
+              <div class="text-xs text-slate-400 mt-0.5">Avg: <span id="gl-avg-pts">—</span></div>
+            </div>
+            <div class="bg-slate-50 dark:bg-slate-800/60 rounded-lg px-4 py-3 text-center">
+              <div class="text-xs uppercase font-bold tracking-wider text-slate-400 mb-1">Your Listings</div>
+              <div id="gl-your-posted" class="text-xl font-black text-indigo-600 dark:text-indigo-400">—</div>
+              <div class="text-xs text-slate-400 mt-0.5">Avg: <span id="gl-avg-posted">—</span></div>
+            </div>
+            <div class="bg-slate-50 dark:bg-slate-800/60 rounded-lg px-4 py-3 text-center">
+              <div class="text-xs uppercase font-bold tracking-wider text-slate-400 mb-1">Your Conv %</div>
+              <div id="gl-your-conv" class="text-xl font-black text-amber-600 dark:text-amber-400">—</div>
+              <div class="text-xs text-slate-400 mt-0.5">Avg: <span id="gl-avg-conv">—</span></div>
+            </div>
+          </div>
+          <div id="gl-you" class="hidden text-xs rounded bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800 text-indigo-800 dark:text-indigo-200 px-3 py-2 mb-3"></div>
+          <div class="overflow-x-auto">
+            <table class="w-full text-sm border-collapse">
+              <thead>
+                <tr class="border-b border-slate-200 dark:border-slate-800 text-slate-500 dark:text-slate-400 uppercase tracking-wider font-bold text-xs">
+                  <th class="py-3 px-3 text-left w-12">Rank</th>
+                  <th class="py-3 px-3 text-left">Name</th>
+                  <th class="py-3 px-3 text-right">Points</th>
+                  <th class="py-3 px-3 text-right">Listings</th>
+                  <th class="py-3 px-3 text-right">Sold</th>
+                </tr>
+              </thead>
+              <tbody id="gl-body" class="divide-y divide-slate-100 dark:divide-slate-800/60">
+                <tr><td colspan="5" class="p-6 text-center text-slate-500 italic">Loading global leaderboard…</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+      </div>
+
+      </div>
+      <!-- ───────── SALES TEAM PAGE ───────── -->
+      <div data-page-content="sales-team" class="page-content hidden space-y-8">
+
+      <div id="dealer-view-panel" class="hidden bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-4 sm:p-6">
+        <div class="flex justify-between items-start mb-4 gap-4 flex-wrap">
+          <div>
+            <h2 class="text-lg font-bold text-slate-900 dark:text-white">Sales Team</h2>
+            <p class="text-slate-500 dark:text-slate-400 text-xs">Add or remove sales reps for your dealership.</p>
+          </div>
+          <button id="invite-rep-btn" class="bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold px-4 py-2 rounded transition whitespace-nowrap">
+            + Invite Rep
+          </button>
+        </div>
+
+        <form id="invite-rep-form" class="hidden mb-4 p-3 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded space-y-2">
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <input type="text" id="invite-name" required placeholder="Full name" class="bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-3 py-2 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-indigo-500">
+            <input type="email" id="invite-email" required placeholder="rep@dealership.com" class="bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-3 py-2 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-indigo-500">
+          </div>
+          <input type="password" id="invite-password" placeholder="Temporary password (leave blank to auto-generate)" class="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-3 py-2 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-indigo-500">
+          <div class="flex gap-2 justify-end">
+            <button type="button" id="invite-cancel-btn" class="text-xs text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white dark:hover:text-slate-700 dark:text-slate-200 px-3 py-2">Cancel</button>
+            <button type="submit" class="bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold px-4 py-2 rounded transition">Create Rep</button>
+          </div>
+        </form>
+
+        <div id="invite-result" class="hidden mb-3 p-2 text-xs rounded"></div>
+
+        <div class="overflow-x-auto">
+          <table class="w-full text-left text-xs border-collapse min-w-[640px]">
+            <thead>
+              <tr class="border-b border-slate-200 dark:border-slate-800 text-slate-500 dark:text-slate-400 uppercase tracking-wider font-bold text-xs">
+                <th class="py-3 px-3">Name</th>
+                <th class="py-3 px-3 max-w-[160px]">Email</th>
+                <th class="py-3 px-3">Role</th>
+                <th class="py-3 px-3 text-right">Listed</th>
+                <th class="py-3 px-3 text-right">Sold</th>
+                <th class="py-3 px-3 text-right">Conv.</th>
+                <th class="py-3 px-3 text-right">Logins</th>
+                <th class="py-3 px-3 text-right">Action</th>
+              </tr>
+            </thead>
+            <tbody id="dealer-team-table-body" class="divide-y divide-slate-800/60 text-slate-700 dark:text-slate-200">
+              <tr><td colspan="8" class="p-4 text-slate-500 italic">Loading team...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      </div><!-- /sales-team page -->
+
+      <!-- ── AI Boost Page ── -->
+      <div data-page-content="ai-boost" class="page-content hidden space-y-6">
+
+        <!-- Header -->
+        <div class="flex items-center justify-between gap-4 flex-wrap">
+          <div>
+            <h2 class="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
+              <svg class="w-5 h-5 text-indigo-500" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z"/><path stroke-linecap="round" stroke-linejoin="round" d="M18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 00-2.456 2.456z"/></svg>
+              AI Boost
+            </h2>
+            <p class="text-sm text-slate-500 dark:text-slate-400 mt-0.5">AI analyses your listings and logs every check here in real time.</p>
+          </div>
+        </div>
+
+        <!-- Upsell if not active -->
+        <div id="ai-boost-page-upsell" class="hidden">
+          <div class="bg-gradient-to-br from-indigo-600 to-purple-700 rounded-xl p-6 sm:p-8 text-white space-y-4">
+            <div class="flex items-start gap-4">
+              <div class="flex-shrink-0 w-12 h-12 bg-white/20 rounded-xl flex items-center justify-center">
+                <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z"/></svg>
+              </div>
+              <div class="flex-1 min-w-0">
+                <h3 class="text-lg font-bold">Unlock AI Boost</h3>
+                <p class="text-indigo-200 text-sm mt-1 leading-relaxed">Auto-generate listing copy, get alerted to missing info, and catch pricing errors across your whole lot — automatically.</p>
+              </div>
+            </div>
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
+              <div class="bg-white/10 rounded-lg p-3">
+                <div class="text-sm font-bold">✦ AI Listing Copy</div>
+                <div class="text-xs text-indigo-200 mt-0.5">Facebook-ready descriptions written for you</div>
+              </div>
+              <div class="bg-white/10 rounded-lg p-3">
+                <div class="text-sm font-bold">⚠ Missing Info Alerts</div>
+                <div class="text-xs text-indigo-200 mt-0.5">Email alerts when photos, price, or mileage are absent</div>
+              </div>
+              <div class="bg-white/10 rounded-lg p-3">
+                <div class="text-sm font-bold">💰 Price Intelligence</div>
+                <div class="text-xs text-indigo-200 mt-0.5">Flag listings priced 15%+ off your median</div>
+              </div>
+            </div>
+            <div class="flex items-center gap-3 pt-1">
+              <button id="ai-boost-page-upgrade-btn" class="bg-white text-indigo-700 hover:bg-indigo-50 text-sm font-bold px-6 py-2.5 rounded-lg transition">Try Free for 3 Days</button>
+              <span class="text-xs text-indigo-200">No credit card required · $199/month after trial</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Active content -->
+        <div id="ai-boost-active-content" class="space-y-5">
+
+          <!-- Top row: Settings + Sync side by side on desktop -->
+          <div class="grid grid-cols-1 lg:grid-cols-3 gap-5">
+
+            <!-- AI Settings card (2/3 width) -->
+            <div class="lg:col-span-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-5 space-y-4">
+              <div class="flex items-center justify-between gap-3">
+                <h3 class="text-sm font-bold text-slate-900 dark:text-white">AI Settings</h3>
+                <div id="ai-config-msg" class="hidden text-xs font-medium px-2.5 py-1 rounded-md"></div>
+              </div>
+
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <!-- Tone -->
+                <div>
+                  <label class="block text-xs uppercase font-bold text-slate-400 dark:text-slate-500 mb-1.5 tracking-wider">Listing Tone</label>
+                  <select id="ai-tone" class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                    <option value="professional">Professional — clear &amp; factual</option>
+                    <option value="friendly">Friendly — warm &amp; approachable</option>
+                    <option value="aggressive">Aggressive — urgent &amp; deal-focused</option>
+                  </select>
+                  <p class="text-xs text-slate-400 mt-1">Controls the voice of AI-generated listing copy.</p>
+                </div>
+
+                <!-- Manager email -->
+                <div>
+                  <label class="block text-xs uppercase font-bold text-slate-400 dark:text-slate-500 mb-1.5 tracking-wider">Alert Email</label>
+                  <input type="email" id="ai-manager-email" placeholder="manager@example.com" class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                  <p class="text-xs text-slate-400 mt-1">Where to send missing-info alerts.</p>
+                </div>
+              </div>
+
+              <!-- Required fields -->
+              <div>
+                <label class="block text-xs uppercase font-bold text-slate-400 dark:text-slate-500 mb-2 tracking-wider">Flag listing if missing</label>
+                <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  <label class="flex items-center gap-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 cursor-pointer hover:bg-indigo-50 dark:hover:bg-indigo-950/50 transition has-[:checked]:bg-indigo-50 dark:has-[:checked]:bg-indigo-950/60 has-[:checked]:border-indigo-400">
+                    <input type="checkbox" id="ai-req-price" value="price" class="accent-indigo-500">
+                    <span class="text-sm text-slate-700 dark:text-slate-300 font-medium">Price</span>
+                  </label>
+                  <label class="flex items-center gap-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 cursor-pointer hover:bg-indigo-50 dark:hover:bg-indigo-950/50 transition has-[:checked]:bg-indigo-50 dark:has-[:checked]:bg-indigo-950/60 has-[:checked]:border-indigo-400">
+                    <input type="checkbox" id="ai-req-mileage" value="mileage" class="accent-indigo-500">
+                    <span class="text-sm text-slate-700 dark:text-slate-300 font-medium">Mileage</span>
+                  </label>
+                  <label class="flex items-center gap-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 cursor-pointer hover:bg-indigo-50 dark:hover:bg-indigo-950/50 transition has-[:checked]:bg-indigo-50 dark:has-[:checked]:bg-indigo-950/60 has-[:checked]:border-indigo-400">
+                    <input type="checkbox" id="ai-req-photos" value="image_urls" class="accent-indigo-500">
+                    <span class="text-sm text-slate-700 dark:text-slate-300 font-medium">Photos</span>
+                  </label>
+                  <label class="flex items-center gap-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 cursor-pointer hover:bg-indigo-50 dark:hover:bg-indigo-950/50 transition has-[:checked]:bg-indigo-50 dark:has-[:checked]:bg-indigo-950/60 has-[:checked]:border-indigo-400">
+                    <input type="checkbox" id="ai-req-description" value="description" class="accent-indigo-500">
+                    <span class="text-sm text-slate-700 dark:text-slate-300 font-medium">Description</span>
+                  </label>
+                </div>
+              </div>
+
+              <button id="ai-config-save-btn" class="bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-bold px-5 py-2 rounded-lg transition">Save Settings</button>
+            </div>
+
+            <!-- Sync card (1/3 width) -->
+            <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-5 flex flex-col gap-4">
+              <div>
+                <h3 class="text-sm font-bold text-slate-900 dark:text-white mb-1">Inventory Scan</h3>
+                <p class="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">Run AI checks across all active listings — flags missing info and price anomalies on every vehicle.</p>
+              </div>
+              <div class="space-y-2 mt-auto">
+                <button id="ai-sync-all-btn" class="w-full flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-bold px-4 py-2.5 rounded-lg transition">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+                  Scan All Inventory
+                </button>
+                <button id="ai-activity-refresh" class="w-full flex items-center justify-center gap-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-sm font-bold px-4 py-2.5 rounded-lg transition border border-slate-200 dark:border-slate-700">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+                  Refresh Log
+                </button>
+              </div>
+              <div id="ai-sync-status" class="hidden space-y-2">
+                <div class="flex items-center gap-2 text-xs font-medium text-indigo-600 dark:text-indigo-400">
+                  <svg class="w-3.5 h-3.5 animate-spin flex-shrink-0" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/></svg>
+                  <span id="ai-sync-status-text">Starting scan…</span>
+                </div>
+                <div class="w-full h-2 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
+                  <div id="ai-sync-progress-bar" class="h-full bg-indigo-500 rounded-full transition-all duration-500" style="width:0%"></div>
+                </div>
+                <div class="text-xs text-slate-400" id="ai-sync-progress-label"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Summary stat cards -->
+          <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4">
+              <div class="text-xs uppercase font-bold tracking-wider text-slate-400 mb-1">Total Checks</div>
+              <div class="text-3xl font-black text-slate-900 dark:text-white" id="ai-stat-total">—</div>
+            </div>
+            <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4">
+              <div class="text-xs uppercase font-bold tracking-wider text-amber-500 mb-1">Missing Info</div>
+              <div class="text-3xl font-black text-amber-500" id="ai-stat-warnings">—</div>
+            </div>
+            <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4">
+              <div class="text-xs uppercase font-bold tracking-wider text-red-500 mb-1">Price Flags</div>
+              <div class="text-3xl font-black text-red-500" id="ai-stat-price-flags">—</div>
+            </div>
+            <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4">
+              <div class="text-xs uppercase font-bold tracking-wider text-emerald-500 mb-1">Copies Written</div>
+              <div class="text-3xl font-black text-emerald-500" id="ai-stat-copies">—</div>
+            </div>
+          </div>
+
+          <!-- Activity feed -->
+          <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden">
+            <div class="px-5 py-3.5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
+              <h3 class="text-sm font-bold text-slate-900 dark:text-white">Recent Activity</h3>
+              <span id="ai-activity-count" class="text-xs text-slate-400"></span>
+            </div>
+            <div class="max-h-[600px] overflow-y-auto">
+              <div id="ai-activity-loading" class="py-12 text-center text-sm text-slate-400 italic">Loading…</div>
+              <div id="ai-activity-empty" class="hidden py-12 text-center text-sm text-slate-400 px-6">No activity yet — click <strong class="text-slate-600 dark:text-slate-300">Scan All Inventory</strong> to run the first check.</div>
+              <div id="ai-activity-error" class="hidden py-6 px-5 text-sm text-red-500"></div>
+              <ul id="ai-activity-list" class="hidden divide-y divide-slate-100 dark:divide-slate-800"></ul>
+            </div>
+          </div>
+
+        </div><!-- /ai-boost-active-content -->
+
+        <!-- Price Report Modal -->
+        <div id="price-report-modal" class="hidden fixed inset-0 z-50 bg-black/70 flex items-start justify-center p-4 overflow-y-auto">
+          <div id="price-report-inner" class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl w-full max-w-2xl mt-10 mb-10 overflow-hidden">
+
+            <!-- Header -->
+            <div class="flex items-start justify-between gap-4 px-6 py-4 border-b border-slate-200 dark:border-slate-800">
+              <div>
+                <h3 id="pr-title" class="text-lg font-bold text-slate-900 dark:text-white">Price Report</h3>
+                <p id="pr-subtitle" class="text-xs text-slate-500 mt-0.5"></p>
+              </div>
+              <div class="flex items-center gap-2 flex-shrink-0">
+                <button id="pr-pdf-btn" class="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold px-3 py-1.5 rounded-lg transition">
+                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+                  Save as PDF
+                </button>
+                <button id="pr-close" class="text-slate-400 hover:text-slate-700 dark:hover:text-white text-2xl leading-none px-1">&times;</button>
+              </div>
+            </div>
+
+            <!-- Loading -->
+            <div id="pr-loading" class="py-16 text-center text-sm text-slate-400 italic">Generating AI market estimate…</div>
+
+            <!-- Content (hidden until loaded) -->
+            <div id="pr-content" class="hidden p-6 space-y-6">
+
+              <!-- Summary strip: Your Price / Overall Market Mid / Difference -->
+              <div class="grid grid-cols-3 gap-3">
+                <div class="bg-slate-50 dark:bg-slate-800 rounded-lg p-3 text-center">
+                  <div class="text-xs uppercase font-bold tracking-wider text-slate-400 mb-1">Your Price</div>
+                  <div id="pr-your-price" class="text-xl font-black text-slate-900 dark:text-white"></div>
+                </div>
+                <div class="bg-slate-50 dark:bg-slate-800 rounded-lg p-3 text-center">
+                  <div class="text-xs uppercase font-bold tracking-wider text-slate-400 mb-1">Market Average</div>
+                  <div id="pr-median" class="text-xl font-black text-slate-900 dark:text-white"></div>
+                </div>
+                <div class="bg-slate-50 dark:bg-slate-800 rounded-lg p-3 text-center">
+                  <div class="text-xs uppercase font-bold tracking-wider text-slate-400 mb-1">Difference</div>
+                  <div id="pr-diff" class="text-xl font-black"></div>
+                </div>
+              </div>
+
+              <!-- Per-Marketplace Average Cards -->
+              <div>
+                <div class="text-xs uppercase font-bold tracking-wider text-slate-400 mb-2">Average Price by Marketplace</div>
+                <div id="pr-marketplace-cards" class="grid grid-cols-3 gap-3"></div>
+              </div>
+
+              <!-- Chart + Mileage side by side -->
+              <div class="grid grid-cols-1 sm:grid-cols-5 gap-4">
+                <!-- Chart -->
+                <div class="sm:col-span-3">
+                  <div class="text-xs uppercase font-bold tracking-wider text-slate-400 mb-2">Marketplace Averages vs Your Price</div>
+                  <div class="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg p-3">
+                    <div class="relative h-52"><canvas id="pr-chart"></canvas></div>
+                  </div>
+                </div>
+                <!-- Mileage Panel -->
+                <div class="sm:col-span-2">
+                  <div class="text-xs uppercase font-bold tracking-wider text-slate-400 mb-2">Mileage Analysis</div>
+                  <div id="pr-mileage-panel" class="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg p-3 h-full space-y-3">
+                    <div class="flex items-center justify-between">
+                      <span class="text-xs text-slate-500">Your mileage</span>
+                      <span id="pr-your-mileage" class="text-sm font-black text-slate-900 dark:text-white"></span>
+                    </div>
+                    <div class="flex items-center justify-between">
+                      <span class="text-xs text-slate-500">Market avg</span>
+                      <span id="pr-market-mileage" class="text-sm font-bold text-slate-600 dark:text-slate-300"></span>
+                    </div>
+                    <!-- Mileage range bar -->
+                    <div class="relative h-3 rounded-full bg-slate-200 dark:bg-slate-700 overflow-visible mt-1">
+                      <div id="pr-mileage-marker" class="absolute top-1/2 -translate-y-1/2 w-3 h-3 rounded-full bg-emerald-500 border-2 border-white shadow" title="Your mileage"></div>
+                    </div>
+                    <div class="flex justify-between text-[9px] text-slate-400"><span>Low</span><span>Market Avg</span><span>High</span></div>
+                    <div class="border-t border-slate-200 dark:border-slate-700 pt-2 space-y-1">
+                      <div class="flex items-center justify-between">
+                        <span class="text-xs text-slate-500">Rating</span>
+                        <span id="pr-mileage-rating" class="text-xs font-bold"></span>
+                      </div>
+                      <div class="flex items-center justify-between">
+                        <span class="text-xs text-slate-500">Price impact</span>
+                        <span id="pr-mileage-impact" class="text-xs font-bold"></span>
+                      </div>
+                    </div>
+                    <p id="pr-mileage-note" class="text-[10px] text-slate-400 leading-relaxed"></p>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Market Range Bar -->
+              <div>
+                <div class="text-xs uppercase font-bold tracking-wider text-slate-400 mb-2">Overall Market Range</div>
+                <div class="bg-slate-50 dark:bg-slate-800 rounded-lg px-4 py-3 space-y-2">
+                  <div class="flex justify-between text-xs text-slate-500 font-mono">
+                    <span id="pr-range-low"></span>
+                    <span id="pr-range-mid" class="font-bold text-slate-700 dark:text-slate-200"></span>
+                    <span id="pr-range-high"></span>
+                  </div>
+                  <div class="relative h-4 rounded-full bg-slate-200 dark:bg-slate-700 overflow-visible">
+                    <div id="pr-range-band" class="absolute top-0 h-full rounded-full bg-indigo-200 dark:bg-indigo-900/60"></div>
+                    <div id="pr-price-marker" class="absolute top-1/2 -translate-y-1/2 w-3 h-3 rounded-full bg-indigo-600 border-2 border-white shadow-md" title="Your price"></div>
+                  </div>
+                  <div class="flex justify-between text-[10px] text-slate-400">
+                    <span>Market Low</span>
+                    <span>Market High</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Market velocity row -->
+              <div class="grid grid-cols-2 gap-3" id="pr-velocity-row">
+                <div class="bg-slate-50 dark:bg-slate-800 rounded-lg p-3 text-center">
+                  <div class="text-xs uppercase font-bold tracking-wider text-slate-400 mb-1">Price to Market</div>
+                  <div id="pr-ptm" class="text-xl font-black text-slate-900 dark:text-white"></div>
+                  <div class="text-[10px] text-slate-400 mt-0.5">% of market average</div>
+                </div>
+                <div class="bg-slate-50 dark:bg-slate-800 rounded-lg p-3 text-center">
+                  <div class="text-xs uppercase font-bold tracking-wider text-slate-400 mb-1">Est. Days to Sell</div>
+                  <div id="pr-days" class="text-xl font-black text-slate-900 dark:text-white"></div>
+                  <div class="text-[10px] text-slate-400 mt-0.5">at current price</div>
+                </div>
+              </div>
+
+              <!-- AI Insight note -->
+              <div class="bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-100 dark:border-indigo-900 rounded-lg px-4 py-3">
+                <div class="text-xs font-bold text-indigo-600 dark:text-indigo-400 uppercase tracking-wider mb-1">AI Market Insight</div>
+                <p id="pr-ai-note" class="text-sm text-slate-700 dark:text-slate-300 leading-relaxed"></p>
+                <p class="text-xs text-slate-400 mt-1.5" id="pr-confidence-label"></p>
+              </div>
+
+              <!-- Method note -->
+              <p class="text-xs text-slate-400 leading-relaxed">AI market analysis based on <span id="pr-match-note"></span>. Used vehicles matched by same year and trim. New vehicles matched by same year. Pricing data is AI-analyzed from marketplace listings — this is not a live data feed. Estimates reflect typical market conditions and are not a guarantee of resale value.</p>
+            </div>
+
+          </div>
+        </div>
+
+      </div>
+
     </section>
   </main>
 
-  <script src="dashboard.js"></script>
+  <script src="dashboard.js?v=20260702h"></script>
   <script src="tour.js"></script>
 </body>
 </html>
