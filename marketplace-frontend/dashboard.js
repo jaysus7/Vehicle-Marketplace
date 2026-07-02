@@ -3384,18 +3384,83 @@ function showVinError(msg) {
 
 function renderVinResults({ decoded, recalls }) {
   const grid = document.getElementById('vin-decoded-grid');
-  const fields = [
-    ['Year', decoded.year], ['Make', decoded.make], ['Model', decoded.model],
-    ['Trim', decoded.trim], ['Body Style', decoded.body_style], ['Doors', decoded.doors],
-    ['Fuel Type', decoded.fuel_type], ['Drivetrain', decoded.drivetrain],
-    ['Transmission', decoded.transmission], ['Engine', decoded.engine],
+  const vd = decoded.vin_data || {};
+  const plantStr = [vd.plant_city, vd.plant_state, vd.plant_country].filter(Boolean).join(', ') || null;
+
+  const coreFields = [
+    ['Year',         decoded.year],
+    ['Make',         decoded.make],
+    ['Model',        decoded.model],
+    ['Trim',         decoded.trim],
+    ['Body Style',   decoded.body_style],
+    ['Doors',        decoded.doors],
+    ['Fuel Type',    decoded.fuel_type],
+    ['Drivetrain',   decoded.drivetrain],
+    ['Transmission', decoded.transmission],
+    ['Engine',       decoded.engine],
   ].filter(([, v]) => v);
 
-  grid.innerHTML = fields.map(([label, value]) => `
+  const extFields = [
+    ['Manufacturer',      vd.manufacturer],
+    ['Vehicle Type',      vd.vehicle_type],
+    ['Series',            vd.series],
+    ['Built In',          plantStr],
+    ['Plant',             vd.plant_company],
+    ['Horsepower',        vd.horsepower ? vd.horsepower + ' HP' : null],
+    ['Cylinders',         vd.cylinders],
+    ['Displacement',      vd.displacement_l ? vd.displacement_l + 'L' : null],
+    ['Displ. (cc)',       vd.displacement_cc ? vd.displacement_cc + 'cc' : null],
+    ['Engine Config',     vd.engine_config],
+    ['Valve Train',       vd.valve_train],
+    ['Turbo',             vd.turbo],
+    ['Engine Model',      vd.engine_model],
+    ['Engine Mfr',        vd.engine_manufacturer],
+    ['Fuel Injection',    vd.fuel_injection],
+    ['Alt Fuel',          vd.fuel_type_secondary],
+    ['Electrification',   vd.electrification],
+    ['Trans Speeds',      vd.transmission_speeds],
+    ['Wheel Base',        vd.wheel_base],
+    ['Wheel Size (F)',    vd.wheel_size_front],
+    ['Wheel Size (R)',    vd.wheel_size_rear],
+    ['Wheels',            vd.wheels],
+    ['Axles',             vd.axles],
+    ['Windows',           vd.windows],
+    ['Seat Rows',         vd.seat_rows],
+    ['Seats',             vd.seats],
+    ['GVWR',              vd.gvwr],
+    ['Curb Weight',       vd.curb_weight_lb ? vd.curb_weight_lb + ' lbs' : null],
+    ['Brakes',            vd.brake_system],
+    ['Steering',          vd.steering_location],
+    ['ABS',               vd.abs],
+    ['ESC',               vd.esc],
+    ['TPMS',              vd.tpms],
+    ['Fwd Collision Warn',vd.forward_collision],
+    ['Lane Departure',    vd.lane_departure],
+    ['Lane Keep',         vd.lane_keep],
+    ['Blind Spot Mon',    vd.blind_spot_mon],
+    ['Adaptive Cruise',   vd.adaptive_cruise],
+    ['Auto Emergency Brk',vd.auto_brake],
+    ['Adaptive Hdlts',    vd.adaptive_headlights],
+    ['Airbags (Front)',   vd.airbag_front],
+    ['Airbags (Side)',    vd.airbag_side],
+    ['Airbags (Curtain)', vd.airbag_curtain],
+    ['Airbags (Knee)',    vd.airbag_knee],
+    ['Keyless Ignition',  vd.keyless_ignition],
+    ['SAE Auto Level',    vd.sae_automation],
+  ].filter(([, v]) => v);
+
+  const card = (label, value) => `
     <div class="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2">
       <div class="text-xs text-slate-400 uppercase tracking-wide">${label}</div>
       <div class="text-sm font-bold text-slate-900 dark:text-white mt-0.5">${value}</div>
-    </div>`).join('');
+    </div>`;
+
+  let html = coreFields.map(([l, v]) => card(l, v)).join('');
+  if (extFields.length) {
+    html += `<div class="col-span-2 mt-1 pt-2 border-t border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-400 uppercase tracking-widest">Extended Build Data (NHTSA)</div>`;
+    html += extFields.map(([l, v]) => card(l, v)).join('');
+  }
+  grid.innerHTML = html;
 
   const recallSection = document.getElementById('vin-recalls-section');
   const recallHeader = document.getElementById('vin-recalls-header');
@@ -3675,16 +3740,83 @@ async function runVinPageDecode() {
 
 function renderVinPageResults({ decoded, recalls }) {
   const grid = document.getElementById('vin-page-grid');
-  const fields = [
-    ['Year', decoded.year], ['Make', decoded.make], ['Model', decoded.model],
-    ['Trim', decoded.trim], ['Body Style', decoded.body_style], ['Fuel Type', decoded.fuel_type],
-    ['Drivetrain', decoded.drivetrain], ['Engine', decoded.engine],
+  const vd = decoded.vin_data || {};
+  const plantStr = [vd.plant_city, vd.plant_state, vd.plant_country].filter(Boolean).join(', ') || null;
+
+  const coreFields = [
+    ['Year',         decoded.year],
+    ['Make',         decoded.make],
+    ['Model',        decoded.model],
+    ['Trim',         decoded.trim],
+    ['Body Style',   decoded.body_style],
+    ['Doors',        decoded.doors],
+    ['Fuel Type',    decoded.fuel_type],
+    ['Drivetrain',   decoded.drivetrain],
+    ['Transmission', decoded.transmission],
+    ['Engine',       decoded.engine],
   ].filter(([, v]) => v);
-  grid.innerHTML = fields.map(([label, value]) => `
+
+  const extFields = [
+    ['Manufacturer',      vd.manufacturer],
+    ['Vehicle Type',      vd.vehicle_type],
+    ['Series',            vd.series],
+    ['Built In',          plantStr],
+    ['Plant',             vd.plant_company],
+    ['Horsepower',        vd.horsepower ? vd.horsepower + ' HP' : null],
+    ['Cylinders',         vd.cylinders],
+    ['Displacement',      vd.displacement_l ? vd.displacement_l + 'L' : null],
+    ['Displ. (cc)',       vd.displacement_cc ? vd.displacement_cc + 'cc' : null],
+    ['Engine Config',     vd.engine_config],
+    ['Valve Train',       vd.valve_train],
+    ['Turbo',             vd.turbo],
+    ['Engine Model',      vd.engine_model],
+    ['Engine Mfr',        vd.engine_manufacturer],
+    ['Fuel Injection',    vd.fuel_injection],
+    ['Alt Fuel',          vd.fuel_type_secondary],
+    ['Electrification',   vd.electrification],
+    ['Trans Speeds',      vd.transmission_speeds],
+    ['Wheel Base',        vd.wheel_base],
+    ['Wheel Size (F)',    vd.wheel_size_front],
+    ['Wheel Size (R)',    vd.wheel_size_rear],
+    ['Wheels',            vd.wheels],
+    ['Axles',             vd.axles],
+    ['Windows',           vd.windows],
+    ['Seat Rows',         vd.seat_rows],
+    ['Seats',             vd.seats],
+    ['GVWR',              vd.gvwr],
+    ['Curb Weight',       vd.curb_weight_lb ? vd.curb_weight_lb + ' lbs' : null],
+    ['Brakes',            vd.brake_system],
+    ['Steering',          vd.steering_location],
+    ['ABS',               vd.abs],
+    ['ESC',               vd.esc],
+    ['TPMS',              vd.tpms],
+    ['Fwd Collision Warn',vd.forward_collision],
+    ['Lane Departure',    vd.lane_departure],
+    ['Lane Keep',         vd.lane_keep],
+    ['Blind Spot Mon',    vd.blind_spot_mon],
+    ['Adaptive Cruise',   vd.adaptive_cruise],
+    ['Auto Emergency Brk',vd.auto_brake],
+    ['Adaptive Hdlts',    vd.adaptive_headlights],
+    ['Airbags (Front)',   vd.airbag_front],
+    ['Airbags (Side)',    vd.airbag_side],
+    ['Airbags (Curtain)', vd.airbag_curtain],
+    ['Airbags (Knee)',    vd.airbag_knee],
+    ['Keyless Ignition',  vd.keyless_ignition],
+    ['SAE Auto Level',    vd.sae_automation],
+  ].filter(([, v]) => v);
+
+  const card = (label, value) => `
     <div class="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2">
       <div class="text-xs text-slate-400 uppercase tracking-wide">${label}</div>
       <div class="text-sm font-bold text-slate-900 dark:text-white mt-0.5">${value}</div>
-    </div>`).join('');
+    </div>`;
+
+  let html = coreFields.map(([l, v]) => card(l, v)).join('');
+  if (extFields.length) {
+    html += `<div class="col-span-2 mt-1 pt-2 border-t border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-400 uppercase tracking-widest">Extended Build Data (NHTSA)</div>`;
+    html += extFields.map(([l, v]) => card(l, v)).join('');
+  }
+  grid.innerHTML = html;
 
   const recallEl = document.getElementById('vin-page-recalls');
   if (recalls?.length) {
