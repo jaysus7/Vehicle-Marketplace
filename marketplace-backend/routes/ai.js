@@ -28,7 +28,7 @@ export function registerAI(app) {
     if (!req.dealershipId) return res.status(400).json({ error: 'No dealership associated' })
     const { data, error } = await supabaseAdmin
       .from('dealerships')
-      .select('ai_boost_active, ai_tone, ai_required_fields, ai_manager_email, auction_api_key, vin_sticker_active')
+      .select('ai_boost_active, ai_tone, ai_required_fields, ai_manager_email, auction_api_key, vin_sticker_active, inv_intel_active')
       .eq('id', req.dealershipId)
       .single()
     if (error) return res.status(500).json({ error: error.message })
@@ -697,12 +697,12 @@ Return ONLY valid JSON array (no markdown):
 
     const { data: dealer } = await supabaseAdmin
       .from('dealerships')
-      .select('ai_boost_active, name')
+      .select('inv_intel_active, name')
       .eq('id', req.dealershipId)
       .single()
 
     const isOwner = (req.user.email || '').toLowerCase() === OWNER_EMAIL
-    if (!isOwner && !dealer?.ai_boost_active) return res.status(403).json({ error: 'AI Boost not active' })
+    if (!isOwner && !dealer?.inv_intel_active) return res.status(403).json({ error: 'Inventory Intelligence not active' })
 
     const since90  = new Date(Date.now() -  90 * 86400000).toISOString()
     const since30  = new Date(Date.now() -  30 * 86400000).toISOString()

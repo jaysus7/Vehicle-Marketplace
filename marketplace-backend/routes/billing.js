@@ -15,6 +15,7 @@ function addonKeyForPrice(priceId) {
   if (priceId === process.env.STRIPE_AI_BOOST_PRICE_ID)    return 'ai_boost'
   if (priceId === process.env.STRIPE_VIN_STICKER_PRICE_ID) return 'vin_sticker'
   if (priceId === process.env.STRIPE_AI_VISION_PRICE_ID)   return 'ai_vision'
+  if (priceId === process.env.STRIPE_INV_INTEL_PRICE_ID)   return 'inv_intel'
   return null
 }
 
@@ -23,6 +24,7 @@ function colsForAddon(key, active) {
   if (key === 'ai_boost')    return { ai_boost_active: active }
   if (key === 'vin_sticker') return { vin_sticker_active: active }
   if (key === 'ai_vision')   return { ai_vision_active: active }
+  if (key === 'inv_intel')   return { inv_intel_active: active }
   return {}
 }
 
@@ -242,6 +244,7 @@ export function registerRoutes(app) {
       ai_boost:    'STRIPE_AI_BOOST_PRICE_ID',
       vin_sticker: 'STRIPE_VIN_STICKER_PRICE_ID',
       ai_vision:   'STRIPE_AI_VISION_PRICE_ID',
+      inv_intel:   'STRIPE_INV_INTEL_PRICE_ID',
     }[addonKey]
 
     const priceId = process.env[envKey]
@@ -299,9 +302,11 @@ export function registerRoutes(app) {
   app.post('/billing/subscribe-ai-boost',    requireAuth, (req, res) => createAddonCheckout(req, res, 'ai_boost'))
   app.post('/billing/subscribe-vin-sticker', requireAuth, (req, res) => createAddonCheckout(req, res, 'vin_sticker'))
   app.post('/billing/subscribe-ai-vision',   requireAuth, (req, res) => createAddonCheckout(req, res, 'ai_vision'))
+  app.post('/billing/subscribe-inv-intel',   requireAuth, (req, res) => createAddonCheckout(req, res, 'inv_intel'))
 
   app.get('/billing/ai-boost-verify',    requireAuth, (req, res) => verifyAddonSession(req, res, 'ai_boost'))
   app.get('/billing/vin-sticker-verify', requireAuth, (req, res) => verifyAddonSession(req, res, 'vin_sticker'))
+  app.get('/billing/inv-intel-verify',   requireAuth, (req, res) => verifyAddonSession(req, res, 'inv_intel'))
   app.get('/billing/ai-vision-verify',   requireAuth, (req, res) => verifyAddonSession(req, res, 'ai_vision'))
 
   // ── Customer Portal ────────────────────────────────────────────────────────
