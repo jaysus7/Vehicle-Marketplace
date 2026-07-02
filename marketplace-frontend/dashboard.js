@@ -3597,9 +3597,9 @@ async function loadVinStickerInventory() {
   const list = document.getElementById('vin-sticker-inventory-list');
   const token = localStorage.getItem('ms_token');
   try {
-    const res = await fetch(`${API}/inventory`, { headers: { 'Authorization': `Bearer ${token}` } });
-    if (!res.ok) throw new Error();
+    const res = await fetch(`${API}/inventory/all`, { headers: { 'Authorization': `Bearer ${token}` } });
     const vehicles = await res.json();
+    if (!res.ok) throw new Error(vehicles?.error || `HTTP ${res.status}`);
     loading.classList.add('hidden');
     if (!vehicles.length) { empty.classList.remove('hidden'); return; }
 
