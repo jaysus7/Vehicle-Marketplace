@@ -24,12 +24,21 @@ function showToast(message, type = 'info', duration = 4000) {
   } catch {}
 })()
 
+// Keys that should survive localStorage.clear() (user-level UI preferences, not session data)
+const PERSIST_KEYS = ['ms_tour_done', 'ms_ext_cta_dismissed'];
+function clearLocalStorage() {
+  const saved = {};
+  PERSIST_KEYS.forEach(k => { try { const v = localStorage.getItem(k); if (v !== null) saved[k] = v; } catch {} });
+  localStorage.clear();
+  Object.entries(saved).forEach(([k, v]) => { try { localStorage.setItem(k, v); } catch {} });
+}
+
 // Local Security Handshake Validations
 const token = localStorage.getItem('token');
 const userRaw = localStorage.getItem('user');
 
 if (!token) {
-  localStorage.clear();
+  clearLocalStorage();
   window.location.href = 'login.html';
 }
 
@@ -272,7 +281,7 @@ async function initializeDashboardEcosystem() {
     }
     if (err.message === 'SESSION_EXPIRED') {
       // Genuine 401 from the server — token really is invalid/expired. Safe to log out.
-      localStorage.clear();
+      clearLocalStorage();
       window.location.href = 'login.html';
       return;
     }
@@ -2062,7 +2071,7 @@ function setupActionListeners() {
     // Tell the extension bridge this is a deliberate sign-out so it logs the
     // extension out too instead of auto-logging the site back in.
     sessionStorage.setItem('ms_logged_out', '1');
-    localStorage.clear();
+    clearLocalStorage();
     window.location.href = 'login.html';
   });
 }
@@ -2231,7 +2240,7 @@ async function initSecurityPanel() {
       alert(data.message || 'Other devices signed out.');
       if (data.scope === 'all') {
         sessionStorage.setItem('ms_logged_out', '1');
-        localStorage.clear();
+        clearLocalStorage();
         window.location.href = '/login.html';
       }
     } catch (err) {

@@ -90,7 +90,7 @@
       .ms-tour-dots{display:flex;gap:6px;margin-bottom:14px;}
       .ms-tour-dot{width:7px;height:7px;border-radius:99px;background:#334155;}
       .ms-tour-dot.on{background:#6366f1;}
-      .ms-tour-dontshow{display:flex;align-items:center;gap:6px;font-size:13px;color:#94a3b8;cursor:pointer;user-select:none;}
+      .ms-tour-dontshow{display:flex;align-items:center;gap:6px;font-size:13px;color:#94a3b8;cursor:pointer;user-select:none;margin-bottom:12px;}
       .ms-tour-dontshow input{accent-color:#6366f1;width:15px;height:15px;cursor:pointer;margin:0;}
       .ms-tour-btns{display:flex;gap:8px;}
       .ms-tour-btn{border:none;cursor:pointer;font-size:15px;font-weight:700;padding:9px 18px;border-radius:9px;}
@@ -113,6 +113,10 @@
       <button class="ms-tour-skip" aria-label="Close tour">×</button>
       <h3></h3><p></p>
       <div class="ms-tour-dots"></div>
+      <label class="ms-tour-dontshow" id="ms-tour-dontshow-row" style="display:none">
+        <input type="checkbox" id="ms-tour-dontshow-chk">
+        Don't show this again
+      </label>
       <div class="ms-tour-foot">
         <div></div>
         <div class="ms-tour-btns">
@@ -124,10 +128,18 @@
     document.body.appendChild(hole);
     document.body.appendChild(card);
 
-    card.querySelector('.ms-tour-skip').onclick = end;
+    card.querySelector('.ms-tour-skip').onclick = () => {
+      const chk = document.getElementById('ms-tour-dontshow-chk');
+      if (chk?.checked) { try { localStorage.setItem(DONE_KEY, '1'); } catch {} }
+      end();
+    };
     backdrop.onclick = end;
     card.querySelector('.ms-tour-back').onclick = () => { if (idx > 0) { idx--; render(); } };
-    card.querySelector('.ms-tour-next').onclick = () => { idx < STEPS.length - 1 ? (idx++, render()) : end(); };
+    card.querySelector('.ms-tour-next').onclick = () => {
+      const chk = document.getElementById('ms-tour-dontshow-chk');
+      if (chk?.checked) { try { localStorage.setItem(DONE_KEY, '1'); } catch {} end(); return; }
+      idx < STEPS.length - 1 ? (idx++, render()) : end();
+    };
 
     els = { backdrop, hole, card };
     return els;
@@ -182,6 +194,8 @@
       STEPS.map((_, i) => `<span class="ms-tour-dot ${i === idx ? 'on' : ''}"></span>`).join('');
     card.querySelector('.ms-tour-back').style.visibility = idx === 0 ? 'hidden' : 'visible';
     card.querySelector('.ms-tour-next').textContent = idx === STEPS.length - 1 ? 'Finish' : 'Next';
+    const dontShowRow = card.querySelector('#ms-tour-dontshow-row');
+    if (dontShowRow) dontShowRow.style.display = idx === 0 ? 'flex' : 'none';
 
     let target = null;
     if (step.target) target = await waitForVisible(step.target, step.before ? 2200 : 1200);
