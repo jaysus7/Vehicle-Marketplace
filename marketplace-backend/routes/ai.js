@@ -915,7 +915,7 @@ Return ONLY valid JSON array (no markdown):
       if (!a.price_flagged) continue
       const inv = vehicleById[a.inventory_id]
       if (!inv) continue
-      if (inv.condition === 'new') continue
+      if ((inv.condition || '').toLowerCase() === 'new') continue
       const key = a.inventory_id || a.vehicle_label
       if (!driftMap[key] || Math.abs(a.price_pct_diff) > Math.abs(driftMap[key].price_pct_diff)) driftMap[key] = a
     }
@@ -936,7 +936,7 @@ Return ONLY valid JSON array (no markdown):
       if (!a.price_flagged) continue
       const inv = vehicleById[a.inventory_id]
       if (!inv) continue
-      if (inv.condition === 'new') continue
+      if ((inv.condition || '').toLowerCase() === 'new') continue
       const key = a.inventory_id || a.vehicle_label
       prevDriftMap[key] = a
     }
