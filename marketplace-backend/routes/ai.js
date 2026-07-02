@@ -952,8 +952,70 @@ Units 60d+ on lot: ${stale}`
     //   (EDealer, CDK, Dealer Inspire, Sincro, etc.) from the site's origin.
     //   Works on any homepage URL, returns actual vehicle count and prices.
     // Strategy 2: HTML scraping — AutoTrader embedded JSON or generic patterns.
+    // Parse Schema.org Car/Vehicle JSON-LD listings from HTML
+    function parseSchemaOrg(html) {
+      const prices = []
+      let listing_count = null
+      const scriptRe = /<script[^>]+type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi
+      let m
+      while ((m = scriptRe.exec(html)) !== null) {
+        try {
+          const blob = JSON.parse(m[1])
+          const items = Array.isArray(blob) ? blob : (blob['@graph'] ? blob['@graph'] : [blob])
+          for (const item of items) {
+            const type = item['@type'] || ''
+            if (/Car|Vehicle|Product|Offer/i.test(type)) {
+              const price = Number(item?.offers?.price ?? item?.price ?? 0)
+              if (price > 1000 && price < 500_000) prices.push(price)
+            }
+            if (/ItemList/i.test(type) && item.numberOfItems) listing_count = Number(item.numberOfItems)
+          }
+        } catch {}
+      }
+      return { prices, listing_count }
+    }
+
+    // Try common dealer JSON feed paths that bypass WAF HTML blocks
+    async function tryJsonFeedFallback(origin) {
+      const FEED_PATHS = [
+        '/api/inventory?format=json&limit=200',
+        '/inventory.json',
+        '/vehicles.json',
+        '/api/vehicles?limit=200',
+        '/api/inventory/vehicles?limit=200',
+        '/feeds/inventory.json',
+      ]
+      for (const path of FEED_PATHS) {
+        try {
+          const r = await browserFetch(origin + path, {
+            signal: AbortSignal.timeout(8000),
+            headers: { Accept: 'application/json' }
+          })
+          if (!r.ok) continue
+          const ct = r.headers.get('content-type') || ''
+          if (!ct.includes('json')) continue
+          const data = await r.json()
+          const arr = Array.isArray(data) ? data : (data.vehicles ?? data.inventory ?? data.items ?? data.listings ?? data.results ?? [])
+          if (!Array.isArray(arr) || !arr.length) continue
+          const prices = arr.map(v => Number(v.price ?? v.sellingPrice ?? v.listPrice ?? 0)).filter(p => p > 1000 && p < 500_000)
+          if (prices.length) {
+            const sorted = [...prices].sort((a, b) => a - b)
+            return {
+              listing_count: arr.length,
+              avg_price: Math.round(prices.reduce((a, b) => a + b, 0) / prices.length),
+              min_price: sorted[0],
+              max_price: sorted[sorted.length - 1],
+              platform: 'JSON feed',
+              scanned_at: new Date().toISOString()
+            }
+          }
+        } catch {}
+      }
+      return null
+    }
+
     async function scrapeInventoryUrl(url) {
-      // Try DMS platform detection first (works on dealer homepages)
+      // Strategy 1: DMS platform detection (probes known API endpoints — works on dealer homepages)
       try {
         const { detectFeedPlatform } = await import('../sync/platforms.js')
         const probe = await detectFeedPlatform(url)
@@ -973,7 +1035,7 @@ Units 60d+ on lot: ${stale}`
         }
       } catch {}
 
-      // Fall back to HTML scraping (AutoTrader pages, generic embedded JSON)
+      // Strategy 2: HTML scraping (AutoTrader pages, generic embedded JSON)
       // For AutoTrader.ca dealer URLs, bump rcp to 100 and force rcs=0 so we
       // get as many listings as possible in one fetch (avoids the 24-unit page cap).
       let fetchUrl = url
@@ -988,6 +1050,43 @@ Units 60d+ on lot: ${stale}`
       }
 
       const res = await browserFetch(fetchUrl, { signal: AbortSignal.timeout(15000) })
+
+      // Strategy 3: on 403 (WAF/bot block) try JSON feed paths and Schema.org JSON-LD
+      if (res.status === 403 || res.status === 401 || res.status === 429) {
+        let origin = ''
+        try { origin = new URL(url).origin } catch {}
+
+        // 3a: probe common JSON feed endpoints
+        if (origin) {
+          const feedResult = await tryJsonFeedFallback(origin)
+          if (feedResult) return feedResult
+        }
+
+        // 3b: try the inventory sub-page which sometimes has looser WAF rules
+        const inventoryPaths = ['/inventory/new', '/inventory', '/new-vehicles', '/used-vehicles', '/vehicles']
+        for (const path of inventoryPaths) {
+          try {
+            const r2 = await browserFetch(origin + path, { signal: AbortSignal.timeout(12000) })
+            if (!r2.ok) continue
+            const html2 = await r2.text()
+            const { prices: sp, listing_count: slc } = parseSchemaOrg(html2)
+            if (sp.length || slc) {
+              const sorted = [...sp].sort((a, b) => a - b)
+              return {
+                listing_count: slc ?? sp.length,
+                avg_price: sp.length ? Math.round(sp.reduce((a, b) => a + b, 0) / sp.length) : null,
+                min_price: sorted[0] ?? null,
+                max_price: sorted[sorted.length - 1] ?? null,
+                platform: 'Schema.org JSON-LD',
+                scanned_at: new Date().toISOString()
+              }
+            }
+          } catch {}
+        }
+
+        throw new Error(`HTTP ${res.status} — site is blocking automated scans`)
+      }
+
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const html = await res.text()
 
@@ -1097,9 +1196,14 @@ Units 60d+ on lot: ${stale}`
       try {
         scanResult = await scrapeInventoryUrl(comp.autotrader_url)
       } catch (err) {
-        const msg = err.message === 'no_inventory_data'
-          ? 'Could not find inventory data at this URL. Use an AutoTrader dealer inventory page (e.g. autotrader.ca/dealers/…) for best results.'
-          : `Scan failed: ${err.message}`
+        let msg
+        if (err.message === 'no_inventory_data') {
+          msg = 'No inventory data found at this URL. Try the dealership\'s inventory page or their AutoTrader dealer URL (autotrader.ca/dealers/…).'
+        } else if (/403|401|429|blocking/i.test(err.message)) {
+          msg = 'Site is blocking automated scans (WAF/bot protection). Try adding their AutoTrader URL instead.'
+        } else {
+          msg = `Scan failed: ${err.message}`
+        }
         scanResult = { error: msg, scanned_at: new Date().toISOString() }
       }
 
