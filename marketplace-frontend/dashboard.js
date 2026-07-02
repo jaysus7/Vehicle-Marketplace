@@ -3724,10 +3724,17 @@ async function loadVinStickerInventory() {
       const brochureBtnCls   = hasBrochure ? 'bg-purple-600 hover:bg-purple-500' : 'bg-indigo-600 hover:bg-indigo-500';
       const brochureBtnLabel = hasBrochure ? `&#9679; Brochure` : `Brochure`;
 
+      const thumbUrl = v.image_urls?.[0] || null;
+      const thumbHtml = thumbUrl
+        ? `<div class="flex-shrink-0 w-24 h-16 bg-slate-900 dark:bg-slate-950 overflow-hidden rounded-sm self-center"><img src="${thumbUrl}" alt="" class="w-full h-full object-contain" loading="lazy"></div>`
+        : `<div class="flex-shrink-0 w-24 h-16 bg-slate-100 dark:bg-slate-800 rounded-sm self-center flex items-center justify-center"><span class="text-slate-400 dark:text-slate-600 text-xs">No photo</span></div>`;
+
       return `<li class="flex gap-0 border-b border-slate-100 dark:border-slate-800 last:border-0 ${cardBg}">
         ${statusDot}
-        <div class="flex-1 px-4 py-3">
-          <div class="flex flex-col sm:flex-row sm:items-start gap-3">
+        <div class="flex-1 px-3 py-3">
+          <div class="flex gap-3 items-start">
+            ${thumbHtml}
+            <div class="flex-1 min-w-0 flex flex-col sm:flex-row sm:items-start gap-2">
             <div class="flex-1 min-w-0">
               <div class="flex items-center gap-2 flex-wrap">
                 <span class="text-sm font-bold text-slate-900 dark:text-white">${label}</span>
@@ -3746,6 +3753,7 @@ async function loadVinStickerInventory() {
               ${decodeBtn}
               <button class="vs-sticker-btn text-xs bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-1.5 rounded-lg transition font-bold" data-id="${v.id}">${stickerBtnLabel}</button>
               <button class="vs-brochure-btn text-xs ${brochureBtnCls} text-white px-3 py-1.5 rounded-lg transition font-bold" data-id="${v.id}">${brochureBtnLabel}</button>
+            </div>
             </div>
           </div>
         </div>
