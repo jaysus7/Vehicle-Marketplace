@@ -4433,6 +4433,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
   if (!bell || !panel) return
 
+  async function authFetch(url, opts = {}) {
+    const tk = localStorage.getItem('token')
+    const res = await fetch(url, { ...opts, headers: { 'Authorization': `Bearer ${tk}`, ...(opts.headers || {}) } })
+    if (!res.ok) throw new Error(res.status)
+    return res.json()
+  }
+
   const TYPE_META = {
     aging:        { icon: '⏱', color: 'text-orange-500' },
     price_drift:  { icon: '💰', color: 'text-amber-500' },
@@ -4480,7 +4487,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const page = el.dataset.page
         const filter = el.dataset.filter
         // Mark read
-        await apiFetch(`${API}/notifications/${id}/read`, { method: 'POST' }).catch(() => {})
+        await authFetch(`${API}/notifications/${id}/read`, { method: 'POST' }).catch(() => {})
         el.classList.add('opacity-60')
         el.querySelector('span.bg-indigo-500')?.classList.replace('bg-indigo-500', 'bg-transparent')
         updateBadge()
@@ -4501,7 +4508,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   async function loadNotifications() {
     try {
-      const data = await apiFetch(`${API}/notifications`)
+      const data = await authFetch(`${API}/notifications`)
       _notifications = Array.isArray(data) ? data : []
       renderList(_notifications)
     } catch {
@@ -4511,7 +4518,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   async function updateBadge() {
     try {
-      const { count } = await apiFetch(`${API}/notifications/unread-count`)
+      const { count } = await authFetch(`${API}/notifications/unread-count`)
       if (count > 0) {
         badge.textContent = count > 99 ? '99+' : count
         badge.classList.remove('hidden')
@@ -4538,7 +4545,7 @@ document.addEventListener('DOMContentLoaded', () => {
   backdrop.addEventListener('click', closePanel)
 
   readAllBtn.addEventListener('click', async () => {
-    await apiFetch(`${API}/notifications/read-all`, { method: 'POST' }).catch(() => {})
+    await authFetch(`${API}/notifications/read-all`, { method: 'POST' }).catch(() => {})
     _notifications.forEach(n => n.read = true)
     renderList(_notifications)
     badge.classList.add('hidden')
@@ -4552,7 +4559,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Start after auth resolves — wait for API constant to be ready
   const authWait = setInterval(() => {
-    if (typeof apiFetch === 'function' && typeof API !== 'undefined') {
+    if (typeof API !== 'undefined' && localStorage.getItem('token')) {
       clearInterval(authWait)
       startPolling()
     }
@@ -4563,6 +4570,13 @@ document.addEventListener('DOMContentLoaded', () => {
 ;(function() {
   let _intelData = null
   let _intelLoaded = false
+
+  async function authFetch(url, opts = {}) {
+    const tk = localStorage.getItem('token')
+    const res = await fetch(url, { ...opts, headers: { 'Authorization': `Bearer ${tk}`, ...(opts.headers || {}) } })
+    if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.error || res.status) }
+    return res.json()
+  }
 
   function scoreColor(s) {
     if (s >= 80) return 'text-emerald-600 dark:text-emerald-400'
@@ -4692,7 +4706,7 @@ document.addEventListener('DOMContentLoaded', () => {
     content.classList.add('hidden')
     upsell.classList.add('hidden')
     try {
-      const data = await apiFetch(`${API}/ai/inventory-intelligence`)
+      const data = await authFetch(`${API}/ai/inventory-intelligence`)
       if (data.error?.includes('AI Boost')) {
         upsell.classList.remove('hidden')
         loading.classList.add('hidden')
