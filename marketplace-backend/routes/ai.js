@@ -131,8 +131,7 @@ export function registerAI(app) {
     // ── Price comp check ──
     // Skip for new vehicles only — used vehicles of any year are fair game for price comparison.
     let price_flag = null
-    const _currentYear = new Date().getFullYear()
-    const _isNewOrCurrentYear = vehicle.condition === 'new'
+    const _isNewOrCurrentYear = (vehicle.condition || '').toLowerCase() === 'new'
     if (!_isNewOrCurrentYear && vehicle.price && vehicle.make && vehicle.model && vehicle.year) {
       const yearMin = vehicle.year - 2
       const yearMax = vehicle.year + 2
@@ -265,9 +264,8 @@ Write a compelling listing in under 280 words. Include the year/make/model/trim,
           if (requiredFields.includes('description') && (!vehicle.description || vehicle.description.length < 20)) warnings.push('Description is missing or too short')
 
           let price_flag = null
-          const currentYear = new Date().getFullYear()
           // Skip price flagging for new vehicles only — used vehicles of any year are compared
-          const isNewOrCurrentYear = vehicle.condition === 'new'
+          const isNewOrCurrentYear = (vehicle.condition || '').toLowerCase() === 'new'
           if (!isNewOrCurrentYear && vehicle.price && vehicle.make && vehicle.model && vehicle.year) {
             const { data: comps } = await supabaseAdmin
               .from('inventory').select('price')
