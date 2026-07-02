@@ -1411,7 +1411,11 @@ Units 60d+ on lot: ${stale}`
     }
 
     const makeCount = {}
-    for (const v of vehicles) { const k = v.make || 'Unknown'; makeCount[k] = (makeCount[k] || 0) + 1 }
+    for (const v of vehicles) {
+      const raw = (v.make || 'Unknown').trim()
+      const k = raw.charAt(0).toUpperCase() + raw.slice(1).toLowerCase()
+      makeCount[k] = (makeCount[k] || 0) + 1
+    }
     const topMakes = Object.entries(makeCount).sort((a, b) => b[1] - a[1]).slice(0, 5)
 
     return {
@@ -1515,7 +1519,7 @@ Units 60d+ on lot: ${stale}`
       return `<tr>
         <td style="padding:7px 12px;border-bottom:1px solid #e2e8f0;font-size:13px">${aLabel(a)}</td>
         <td style="padding:7px 12px;border-bottom:1px solid #e2e8f0;text-align:right;font-size:13px;color:${over ? '#16a34a' : '#ef4444'};font-weight:700">${over ? '+' : ''}${pct}%</td>
-        <td style="padding:7px 12px;border-bottom:1px solid #e2e8f0;font-size:11px;color:#64748b">${over ? 'Overpriced' : 'Underpriced'} vs similar units on your lot. ${fix}</td>
+        <td style="padding:7px 12px;border-bottom:1px solid #e2e8f0;font-size:11px;color:#64748b">${over ? 'Overpriced' : 'Underpriced'} vs AutoTrader/CarGurus market median. ${fix}</td>
       </tr>`
     }
 
@@ -1627,7 +1631,7 @@ Units 60d+ on lot: ${stale}`
 
     ${priceDrift.length ? `
       ${sectionHeader('💰 Price Drift Flags — Used Vehicles Only (' + priceDrift.length + ')')}
-      ${subNote('Price drift = this vehicle\'s asking price vs. the median of similar make/model used units on your own lot. Negative = underpriced (selling cheap or leaving margin). Positive = overpriced (may slow the sale). New vehicles excluded — MSRP is not compared.', 3)}
+      ${subNote('Price drift = this vehicle\'s asking price vs. the market median on AutoTrader &amp; CarGurus for similar make/model/year. Negative = underpriced vs market (leaving margin). Positive = overpriced vs market (may slow the sale). New vehicles excluded.', 3)}
       <tr style="background:#f8fafc"><td style="padding:5px 12px;font-size:11px;font-weight:700;color:#64748b">VEHICLE</td><td style="padding:5px 12px;font-size:11px;font-weight:700;color:#64748b;text-align:right">DRIFT</td><td style="padding:5px 12px;font-size:11px;font-weight:700;color:#64748b">RECOMMENDATION</td></tr>
       ${priceDrift.map(driftRow).join('')}` : ''}
 
@@ -1741,11 +1745,11 @@ Units 60d+ on lot: ${stale}`
       const pct = a.price_pct_diff; const over = pct > 0
       const fix = over
         ? `Reduce by ~$${Math.round(Math.abs(pct / 100) * (vehicleById[a.inventory_id]?.price || 0)).toLocaleString()}`
-        : `Priced below lot median — may sell faster or raise to recapture margin`
+        : `Priced below market median — may sell faster or raise to recapture margin`
       return `<tr>
         <td style="padding:7px 12px;border-bottom:1px solid #e2e8f0;font-size:13px">${aLabel(a)}</td>
         <td style="padding:7px 12px;border-bottom:1px solid #e2e8f0;text-align:right;font-size:13px;color:${over ? '#16a34a' : '#ef4444'};font-weight:700">${over ? '+' : ''}${pct}%</td>
-        <td style="padding:7px 12px;border-bottom:1px solid #e2e8f0;font-size:11px;color:#64748b">${over ? 'Overpriced' : 'Underpriced'} vs lot median. ${fix}</td></tr>`
+        <td style="padding:7px 12px;border-bottom:1px solid #e2e8f0;font-size:11px;color:#64748b">${over ? 'Overpriced' : 'Underpriced'} vs AutoTrader/CarGurus market median. ${fix}</td></tr>`
     }
 
     const warnRow = a => `<tr>
@@ -1997,7 +2001,7 @@ Units 60d+ on lot: ${stale}`
           return `<tr>
             <td style="padding:7px 12px;border-bottom:1px solid #e2e8f0;font-size:13px">${aLabel(a)}</td>
             <td style="padding:7px 12px;border-bottom:1px solid #e2e8f0;text-align:right;font-size:13px;color:${over ? '#16a34a' : '#ef4444'};font-weight:700">${over ? '+' : ''}${pct}%</td>
-            <td style="padding:7px 12px;border-bottom:1px solid #e2e8f0;font-size:11px;color:#64748b">${over ? 'Overpriced' : 'Underpriced'} vs similar units on your lot. ${fix}</td></tr>`
+            <td style="padding:7px 12px;border-bottom:1px solid #e2e8f0;font-size:11px;color:#64748b">${over ? 'Overpriced' : 'Underpriced'} vs AutoTrader/CarGurus market median. ${fix}</td></tr>`
         }
         const warnRow = a =>
           `<tr><td style="padding:7px 12px;border-bottom:1px solid #e2e8f0;font-size:13px">${aLabel(a)}</td>
