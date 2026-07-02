@@ -830,13 +830,23 @@ function buildFeatureList(vehicle) {
 }
 
 // Fetch an image URL and return a base64 data URI so Puppeteer can render it
-async function imgToDataUri(url) {
+async function imgToDataUri(url, { maxWidth = 800, quality = 72 } = {}) {
   try {
-    const res = await fetch(url, { signal: AbortSignal.timeout(8000) })
+    const res = await fetch(url, { signal: AbortSignal.timeout(10000) })
     if (!res.ok) return null
-    const buf = await res.arrayBuffer()
-    const mime = res.headers.get('content-type') || 'image/jpeg'
-    return `data:${mime};base64,${Buffer.from(buf).toString('base64')}`
+    const buf = Buffer.from(await res.arrayBuffer())
+    try {
+      const sharp = (await import('sharp')).default
+      const webp = await sharp(buf)
+        .resize({ width: maxWidth, withoutEnlargement: true })
+        .webp({ quality })
+        .toBuffer()
+      return `data:image/webp;base64,${webp.toString('base64')}`
+    } catch {
+      // sharp unavailable or unsupported format — fall back to raw
+      const mime = res.headers.get('content-type') || 'image/jpeg'
+      return `data:${mime};base64,${buf.toString('base64')}`
+    }
   } catch { return null }
 }
 
@@ -1139,8 +1149,8 @@ export function registerRoutes(app) {
       }, 110000)
       try {
         const branding = dealer.branding || {}
-        // Limit to 2 images to avoid OOM from large base64 payloads
-        const imageUrls = (vehicle.image_urls || []).slice(0, 2)
+        // Images are resized to WebP by imgToDataUri to keep HTML payload small
+        const imageUrls = (vehicle.image_urls || []).slice(0, 4)
         const [photoDataUris, logoDataUri] = await Promise.all([
           Promise.all(imageUrls.map(u => imgToDataUri(u))),
           branding.logo_url ? imgToDataUri(branding.logo_url) : Promise.resolve(null),
@@ -1199,8 +1209,8 @@ export function registerRoutes(app) {
       }, 110000)
       try {
         const branding = dealer.branding || {}
-        // Limit to 2 images to avoid OOM from large base64 payloads
-        const imageUrls = (vehicle.image_urls || []).slice(0, 2)
+        // Images are resized to WebP by imgToDataUri to keep HTML payload small
+        const imageUrls = (vehicle.image_urls || []).slice(0, 4)
         const [photosDataUris, logoDataUri] = await Promise.all([
           Promise.all(imageUrls.map(u => imgToDataUri(u))),
           branding.logo_url ? imgToDataUri(branding.logo_url) : Promise.resolve(null),
