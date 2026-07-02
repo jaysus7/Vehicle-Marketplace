@@ -335,7 +335,7 @@ Write a compelling listing in under 280 words. Include the year/make/model/trim,
     const mileageText = vehicle.mileage ? `${Number(vehicle.mileage).toLocaleString()} km` : 'unknown mileage'
     const trimText = vehicle.trim ? ` ${vehicle.trim}` : ''
 
-    const prompt = `You are an automotive market pricing expert specializing in the Canadian market.
+    const prompt = `You are an automotive market pricing expert specializing in the Canadian market. Your estimates are based on Canadian automotive marketplace pricing data including AutoTrader Canada, CarGurus Canada, and Kijiji Autos.
 
 Provide a realistic Canadian retail market price range for the following ${conditionLabel} vehicle near ${location}:
 
@@ -345,11 +345,12 @@ Mileage: ${mileageText}
 ${vehicle.exterior_color ? `Colour: ${vehicle.exterior_color}` : ''}
 
 Rules:
-- For USED vehicles: compare only against used vehicles of the SAME year and SAME trim level
+- For USED vehicles: compare only against used vehicles of the SAME year and SAME trim level in the ${location} region
 - For NEW vehicles: compare against new vehicles of the SAME year (trim flexible, as new units sell near MSRP)
-- Base estimates on current Canadian market pricing (CAD), not US pricing
+- Base estimates on Canadian market pricing (CAD), not US pricing
 - Account for regional market conditions in ${location}
 - Be realistic and specific — not overly wide ranges
+- In your note, briefly mention which marketplace(s) typically show the most listings for this vehicle type
 
 Respond with ONLY valid JSON (no explanation, no markdown) in this exact format:
 {
@@ -357,7 +358,8 @@ Respond with ONLY valid JSON (no explanation, no markdown) in this exact format:
   "mid": <integer CAD price, typical market price>,
   "high": <integer CAD price, upper end of fair market range>,
   "confidence": "high" | "medium" | "low",
-  "note": "<one sentence explaining the estimate, e.g. market demand, regional factors, trim popularity>"
+  "note": "<one or two sentences: market context for this vehicle, referencing relevant Canadian marketplace pricing trends>",
+  "sources": ["AutoTrader Canada", "CarGurus Canada", "Kijiji Autos"]
 }`
 
     const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
