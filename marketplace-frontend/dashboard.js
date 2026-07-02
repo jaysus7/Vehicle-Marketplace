@@ -4315,10 +4315,51 @@ document.addEventListener('DOMContentLoaded', () => {
 
         compPanel.innerHTML = `
           <div class="pt-1">
-            <div class="text-xs uppercase font-bold tracking-wider text-slate-400 mb-3">Lot Comparison</div>
+            <div class="flex items-center justify-between mb-3">
+              <div class="text-xs uppercase font-bold tracking-wider text-slate-400">Lot Comparison</div>
+              <button id="competitor-pdf-btn" class="flex items-center gap-1.5 text-xs font-bold text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 transition-colors">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+                Download PDF
+              </button>
+            </div>
             <div class="space-y-3 max-h-[480px] overflow-y-auto pr-1">${rows}</div>
           </div>`;
         compPanel.classList.remove('hidden');
+        document.getElementById('competitor-pdf-btn')?.addEventListener('click', () => {
+          const panel = document.getElementById('competitor-comparison');
+          if (!panel || panel.classList.contains('hidden')) return;
+          const inner = panel.querySelector('.space-y-3')?.innerHTML || panel.innerHTML;
+          const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Competitor Lot Comparison</title>
+<style>
+  @media print { .no-print{display:none!important} @page{margin:0.75in} }
+  body{font-family:Arial,sans-serif;background:#f8fafc;padding:24px;color:#0f172a}
+  .no-print{display:flex;justify-content:flex-end;gap:10px;margin-bottom:16px}
+  .no-print button{padding:8px 18px;border-radius:6px;border:none;cursor:pointer;font-weight:700;font-size:13px}
+  h1{font-size:18px;font-weight:900;color:#1a2e4a;margin:0 0 4px}
+  .sub{font-size:12px;color:#64748b;margin-bottom:20px}
+  .card{background:#fff;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;margin-bottom:16px}
+  .card-head{background:#1a2e4a;color:#fff;font-weight:700;font-size:14px;padding:10px 14px}
+  .grid{display:grid;grid-template-columns:1fr 1fr;border-top:1px solid #e2e8f0}
+  .col{padding:14px;font-size:13px}
+  .col:first-child{border-right:1px solid #e2e8f0}
+  .col-label{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;color:#64748b;margin-bottom:8px}
+  .row{margin-bottom:4px}.row .l{color:#64748b}.row .v{font-weight:700}
+  .flags{padding:10px 14px;border-top:1px solid #e2e8f0;font-size:12px}
+</style></head><body>
+<div class="no-print">
+  <button onclick="window.close()" style="background:#f1f5f9;color:#334155">✕ Close</button>
+  <button onclick="window.print()" style="background:#1a2e4a;color:#fff">🖨 Print / Save as PDF</button>
+</div>
+<h1>Competitor Lot Comparison</h1>
+<div class="sub">Generated ${new Date().toLocaleDateString('en-CA', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</div>
+${inner}
+</body></html>`;
+          const blob = new Blob([html], { type: 'text/html' });
+          const url = URL.createObjectURL(blob);
+          const w = window.open(url, '_blank');
+          if (w) setTimeout(() => URL.revokeObjectURL(url), 30000);
+          else showToast('Pop-up blocked — allow pop-ups and try again', 'error');
+        });
       }
 
       showToast(`Scanned ${scanData.scanned} competitor${scanData.scanned !== 1 ? 's' : ''}`, 'success');
@@ -4378,42 +4419,6 @@ document.addEventListener('DOMContentLoaded', () => {
     finally { btn.disabled = false; btn.innerHTML = '<svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3"/></svg> Download PDF'; }
   });
 
-  // Competitor comparison PDF — generates a printable page from the rendered comparison panel
-  document.getElementById('competitor-pdf-btn')?.addEventListener('click', () => {
-    const panel = document.getElementById('competitor-comparison');
-    if (!panel || panel.classList.contains('hidden')) return;
-    const inner = panel.querySelector('.space-y-3')?.innerHTML || panel.innerHTML;
-    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Competitor Lot Comparison</title>
-<style>
-  @media print { .no-print{display:none!important} @page{margin:0.75in} }
-  body{font-family:Arial,sans-serif;background:#f8fafc;padding:24px;color:#0f172a}
-  .no-print{display:flex;justify-content:flex-end;gap:10px;margin-bottom:16px}
-  .no-print button{padding:8px 18px;border-radius:6px;border:none;cursor:pointer;font-weight:700;font-size:13px}
-  h1{font-size:18px;font-weight:900;color:#1a2e4a;margin:0 0 4px}
-  .sub{font-size:12px;color:#64748b;margin-bottom:20px}
-  .card{background:#fff;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;margin-bottom:16px}
-  .card-head{background:#1a2e4a;color:#fff;font-weight:700;font-size:14px;padding:10px 14px}
-  .grid{display:grid;grid-template-columns:1fr 1fr;border-top:1px solid #e2e8f0}
-  .col{padding:14px;font-size:13px}
-  .col:first-child{border-right:1px solid #e2e8f0}
-  .col-label{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;color:#64748b;margin-bottom:8px}
-  .row{margin-bottom:4px}.row .l{color:#64748b}.row .v{font-weight:700}
-  .flags{padding:10px 14px;border-top:1px solid #e2e8f0;font-size:12px}
-</style></head><body>
-<div class="no-print">
-  <button onclick="window.close()" style="background:#f1f5f9;color:#334155">✕ Close</button>
-  <button onclick="window.print()" style="background:#1a2e4a;color:#fff">🖨 Print / Save as PDF</button>
-</div>
-<h1>Competitor Lot Comparison</h1>
-<div class="sub">Generated ${new Date().toLocaleDateString('en-CA', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</div>
-${inner}
-</body></html>`;
-    const blob = new Blob([html], { type: 'text/html' });
-    const url = URL.createObjectURL(blob);
-    const w = window.open(url, '_blank');
-    if (w) setTimeout(() => URL.revokeObjectURL(url), 30000);
-    else showToast('Pop-up blocked — allow pop-ups and try again', 'error');
-  });
 });
 
 // ── Notification Center ────────────────────────────────────────────────────
