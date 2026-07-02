@@ -225,8 +225,8 @@ function buildWindowStickerHtml(vehicle, dealer, branding, recalls, photoDataUri
   /* LEFT = photo + ribbon + columns + build data */
   .left{flex:1;display:flex;flex-direction:column;min-width:0;border-right:2px solid ${primary};}
 
-  .photo{height:168px;background:#dde3ec;overflow:hidden;flex-shrink:0;position:relative;}
-  .photo img{width:100%;height:100%;object-fit:cover;object-position:center;}
+  .photo{height:180px;background:#0f172a;overflow:hidden;flex-shrink:0;position:relative;}
+  .photo img{width:100%;height:100%;object-fit:contain;object-position:center;}
   .photo-none{width:100%;height:100%;display:flex;align-items:center;justify-content:center;color:#94a3b8;font-size:12px;background:#e8ecf0;}
 
   .ribbon{display:flex;background:#f0f4f8;border-bottom:1px solid #d1dae3;flex-shrink:0;}
@@ -515,8 +515,8 @@ function buildBrochureHtml(vehicle, dealer, branding, recalls, photosDataUris, l
 <head><meta charset="UTF-8">
 <style>
   *{margin:0;padding:0;box-sizing:border-box;}
-  body{font-family:'Arial',Helvetica,sans-serif;width:816px;background:#fff;color:#111;}
-  .page{width:816px;height:1056px;overflow:hidden;display:flex;flex-direction:column;page-break-after:always;}
+  body{font-family:'Arial',Helvetica,sans-serif;width:816px;background:#fff;color:#111;margin:0;padding:0;}
+  .page{width:816px;min-height:1056px;overflow:hidden;display:flex;flex-direction:column;page-break-after:always;}
 
   /* ════ PAGE 1 ════ */
   /* Hero photo — full bleed top half */
@@ -559,9 +559,9 @@ function buildBrochureHtml(vehicle, dealer, branding, recalls, photosDataUris, l
 
   /* Right: second photo + sales blurbs */
   .sales-right{width:260px;display:flex;flex-direction:column;}
-  .photo2{height:165px;background:#e8ecf0;overflow:hidden;flex-shrink:0;}
-  .photo2 img{width:100%;height:100%;object-fit:cover;}
-  .photo2-none{width:100%;height:100%;display:flex;align-items:center;justify-content:center;background:#dde3ec;}
+  .photo2{height:165px;background:#0f172a;overflow:hidden;flex-shrink:0;}
+  .photo2 img{width:100%;height:100%;object-fit:contain;}
+  .photo2-none{width:100%;height:100%;display:flex;align-items:center;justify-content:center;background:#0f172a;}
   .sales-right-body{flex:1;padding:14px 16px;display:flex;flex-direction:column;gap:12px;}
   .sr-blurb{}
   .sr-blurb-title{font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.8px;color:${primary};border-bottom:1.5px solid ${secondary};padding-bottom:2px;margin-bottom:5px;}
@@ -579,8 +579,8 @@ function buildBrochureHtml(vehicle, dealer, branding, recalls, photosDataUris, l
 
   /* Photo gallery row */
   .gallery-row{display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px;height:160px;flex-shrink:0;}
-  .gp{overflow:hidden;background:#dde3ec;display:flex;align-items:center;justify-content:center;}
-  .gp img{width:100%;height:100%;object-fit:cover;}
+  .gp{overflow:hidden;background:#0f172a;display:flex;align-items:center;justify-content:center;}
+  .gp img{width:100%;height:100%;object-fit:contain;}
   .gp-none{color:#94a3b8;font-size:10px;}
 
   /* Body */
@@ -826,7 +826,7 @@ async function imgToDataUri(url) {
   } catch { return null }
 }
 
-async function generatePdf(html) {
+async function generatePdf(html, { landscape = false, viewportWidth = 860, viewportHeight = 1100 } = {}) {
   // Dynamic import to avoid memory cost when not in use
   const puppeteer = (await import('puppeteer-core')).default
   let browser, page
@@ -851,10 +851,10 @@ async function generatePdf(html) {
       if (!exec) throw new Error('No local Chrome found')
       launchOpts = { executablePath: exec, args: ['--no-sandbox', '--disable-setuid-sandbox'], headless: 'new' }
     }
-    browser = await puppeteer.launch({ ...launchOpts, defaultViewport: { width: 816, height: 1056 } })
+    browser = await puppeteer.launch({ ...launchOpts, defaultViewport: { width: viewportWidth, height: viewportHeight } })
     page = await browser.newPage()
     await page.setContent(html, { waitUntil: 'networkidle0' })
-    const pdf = await page.pdf({ format: 'Letter', landscape: true, printBackground: true, margin: { top: 0, bottom: 0, left: 0, right: 0 } })
+    const pdf = await page.pdf({ format: 'Letter', landscape, printBackground: true, margin: { top: 0, bottom: 0, left: 0, right: 0 } })
     return pdf
   } finally {
     if (page) await page.close().catch(() => {})
@@ -1114,7 +1114,7 @@ export function registerRoutes(app) {
         branding.logo_url ? imgToDataUri(branding.logo_url) : Promise.resolve(null),
       ])
       const html = buildWindowStickerHtml(vehicle, dealer, branding, vehicle.recalls || [], photoDataUri, logoDataUri)
-      const pdf = await generatePdf(html)
+      const pdf = await generatePdf(html, { landscape: true, viewportWidth: 1100, viewportHeight: 860 })
       const path = `${req.dealershipId}/${vehicle.id}/window-sticker.pdf`
       const url = await uploadPdf(pdf, path)
       await supabaseAdmin.from('inventory').update({ window_sticker_url: url }).eq('id', vehicle.id)
@@ -1152,7 +1152,7 @@ export function registerRoutes(app) {
         branding.logo_url ? imgToDataUri(branding.logo_url) : Promise.resolve(null),
       ])
       const html = buildBrochureHtml(vehicle, dealer, branding, vehicle.recalls || [], photosDataUris, logoDataUri)
-      const pdf = await generatePdf(html)
+      const pdf = await generatePdf(html, { landscape: false, viewportWidth: 860, viewportHeight: 1100 })
       const path = `${req.dealershipId}/${vehicle.id}/brochure.pdf`
       const url = await uploadPdf(pdf, path)
       await supabaseAdmin.from('inventory').update({ brochure_url: url }).eq('id', vehicle.id)
