@@ -382,15 +382,28 @@ Write a compelling listing in under 280 words. Include the year/make/model/trim,
     const liveDataLines = []
     if (scraped.autotrader) {
       const at = scraped.autotrader
-      liveDataLines.push(`LIVE ${src1} data (${at.count} listings): avg price $${at.avg_price.toLocaleString()} ${currency}, median $${at.median_price.toLocaleString()}, avg mileage ${at.avg_mileage.toLocaleString()} ${distanceUnit}`)
+      const daysNote = at.avg_days_online != null
+        ? `, avg days online ${at.avg_days_online} (${at.days_online_sample}/${at.count} listings had date)`
+        : ''
+      liveDataLines.push(`LIVE ${src1} data (${at.count} listings): avg price $${at.avg_price.toLocaleString()} ${currency}, median price $${at.median_price.toLocaleString()}, avg mileage ${at.avg_mileage.toLocaleString()} ${distanceUnit}, median mileage ${at.median_mileage.toLocaleString()} ${distanceUnit}${daysNote}`)
     }
     if (scraped.cargurus) {
       const cg = scraped.cargurus
-      liveDataLines.push(`LIVE ${src2} data (${cg.count} listings): avg price $${cg.avg_price.toLocaleString()} ${currency}, median $${cg.median_price.toLocaleString()}, avg mileage ${cg.avg_mileage.toLocaleString()} ${distanceUnit}`)
+      const daysNote = cg.avg_days_online != null
+        ? `, avg days online ${cg.avg_days_online} (${cg.days_online_sample}/${cg.count} listings had date)`
+        : ''
+      liveDataLines.push(`LIVE ${src2} data (${cg.count} listings): avg price $${cg.avg_price.toLocaleString()} ${currency}, median price $${cg.median_price.toLocaleString()}, avg mileage ${cg.avg_mileage.toLocaleString()} ${distanceUnit}, median mileage ${cg.median_mileage.toLocaleString()} ${distanceUnit}${daysNote}`)
     }
     const liveDataBlock = liveDataLines.length
-      ? `\nREAL SCRAPED MARKET DATA — use these as your primary pricing anchors:\n${liveDataLines.join('\n')}\n`
+      ? `\nREAL SCRAPED MARKET DATA — use these as your primary anchors for pricing, mileage, and days-on-market:\n${liveDataLines.join('\n')}\n`
       : `\nNo live scrape data available — use your training knowledge of the ${marketLabel} market.\n`
+
+    // Compute combined avg days online across platforms (for days_on_market_estimate rule)
+    const allDaysSamples = [scraped.autotrader, scraped.cargurus]
+      .filter(s => s?.avg_days_online != null)
+    const combinedAvgDays = allDaysSamples.length
+      ? Math.round(allDaysSamples.reduce((a, b) => a + b.avg_days_online, 0) / allDaysSamples.length)
+      : null
 
     // Marketplace-specific instructions for the JSON output
     const atInstruction = scraped.autotrader
@@ -419,7 +432,7 @@ CRITICAL RULES — accuracy is paramount:
 5. If LIVE SCRAPED data is provided above, anchor your mid price and market_avg_mileage to that data — do not deviate by more than 5%
 6. Mileage rating MUST accurately reflect the delta vs expected mileage — if mileage is ABOVE expected it is above/well above average, if BELOW it is below/well below average
 7. price_to_market_pct: compute as Math.round((listedPrice / mid) * 100) where listedPrice = ${vehicle.price || 0}
-8. days_on_market_estimate: estimate realistically — overpriced vehicles take longer, well-priced take less
+8. days_on_market_estimate: ${combinedAvgDays != null ? `The scraped market average days online is ${combinedAvgDays} days — use this as your baseline, then adjust up/down based on how this vehicle's price compares to market mid` : 'estimate realistically based on price-to-market — overpriced vehicles take longer, well-priced take less'}
 9. Each marketplace has slightly different avg prices — reflect this realistically
 10. You MUST return ALL fields in the JSON — do not omit any field
 11. This report is used by professional auto dealers — be precise and realistic, not generic

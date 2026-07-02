@@ -73,6 +73,36 @@ function findListingArrays(obj, depth = 0) {
   return results
 }
 
+// Parse a listing date string or unix timestamp into days-since-listed.
+function parseDaysOnline(l) {
+  // Direct numeric field (some sites return integer days directly)
+  const direct = l.daysOnMarket ?? l.daysOnLot ?? l.daysListed ?? l.age ?? l.listingAge
+  if (direct != null && !isNaN(Number(direct)) && Number(direct) >= 0) {
+    return Math.round(Number(direct))
+  }
+
+  // Date-string fields — compute days from activation/posted date to today
+  const raw =
+    l.activationDate ?? l.postedDate ?? l.listingDate ?? l.createdDate ??
+    l.datePosted ?? l.dateAdded ?? l.dateCreated ?? l.publishedDate ??
+    l.firstSeen ?? l.dateFirstListed ?? l.listedDate ?? l.startDate ??
+    l.created_at ?? l.created ?? l.date
+
+  if (!raw) return null
+
+  let ts
+  if (typeof raw === 'number') {
+    // Unix seconds or ms
+    ts = raw > 1e10 ? raw : raw * 1000
+  } else if (typeof raw === 'string') {
+    ts = Date.parse(raw)
+  }
+
+  if (!ts || isNaN(ts)) return null
+  const days = Math.round((Date.now() - ts) / 86400000)
+  return days >= 0 && days < 3650 ? days : null // ignore bad dates
+}
+
 function normaliseListings(raw) {
   return raw
     .map(l => {
@@ -84,7 +114,8 @@ function normaliseListings(raw) {
         l.mileage ?? l.kilometres ?? l.kilometers ?? l.odometer ??
         l.mileageKm ?? l.kms ?? l.miles ?? 0
       )
-      return { price, mileage }
+      const daysOnline = parseDaysOnline(l)
+      return { price, mileage, daysOnline }
     })
     .filter(l => l.price > 1000 && l.mileage > 0)
 }
@@ -93,6 +124,14 @@ function summarise(listings) {
   if (!listings.length) return null
   const prices = listings.map(l => l.price)
   const mileages = listings.map(l => l.mileage)
+
+  // Only include listings where we have a real days-online value
+  const withDays = listings.filter(l => l.daysOnline != null)
+  const avgDaysOnline = withDays.length
+    ? Math.round(withDays.reduce((a, b) => a + b.daysOnline, 0) / withDays.length)
+    : null
+  const medianDaysOnline = withDays.length ? Math.round(median(withDays.map(l => l.daysOnline))) : null
+
   return {
     count: listings.length,
     avg_price: Math.round(prices.reduce((a, b) => a + b, 0) / prices.length),
@@ -101,6 +140,9 @@ function summarise(listings) {
     median_mileage: Math.round(median(mileages)),
     min_price: Math.min(...prices),
     max_price: Math.max(...prices),
+    avg_days_online: avgDaysOnline,
+    median_days_online: medianDaysOnline,
+    days_online_sample: withDays.length,
   }
 }
 
