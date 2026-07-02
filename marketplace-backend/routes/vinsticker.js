@@ -867,7 +867,7 @@ async function generatePdf(html, { landscape = false, viewportWidth = 860, viewp
     }
     browser = await puppeteer.launch({ ...launchOpts, defaultViewport: { width: viewportWidth, height: viewportHeight } })
     page = await browser.newPage()
-    await page.setContent(html, { waitUntil: 'networkidle0' })
+    await page.setContent(html, { waitUntil: 'domcontentloaded' })
     const pdf = await page.pdf({ format: 'Letter', landscape, printBackground: true, margin: { top: 0, bottom: 0, left: 0, right: 0 } })
     return pdf
   } finally {
@@ -1116,28 +1116,43 @@ export function registerRoutes(app) {
       .single()
     if (error || !vehicle) return res.status(404).json({ error: 'Vehicle not found' })
 
-    // Return cached URL if already generated
     if (vehicle.window_sticker_url && req.query.regen !== '1') {
       return res.json({ url: vehicle.window_sticker_url, cached: true })
     }
 
-    try {
-      const branding = dealer.branding || {}
-      const imageUrls = (vehicle.image_urls || []).slice(0, 4)
-      const [photoDataUris, logoDataUri] = await Promise.all([
-        Promise.all(imageUrls.map(u => imgToDataUri(u))),
-        branding.logo_url ? imgToDataUri(branding.logo_url) : Promise.resolve(null),
-      ])
-      const html = buildWindowStickerHtml(vehicle, dealer, branding, vehicle.recalls || [], photoDataUris.filter(Boolean), logoDataUri)
-      const pdf = await generatePdf(html, { landscape: true, viewportWidth: 1100, viewportHeight: 860 })
-      const path = `${req.dealershipId}/${vehicle.id}/window-sticker.pdf`
-      const url = await uploadPdf(pdf, path)
-      await supabaseAdmin.from('inventory').update({ window_sticker_url: url }).eq('id', vehicle.id)
-      res.json({ url, cached: false })
-    } catch (e) {
-      console.error('[window-sticker]', e.message)
-      res.status(500).json({ error: e.message })
-    }
+    // Respond immediately — generate in background to avoid platform timeout
+    res.json({ status: 'generating' })
+
+    ;(async () => {
+      try {
+        const branding = dealer.branding || {}
+        const imageUrls = (vehicle.image_urls || []).slice(0, 4)
+        const [photoDataUris, logoDataUri] = await Promise.all([
+          Promise.all(imageUrls.map(u => imgToDataUri(u))),
+          branding.logo_url ? imgToDataUri(branding.logo_url) : Promise.resolve(null),
+        ])
+        const html = buildWindowStickerHtml(vehicle, dealer, branding, vehicle.recalls || [], photoDataUris.filter(Boolean), logoDataUri)
+        const pdf = await generatePdf(html, { landscape: true, viewportWidth: 1100, viewportHeight: 860 })
+        const path = `${req.dealershipId}/${vehicle.id}/window-sticker.pdf`
+        const url = await uploadPdf(pdf, path)
+        await supabaseAdmin.from('inventory').update({ window_sticker_url: url }).eq('id', vehicle.id)
+      } catch (e) {
+        console.error('[window-sticker background]', e.message)
+      }
+    })()
+  })
+
+  // ── Poll window sticker status ────────────────────────────────────────
+  app.get('/pdf/window-sticker/:vehicleId/status', requireAuth, requireDealerAdmin, async (req, res) => {
+    if (!req.dealershipId) return res.status(400).json({ error: 'No dealership' })
+    const { data: vehicle } = await supabaseAdmin
+      .from('inventory')
+      .select('window_sticker_url')
+      .eq('id', req.params.vehicleId)
+      .eq('dealership_id', req.dealershipId)
+      .single()
+    if (vehicle?.window_sticker_url) return res.json({ status: 'ready', url: vehicle.window_sticker_url })
+    res.json({ status: 'generating' })
   })
 
   // ── Generate brochure ─────────────────────────────────────────────────
@@ -1159,23 +1174,39 @@ export function registerRoutes(app) {
       return res.json({ url: vehicle.brochure_url, cached: true })
     }
 
-    try {
-      const branding = dealer.branding || {}
-      const imageUrls = (vehicle.image_urls || []).slice(0, 4)
-      const [photosDataUris, logoDataUri] = await Promise.all([
-        Promise.all(imageUrls.map(u => imgToDataUri(u))),
-        branding.logo_url ? imgToDataUri(branding.logo_url) : Promise.resolve(null),
-      ])
-      const html = buildBrochureHtml(vehicle, dealer, branding, vehicle.recalls || [], photosDataUris, logoDataUri)
-      const pdf = await generatePdf(html, { landscape: false, viewportWidth: 860, viewportHeight: 1100 })
-      const path = `${req.dealershipId}/${vehicle.id}/brochure.pdf`
-      const url = await uploadPdf(pdf, path)
-      await supabaseAdmin.from('inventory').update({ brochure_url: url }).eq('id', vehicle.id)
-      res.json({ url, cached: false })
-    } catch (e) {
-      console.error('[brochure]', e.message)
-      res.status(500).json({ error: e.message })
-    }
+    // Respond immediately — generate in background to avoid platform timeout
+    res.json({ status: 'generating' })
+
+    ;(async () => {
+      try {
+        const branding = dealer.branding || {}
+        const imageUrls = (vehicle.image_urls || []).slice(0, 4)
+        const [photosDataUris, logoDataUri] = await Promise.all([
+          Promise.all(imageUrls.map(u => imgToDataUri(u))),
+          branding.logo_url ? imgToDataUri(branding.logo_url) : Promise.resolve(null),
+        ])
+        const html = buildBrochureHtml(vehicle, dealer, branding, vehicle.recalls || [], photosDataUris, logoDataUri)
+        const pdf = await generatePdf(html, { landscape: false, viewportWidth: 860, viewportHeight: 1100 })
+        const path = `${req.dealershipId}/${vehicle.id}/brochure.pdf`
+        const url = await uploadPdf(pdf, path)
+        await supabaseAdmin.from('inventory').update({ brochure_url: url }).eq('id', vehicle.id)
+      } catch (e) {
+        console.error('[brochure background]', e.message)
+      }
+    })()
+  })
+
+  // ── Poll brochure status ──────────────────────────────────────────────
+  app.get('/pdf/brochure/:vehicleId/status', requireAuth, requireDealerAdmin, async (req, res) => {
+    if (!req.dealershipId) return res.status(400).json({ error: 'No dealership' })
+    const { data: vehicle } = await supabaseAdmin
+      .from('inventory')
+      .select('brochure_url')
+      .eq('id', req.params.vehicleId)
+      .eq('dealership_id', req.dealershipId)
+      .single()
+    if (vehicle?.brochure_url) return res.json({ status: 'ready', url: vehicle.brochure_url })
+    res.json({ status: 'generating' })
   })
 
   // ── Clear cached PDFs when vehicle is sold/deleted ────────────────────

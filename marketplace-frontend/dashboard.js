@@ -3527,20 +3527,53 @@ async function generatePdf(vehicleId, type, btn) {
   btn.disabled = true;
   btn.textContent = 'Generating…';
   const label = type === 'window-sticker' ? 'Window Sticker' : 'Brochure';
-  showToast(`Generating ${label} — this takes 10–20 seconds on first run…`, 'info', 18000);
+
+  const openUrl = (url) => {
+    window.open(url, '_blank');
+    showToast(`${label} ready — opened in new tab`, 'success');
+    btn.disabled = false;
+    btn.textContent = origText;
+  };
+
+  const pollStatus = async (deadline) => {
+    if (Date.now() > deadline) {
+      showToast(`${label} is taking longer than expected — try again in a moment`, 'error');
+      btn.disabled = false;
+      btn.textContent = origText;
+      return;
+    }
+    try {
+      const r = await fetch(`${API}/pdf/${type}/${vehicleId}/status`, {
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
+      const d = await r.json();
+      if (d.status === 'ready' && d.url) {
+        openUrl(d.url);
+      } else {
+        setTimeout(() => pollStatus(deadline), 4000);
+      }
+    } catch {
+      setTimeout(() => pollStatus(deadline), 4000);
+    }
+  };
+
   try {
+    showToast(`Generating ${label} — this takes 15–30 seconds on first run…`, 'info', 35000);
     const res = await fetch(`${API}/pdf/${type}/${vehicleId}`, {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'PDF generation failed');
-    window.open(data.url, '_blank');
-    if (data.cached) showToast(`${label} opened (cached)`, 'success');
-    else showToast(`${label} generated and opened`, 'success');
+    if (data.url) {
+      // Cached — open immediately
+      openUrl(data.url);
+    } else {
+      // Generation started — poll for completion (90s deadline)
+      pollStatus(Date.now() + 90_000);
+    }
   } catch (e) {
     showToast(e.message, 'error');
-  } finally {
     btn.disabled = false;
     btn.textContent = origText;
   }
