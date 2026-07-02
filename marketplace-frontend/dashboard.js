@@ -2701,7 +2701,13 @@ body{font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;color:#0f172a;font-
 <div class="sl">Price Summary</div>
 <div class="strip5">
   <div class="tile"><div class="tl">Your Price</div><div class="tv">${fmt(vehicle.price)}</div></div>
-  <div class="tile"><div class="tl">Market Average</div><div class="tv">${fmt(estimate?.mid)}</div></div>
+  <div class="tile"><div class="tl">Market Average</div><div class="tv">${(() => {
+    const _ap = (estimate?.marketplace_averages || []).map(m => Number(m.avg)).filter(p => p > 0).sort((a,b)=>a-b);
+    const _m = _ap.length ? (_ap.length%2===0?(_ap[Math.floor(_ap.length/2)-1]+_ap[Math.floor(_ap.length/2)])/2:_ap[Math.floor(_ap.length/2)]):null;
+    const _vp = _m ? _ap.filter(p=>p>=_m*0.55&&p<=_m*1.8) : _ap;
+    const _avg = _vp.length ? Math.round(_vp.reduce((a,b)=>a+b,0)/_vp.length) : estimate?.mid;
+    return fmt(_avg);
+  })()}</div></div>
   <div class="tile"><div class="tl">Difference</div><div class="tv" style="color:${diffColor}">${diffText}</div></div>
   <div class="tile"><div class="tl">Price to Market</div><div class="tv" style="color:${ptmColor}">${ptm != null ? ptm + '%' : '—'}</div></div>
   <div class="tile"><div class="tl">Est. Days to Sell</div><div class="tv">${dom != null ? dom + 'd' : '—'}</div></div>
@@ -2810,8 +2816,21 @@ async function openPriceReport(inventoryId) {
     document.getElementById('pr-subtitle').textContent =
       vehicle.stocknumber ? `Stock #${vehicle.stocknumber} · ${vehicle.condition || ''}` : (vehicle.condition || '');
 
+    // Compute market average from valid (non-outlier) marketplace bars
+    const _avgsAll = estimate?.marketplace_averages || [];
+    const _rawPrices = _avgsAll.map(m => Number(m.avg)).filter(p => p > 0).sort((a, b) => a - b);
+    const _med = _rawPrices.length ? (_rawPrices.length % 2 === 0
+      ? (_rawPrices[Math.floor(_rawPrices.length / 2) - 1] + _rawPrices[Math.floor(_rawPrices.length / 2)]) / 2
+      : _rawPrices[Math.floor(_rawPrices.length / 2)]) : null;
+    const _validPrices = _med
+      ? _avgsAll.map(m => Number(m.avg)).filter(p => p > 0 && p >= _med * 0.55 && p <= _med * 1.8)
+      : _rawPrices;
+    const computedMarketAvgForTiles = _validPrices.length
+      ? Math.round(_validPrices.reduce((a, b) => a + b, 0) / _validPrices.length)
+      : estimate?.mid;
+
     document.getElementById('pr-your-price').textContent = fmt(vehicle.price);
-    document.getElementById('pr-median').textContent = fmt(estimate?.mid);
+    document.getElementById('pr-median').textContent = fmt(computedMarketAvgForTiles);
 
     const diffEl = document.getElementById('pr-diff');
     if (pct_diff != null) {
@@ -2934,9 +2953,20 @@ async function openPriceReport(inventoryId) {
       const yourPrice = Number(vehicle.price);
       const avgs = estimate.marketplace_averages || [];
 
-      // Build labels and data: one bar per marketplace avg, then Your Price
-      const chartLabels = [...avgs.map(m => m.name), 'Your Price'];
-      const chartData = [...avgs.map(m => Number(m.avg)), yourPrice];
+      // Filter out marketplace averages that are outliers (< 55% or > 180% of
+      // the median) — bad scrape data on one source shouldn't skew the chart.
+      const rawAvgPrices = avgs.map(m => Number(m.avg)).filter(p => p > 0).sort((a, b) => a - b);
+      const medIdx = Math.floor(rawAvgPrices.length / 2);
+      const avgMedian = rawAvgPrices.length ? (rawAvgPrices.length % 2 === 0
+        ? (rawAvgPrices[medIdx - 1] + rawAvgPrices[medIdx]) / 2
+        : rawAvgPrices[medIdx]) : null;
+      const validAvgs = avgMedian
+        ? avgs.filter(m => { const p = Number(m.avg); return p >= avgMedian * 0.55 && p <= avgMedian * 1.8; })
+        : avgs;
+
+      // Build labels and data: one bar per valid marketplace avg, then Your Price
+      const chartLabels = [...validAvgs.map(m => m.name), 'Your Price'];
+      const chartData = [...validAvgs.map(m => Number(m.avg)), yourPrice];
       const chartColors = [
         'rgba(99,102,241,0.25)', 'rgba(99,102,241,0.35)', 'rgba(99,102,241,0.20)',
         '#6366f1' // your price always solid indigo
@@ -2945,8 +2975,12 @@ async function openPriceReport(inventoryId) {
       chartColors[chartData.length - 1] = '#6366f1';
       const chartBorders = chartColors.map((_, i) => i === chartData.length - 1 ? '#4f46e5' : '#818cf8');
 
-      // Overall market mid as a reference line
-      const midLine = chartData.map(() => estimate.mid);
+      // Market average = mean of the valid marketplace bars (excludes Your Price and outliers)
+      const validPrices = validAvgs.map(m => Number(m.avg)).filter(p => p > 0);
+      const computedMarketAvg = validPrices.length
+        ? Math.round(validPrices.reduce((a, b) => a + b, 0) / validPrices.length)
+        : estimate.mid;
+      const midLine = chartData.map(() => computedMarketAvg);
 
       __prChart = new Chart(ctx, {
         type: 'bar',
