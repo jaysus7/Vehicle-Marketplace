@@ -1088,11 +1088,10 @@ Units 60d+ on lot: ${stale}`
       }
     }
 
-    const results = []
-    for (const comp of competitors || []) {
+    const results = await Promise.all((competitors || []).map(async comp => {
       if (!comp.autotrader_url) {
-        results.push({ id: comp.id, name: comp.name, result: { error: 'No URL configured', scanned_at: new Date().toISOString() } })
-        continue
+        const result = { error: 'No URL configured', scanned_at: new Date().toISOString() }
+        return { id: comp.id, name: comp.name, result }
       }
       let scanResult
       try {
@@ -1109,8 +1108,8 @@ Units 60d+ on lot: ${stale}`
         .update({ last_scan_result: scanResult, last_scanned_at: new Date().toISOString() })
         .eq('id', comp.id)
 
-      results.push({ id: comp.id, name: comp.name, result: scanResult })
-    }
+      return { id: comp.id, name: comp.name, result: scanResult }
+    }))
 
     res.json({ scanned: results.length, results })
   })
@@ -1130,7 +1129,7 @@ Units 60d+ on lot: ${stale}`
       { data: soldPrevWeek }
     ] = await Promise.all([
       supabaseAdmin.from('inventory')
-        .select('id, year, make, model, trim, price, condition, stocknumber, image_urls, last_synced_at, created_at, updated_at, status')
+        .select('id, year, make, model, trim, price, condition, stocknumber, image_urls, last_synced_at, created_at, status')
         .eq('dealership_id', dealershipId)
         .eq('status', 'available'),
       supabaseAdmin.from('ai_activity')

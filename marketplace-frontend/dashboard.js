@@ -3525,7 +3525,9 @@ async function generatePdf(vehicleId, type, btn) {
   const token = localStorage.getItem('token');
   const origText = btn.textContent;
   btn.disabled = true;
-  btn.textContent = '…';
+  btn.textContent = 'Generating…';
+  const label = type === 'window-sticker' ? 'Window Sticker' : 'Brochure';
+  showToast(`Generating ${label} — this takes 10–20 seconds on first run…`, 'info', 18000);
   try {
     const res = await fetch(`${API}/pdf/${type}/${vehicleId}`, {
       method: 'POST',
@@ -3534,8 +3536,10 @@ async function generatePdf(vehicleId, type, btn) {
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'PDF generation failed');
     window.open(data.url, '_blank');
+    if (data.cached) showToast(`${label} opened (cached)`, 'success');
+    else showToast(`${label} generated and opened`, 'success');
   } catch (e) {
-    alert(e.message);
+    showToast(e.message, 'error');
   } finally {
     btn.disabled = false;
     btn.textContent = origText;
@@ -4443,9 +4447,14 @@ ${inner}
 </body></html>`;
           const blob = new Blob([html], { type: 'text/html' });
           const url = URL.createObjectURL(blob);
-          const w = window.open(url, '_blank');
-          if (w) setTimeout(() => URL.revokeObjectURL(url), 30000);
-          else showToast('Pop-up blocked — allow pop-ups and try again', 'error');
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = `competitor-comparison-${new Date().toISOString().slice(0,10)}.html`;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          setTimeout(() => URL.revokeObjectURL(url), 5000);
+          showToast('Comparison downloaded — open in browser then Print → Save as PDF', 'success', 5000);
         });
       }
 

@@ -38,7 +38,9 @@ async function loadDealershipData(dealershipId) {
   return data
 }
 
-function buildWindowStickerHtml(vehicle, dealer, branding, recalls, photoDataUri, logoDataUri) {
+function buildWindowStickerHtml(vehicle, dealer, branding, recalls, photoDataUris, logoDataUri) {
+  const photoDataUri = Array.isArray(photoDataUris) ? photoDataUris[0] : photoDataUris
+  const allPhotos = (Array.isArray(photoDataUris) ? photoDataUris : [photoDataUri]).filter(Boolean)
   const primary   = branding.primary_color   || '#003087'
   const secondary = branding.secondary_color || '#c9a84c'
 
@@ -238,9 +240,10 @@ function buildWindowStickerHtml(vehicle, dealer, branding, recalls, photoDataUri
   /* LEFT = photo + ribbon + columns + build data */
   .left{flex:1;display:flex;flex-direction:column;min-width:0;border-right:2px solid ${primary};}
 
-  .photo{height:180px;background:#0f172a;overflow:hidden;flex-shrink:0;position:relative;}
-  .photo img{width:100%;height:100%;object-fit:contain;object-position:center;}
-  .photo-none{width:100%;height:100%;display:flex;align-items:center;justify-content:center;color:#94a3b8;font-size:12px;background:#e8ecf0;}
+  .photo{background:#0f172a;overflow:hidden;flex-shrink:0;position:relative;}
+  .photo-row{display:flex;height:180px;gap:2px;background:#0f172a;}
+  .photo-row img{flex:1;min-width:0;object-fit:cover;object-position:center;}
+  .photo-none{width:100%;height:180px;display:flex;align-items:center;justify-content:center;color:#94a3b8;font-size:12px;background:#e8ecf0;}
 
   .ribbon{display:flex;background:#f0f4f8;border-bottom:1px solid #d1dae3;flex-shrink:0;}
   .rc{flex:1;padding:5px 8px;border-right:1px solid #d1dae3;text-align:center;}
@@ -327,11 +330,9 @@ function buildWindowStickerHtml(vehicle, dealer, branding, recalls, photoDataUri
   <!-- LEFT PANEL -->
   <div class="left">
 
-    <div class="photo">
-      ${photoDataUri
-        ? `<img src="${photoDataUri}" alt="Vehicle">`
-        : `<div class="photo-none">No Photo Available</div>`}
-    </div>
+    ${allPhotos.length
+      ? `<div class="photo-row">${allPhotos.slice(0, 4).map((src, i) => `<img src="${src}" alt="Vehicle photo ${i + 1}">`).join('')}</div>`
+      : `<div class="photo-none">No Photo Available</div>`}
 
     <div class="ribbon">
       ${[
@@ -1122,11 +1123,12 @@ export function registerRoutes(app) {
 
     try {
       const branding = dealer.branding || {}
-      const [photoDataUri, logoDataUri] = await Promise.all([
-        vehicle.image_urls?.[0] ? imgToDataUri(vehicle.image_urls[0]) : Promise.resolve(null),
+      const imageUrls = (vehicle.image_urls || []).slice(0, 4)
+      const [photoDataUris, logoDataUri] = await Promise.all([
+        Promise.all(imageUrls.map(u => imgToDataUri(u))),
         branding.logo_url ? imgToDataUri(branding.logo_url) : Promise.resolve(null),
       ])
-      const html = buildWindowStickerHtml(vehicle, dealer, branding, vehicle.recalls || [], photoDataUri, logoDataUri)
+      const html = buildWindowStickerHtml(vehicle, dealer, branding, vehicle.recalls || [], photoDataUris.filter(Boolean), logoDataUri)
       const pdf = await generatePdf(html, { landscape: true, viewportWidth: 1100, viewportHeight: 860 })
       const path = `${req.dealershipId}/${vehicle.id}/window-sticker.pdf`
       const url = await uploadPdf(pdf, path)
