@@ -744,6 +744,73 @@ Return ONLY valid JSON array (no markdown):
       .select('*')
       .eq('dealership_id', req.dealershipId)
 
+    // Attempt to scrape inventory data from a URL.
+    // Works best with AutoTrader dealer inventory pages (server-rendered JSON).
+    // Dealer homepages rarely expose structured inventory data — we detect this and return a clear error.
+    async function scrapeInventoryUrl(url) {
+      const res = await browserFetch(url, { signal: AbortSignal.timeout(12000) })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const html = await res.text()
+
+      let listing_count = null
+      let prices = []
+
+      // AutoTrader: embedded JSON state
+      const atStateMatch = html.match(/window\.__INITIAL_STATE__\s*=\s*(\{.{0,50000}?\});?\s*<\/script>/s)
+      if (atStateMatch) {
+        try {
+          const state = JSON.parse(atStateMatch[1])
+          // total count lives at different paths in different AT versions
+          const total = state?.searchResults?.totalCount
+            || state?.listing?.totalCount
+            || state?.resultList?.totalCount
+          if (total) listing_count = total
+          const listings = state?.searchResults?.listings
+            || state?.resultList?.listings
+            || []
+          for (const l of listings) {
+            const p = l?.price?.value || l?.pricingDetail?.price
+            if (p && p > 1000 && p < 500000) prices.push(p)
+          }
+        } catch {}
+      }
+
+      // AutoTrader / generic: JSON-LD arrays
+      if (!listing_count) {
+        const countMatch = html.match(/"totalResults"\s*:\s*(\d+)/)
+          || html.match(/"totalCount"\s*:\s*(\d+)/)
+          || html.match(/"total"\s*:\s*(\d+)/)
+        if (countMatch) listing_count = parseInt(countMatch[1])
+      }
+
+      // Generic: text pattern like "148 vehicles"
+      if (!listing_count) {
+        const textMatch = html.match(/\b(\d{1,4})\s+(?:new\s+&\s+used\s+)?(?:vehicles?|listings?|results?|cars?)\b/i)
+        if (textMatch) listing_count = parseInt(textMatch[1])
+      }
+
+      // Extract prices from any embedded JSON (works on many DMS-generated sites)
+      if (!prices.length) {
+        const priceMatches = [...html.matchAll(/"(?:price|sellingPrice|listPrice|salePrice)"\s*:\s*"?(\d{4,6})"?/g)]
+        prices = priceMatches.map(m => parseInt(m[1])).filter(p => p > 1000 && p < 500000)
+      }
+
+      // If we found nothing at all, this is probably a homepage — tell the user
+      if (!listing_count && !prices.length) {
+        throw new Error('no_inventory_data')
+      }
+
+      const sorted = [...prices].sort((a, b) => a - b)
+      const avg_price = prices.length ? Math.round(prices.reduce((a, b) => a + b, 0) / prices.length) : null
+      return {
+        listing_count: listing_count ?? (prices.length || null),
+        avg_price,
+        min_price: sorted[0] ?? null,
+        max_price: sorted[sorted.length - 1] ?? null,
+        scanned_at: new Date().toISOString()
+      }
+    }
+
     const results = []
     for (const comp of competitors || []) {
       if (!comp.autotrader_url) {
@@ -752,32 +819,12 @@ Return ONLY valid JSON array (no markdown):
       }
       let scanResult
       try {
-        const html = await browserFetch(comp.autotrader_url).then(r => r.text())
-        // Try JSON-LD or embedded listing data
-        let listing_count = null
-        let prices = []
-
-        // Look for result count patterns
-        const countMatch = html.match(/"totalResults"\s*:\s*(\d+)/) || html.match(/"total"\s*:\s*(\d+)/) || html.match(/(\d+)\s+(?:results?|listings?|vehicles?)\s+found/i)
-        if (countMatch) listing_count = parseInt(countMatch[1])
-
-        // Extract prices from embedded JSON
-        const priceMatches = [...html.matchAll(/"price"\s*:\s*(\d{3,6})/g)]
-        if (priceMatches.length > 0) {
-          prices = priceMatches.map(m => parseInt(m[1])).filter(p => p > 1000 && p < 500000)
-        }
-
-        const avg_price = prices.length ? Math.round(prices.reduce((a, b) => a + b, 0) / prices.length) : null
-        const sorted = [...prices].sort((a, b) => a - b)
-        scanResult = {
-          listing_count: listing_count || (prices.length > 0 ? prices.length : null),
-          avg_price,
-          min_price: sorted[0] || null,
-          max_price: sorted[sorted.length - 1] || null,
-          scanned_at: new Date().toISOString()
-        }
-      } catch {
-        scanResult = { error: 'Could not parse listing data', scanned_at: new Date().toISOString() }
+        scanResult = await scrapeInventoryUrl(comp.autotrader_url)
+      } catch (err) {
+        const msg = err.message === 'no_inventory_data'
+          ? 'Could not find inventory data at this URL. Use an AutoTrader dealer inventory page (e.g. autotrader.ca/dealers/…) for best results.'
+          : `Scan failed: ${err.message}`
+        scanResult = { error: msg, scanned_at: new Date().toISOString() }
       }
 
       await supabaseAdmin
