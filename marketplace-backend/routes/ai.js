@@ -969,38 +969,102 @@ Units 60d+ on lot: ${scoredVehicles.filter(v => v.days >= 60).length}`
       } catch {}
 
       // Fall back to HTML scraping (AutoTrader pages, generic embedded JSON)
-      const res = await browserFetch(url, { signal: AbortSignal.timeout(12000) })
+      // For AutoTrader.ca dealer URLs, bump rcp to 100 and force rcs=0 so we
+      // get as many listings as possible in one fetch (avoids the 24-unit page cap).
+      let fetchUrl = url
+      if (/autotrader\.ca/i.test(url)) {
+        try {
+          const u = new URL(url)
+          u.searchParams.set('rcp', '100')
+          u.searchParams.set('rcs', '0')
+          u.searchParams.set('srt', '35')
+          fetchUrl = u.toString()
+        } catch {}
+      }
+
+      const res = await browserFetch(fetchUrl, { signal: AbortSignal.timeout(15000) })
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const html = await res.text()
 
       let listing_count = null
       let prices = []
 
-      // AutoTrader: embedded JSON state
-      const atStateMatch = html.match(/window\.__INITIAL_STATE__\s*=\s*(\{.{0,50000}?\});?\s*<\/script>/s)
-      if (atStateMatch) {
+      // Helper: walk an object tree looking for a listing array with prices
+      function extractListings(obj, depth = 0) {
+        if (depth > 8 || !obj || typeof obj !== 'object') return []
+        if (Array.isArray(obj) && obj.length > 0) {
+          const s = obj[0]
+          if (s && (s.price !== undefined || s.pricingDetail !== undefined || s.listPrice !== undefined)) return obj
+        }
+        for (const v of Object.values(obj)) {
+          const found = extractListings(v, depth + 1)
+          if (found.length) return found
+        }
+        return []
+      }
+
+      // Helper: find the true total count (not just the page count) in AT json
+      function findTotal(obj, depth = 0) {
+        if (depth > 6 || !obj || typeof obj !== 'object' || Array.isArray(obj)) return null
+        for (const [k, v] of Object.entries(obj)) {
+          if (/^(totalCount|totalResults|totalListings|numFound|total_count|count)$/i.test(k) && typeof v === 'number' && v > 0) return v
+          if (typeof v === 'object') {
+            const r = findTotal(v, depth + 1)
+            if (r) return r
+          }
+        }
+        return null
+      }
+
+      // Try __NEXT_DATA__ first (AutoTrader CA uses Next.js)
+      const nextDataMatch = html.match(/<script id="__NEXT_DATA__" type="application\/json">([\s\S]*?)<\/script>/)
+      if (nextDataMatch) {
         try {
-          const state = JSON.parse(atStateMatch[1])
-          const total = state?.searchResults?.totalCount || state?.listing?.totalCount || state?.resultList?.totalCount
+          const nd = JSON.parse(nextDataMatch[1])
+          const total = findTotal(nd)
           if (total) listing_count = total
-          const listings = state?.searchResults?.listings || state?.resultList?.listings || []
-          for (const l of listings) {
-            const p = l?.price?.value || l?.pricingDetail?.price
-            if (p && p > 1000 && p < 500000) prices.push(p)
+          const raw = extractListings(nd)
+          for (const l of raw) {
+            const p = Number(l?.price?.value ?? l?.price ?? l?.pricingDetail?.price ?? l?.listPrice ?? 0)
+            if (p > 1000 && p < 500000) prices.push(p)
           }
         } catch {}
       }
 
+      // Also try window.__INITIAL_STATE__
+      if (!listing_count || !prices.length) {
+        const atStateMatch = html.match(/window\.__INITIAL_STATE__\s*=\s*(\{.{0,80000}?\});?\s*<\/script>/s)
+        if (atStateMatch) {
+          try {
+            const state = JSON.parse(atStateMatch[1])
+            if (!listing_count) listing_count = findTotal(state)
+            if (!prices.length) {
+              const raw = extractListings(state)
+              for (const l of raw) {
+                const p = Number(l?.price?.value ?? l?.price ?? l?.pricingDetail?.price ?? l?.listPrice ?? 0)
+                if (p > 1000 && p < 500000) prices.push(p)
+              }
+            }
+          } catch {}
+        }
+      }
+
+      // Regex fallback for total count
       if (!listing_count) {
-        const countMatch = html.match(/"totalResults"\s*:\s*(\d+)/) || html.match(/"totalCount"\s*:\s*(\d+)/) || html.match(/"total"\s*:\s*(\d+)/)
+        const countMatch = html.match(/"totalResults"\s*:\s*(\d+)/)
+          || html.match(/"totalCount"\s*:\s*(\d+)/)
+          || html.match(/"numFound"\s*:\s*(\d+)/)
+          || html.match(/"total"\s*:\s*(\d+)/)
         if (countMatch) listing_count = parseInt(countMatch[1])
       }
 
+      // Plain-text count ("147 vehicles")
       if (!listing_count) {
-        const textMatch = html.match(/\b(\d{1,4})\s+(?:new\s+&\s+used\s+)?(?:vehicles?|listings?|results?|cars?)\b/i)
+        const textMatch = html.match(/\b(\d{1,4})\s+(?:new\s+[&+]\s+used\s+)?(?:vehicles?|listings?|results?|cars?)\b/i)
         if (textMatch) listing_count = parseInt(textMatch[1])
       }
 
+      // Generic price extraction fallback
       if (!prices.length) {
         const priceMatches = [...html.matchAll(/"(?:price|sellingPrice|listPrice|salePrice)"\s*:\s*"?(\d{4,6})"?/g)]
         prices = priceMatches.map(m => parseInt(m[1])).filter(p => p > 1000 && p < 500000)
