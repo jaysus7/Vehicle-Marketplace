@@ -301,40 +301,87 @@ Write a compelling listing in under 280 words. Include the year/make/model/trim,
     res.json({ activity: data || [] })
   })
 
-  // GET /ai/price-report/:inventory_id — full price comp detail for a flagged vehicle
+  // GET /ai/price-report/:inventory_id — AI market estimate for a vehicle
   app.get('/ai/price-report/:inventory_id', requireAuth, async (req, res) => {
     if (!req.dealershipId) return res.status(400).json({ error: 'No dealership associated' })
     const { inventory_id } = req.params
 
     const { data: vehicle, error: vErr } = await supabaseAdmin
       .from('inventory')
-      .select('id, year, make, model, trim, condition, price, mileage, stocknumber, status')
+      .select('id, year, make, model, trim, condition, price, mileage, exterior_color, stocknumber, status')
       .eq('id', inventory_id)
       .eq('dealership_id', req.dealershipId)
       .single()
     if (vErr || !vehicle) return res.status(404).json({ error: 'Vehicle not found' })
 
     if (!vehicle.price || !vehicle.make || !vehicle.model || !vehicle.year) {
-      return res.json({ vehicle, comps: [], median: null, pct_diff: null })
+      return res.json({ vehicle, estimate: null, pct_diff: null })
     }
 
-    const { data: comps } = await supabaseAdmin
-      .from('inventory')
-      .select('id, year, make, model, trim, condition, price, mileage, stocknumber, status')
-      .eq('dealership_id', req.dealershipId)
-      .eq('make', vehicle.make)
-      .eq('model', vehicle.model)
-      .eq('status', 'available')
-      .gte('year', vehicle.year - 2)
-      .lte('year', vehicle.year + 2)
-      .neq('id', inventory_id)
-      .not('price', 'is', null)
+    if (!process.env.ANTHROPIC_API_KEY) {
+      return res.status(503).json({ error: 'AI features not configured' })
+    }
 
-    const validComps = (comps || []).filter(c => Number(c.price) > 0)
-    const prices = validComps.map(c => Number(c.price)).sort((a, b) => a - b)
-    const med = median(prices)
-    const pct_diff = med ? Math.round(((Number(vehicle.price) - med) / med) * 1000) / 10 : null
+    // Fetch dealership province/city for market context
+    const { data: dealer } = await supabaseAdmin
+      .from('dealerships')
+      .select('city, province')
+      .eq('id', req.dealershipId)
+      .single()
 
-    res.json({ vehicle, comps: validComps, median: med, pct_diff })
+    const isNew = vehicle.condition === 'new' || Number(vehicle.year) >= new Date().getFullYear()
+    const conditionLabel = isNew ? 'new' : 'used'
+    const location = [dealer?.city, dealer?.province].filter(Boolean).join(', ') || 'Canada'
+    const mileageText = vehicle.mileage ? `${Number(vehicle.mileage).toLocaleString()} km` : 'unknown mileage'
+    const trimText = vehicle.trim ? ` ${vehicle.trim}` : ''
+
+    const prompt = `You are an automotive market pricing expert specializing in the Canadian market.
+
+Provide a realistic Canadian retail market price range for the following ${conditionLabel} vehicle near ${location}:
+
+${vehicle.year} ${vehicle.make} ${vehicle.model}${trimText}
+Condition: ${conditionLabel}
+Mileage: ${mileageText}
+${vehicle.exterior_color ? `Colour: ${vehicle.exterior_color}` : ''}
+
+Rules:
+- For USED vehicles: compare only against used vehicles of the SAME year and SAME trim level
+- For NEW vehicles: compare against new vehicles of the SAME year (trim flexible, as new units sell near MSRP)
+- Base estimates on current Canadian market pricing (CAD), not US pricing
+- Account for regional market conditions in ${location}
+- Be realistic and specific — not overly wide ranges
+
+Respond with ONLY valid JSON (no explanation, no markdown) in this exact format:
+{
+  "low": <integer CAD price, lower end of fair market range>,
+  "mid": <integer CAD price, typical market price>,
+  "high": <integer CAD price, upper end of fair market range>,
+  "confidence": "high" | "medium" | "low",
+  "note": "<one sentence explaining the estimate, e.g. market demand, regional factors, trim popularity>"
+}`
+
+    const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
+    let estimate = null
+
+    try {
+      const message = await anthropic.messages.create({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 256,
+        messages: [{ role: 'user', content: prompt }]
+      })
+      const text = message.content[0]?.text?.trim() || ''
+      // Strip any markdown fencing if present
+      const jsonText = text.replace(/^```json?\s*/i, '').replace(/```\s*$/i, '').trim()
+      estimate = JSON.parse(jsonText)
+    } catch (aiErr) {
+      return res.status(502).json({ error: `AI estimate failed: ${aiErr.message}` })
+    }
+
+    const yourPrice = Number(vehicle.price)
+    const pct_diff = estimate?.mid
+      ? Math.round(((yourPrice - estimate.mid) / estimate.mid) * 1000) / 10
+      : null
+
+    res.json({ vehicle, estimate, pct_diff })
   })
 }
