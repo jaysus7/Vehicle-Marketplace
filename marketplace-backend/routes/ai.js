@@ -347,48 +347,58 @@ Write a compelling listing in under 280 words. Include the year/make/model/trim,
 
     const [src1, src2, src3] = marketSources
     const vehicleMileage = vehicle.mileage ? Number(vehicle.mileage) : null
-    const vehicleAge = new Date().getFullYear() - Number(vehicle.year)
+    const currentYear = new Date().getFullYear()
+    const vehicleAge = currentYear - Number(vehicle.year)
+    // Expected mileage for age: CA = 19,000 km/yr, US = 13,500 mi/yr
+    const expectedMileage = isUS ? vehicleAge * 13500 : vehicleAge * 19000
+    const mileageDelta = vehicleMileage != null ? vehicleMileage - expectedMileage : null
+    const mileageContext = vehicleMileage != null
+      ? `This vehicle has ${mileageDelta > 0 ? mileageDelta.toLocaleString() + ' ' + distanceUnit + ' MORE than expected' : Math.abs(mileageDelta).toLocaleString() + ' ' + distanceUnit + ' LESS than expected'} for its age (expected ~${expectedMileage.toLocaleString()} ${distanceUnit} for a ${vehicleAge}-year-old vehicle at typical ${marketLabel} annual rates of ${isUS ? '13,500 mi/yr' : '19,000 km/yr'}).`
+      : 'Mileage unknown.'
 
-    const prompt = `You are an automotive pricing analyst with the accuracy and depth of vAuto, specializing in the ${marketLabel} market. You have deep knowledge of ${marketSources.join(', ')} listing data.
+    const prompt = `You are a professional automotive market analyst with dealer-grade accuracy, equivalent to vAuto or Black Book. You specialize in the ${marketLabel} used vehicle market and have deep knowledge of real retail listing prices on ${marketSources.join(', ')}.
 
-Provide a comprehensive ${marketLabel} retail market analysis for this ${conditionLabel} vehicle near ${location}:
-
+VEHICLE TO ANALYZE:
 ${vehicle.year} ${vehicle.make} ${vehicle.model}${trimText}
+Listed price: ${vehicle.price ? '$' + Number(vehicle.price).toLocaleString() + ' ' + currency : 'unknown'}
 Condition: ${conditionLabel}
 Mileage: ${mileageText}
-Vehicle age: ${vehicleAge} year(s)
 ${vehicle.exterior_color ? `Colour: ${vehicle.exterior_color}` : ''}
+Vehicle age: ${vehicleAge} year(s) old (${currentYear} model year context: ${vehicle.year})
+Mileage context: ${mileageContext}
 
-Analysis rules:
-- USED vehicles: compare against used vehicles of the SAME year and SAME trim level in the ${location} region
-- NEW vehicles: compare against new vehicles of the SAME year (trim flexible, MSRP-based)
-- All prices in ${currency} for the ${marketLabel} market — NOT ${isUS ? 'Canadian' : 'US'} pricing
-- Mileage context: typical annual ${distanceUnit} for ${marketLabel} drivers is ${isUS ? '12,000–15,000 miles' : '18,000–20,000 km'}; expected mileage for a ${vehicleAge}-year-old vehicle is ${isUS ? (vehicleAge * 13500).toLocaleString() + ' miles' : (vehicleAge * 19000).toLocaleString() + ' km'}
-- Price impact of mileage: estimate the dollar adjustment (positive = premium for low mileage, negative = discount for high mileage) vs a same-year vehicle at average mileage
-- Each marketplace prices slightly differently — reflect realistic per-source variation
-- Listing counts should reflect real market volume for this vehicle type and region
-- Be precise, not broad — this report is used by professional dealers
+CRITICAL RULES — accuracy is paramount:
+1. USED vehicles: compare ONLY against used ${vehicle.year} ${vehicle.make} ${vehicle.model}${trimText} listings (same year, same trim) in the ${location} area
+2. NEW vehicles: compare against new ${vehicle.year} ${vehicle.make} ${vehicle.model} at MSRP
+3. ALL prices MUST be in ${currency} reflecting the ACTUAL ${marketLabel} retail market — do NOT use US prices for Canadian vehicles or vice versa
+4. ${isUS ? 'US retail prices are typically 15–25% lower in USD than equivalent Canadian CAD prices.' : 'Canadian retail prices in CAD are typically 25–35% higher than the same vehicle in USD due to currency, taxes, and import costs.'}
+5. Mileage rating MUST accurately reflect the delta vs expected mileage — if mileage is ABOVE expected it is above/well above average, if BELOW it is below/well below average
+6. price_to_market_pct: compute as Math.round((listedPrice / mid) * 100) where listedPrice = ${vehicle.price || 0}
+7. days_on_market_estimate: estimate realistically — overpriced vehicles take longer, well-priced take less
+8. Each marketplace has slightly different avg prices — reflect this realistically
+9. You MUST return ALL fields in the JSON — do not omit any field
+10. This report is used by professional auto dealers — be precise and realistic, not generic
 
-Respond with ONLY valid JSON (no markdown, no explanation):
+Respond with ONLY valid JSON (no markdown, no explanation, no trailing commas):
 {
-  "low": <integer ${currency}, lower bound of fair retail range>,
-  "mid": <integer ${currency}, typical retail asking price>,
-  "high": <integer ${currency}, upper bound of fair retail range>,
+  "low": <integer ${currency}, lower bound of fair retail range for this exact vehicle>,
+  "mid": <integer ${currency}, typical asking price for comparable listings>,
+  "high": <integer ${currency}, upper bound — well-equipped or low-mileage premium>,
   "currency": "${currency}",
-  "price_to_market_pct": <integer, this vehicle's list price as % of market average, e.g. 98 means 2% below market>,
-  "days_on_market_estimate": <integer, estimated typical days to sell at current price>,
+  "price_to_market_pct": <integer, listed price as % of mid, e.g. 98 = 2% below market>,
+  "days_on_market_estimate": <integer, realistic days to sell at listed price>,
   "confidence": "high" | "medium" | "low",
-  "note": "<two sentences: regional demand, trim desirability, and market velocity for this specific vehicle>",
+  "note": "<two specific sentences about this exact vehicle's market demand, trim desirability, mileage position, and regional pricing in ${location}>",
   "marketplace_averages": [
-    { "name": "${src1}", "avg": <integer ${currency}>, "estimated_listings": "<e.g. ~40 listings>", "avg_mileage": <integer, avg ${distanceUnit} for similar listings on this platform> },
+    { "name": "${src1}", "avg": <integer ${currency} realistic avg for this vehicle on ${src1}>, "estimated_listings": "<e.g. ~40 listings>", "avg_mileage": <integer, realistic avg ${distanceUnit} for similar listings on this platform> },
     { "name": "${src2}", "avg": <integer ${currency}>, "estimated_listings": "<e.g. ~25 listings>", "avg_mileage": <integer> },
     { "name": "${src3}", "avg": <integer ${currency}>, "estimated_listings": "<e.g. ~55 listings>", "avg_mileage": <integer> }
   ],
   "mileage_analysis": {
-    "market_avg_mileage": <integer, average ${distanceUnit} for comparable ${conditionLabel} ${vehicle.year} ${vehicle.make} ${vehicle.model}${trimText} in ${location}>,
+    "market_avg_mileage": <integer, realistic average ${distanceUnit} for used ${vehicle.year} ${vehicle.make} ${vehicle.model}${trimText} listings in ${location}>,
     "mileage_rating": "well below average" | "below average" | "average" | "above average" | "well above average",
-    "mileage_price_impact": <integer ${currency}, estimated price premium (positive) or discount (negative) vs average-mileage unit>,
-    "mileage_note": "<one sentence explaining the mileage impact on this specific vehicle's value>"
+    "mileage_price_impact": <integer ${currency}, realistic dollar premium (positive) or discount (negative) vs same vehicle at average mileage — typically $500–$3000 range>,
+    "mileage_note": "<one precise sentence: state actual mileage vs market avg and the pricing implication>"
   }
 }`
 
@@ -397,8 +407,8 @@ Respond with ONLY valid JSON (no markdown, no explanation):
 
     try {
       const message = await anthropic.messages.create({
-        model: 'claude-haiku-4-5-20251001',
-        max_tokens: 768,
+        model: 'claude-sonnet-4-6',
+        max_tokens: 1024,
         messages: [{ role: 'user', content: prompt }]
       })
       const text = message.content[0]?.text?.trim() || ''
