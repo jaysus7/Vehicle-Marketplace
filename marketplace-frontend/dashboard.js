@@ -4950,33 +4950,67 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Health scores table — with score breakdown sub-row
     const hbody = document.getElementById('inv-intel-health-body')
-    hbody.innerHTML = vehicles.slice(0, 60).map(v => {
-      const issues = v.issues.length
-        ? v.issues.map(i => `<span class="inline-flex text-[10px] bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 px-1.5 py-0.5 rounded">${i}</span>`).join(' ')
-        : '<span class="text-emerald-500 text-xs">✓ Good</span>'
-      const stockLink = v.stock ? `<a href="#" onclick="switchPage('inventory');document.getElementById('catalog-search').value='${v.stock}';if(typeof renderCatalog==='function')renderCatalog();return false;" class="text-indigo-600 dark:text-indigo-400 hover:underline">${v.stock}</a>` : `<span class="text-slate-400 font-mono text-xs">${v.id.slice(0, 8)}</span>`
+    hbody.innerHTML = vehicles.slice(0, 60).map((v, idx) => {
       const b = v.breakdown || {}
-      const bParts = [
-        b.photos  != null && `📷 ${b.photos}/30`,
-        b.days    != null && `📅 ${b.days}/25`,
-        b.price   != null && `💰 ${b.price}/15`,
-        b.mileage != null && `🔢 ${b.mileage}/10`,
-        b.description != null && `📝 ${b.description}/10`,
-        b.fields  != null && `✅ ${b.fields}/10`,
-      ].filter(Boolean).join(' · ')
-      return `<tr class="hover:bg-slate-50 dark:hover:bg-slate-800/40 transition">
-        <td class="px-4 py-2.5">
-          <div>${stockLink}</div>
-          <div class="text-xs text-slate-400">${v.year} ${v.make} ${v.model}</div>
+      const scoreColor = v.score >= 80 ? '#10b981' : v.score >= 60 ? '#f59e0b' : '#ef4444'
+      const issueList = v.issues.length
+        ? v.issues.map(i => `<span class="inline-flex text-[10px] bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 px-1.5 py-0.5 rounded">${i}</span>`).join(' ')
+        : '<span class="text-emerald-500 text-xs font-semibold">✓ Good</span>'
+      const stockNum = v.stock || v.id?.slice(0, 8) || '—'
+      const vehicleLine = [v.year, v.make, v.model, v.trim].filter(Boolean).join(' ')
+
+      // Score bar segments
+      const segments = [
+        { label: 'Photos',      val: b.photos,      max: 30, icon: '📷' },
+        { label: 'Days on lot', val: b.days,         max: 25, icon: '📅' },
+        { label: 'Price',       val: b.price,        max: 15, icon: '💰' },
+        { label: 'Mileage',     val: b.mileage,      max: 10, icon: '🔢' },
+        { label: 'Description', val: b.description,  max: 10, icon: '📝' },
+        { label: 'Fields',      val: b.fields,       max: 10, icon: '✅' },
+      ].filter(s => s.val != null)
+
+      const breakdownId = `hbd-${idx}`
+      const breakdownHtml = `
+        <div id="${breakdownId}" class="hidden col-span-5 bg-slate-50 dark:bg-slate-800/60 border-t border-slate-200 dark:border-slate-700 px-6 py-4">
+          <div class="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-3">
+            ${segments.map(s => {
+              const pct = Math.round((s.val / s.max) * 100)
+              const barColor = pct >= 80 ? 'bg-emerald-500' : pct >= 50 ? 'bg-amber-400' : 'bg-red-400'
+              return `<div>
+                <div class="flex justify-between text-[10px] font-semibold text-slate-500 dark:text-slate-400 mb-1">
+                  <span>${s.icon} ${s.label}</span><span>${s.val}/${s.max}</span>
+                </div>
+                <div class="h-1.5 rounded-full bg-slate-200 dark:bg-slate-700">
+                  <div class="h-1.5 rounded-full ${barColor}" style="width:${pct}%"></div>
+                </div>
+              </div>`
+            }).join('')}
+          </div>
+          ${v.issues.length ? `<div class="flex flex-wrap gap-1">${issueList}</div>` : '<div class="text-emerald-500 text-xs font-semibold">✓ No issues</div>'}
+        </div>`
+
+      return `<tr class="cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/40 transition border-t border-slate-100 dark:border-slate-800" onclick="
+        const bd = document.getElementById('${breakdownId}');
+        const row = this.nextElementSibling;
+        if (bd) { bd.classList.toggle('hidden'); this.querySelector('.hbd-arrow')?.classList.toggle('rotate-90'); }
+      ">
+        <td class="px-4 py-3">
+          <div class="font-semibold text-sm text-indigo-600 dark:text-indigo-400">${stockNum}</div>
+          <div class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">${vehicleLine}</div>
         </td>
-        <td class="px-4 py-2.5 text-right align-top pt-3">
-          <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold ${scoreBg(v.score)}">${v.score}</span>
-          ${bParts ? `<div class="text-[9px] text-slate-400 mt-1 text-right leading-relaxed whitespace-nowrap">${bParts.replace(/ · /g, '<br>')}</div>` : ''}
+        <td class="px-4 py-3 text-center">
+          <div class="inline-flex flex-col items-center gap-0.5">
+            <span class="text-lg font-black" style="color:${scoreColor}">${v.score}</span>
+            <span class="text-[9px] text-slate-400 font-medium">/100</span>
+          </div>
         </td>
-        <td class="px-4 py-2.5 text-right tabular-nums text-sm">${v.photos}</td>
-        <td class="px-4 py-2.5 text-right tabular-nums text-sm ${v.days >= 60 ? 'text-red-500 font-bold' : v.days >= 30 ? 'text-amber-500' : ''}">${v.days}d</td>
-        <td class="px-4 py-2.5">${issues}</td>
-      </tr>`
+        <td class="px-4 py-3 text-center tabular-nums text-sm text-slate-700 dark:text-slate-300">${v.photos}</td>
+        <td class="px-4 py-3 text-center tabular-nums text-sm font-semibold ${v.days >= 60 ? 'text-red-500' : v.days >= 30 ? 'text-amber-500' : 'text-slate-700 dark:text-slate-300'}">${v.days}d</td>
+        <td class="px-4 py-3 text-right pr-2">
+          <svg class="hbd-arrow w-4 h-4 text-slate-400 inline transition-transform duration-150" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
+        </td>
+      </tr>
+      <tr class="border-0"><td colspan="5" class="p-0">${breakdownHtml}</td></tr>`
     }).join('') || '<tr><td colspan="5" class="px-4 py-6 text-center text-slate-400">No vehicles found</td></tr>'
 
     document.getElementById('inv-intel-content').classList.remove('hidden')
