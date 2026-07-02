@@ -1120,23 +1120,33 @@ Return ONLY valid JSON array (no markdown):
     <div style="color:#e2e8f0;font-size:15px;font-weight:700;margin-top:6px">${dateStr}</div>
   </td></tr>
 
-  <!-- Row 1: core stats -->
+  <!-- Row 1: inventory breakdown -->
   <tr><td style="padding:0">
     <table width="100%" cellpadding="0" cellspacing="0" style="border-bottom:1px solid #e2e8f0"><tr>
-      ${statBox('Total Units', totalUnits, 'available now', '#1a2e4a')}
-      ${statBox('Photos', `${photosPct}%`, `${withPhotos} of ${totalUnits} have photos`, photosPct < 80 ? '#ef4444' : '#16a34a')}
-      ${statBox('Avg Days on Lot', avgDays, agingPct > 0 ? `${agingPct}% aging 60d+` : 'healthy turnover', avgDays > 45 ? '#f59e0b' : '#16a34a')}
-      ${statBox('Price Flags', priceDrift.length, `${driftPct}% of lot (used)`, priceDrift.length > 0 ? '#ef4444' : '#16a34a', wkDelta(priceDrift.length, prevPriceFlagCount, true))}
+      ${statBox('Total Inventory', totalUnits, 'all available units', '#1a2e4a')}
+      ${statBox('New Units', conditionCount.new, `${totalUnits ? Math.round(conditionCount.new/totalUnits*100) : 0}% of lot`, '#0ea5e9')}
+      ${statBox('Used Units', conditionCount.used, `${totalUnits ? Math.round(conditionCount.used/totalUnits*100) : 0}% of lot`, '#6366f1')}
+      ${statBox('Demo Units', conditionCount.demo, `${totalUnits ? Math.round(conditionCount.demo/totalUnits*100) : 0}% of lot`, '#f59e0b')}
     </tr></table>
   </td></tr>
 
-  <!-- Row 2: weekly activity -->
+  <!-- Row 2: core stats -->
+  <tr><td style="padding:0">
+    <table width="100%" cellpadding="0" cellspacing="0" style="border-bottom:1px solid #e2e8f0"><tr>
+      ${statBox('Photos', `${photosPct}%`, `${withPhotos} of ${totalUnits} have photos`, photosPct < 80 ? '#ef4444' : '#16a34a')}
+      ${statBox('Avg Days on Lot', avgDays, agingPct > 0 ? `${agingPct}% aging 60d+` : 'healthy turnover', avgDays > 45 ? '#f59e0b' : '#16a34a')}
+      ${statBox('Price Flags', priceDrift.length, `${driftPct}% of lot (used)`, priceDrift.length > 0 ? '#ef4444' : '#16a34a', wkDelta(priceDrift.length, prevPriceFlagCount, true))}
+      ${statBox('No Photos', noPhotos.length, `${noPhotos.length} listings missing`, noPhotos.length > 0 ? '#ef4444' : '#16a34a')}
+    </tr></table>
+  </td></tr>
+
+  <!-- Row 3: weekly activity -->
   <tr><td style="padding:0">
     <table width="100%" cellpadding="0" cellspacing="0" style="border-bottom:1px solid #e2e8f0"><tr>
       ${statBox('New Arrivals', newArrivalsThisWeek, 'added this week', '#6366f1', wkDelta(newArrivalsThisWeek, newArrivalsPrevWeek))}
       ${statBox('Sold This Week', soldThisWeekCount, 'units sold last 7 days', soldThisWeekCount > 0 ? '#16a34a' : '#94a3b8', wkDelta(soldThisWeekCount, soldPrevWeekCount))}
       ${statBox('60d+ Aging', aging.length, `${agingPct}% of lot`, aging.length > 0 ? '#f59e0b' : '#16a34a')}
-      ${statBox('No Photos', noPhotos.length, `${totalUnits - withPhotos} listings`, noPhotos.length > 0 ? '#ef4444' : '#16a34a')}
+      ${statBox('Avg Ask Price', avgPrice ? '$' + avgPrice.toLocaleString() : '—', medianPrice ? `median $${medianPrice.toLocaleString()}` : '', '#334155')}
     </tr></table>
   </td></tr>
 
@@ -1369,20 +1379,30 @@ Return ONLY valid JSON array (no markdown):
   <!-- Row 1: core stats -->
   <tr><td style="padding:0">
     <table width="100%" cellpadding="0" cellspacing="0" style="border-bottom:1px solid #e2e8f0"><tr>
-      ${statBox('Total Units', totalUnits, 'available now', '#1a2e4a')}
-      ${statBox('Photos', `${photosPct}%`, `${withPhotos} of ${totalUnits} have photos`, photosPct < 80 ? '#ef4444' : '#16a34a')}
-      ${statBox('Avg Days on Lot', avgDays, agingPct > 0 ? `${agingPct}% aging 60d+` : 'healthy turnover', avgDays > 45 ? '#f59e0b' : '#16a34a')}
-      ${statBox('Price Flags', priceDrift.length, `${driftPct}% of lot (used)`, priceDrift.length > 0 ? '#ef4444' : '#16a34a', wkDelta(priceDrift.length, prevPriceFlagCount, true))}
+      ${statBox('Total Inventory', totalUnits, 'all available units', '#1a2e4a')}
+      ${statBox('New Units', conditionCount.new, `${totalUnits ? Math.round(conditionCount.new/totalUnits*100) : 0}% of lot`, '#0ea5e9')}
+      ${statBox('Used Units', conditionCount.used, `${totalUnits ? Math.round(conditionCount.used/totalUnits*100) : 0}% of lot`, '#6366f1')}
+      ${statBox('Demo Units', conditionCount.demo, `${totalUnits ? Math.round(conditionCount.demo/totalUnits*100) : 0}% of lot`, '#f59e0b')}
     </tr></table>
   </td></tr>
 
-  <!-- Row 2: weekly activity -->
+  <!-- Row 2: core stats -->
+  <tr><td style="padding:0">
+    <table width="100%" cellpadding="0" cellspacing="0" style="border-bottom:1px solid #e2e8f0"><tr>
+      ${statBox('Photos', `${photosPct}%`, `${withPhotos} of ${totalUnits} have photos`, photosPct < 80 ? '#ef4444' : '#16a34a')}
+      ${statBox('Avg Days on Lot', avgDays, agingPct > 0 ? `${agingPct}% aging 60d+` : 'healthy turnover', avgDays > 45 ? '#f59e0b' : '#16a34a')}
+      ${statBox('Price Flags', priceDrift.length, `${driftPct}% of lot (used)`, priceDrift.length > 0 ? '#ef4444' : '#16a34a', wkDelta(priceDrift.length, prevPriceFlagCount, true))}
+      ${statBox('No Photos', noPhotos.length, `${noPhotos.length} listings missing`, noPhotos.length > 0 ? '#ef4444' : '#16a34a')}
+    </tr></table>
+  </td></tr>
+
+  <!-- Row 3: weekly activity -->
   <tr><td style="padding:0">
     <table width="100%" cellpadding="0" cellspacing="0" style="border-bottom:1px solid #e2e8f0"><tr>
       ${statBox('New Arrivals', newArrivalsThisWeek, 'added this week', '#6366f1', wkDelta(newArrivalsThisWeek, newArrivalsPrevWeek))}
       ${statBox('Sold This Week', soldThisWeekCount, 'units sold last 7 days', soldThisWeekCount > 0 ? '#16a34a' : '#94a3b8', wkDelta(soldThisWeekCount, soldPrevWeekCount))}
       ${statBox('60d+ Aging', aging.length, `${agingPct}% of lot`, aging.length > 0 ? '#f59e0b' : '#16a34a')}
-      ${statBox('No Photos', noPhotos.length, `${totalUnits - withPhotos} listings`, noPhotos.length > 0 ? '#ef4444' : '#16a34a')}
+      ${statBox('Avg Ask Price', avgPrice ? '$' + avgPrice.toLocaleString() : '—', medianPrice ? `median $${medianPrice.toLocaleString()}` : '', '#334155')}
     </tr></table>
   </td></tr>
 
