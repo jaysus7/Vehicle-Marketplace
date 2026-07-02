@@ -356,7 +356,7 @@
           <span class="hidden md:inline">Insights</span>
         </button>
         <button type="button" data-page="inventory" title="Inventory" class="nav-item flex-1 md:flex-none md:w-full flex items-center justify-center md:justify-start gap-2.5 px-2 md:px-3 py-2.5 md:py-2 rounded font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition">
-          <svg class="w-5 h-5 md:w-4 md:h-4 flex-shrink-0 opacity-60" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><rect x="2" y="7" width="20" height="10" rx="2"/><path stroke-linecap="round" d="M6 17v1a1 1 0 001 1h2a1 1 0 001-1v-1M14 17v1a1 1 0 001 1h2a1 1 0 001-1v-1"/><circle cx="7.5" cy="12" r="1.5"/><path stroke-linecap="round" d="M11 12h6"/><path stroke-linecap="round" d="M11 9.5h4"/></svg>
+          <svg class="w-5 h-5 md:w-4 md:h-4 flex-shrink-0 opacity-60" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5 17H3a1 1 0 01-1-1v-4l2.5-5h11L18 12v4a1 1 0 01-1 1h-2"/><circle cx="7.5" cy="17.5" r="1.5"/><circle cx="16.5" cy="17.5" r="1.5"/><path stroke-linecap="round" d="M7.5 12h5"/></svg>
           <span class="hidden md:inline">Inventory</span>
         </button>
         <button type="button" data-page="leaderboard" title="Leaderboard" class="nav-item flex-1 md:flex-none md:w-full flex items-center justify-center md:justify-start gap-2.5 px-2 md:px-3 py-2.5 md:py-2 rounded font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition">
@@ -375,7 +375,7 @@
           </span>
           <span class="hidden md:flex items-center gap-1 flex-shrink-0">
             <span id="nav-ai-boost-pill" class="hidden text-[9px] font-black uppercase tracking-wider bg-indigo-600 text-white px-1.5 py-0.5 rounded-full leading-none">Trial</span>
-            <span class="text-[9px] font-black uppercase tracking-wider bg-amber-400 text-amber-900 px-1.5 py-0.5 rounded-full leading-none">Paid</span>
+            <span class="text-[9px] font-black uppercase tracking-wider bg-slate-200 dark:bg-slate-700 text-slate-500 dark:text-slate-400 px-1.5 py-0.5 rounded-full leading-none">Paid</span>
           </span>
         </button>
         <!-- VIN Sticker & Brochure: visible to ALL roles (reps included) — hidden only until role resolved -->
@@ -386,7 +386,7 @@
           </span>
           <span class="hidden md:flex items-center gap-1 flex-shrink-0">
             <span id="nav-vin-sticker-pill" class="hidden text-[9px] font-black uppercase tracking-wider bg-emerald-600 text-white px-1.5 py-0.5 rounded-full leading-none">Trial</span>
-            <span class="text-[9px] font-black uppercase tracking-wider bg-amber-400 text-amber-900 px-1.5 py-0.5 rounded-full leading-none">Paid</span>
+            <span class="text-[9px] font-black uppercase tracking-wider bg-slate-200 dark:bg-slate-700 text-slate-500 dark:text-slate-400 px-1.5 py-0.5 rounded-full leading-none">Paid</span>
           </span>
         </button>
         <!-- Inventory Intelligence: admin-only, separate add-on -->
@@ -397,7 +397,7 @@
           </span>
           <span class="hidden md:flex items-center gap-1 flex-shrink-0">
             <span id="nav-inv-intel-pill" class="hidden text-[9px] font-black uppercase tracking-wider bg-violet-600 text-white px-1.5 py-0.5 rounded-full leading-none">Trial</span>
-            <span class="text-[9px] font-black uppercase tracking-wider bg-amber-400 text-amber-900 px-1.5 py-0.5 rounded-full leading-none">Paid</span>
+            <span class="text-[9px] font-black uppercase tracking-wider bg-slate-200 dark:bg-slate-700 text-slate-500 dark:text-slate-400 px-1.5 py-0.5 rounded-full leading-none">Paid</span>
           </span>
         </button>
         <button type="button" data-page="profile" title="Settings" class="nav-item flex-1 md:flex-none md:w-full flex items-center justify-center md:justify-start gap-2.5 px-2 md:px-3 py-2.5 md:py-2 rounded font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition md:mt-auto">
@@ -697,23 +697,31 @@
       </div>
 
       <div id="catalog-panel" class="hidden bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-4 sm:p-6">
-        <div class="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-4 gap-3">
-          <div>
-            <h2 class="text-lg font-bold text-slate-900 dark:text-white">Inventory Catalog</h2>
-            <p class="text-slate-500 dark:text-slate-400 text-xs">Browse every vehicle synced from your feeds.</p>
-          </div>
-          <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full sm:w-auto">
+        <div class="mb-4 space-y-3">
+          <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+            <div>
+              <h2 class="text-lg font-bold text-slate-900 dark:text-white">Inventory Catalog</h2>
+              <p class="text-slate-500 dark:text-slate-400 text-xs">Browse every vehicle synced from your feeds.</p>
+            </div>
             <input type="text" id="catalog-search" placeholder="Search make, model, VIN, stock..." class="bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded px-3 py-1.5 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-indigo-500 w-full sm:w-64">
-            <select id="catalog-status" class="bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded px-2 py-1.5 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-indigo-500 w-full sm:w-auto">
-              <option value="all">All</option>
-              <option value="new">New</option>
-              <option value="used">Used</option>
-              <option value="demo">Demo</option>
-              <option value="available">Available</option>
-              <option value="pending">Sale Pending</option>
-              <option value="sold">Sold</option>
-            </select>
           </div>
+          <!-- Status pill row -->
+          <div class="flex flex-wrap gap-1.5" id="catalog-status-pills">
+            <button data-status="all"       class="catalog-status-pill active px-3 py-1 rounded-full text-xs font-semibold bg-indigo-600 text-white transition">All</button>
+            <button data-status="available" class="catalog-status-pill px-3 py-1 rounded-full text-xs font-semibold border border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition">Available</button>
+            <button data-status="posted"    class="catalog-status-pill px-3 py-1 rounded-full text-xs font-semibold border border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition">Posted</button>
+            <button data-status="pending"   class="catalog-status-pill px-3 py-1 rounded-full text-xs font-semibold border border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition">Pending</button>
+            <button data-status="sold"      class="catalog-status-pill px-3 py-1 rounded-full text-xs font-semibold border border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition">Sold</button>
+          </div>
+          <!-- Type pill row -->
+          <div class="flex flex-wrap gap-1.5" id="catalog-type-pills">
+            <button data-type="all"  class="catalog-type-pill active px-3 py-1 rounded-full text-xs font-semibold bg-indigo-600 text-white transition">All</button>
+            <button data-type="new"  class="catalog-type-pill px-3 py-1 rounded-full text-xs font-semibold border border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition">New</button>
+            <button data-type="used" class="catalog-type-pill px-3 py-1 rounded-full text-xs font-semibold border border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition">Used</button>
+            <button data-type="demo" class="catalog-type-pill px-3 py-1 rounded-full text-xs font-semibold border border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition">Demo</button>
+          </div>
+          <!-- hidden select kept for JS compatibility -->
+          <select id="catalog-status" class="hidden"></select>
         </div>
         <div id="catalog-list" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 max-h-[600px] overflow-y-auto pr-1">
           <div class="text-xs text-slate-500 italic col-span-full">Loading catalog...</div>
@@ -1944,7 +1952,7 @@
     </div>
   </div>
 
-  <script src="dashboard.js?v=20260703q"></script>
+  <script src="dashboard.js?v=20260703r"></script>
   <script src="tour.js"></script>
 </body>
 </html>

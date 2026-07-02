@@ -1767,10 +1767,14 @@ async function loadInventoryCatalog() {
   }
 }
 
+let __catalogStatusFilter = 'all';
+let __catalogTypeFilter = 'all';
+
 function renderCatalog() {
   const list = document.getElementById('catalog-list');
   const q = document.getElementById('catalog-search').value.trim().toLowerCase();
-  const statusFilter = document.getElementById('catalog-status').value;
+  const statusFilter = __catalogStatusFilter;
+  const typeFilter = __catalogTypeFilter;
 
   const conditionRank = (v) => {
     const c = (v.condition || '').toLowerCase();
@@ -1787,14 +1791,12 @@ function renderCatalog() {
     return conditionRank(v);
   };
 
-  const CONDITION_FILTERS = new Set(['new', 'used', 'demo']);
   let filtered = __catalogCache;
   if (statusFilter !== 'all') {
-    if (CONDITION_FILTERS.has(statusFilter)) {
-      filtered = filtered.filter(v => (v.condition || '').toLowerCase() === statusFilter);
-    } else {
-      filtered = filtered.filter(v => v.status === statusFilter);
-    }
+    filtered = filtered.filter(v => v.status === statusFilter);
+  }
+  if (typeFilter !== 'all') {
+    filtered = filtered.filter(v => (v.condition || '').toLowerCase() === typeFilter);
   }
   if (q) {
     filtered = filtered.filter(v =>
@@ -1987,9 +1989,34 @@ function setupActionListeners() {
   // Manual sync trigger
   document.getElementById('sync-now-btn')?.addEventListener('click', syncNow);
 
-  // Catalog search + status filter
+  // Catalog search + pill filters
   document.getElementById('catalog-search')?.addEventListener('input', renderCatalog);
-  document.getElementById('catalog-status')?.addEventListener('change', renderCatalog);
+
+  document.getElementById('catalog-status-pills')?.addEventListener('click', (e) => {
+    const btn = e.target.closest('.catalog-status-pill');
+    if (!btn) return;
+    __catalogStatusFilter = btn.dataset.status;
+    document.querySelectorAll('.catalog-status-pill').forEach(b => {
+      const active = b.dataset.status === __catalogStatusFilter;
+      b.className = active
+        ? 'catalog-status-pill active px-3 py-1 rounded-full text-xs font-semibold bg-indigo-600 text-white transition'
+        : 'catalog-status-pill px-3 py-1 rounded-full text-xs font-semibold border border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition';
+    });
+    renderCatalog();
+  });
+
+  document.getElementById('catalog-type-pills')?.addEventListener('click', (e) => {
+    const btn = e.target.closest('.catalog-type-pill');
+    if (!btn) return;
+    __catalogTypeFilter = btn.dataset.type;
+    document.querySelectorAll('.catalog-type-pill').forEach(b => {
+      const active = b.dataset.type === __catalogTypeFilter;
+      b.className = active
+        ? 'catalog-type-pill active px-3 py-1 rounded-full text-xs font-semibold bg-indigo-600 text-white transition'
+        : 'catalog-type-pill px-3 py-1 rounded-full text-xs font-semibold border border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition';
+    });
+    renderCatalog();
+  });
 
   // Rep drill-down modal close
   document.getElementById('rep-detail-close')?.addEventListener('click', closeRepDetail);
