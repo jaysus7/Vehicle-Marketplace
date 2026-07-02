@@ -3012,6 +3012,8 @@ async function loadAIBoostSection() {
           __hotMakeModels = new Set((data.hot_segments || []).map(s => `${s.make} ${s.model}`.toLowerCase()));
           __coldMakeModels = new Set((data.cold_segments || []).map(s => `${s.make} ${s.model}`.toLowerCase()));
           __vehicleHealthScores = Object.fromEntries((data.vehicles || []).map(v => [v.id, v.score]));
+          // Re-render inventory cards now that caches are populated
+          if (typeof renderCatalog === 'function' && document.getElementById('catalog-list')) renderCatalog();
         })
         .catch(() => {});
     }
