@@ -1084,6 +1084,47 @@ Units 60d+ on lot: ${stale}`
           } catch {}
         }
 
+        // 3c: Puppeteer — real browser, clears JS challenges (same path inventory sync uses)
+        try {
+          const { fetchViaBrowser } = await import('../puppeteerRenderer.js')
+          const r = await fetchViaBrowser(url, { timeoutMs: 30000 })
+          if (r.ok && r.body) {
+            const { prices: sp, listing_count: slc } = parseSchemaOrg(r.body)
+            if (sp.length || slc) {
+              const sorted = [...sp].sort((a, b) => a - b)
+              return {
+                listing_count: slc ?? sp.length,
+                avg_price: sp.length ? Math.round(sp.reduce((a, b) => a + b, 0) / sp.length) : null,
+                min_price: sorted[0] ?? null,
+                max_price: sorted[sorted.length - 1] ?? null,
+                platform: 'Schema.org (browser)',
+                scanned_at: new Date().toISOString()
+              }
+            }
+            // Try the same embedded-JSON extraction on the Puppeteer-rendered HTML
+            const ndMatch = r.body.match(/<script id="__NEXT_DATA__" type="application\/json">([\s\S]*?)<\/script>/)
+            if (ndMatch) {
+              try {
+                const nd = JSON.parse(ndMatch[1])
+                const tot = findTotal(nd)
+                const raw = extractListings(nd)
+                const bp = raw.map(l => Number(l?.price?.value ?? l?.price ?? 0)).filter(p => p > 1000 && p < 500_000)
+                if (tot || bp.length) {
+                  const sorted = [...bp].sort((a, b) => a - b)
+                  return {
+                    listing_count: tot ?? bp.length,
+                    avg_price: bp.length ? Math.round(bp.reduce((a, b) => a + b, 0) / bp.length) : null,
+                    min_price: sorted[0] ?? null,
+                    max_price: sorted[sorted.length - 1] ?? null,
+                    platform: 'browser render',
+                    scanned_at: new Date().toISOString()
+                  }
+                }
+              } catch {}
+            }
+          }
+        } catch {}
+
         throw new Error(`HTTP ${res.status} — site is blocking automated scans`)
       }
 
