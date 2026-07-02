@@ -2,7 +2,6 @@ import Anthropic from '@anthropic-ai/sdk'
 import { supabaseAdmin, resend, EMAIL_FROM, browserFetch } from '../shared.js'
 import { requireAuth } from '../middleware.js'
 import { scrapeMarketData } from '../scraper.js'
-import { detectFeedPlatform } from '../sync/platforms.js'
 
 const OWNER_EMAIL = (process.env.OWNER_EMAIL || 'massiejay@gmail.com').toLowerCase()
 
@@ -753,6 +752,7 @@ Return ONLY valid JSON array (no markdown):
     async function scrapeInventoryUrl(url) {
       // Try DMS platform detection first (works on dealer homepages)
       try {
+        const { detectFeedPlatform } = await import('../sync/platforms.js')
         const probe = await detectFeedPlatform(url)
         if (probe.success) {
           const vehicles = probe.sample_vehicles || []
@@ -905,12 +905,14 @@ Return ONLY valid JSON array (no markdown):
     for (const v of vehicles) vehicleById[v.id] = v
 
     // Deduplicate price drift by inventory_id, keep worst flag per vehicle.
-    // Skip condition='new' — MSRP pricing has no meaningful internal comparable.
+    // Skip condition='new' — MSRP pricing has no meaningful comparable.
+    // Also skip if vehicle not found in current available list (may be sold/archived with stale activity).
     const driftMap = {}
     for (const a of (recentActivity || [])) {
       if (!a.price_flagged) continue
       const inv = vehicleById[a.inventory_id]
-      if (inv?.condition === 'new') continue
+      if (!inv) continue                         // not in current available inventory — skip stale activity
+      if (inv.condition === 'new') continue      // new vehicles excluded from price comparison
       const key = a.inventory_id || a.vehicle_label
       if (!driftMap[key] || Math.abs(a.price_pct_diff) > Math.abs(driftMap[key].price_pct_diff)) {
         driftMap[key] = a
@@ -1163,7 +1165,8 @@ Return ONLY valid JSON array (no markdown):
     for (const a of (recentActivity || [])) {
       if (!a.price_flagged) continue
       const inv = vehicleById[a.inventory_id]
-      if (inv?.condition === 'new') continue
+      if (!inv) continue                    // stale activity for sold/archived vehicle
+      if (inv.condition === 'new') continue // new vehicles excluded
       const key = a.inventory_id || a.vehicle_label
       if (!driftMap[key] || Math.abs(a.price_pct_diff) > Math.abs(driftMap[key].price_pct_diff)) driftMap[key] = a
     }
