@@ -3538,7 +3538,7 @@ async function generatePdf(vehicleId, type, btn) {
 
   const pollStatus = async (deadline) => {
     if (Date.now() > deadline) {
-      showToast(`${label} is taking longer than expected — try again in a moment`, 'error');
+      showToast(`${label} is still generating — check back in a minute and click again to open it`, 'info', 8000);
       btn.disabled = false;
       btn.textContent = origText;
       return;
@@ -3570,8 +3570,8 @@ async function generatePdf(vehicleId, type, btn) {
       // Cached — open immediately
       openUrl(data.url);
     } else {
-      // Generation started — poll for completion (90s deadline)
-      pollStatus(Date.now() + 90_000);
+      // Generation started — poll for completion (150s deadline)
+      pollStatus(Date.now() + 150_000);
     }
   } catch (e) {
     showToast(e.message, 'error');
@@ -3835,12 +3835,7 @@ async function loadVinStickerInventory() {
           ? 'bg-emerald-50/40 dark:bg-emerald-950/10'
           : '';
 
-      const statusBadges = [
-        hasVin      && `<span class="inline-flex items-center text-xs font-medium text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 rounded px-1.5 py-0.5">&#10003; VIN</span>`,
-        hasSticker  && `<span class="inline-flex items-center text-xs font-medium text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 rounded px-1.5 py-0.5">&#10003; Sticker</span>`,
-        hasBrochure && `<span class="inline-flex items-center text-xs font-medium text-purple-700 dark:text-purple-400 bg-purple-50 dark:bg-purple-950/40 border border-purple-200 dark:border-purple-800 rounded px-1.5 py-0.5">&#10003; Brochure</span>`,
-        allDone     && `<span class="inline-flex items-center text-xs font-bold text-purple-700 dark:text-purple-300 bg-purple-100 dark:bg-purple-900/40 border border-purple-300 dark:border-purple-700 rounded px-1.5 py-0.5">&#9733; Complete</span>`,
-      ].filter(Boolean).join('');
+      // Status communicated via action button states — no separate badge row needed
 
       // Build pill-style detail chips
       const chips = [
@@ -3855,13 +3850,16 @@ async function loadVinStickerInventory() {
         v.doors        && `<span class="chip">${v.doors}-door</span>`,
       ].filter(Boolean).join('');
 
-      const decodeBtn = hasVin
-        ? `<button class="vs-decode-btn text-xs bg-emerald-100 dark:bg-emerald-900/40 hover:bg-emerald-200 dark:hover:bg-emerald-800/60 border border-emerald-300 dark:border-emerald-700 text-emerald-700 dark:text-emerald-300 px-3 py-1.5 rounded-lg transition font-medium" data-id="${v.id}" data-vin="${v.vin || ''}">&#10003; VIN</button>`
-        : `<button class="vs-decode-btn text-xs bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 px-3 py-1.5 rounded-lg transition font-medium" data-id="${v.id}" data-vin="${v.vin || ''}">VIN Decode</button>`;
+      const vinBtnCls = hasVin
+        ? 'bg-emerald-50 dark:bg-emerald-900/40 hover:bg-emerald-100 dark:hover:bg-emerald-800/60 border border-emerald-300 dark:border-emerald-700 text-emerald-700 dark:text-emerald-300'
+        : 'bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300';
+      const vinBtnLabel = hasVin ? `&#10003; VIN` : `VIN`;
+      const decodeBtn = `<button class="vs-decode-btn text-xs ${vinBtnCls} px-3 py-1.5 rounded-lg transition font-semibold" data-id="${v.id}" data-vin="${v.vin || ''}">${vinBtnLabel}</button>`;
 
-      const stickerBtnLabel  = hasSticker  ? `&#9679; Sticker`  : `Sticker`;
-      const brochureBtnCls   = hasBrochure ? 'bg-purple-600 hover:bg-purple-500' : 'bg-indigo-600 hover:bg-indigo-500';
-      const brochureBtnLabel = hasBrochure ? `&#9679; Brochure` : `Brochure`;
+      const stickerBtnCls   = hasSticker ? 'bg-emerald-600 hover:bg-emerald-500' : 'bg-emerald-600 hover:bg-emerald-500';
+      const stickerBtnLabel = hasSticker ? `&#10003; Sticker` : `Sticker`;
+      const brochureBtnCls  = hasBrochure ? 'bg-indigo-500 hover:bg-indigo-400' : 'bg-indigo-600 hover:bg-indigo-500';
+      const brochureBtnLabel = hasBrochure ? `&#10003; Brochure` : `Brochure`;
 
       const thumbUrl = v.image_urls?.[0] || null;
       const thumbHtml = thumbUrl
@@ -3879,7 +3877,6 @@ async function loadVinStickerInventory() {
                 <span class="text-sm font-bold text-slate-900 dark:text-white">${label}</span>
                 ${v.stocknumber ? `<span class="text-xs font-mono text-slate-400 dark:text-slate-500">#${v.stocknumber}</span>` : ''}
                 ${recallBadge}
-                ${statusBadges}
               </div>
               <div class="flex items-center gap-2 mt-0.5 text-xs text-slate-500 dark:text-slate-400 flex-wrap">
                 <span class="font-semibold text-slate-700 dark:text-slate-200">${price}</span>
