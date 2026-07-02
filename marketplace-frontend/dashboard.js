@@ -296,8 +296,11 @@ function switchPage(pageId) {
   document.querySelectorAll('[data-page-content]').forEach(el => {
     el.classList.toggle('hidden', el.dataset.pageContent !== pageId);
   });
-  document.querySelectorAll('#dashboard-nav .nav-item, #nav-ai-boost, #nav-vin-sticker').forEach(btn => {
-    const active = btn.dataset.page === pageId;
+  document.querySelectorAll('#dashboard-nav .nav-item, #nav-ai-boost, #nav-vin-sticker, #nav-inv-intel').forEach(btn => {
+    const active = btn.id === 'nav-inv-intel' ? pageId === 'inv-intel'
+                 : btn.id === 'nav-ai-boost'  ? pageId === 'ai-boost'
+                 : btn.id === 'nav-vin-sticker'? pageId === 'vin-sticker'
+                 : btn.dataset.page === pageId;
     btn.classList.toggle('bg-indigo-100', active);
     btn.classList.toggle('dark:bg-indigo-950/50', active);
     btn.classList.toggle('text-indigo-700', active);
@@ -309,6 +312,7 @@ function switchPage(pageId) {
   if (pageId === 'ai-boost') loadAIActivity();
   if (pageId === 'vin-sticker') loadVinStickerPage();
   if (pageId === 'profile') loadProfileBranding();
+  if (pageId === 'inv-intel' && typeof window._invIntelPageHook === 'function') window._invIntelPageHook();
 }
 
 // Idempotent restore: makes sure leaderboard / team-insights / sales-team panels live
@@ -3615,6 +3619,7 @@ function showBrandingMsg(text, ok) {
 
 function initVinStickerPage() {
   renderVinStickerNav();
+  renderInvIntelNav();
   loadVinStickerPage();
 
   document.getElementById('vin-page-decode-btn')?.addEventListener('click', runVinPageDecode);
@@ -3645,6 +3650,27 @@ function renderVinStickerNav() {
   if (!btn._clickWired) {
     btn._clickWired = true;
     btn.addEventListener('click', () => switchPage('vin-sticker'));
+  }
+}
+
+function renderInvIntelNav() {
+  const btn = document.getElementById('nav-inv-intel');
+  if (!btn) return;
+  const isAdmin = profileContext?.role === 'DEALER_ADMIN' || profileContext?.role === 'OWNER';
+  if (!isAdmin) { btn.classList.add('hidden'); return; }
+
+  btn.classList.remove('hidden');
+  // Style based on whether AI Boost is active (same data, no separate flag needed)
+  if (__aiBoostActive) {
+    btn.classList.remove('text-slate-400', 'dark:text-slate-600');
+    btn.classList.add('text-slate-700', 'dark:text-slate-300', 'hover:bg-slate-100', 'dark:hover:bg-slate-800');
+  } else {
+    btn.classList.add('text-slate-700', 'dark:text-slate-300', 'hover:bg-slate-100', 'dark:hover:bg-slate-800');
+  }
+
+  if (!btn._clickWired) {
+    btn._clickWired = true;
+    btn.addEventListener('click', () => switchPage('inv-intel'));
   }
 }
 
@@ -4526,4 +4552,182 @@ ${inner}
       startPolling()
     }
   }, 500)
+})()
+
+// ── Inventory Intelligence Page ────────────────────────────────────────────
+;(function() {
+  let _intelData = null
+  let _intelLoaded = false
+
+  function scoreColor(s) {
+    if (s >= 80) return 'text-emerald-600 dark:text-emerald-400'
+    if (s >= 60) return 'text-amber-600 dark:text-amber-400'
+    return 'text-red-600 dark:text-red-400'
+  }
+
+  function scoreBg(s) {
+    if (s >= 80) return 'bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300'
+    if (s >= 60) return 'bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300'
+    return 'bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300'
+  }
+
+  function supplyColor(mos) {
+    if (mos === null) return 'text-slate-400'
+    if (mos <= 1.5) return 'text-emerald-600 dark:text-emerald-400 font-bold'
+    if (mos <= 3)   return 'text-amber-600 dark:text-amber-400'
+    return 'text-red-500 dark:text-red-400'
+  }
+
+  function statCard(label, value, sub, accent) {
+    return `<div class="bg-white dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 rounded-xl p-4">
+      <div class="text-xs font-bold uppercase tracking-wider text-slate-400 mb-1">${label}</div>
+      <div class="text-2xl font-black ${accent || 'text-slate-900 dark:text-white'}">${value}</div>
+      ${sub ? `<div class="text-xs text-slate-500 mt-0.5">${sub}</div>` : ''}
+    </div>`
+  }
+
+  function renderIntel(data) {
+    const { summary, velocity, hot_segments, cold_segments, duplicate_vins, vehicles, narrative } = data
+
+    // Stats
+    const sa = summary.avg_score
+    document.getElementById('inv-intel-stats').innerHTML = [
+      statCard('Total Units', summary.total, 'available'),
+      statCard('Avg Health Score', sa + '/100', '', scoreColor(sa)),
+      statCard('Need Attention', summary.needs_attention, 'score < 50', summary.needs_attention > 0 ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400'),
+      statCard('Duplicate VINs', summary.duplicate_vins, duplicate_vins.length ? 'action required' : 'none found', duplicate_vins.length ? 'text-red-600 dark:text-red-400' : 'text-slate-900 dark:text-white'),
+    ].join('')
+
+    // AI Narrative
+    const narEl = document.getElementById('inv-intel-narrative')
+    const narList = document.getElementById('inv-intel-narrative-list')
+    if (narrative?.length) {
+      narList.innerHTML = narrative.map(b => `<li class="flex gap-2 text-sm text-slate-700 dark:text-slate-300"><span class="text-indigo-500 flex-shrink-0 mt-0.5">›</span>${b}</li>`).join('')
+      narEl.classList.remove('hidden')
+    } else {
+      narEl.classList.add('hidden')
+    }
+
+    // Hot / Cold segments
+    const hotEl = document.getElementById('inv-intel-hot')
+    hotEl.innerHTML = hot_segments.length
+      ? hot_segments.map(s => `<div class="flex items-center justify-between py-1.5 border-b border-slate-100 dark:border-slate-700 last:border-0">
+          <span class="font-medium text-slate-900 dark:text-white">${s.make} ${s.model}</span>
+          <div class="text-right">
+            <div class="text-xs font-bold text-emerald-600">${s.monthly_velocity}/mo</div>
+            <div class="text-[10px] text-slate-400">${s.current_stock} in stock</div>
+          </div>
+        </div>`).join('')
+      : '<p class="text-slate-400 text-sm">No hot segments detected</p>'
+
+    const coldEl = document.getElementById('inv-intel-cold')
+    coldEl.innerHTML = cold_segments.length
+      ? cold_segments.map(s => `<div class="flex items-center justify-between py-1.5 border-b border-slate-100 dark:border-slate-700 last:border-0">
+          <span class="font-medium text-slate-900 dark:text-white">${s.make} ${s.model}</span>
+          <div class="text-right">
+            <div class="text-xs font-bold text-slate-500">${s.current_stock} units</div>
+            <div class="text-[10px] text-slate-400">${s.monthly_velocity}/mo sold</div>
+          </div>
+        </div>`).join('')
+      : '<p class="text-slate-400 text-sm">No cold segments detected</p>'
+
+    // Duplicates
+    const dupsWrap = document.getElementById('inv-intel-dups-wrap')
+    const dupsEl = document.getElementById('inv-intel-dups')
+    if (duplicate_vins.length) {
+      dupsEl.innerHTML = duplicate_vins.map(d => `<div class="bg-white dark:bg-slate-800 rounded-lg px-3 py-2">
+        <div class="font-mono text-xs font-bold text-red-700 dark:text-red-400 mb-1">VIN: ${d.vin}</div>
+        <div class="flex flex-wrap gap-2">${d.units.map(u => `<span class="text-xs bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300 px-2 py-0.5 rounded">${u.year} ${u.make} ${u.model}${u.stock ? ' · ' + u.stock : ''}</span>`).join('')}</div>
+      </div>`).join('')
+      dupsWrap.classList.remove('hidden')
+    } else {
+      dupsWrap.classList.add('hidden')
+    }
+
+    // Velocity table
+    const tbody = document.getElementById('inv-intel-velocity-body')
+    tbody.innerHTML = velocity.map(s => `<tr class="hover:bg-slate-50 dark:hover:bg-slate-800/40 transition">
+      <td class="px-4 py-2.5 font-medium text-slate-900 dark:text-white">${s.make} ${s.model}</td>
+      <td class="px-4 py-2.5 text-right tabular-nums">${s.sold_30d}</td>
+      <td class="px-4 py-2.5 text-right tabular-nums font-bold">${s.sold_90d}</td>
+      <td class="px-4 py-2.5 text-right tabular-nums">${s.current_stock}</td>
+      <td class="px-4 py-2.5 text-right tabular-nums ${supplyColor(s.months_of_supply)}">${s.months_of_supply != null ? s.months_of_supply + ' mo' : '—'}</td>
+    </tr>`).join('') || '<tr><td colspan="5" class="px-4 py-6 text-center text-slate-400">No sell-through data yet</td></tr>'
+
+    // Health scores table (show lowest 50)
+    const hbody = document.getElementById('inv-intel-health-body')
+    hbody.innerHTML = vehicles.slice(0, 60).map(v => {
+      const issues = v.issues.length
+        ? v.issues.map(i => `<span class="inline-flex text-[10px] bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 px-1.5 py-0.5 rounded">${i}</span>`).join(' ')
+        : '<span class="text-emerald-500 text-xs">✓ Good</span>'
+      const stockLink = v.stock ? `<a href="#" onclick="switchPage('inventory');document.getElementById('catalog-search').value='${v.stock}';if(typeof renderCatalog==='function')renderCatalog();return false;" class="text-indigo-600 dark:text-indigo-400 hover:underline">${v.stock}</a>` : `<span class="text-slate-400 font-mono text-xs">${v.id.slice(0, 8)}</span>`
+      return `<tr class="hover:bg-slate-50 dark:hover:bg-slate-800/40 transition">
+        <td class="px-4 py-2.5">
+          <div>${stockLink}</div>
+          <div class="text-xs text-slate-400">${v.year} ${v.make} ${v.model}</div>
+        </td>
+        <td class="px-4 py-2.5 text-right">
+          <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold ${scoreBg(v.score)}">${v.score}</span>
+        </td>
+        <td class="px-4 py-2.5 text-right tabular-nums text-sm">${v.photos}</td>
+        <td class="px-4 py-2.5 text-right tabular-nums text-sm ${v.days >= 60 ? 'text-red-500 font-bold' : v.days >= 30 ? 'text-amber-500' : ''}">${v.days}d</td>
+        <td class="px-4 py-2.5">${issues}</td>
+      </tr>`
+    }).join('') || '<tr><td colspan="5" class="px-4 py-6 text-center text-slate-400">No vehicles found</td></tr>'
+
+    document.getElementById('inv-intel-content').classList.remove('hidden')
+  }
+
+  async function loadIntel(force = false) {
+    if (_intelLoaded && !force) return
+    const loading = document.getElementById('inv-intel-loading')
+    const content = document.getElementById('inv-intel-content')
+    const upsell  = document.getElementById('inv-intel-upsell')
+    loading.classList.remove('hidden')
+    content.classList.add('hidden')
+    upsell.classList.add('hidden')
+    try {
+      const data = await apiFetch(`${API}/ai/inventory-intelligence`)
+      if (data.error?.includes('AI Boost')) {
+        upsell.classList.remove('hidden')
+        loading.classList.add('hidden')
+        return
+      }
+      _intelData = data
+      _intelLoaded = true
+      renderIntel(data)
+    } catch (err) {
+      if (err.message?.includes('403') || err.message?.includes('AI Boost')) {
+        upsell.classList.remove('hidden')
+      } else {
+        showToast('Could not load inventory intelligence: ' + err.message, 'error')
+      }
+    } finally {
+      loading.classList.add('hidden')
+    }
+  }
+
+  // Wire nav + refresh button
+  document.addEventListener('DOMContentLoaded', () => {
+    const navBtn = document.getElementById('nav-inv-intel')
+    const refreshBtn = document.getElementById('inv-intel-refresh-btn')
+
+    if (navBtn) {
+      navBtn.addEventListener('click', () => {
+        switchPage('inv-intel')
+        loadIntel()
+      })
+    }
+
+    if (refreshBtn) {
+      refreshBtn.addEventListener('click', () => {
+        _intelLoaded = false
+        loadIntel(true)
+      })
+    }
+  })
+
+  // Auto-load if navigated via notification link
+  const origSwitch = window._origSwitchPage
+  window._invIntelPageHook = () => loadIntel()
 })()

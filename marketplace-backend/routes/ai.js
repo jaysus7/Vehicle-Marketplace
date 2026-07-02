@@ -691,6 +691,203 @@ Return ONLY valid JSON array (no markdown):
     res.json({ recommendations, sell_through, generated_at: new Date().toISOString() })
   })
 
+  // ── Inventory Intelligence ────────────────────────────────────────────────
+  app.get('/ai/inventory-intelligence', requireAuth, async (req, res) => {
+    if (!req.dealershipId) return res.status(400).json({ error: 'No dealership associated' })
+
+    const { data: dealer } = await supabaseAdmin
+      .from('dealerships')
+      .select('ai_boost_active, name')
+      .eq('id', req.dealershipId)
+      .single()
+
+    const isOwner = (req.user.email || '').toLowerCase() === OWNER_EMAIL
+    if (!isOwner && !dealer?.ai_boost_active) return res.status(403).json({ error: 'AI Boost not active' })
+
+    const since90  = new Date(Date.now() -  90 * 86400000).toISOString()
+    const since30  = new Date(Date.now() -  30 * 86400000).toISOString()
+    const since180 = new Date(Date.now() - 180 * 86400000).toISOString()
+
+    const [{ data: available }, { data: sold90 }, { data: sold30 }] = await Promise.all([
+      supabaseAdmin
+        .from('inventory')
+        .select('id, vin, stock_number, stocknumber, make, model, year, condition, price, mileage, description, images, days_on_lot, created_at, updated_at')
+        .eq('dealership_id', req.dealershipId)
+        .eq('status', 'available'),
+      supabaseAdmin
+        .from('inventory')
+        .select('make, model, year, condition, updated_at')
+        .eq('dealership_id', req.dealershipId)
+        .in('status', ['sold', 'archived'])
+        .gte('updated_at', since90),
+      supabaseAdmin
+        .from('inventory')
+        .select('make, model, year, condition, updated_at')
+        .eq('dealership_id', req.dealershipId)
+        .in('status', ['sold', 'archived'])
+        .gte('updated_at', since30),
+    ])
+
+    const vehicles = available || []
+
+    // ── 1. Duplicate VIN detection ─────────────────────────────────────────
+    const vinCount = {}
+    for (const v of vehicles) {
+      const vin = (v.vin || '').trim().toUpperCase()
+      if (!vin || vin.length < 6) continue
+      if (!vinCount[vin]) vinCount[vin] = []
+      vinCount[vin].push({ id: v.id, stock: v.stocknumber || v.stock_number || '', year: v.year, make: v.make, model: v.model })
+    }
+    const duplicateVins = Object.entries(vinCount)
+      .filter(([, arr]) => arr.length > 1)
+      .map(([vin, units]) => ({ vin, units }))
+
+    // ── 2. Segment velocity (by make × model) ─────────────────────────────
+    const seg90 = {}, seg30 = {}
+    for (const v of sold90 || []) {
+      const k = `${v.make}|${v.model}`
+      seg90[k] = (seg90[k] || 0) + 1
+    }
+    for (const v of sold30 || []) {
+      const k = `${v.make}|${v.model}`
+      seg30[k] = (seg30[k] || 0) + 1
+    }
+
+    const stockBySegment = {}
+    for (const v of vehicles) {
+      const k = `${v.make}|${v.model}`
+      if (!stockBySegment[k]) stockBySegment[k] = { make: v.make, model: v.model, units: [] }
+      stockBySegment[k].units.push(v)
+    }
+
+    const allSegments = new Set([
+      ...Object.keys(seg90),
+      ...Object.keys(seg30),
+      ...Object.keys(stockBySegment),
+    ])
+
+    const velocity = []
+    for (const k of allSegments) {
+      const [make, model] = k.split('|')
+      const s30 = seg30[k] || 0
+      const s90 = seg90[k] || 0
+      const stock = (stockBySegment[k]?.units || []).length
+      // Turn rate = monthly velocity / current stock (months of supply, lower = faster)
+      const monthlyVelocity = s90 / 3  // avg sold per month over 90d
+      const monthsOfSupply = monthlyVelocity > 0 ? Math.round((stock / monthlyVelocity) * 10) / 10 : null
+      velocity.push({ make, model, sold_30d: s30, sold_90d: s90, current_stock: stock, monthly_velocity: Math.round(monthlyVelocity * 10) / 10, months_of_supply: monthsOfSupply })
+    }
+    velocity.sort((a, b) => (b.sold_90d - a.sold_90d) || (a.months_of_supply ?? 99) - (b.months_of_supply ?? 99))
+
+    // Hot: selling fast, low stock
+    const hot = velocity
+      .filter(s => s.monthly_velocity > 0 && s.current_stock < 3)
+      .sort((a, b) => b.monthly_velocity - a.monthly_velocity)
+      .slice(0, 4)
+
+    // Cold: stock sitting but not moving
+    const cold = velocity
+      .filter(s => s.current_stock >= 2 && s.monthly_velocity < 1)
+      .sort((a, b) => b.current_stock - a.current_stock)
+      .slice(0, 4)
+
+    // ── 3. Per-vehicle health score ────────────────────────────────────────
+    const now = Date.now()
+    const scoredVehicles = vehicles.map(v => {
+      let score = 0
+      // Photos (30 pts)
+      const photoCount = Array.isArray(v.images) ? v.images.length : (v.images ? 1 : 0)
+      if (photoCount >= 10) score += 30
+      else if (photoCount >= 5) score += 20
+      else if (photoCount >= 1) score += 10
+
+      // Days on lot (25 pts)
+      const days = v.days_on_lot ?? Math.round((now - new Date(v.created_at).getTime()) / 86400000)
+      if (days < 15)       score += 25
+      else if (days < 30)  score += 20
+      else if (days < 60)  score += 10
+      else if (days < 90)  score += 5
+
+      // Price set (15 pts)
+      if (v.price > 0) score += 15
+
+      // Mileage set (10 pts)
+      if (v.mileage > 0) score += 10
+
+      // Description (10 pts)
+      if ((v.description || '').trim().length > 50) score += 10
+
+      // Year / make / model / condition all present (10 pts)
+      const complete = [v.year, v.make, v.model, v.condition].every(Boolean)
+      if (complete) score += 10
+
+      const stock = v.stocknumber || v.stock_number || ''
+      return {
+        id: v.id,
+        stock,
+        year: v.year,
+        make: v.make,
+        model: v.model,
+        condition: v.condition,
+        price: v.price,
+        days,
+        photos: photoCount,
+        score,
+        issues: [
+          photoCount === 0 && 'No photos',
+          !(v.price > 0) && 'No price',
+          !(v.mileage > 0) && 'No mileage',
+          !(v.description?.trim().length > 50) && 'Short/no description',
+          days >= 60 && `${days}d on lot`,
+        ].filter(Boolean),
+      }
+    }).sort((a, b) => a.score - b.score)  // lowest health first
+
+    // ── 4. Summary stats ──────────────────────────────────────────────────
+    const avgScore = vehicles.length
+      ? Math.round(scoredVehicles.reduce((s, v) => s + v.score, 0) / vehicles.length)
+      : 0
+    const needsAttention = scoredVehicles.filter(v => v.score < 50).length
+
+    // ── 5. AI narrative (optional — only if Anthropic key present) ─────────
+    let narrative = null
+    if (process.env.ANTHROPIC_API_KEY && velocity.length) {
+      try {
+        const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
+        const prompt = `You are an automotive inventory analyst for a Canadian dealership. Analyze this lot data and return exactly 5 bullet-point insights — each under 20 words, specific, actionable. Return ONLY a JSON array of strings (no markdown):
+
+Lot: ${vehicles.length} available | avg health score: ${avgScore}/100 | ${needsAttention} units need attention
+Hot segments (low stock, selling fast): ${hot.map(s => `${s.make} ${s.model} (${s.monthly_velocity}/mo, ${s.current_stock} in stock)`).join('; ') || 'none'}
+Cold segments (high stock, slow moving): ${cold.map(s => `${s.make} ${s.model} (${s.current_stock} units, ${s.monthly_velocity}/mo)`).join('; ') || 'none'}
+Top movers 90d: ${velocity.slice(0, 5).map(s => `${s.make} ${s.model}: ${s.sold_90d} sold`).join(', ')}
+Duplicate VINs: ${duplicateVins.length}
+Units without photos: ${scoredVehicles.filter(v => v.photos === 0).length}
+Units 60d+ on lot: ${scoredVehicles.filter(v => v.days >= 60).length}`
+
+        const msg = await anthropic.messages.create({
+          model: 'claude-haiku-4-5-20251001',
+          max_tokens: 400,
+          messages: [{ role: 'user', content: prompt }]
+        })
+        const text = msg.content[0]?.text?.trim().replace(/^```json?\s*/i, '').replace(/```\s*$/i, '') || '[]'
+        narrative = JSON.parse(text)
+      } catch {
+        narrative = null
+      }
+    }
+
+    res.json({
+      summary: { total: vehicles.length, avg_score: avgScore, needs_attention: needsAttention, duplicate_vins: duplicateVins.length },
+      velocity: velocity.slice(0, 30),
+      hot_segments: hot,
+      cold_segments: cold,
+      duplicate_vins: duplicateVins,
+      vehicles: scoredVehicles,
+      narrative,
+      generated_at: new Date().toISOString(),
+    })
+  })
+
   // ── Competitor Monitoring ────────────────────────────────────────────────
 
   app.get('/ai/competitors', requireAuth, async (req, res) => {
