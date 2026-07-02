@@ -4327,4 +4327,58 @@ document.addEventListener('DOMContentLoaded', () => {
     } catch (e) { showToast(e.message, 'error'); }
     finally { btn.disabled = false; btn.innerHTML = '<svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25m19.5 0v.243a2.25 2.25 0 01-1.07 1.916l-7.5 4.615a2.25 2.25 0 01-2.36 0L3.32 8.91a2.25 2.25 0 01-1.07-1.916V6.75"/></svg> Send Report Now'; }
   });
+
+  // PDF download — opens the report HTML in a new tab with a Print button
+  document.getElementById('weekly-report-pdf-btn')?.addEventListener('click', async () => {
+    const btn = document.getElementById('weekly-report-pdf-btn');
+    btn.disabled = true; btn.textContent = 'Generating…';
+    try {
+      const res = await fetch(`${API}/ai/weekly-report/html`, { headers: { 'Authorization': `Bearer ${token}` } });
+      if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.error || 'Failed'); }
+      const html = await res.text();
+      const blob = new Blob([html], { type: 'text/html' });
+      const url = URL.createObjectURL(blob);
+      const w = window.open(url, '_blank');
+      if (w) setTimeout(() => URL.revokeObjectURL(url), 30000);
+      else showToast('Pop-up blocked — allow pop-ups and try again', 'error');
+    } catch (e) { showToast(e.message, 'error'); }
+    finally { btn.disabled = false; btn.innerHTML = '<svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3"/></svg> Download PDF'; }
+  });
+
+  // Competitor comparison PDF — generates a printable page from the rendered comparison panel
+  document.getElementById('competitor-pdf-btn')?.addEventListener('click', () => {
+    const panel = document.getElementById('competitor-comparison');
+    if (!panel || panel.classList.contains('hidden')) return;
+    const inner = panel.querySelector('.space-y-3')?.innerHTML || panel.innerHTML;
+    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Competitor Lot Comparison</title>
+<style>
+  @media print { .no-print{display:none!important} @page{margin:0.75in} }
+  body{font-family:Arial,sans-serif;background:#f8fafc;padding:24px;color:#0f172a}
+  .no-print{display:flex;justify-content:flex-end;gap:10px;margin-bottom:16px}
+  .no-print button{padding:8px 18px;border-radius:6px;border:none;cursor:pointer;font-weight:700;font-size:13px}
+  h1{font-size:18px;font-weight:900;color:#1a2e4a;margin:0 0 4px}
+  .sub{font-size:12px;color:#64748b;margin-bottom:20px}
+  .card{background:#fff;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;margin-bottom:16px}
+  .card-head{background:#1a2e4a;color:#fff;font-weight:700;font-size:14px;padding:10px 14px}
+  .grid{display:grid;grid-template-columns:1fr 1fr;border-top:1px solid #e2e8f0}
+  .col{padding:14px;font-size:13px}
+  .col:first-child{border-right:1px solid #e2e8f0}
+  .col-label{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;color:#64748b;margin-bottom:8px}
+  .row{margin-bottom:4px}.row .l{color:#64748b}.row .v{font-weight:700}
+  .flags{padding:10px 14px;border-top:1px solid #e2e8f0;font-size:12px}
+</style></head><body>
+<div class="no-print">
+  <button onclick="window.close()" style="background:#f1f5f9;color:#334155">✕ Close</button>
+  <button onclick="window.print()" style="background:#1a2e4a;color:#fff">🖨 Print / Save as PDF</button>
+</div>
+<h1>Competitor Lot Comparison</h1>
+<div class="sub">Generated ${new Date().toLocaleDateString('en-CA', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</div>
+${inner}
+</body></html>`;
+    const blob = new Blob([html], { type: 'text/html' });
+    const url = URL.createObjectURL(blob);
+    const w = window.open(url, '_blank');
+    if (w) setTimeout(() => URL.revokeObjectURL(url), 30000);
+    else showToast('Pop-up blocked — allow pop-ups and try again', 'error');
+  });
 });
