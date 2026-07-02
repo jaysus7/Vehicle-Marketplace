@@ -3102,6 +3102,7 @@ function setupAIBoostListeners() {
   document.getElementById('ai-boost-page-upgrade-btn')?.addEventListener('click', (e) => {
     startAIBoostCheckout(e.currentTarget, 'Try Free for 3 Days');
   });
+  document.getElementById('ai-boost-manage-btn')?.addEventListener('click', launchStripeLifecycle);
 
   document.getElementById('ai-activity-refresh')?.addEventListener('click', loadAIActivity);
 
@@ -3668,6 +3669,7 @@ function initVinStickerPage() {
     if (e.key === 'Enter') runVinPageDecode();
   });
   document.getElementById('vin-sticker-page-upgrade-btn')?.addEventListener('click', startVinStickerTrial);
+  document.getElementById('vin-sticker-manage-btn')?.addEventListener('click', launchStripeLifecycle);
 }
 
 function renderVinStickerNav() {
