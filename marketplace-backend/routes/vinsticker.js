@@ -215,7 +215,6 @@ function buildWindowStickerHtml(vehicle, dealer, branding, recalls, photoDataUri
 <head><meta charset="UTF-8">
 <style>
   *{margin:0;padding:0;box-sizing:border-box;}
-  @page{size:landscape;margin:0;}
   body{font-family:'Arial',Helvetica,sans-serif;width:1056px;height:816px;background:#fff;color:#111;display:flex;flex-direction:column;overflow:hidden;}
 
   /* ── HEADER ── */
@@ -529,7 +528,6 @@ function buildBrochureHtml(vehicle, dealer, branding, recalls, photosDataUris, l
 <head><meta charset="UTF-8">
 <style>
   *{margin:0;padding:0;box-sizing:border-box;}
-  @page{size:portrait;margin:0;}
   body{font-family:'Arial',Helvetica,sans-serif;width:816px;background:#fff;color:#111;margin:0;padding:0;}
   .page{width:816px;min-height:1056px;overflow:hidden;display:flex;flex-direction:column;page-break-after:always;}
 
