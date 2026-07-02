@@ -27,32 +27,44 @@ export function registerAI(app) {
     if (!req.dealershipId) return res.status(400).json({ error: 'No dealership associated' })
     const { data, error } = await supabaseAdmin
       .from('dealerships')
-      .select('ai_boost_active, ai_tone, ai_required_fields, ai_manager_email')
+      .select('ai_boost_active, ai_tone, ai_required_fields, ai_manager_email, auction_api_key')
       .eq('id', req.dealershipId)
       .single()
     if (error) return res.status(500).json({ error: error.message })
     const isOwner = (req.user.email || '').toLowerCase() === OWNER_EMAIL
-    res.json({ ...data, ai_boost_active: isOwner ? true : !!data.ai_boost_active })
+    // Mask the key — return only a boolean indicating whether one is set,
+    // plus a redacted preview so the UI can show "••••••••abc123"
+    const auctionKeySet = !!data.auction_api_key
+    const auctionKeyPreview = data.auction_api_key
+      ? '••••••••' + data.auction_api_key.slice(-6)
+      : ''
+    const { auction_api_key: _, ...rest } = data
+    res.json({ ...rest, ai_boost_active: isOwner ? true : !!data.ai_boost_active, auction_key_set: auctionKeySet, auction_key_preview: auctionKeyPreview })
   })
 
   // PUT /ai/config — update dealership AI config (DEALER_ADMIN only)
   app.put('/ai/config', requireAuth, requireDealerAdmin, async (req, res) => {
     if (!req.dealershipId) return res.status(400).json({ error: 'No dealership associated' })
-    const { ai_tone, ai_required_fields, ai_manager_email, ai_boost_active } = req.body
+    const { ai_tone, ai_required_fields, ai_manager_email, ai_boost_active, auction_api_key } = req.body
     const update = {}
     if (ai_tone !== undefined) update.ai_tone = ai_tone
     if (ai_required_fields !== undefined) update.ai_required_fields = ai_required_fields
     if (ai_manager_email !== undefined) update.ai_manager_email = ai_manager_email
     if (ai_boost_active !== undefined) update.ai_boost_active = ai_boost_active
+    // Empty string clears the key; undefined = no change
+    if (auction_api_key !== undefined) update.auction_api_key = auction_api_key || null
 
     const { data, error } = await supabaseAdmin
       .from('dealerships')
       .update(update)
       .eq('id', req.dealershipId)
-      .select('ai_boost_active, ai_tone, ai_required_fields, ai_manager_email')
+      .select('ai_boost_active, ai_tone, ai_required_fields, ai_manager_email, auction_api_key')
       .single()
     if (error) return res.status(500).json({ error: error.message })
-    res.json(data)
+    const auctionKeySet = !!data.auction_api_key
+    const auctionKeyPreview = data.auction_api_key ? '••••••••' + data.auction_api_key.slice(-6) : ''
+    const { auction_api_key: __, ...rest2 } = data
+    res.json({ ...rest2, auction_key_set: auctionKeySet, auction_key_preview: auctionKeyPreview })
   })
 
   // POST /ai/enrich-listing — run AI enrichment on an inventory item
@@ -359,7 +371,7 @@ Write a compelling listing in under 280 words. Include the year/make/model/trim,
 
     // Attempt live market scraping (best-effort; falls back to AI-only on failure)
     const vehicleLabel = `${vehicle.year} ${vehicle.make} ${vehicle.model}${trimText}`
-    let scraped = { autotrader: null, cargurus: null }
+    let scraped = { autotrader: null, cargurus: null, copart: null }
     let dataSource = 'ai_estimate'
     try {
       scraped = await scrapeMarketData({
@@ -380,25 +392,25 @@ Write a compelling listing in under 280 words. Include the year/make/model/trim,
 
     // Build real-data context lines to inject into the prompt
     const liveDataLines = []
-    if (scraped.autotrader) {
-      const at = scraped.autotrader
-      const daysNote = at.avg_days_online != null
-        ? `, avg days online ${at.avg_days_online} (${at.days_online_sample}/${at.count} listings had date)`
+    const fmtScraped = (s) => {
+      const daysNote = s.avg_days_online != null
+        ? `, avg days online ${s.avg_days_online} (${s.days_online_sample}/${s.count} listings had date)`
         : ''
-      liveDataLines.push(`LIVE ${src1} data (${at.count} listings): avg price $${at.avg_price.toLocaleString()} ${currency}, median price $${at.median_price.toLocaleString()}, avg mileage ${at.avg_mileage.toLocaleString()} ${distanceUnit}, median mileage ${at.median_mileage.toLocaleString()} ${distanceUnit}${daysNote}`)
+      return `avg price $${s.avg_price.toLocaleString()} ${currency}, median price $${s.median_price.toLocaleString()}, avg mileage ${s.avg_mileage.toLocaleString()} ${distanceUnit}, median mileage ${s.median_mileage.toLocaleString()} ${distanceUnit}${daysNote}`
     }
-    if (scraped.cargurus) {
-      const cg = scraped.cargurus
-      const daysNote = cg.avg_days_online != null
-        ? `, avg days online ${cg.avg_days_online} (${cg.days_online_sample}/${cg.count} listings had date)`
-        : ''
-      liveDataLines.push(`LIVE ${src2} data (${cg.count} listings): avg price $${cg.avg_price.toLocaleString()} ${currency}, median price $${cg.median_price.toLocaleString()}, avg mileage ${cg.avg_mileage.toLocaleString()} ${distanceUnit}, median mileage ${cg.median_mileage.toLocaleString()} ${distanceUnit}${daysNote}`)
+
+    if (scraped.autotrader) liveDataLines.push(`LIVE ${src1} data (${scraped.autotrader.count} listings): ${fmtScraped(scraped.autotrader)}`)
+    if (scraped.cargurus) liveDataLines.push(`LIVE ${src2} data (${scraped.cargurus.count} listings): ${fmtScraped(scraped.cargurus)}`)
+    if (scraped.copart) {
+      const cp = scraped.copart
+      liveDataLines.push(`AUCTION REFERENCE — Copart Canada (${cp.count} salvage/insurance lots): avg $${cp.avg_price.toLocaleString()} ${currency}, median $${cp.median_price.toLocaleString()}, avg mileage ${cp.avg_mileage.toLocaleString()} ${distanceUnit} — these are WHOLESALE/SALVAGE values, expect retail to be 40–80% higher`)
     }
+
     const liveDataBlock = liveDataLines.length
       ? `\nREAL SCRAPED MARKET DATA — use these as your primary anchors for pricing, mileage, and days-on-market:\n${liveDataLines.join('\n')}\n`
       : `\nNo live scrape data available — use your training knowledge of the ${marketLabel} market.\n`
 
-    // Compute combined avg days online across platforms (for days_on_market_estimate rule)
+    // Compute combined avg days online across retail platforms (for days_on_market_estimate rule)
     const allDaysSamples = [scraped.autotrader, scraped.cargurus]
       .filter(s => s?.avg_days_online != null)
     const combinedAvgDays = allDaysSamples.length
@@ -482,6 +494,17 @@ Respond with ONLY valid JSON (no markdown, no explanation, no trailing commas):
       ? Math.round(((yourPrice - estimate.mid) / estimate.mid) * 1000) / 10
       : null
 
-    res.json({ vehicle, estimate, pct_diff, data_source: dataSource })
+    res.json({
+      vehicle,
+      estimate,
+      pct_diff,
+      data_source: dataSource,
+      copart: scraped.copart ? {
+        avg_price: scraped.copart.avg_price,
+        median_price: scraped.copart.median_price,
+        avg_mileage: scraped.copart.avg_mileage,
+        count: scraped.copart.count,
+      } : null,
+    })
   })
 }

@@ -2995,6 +2995,34 @@ function renderAIBoostSection(cfg) {
     const emailEl = document.getElementById('ai-manager-email');
     if (emailEl) emailEl.value = cfg.ai_manager_email || '';
 
+    // Auction API key — show masked preview if one is already set
+    const auctionKeyEl = document.getElementById('ai-auction-key');
+    const auctionKeyClear = document.getElementById('ai-auction-key-clear');
+    const auctionKeyHint = document.getElementById('ai-auction-key-hint');
+    if (auctionKeyEl) {
+      auctionKeyEl.placeholder = cfg.auction_key_set
+        ? cfg.auction_key_preview || '••••••••••••'
+        : 'Paste your auction platform API key…';
+      auctionKeyEl.value = '';
+      if (auctionKeyClear) auctionKeyClear.classList.toggle('hidden', !cfg.auction_key_set);
+      if (auctionKeyHint && cfg.auction_key_set) {
+        auctionKeyHint.textContent = 'Auction API key is set. Leave blank to keep it unchanged, or paste a new key to replace it.';
+      }
+      auctionKeyClear?.addEventListener('click', async () => {
+        if (!confirm('Remove the auction API key? Market reports will fall back to AI estimates.')) return;
+        auctionKeyEl.value = '';
+        auctionKeyEl.placeholder = 'Paste your auction platform API key…';
+        auctionKeyClear.classList.add('hidden');
+        if (auctionKeyHint) auctionKeyHint.textContent = 'When set, real wholesale auction pricing is used in market reports instead of estimates. The key is stored encrypted.';
+        // Save the cleared key immediately
+        await fetch(`${API}/ai/config`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+          body: JSON.stringify({ auction_api_key: '' }),
+        });
+      });
+    }
+
     const reqFields = cfg.ai_required_fields || [];
     ['price', 'mileage', 'image_urls', 'description'].forEach(f => {
       const idMap = { price: 'ai-req-price', mileage: 'ai-req-mileage', image_urls: 'ai-req-photos', description: 'ai-req-description' };
@@ -3128,10 +3156,13 @@ function setupAIBoostListeners() {
     if (document.getElementById('ai-req-photos')?.checked) reqFields.push('image_urls');
     if (document.getElementById('ai-req-description')?.checked) reqFields.push('description');
 
+    const auctionKeyInput = document.getElementById('ai-auction-key')?.value.trim();
     const payload = {
       ai_tone: document.getElementById('ai-tone')?.value || 'professional',
       ai_manager_email: document.getElementById('ai-manager-email')?.value.trim() || null,
-      ai_required_fields: reqFields
+      ai_required_fields: reqFields,
+      // Only send auction_api_key if the user typed something — blank means "no change"
+      ...(auctionKeyInput ? { auction_api_key: auctionKeyInput } : {}),
     };
 
     try {
@@ -3145,6 +3176,15 @@ function setupAIBoostListeners() {
       msg.textContent = '✓ Saved';
       msg.className = 'text-xs font-medium px-2.5 py-1 rounded-md bg-emerald-100 dark:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300';
       msg.classList.remove('hidden');
+      // Update auction key UI state after save
+      if (auctionKeyInput) {
+        const keyEl = document.getElementById('ai-auction-key');
+        const clearBtn = document.getElementById('ai-auction-key-clear');
+        const hint = document.getElementById('ai-auction-key-hint');
+        if (keyEl) { keyEl.value = ''; keyEl.placeholder = data.auction_key_preview || '••••••••••••'; }
+        if (clearBtn) clearBtn.classList.remove('hidden');
+        if (hint) hint.textContent = 'Auction API key is set. Leave blank to keep it unchanged, or paste a new key to replace it.';
+      }
     } catch (err) {
       msg.textContent = err.message;
       msg.className = 'text-xs font-medium px-2.5 py-1 rounded-md bg-red-100 dark:bg-red-900/50 text-red-700 dark:text-red-300';

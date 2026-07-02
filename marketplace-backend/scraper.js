@@ -313,24 +313,93 @@ export async function scrapeCarGurus({ make, model, year, trim, postalCode, prov
   return { source: isUS ? 'CarGurus.com' : 'CarGurus Canada', ...summarise(listings), listings }
 }
 
+// ── Copart Canada ──────────────────────────────────────────────────────────
+
+/**
+ * Scrape Copart Canada public auction listings for a given vehicle.
+ * Copart's search API is called by their own frontend and returns JSON
+ * without requiring authentication for public lot data.
+ *
+ * NOTE: These are salvage/insurance-write-off vehicles. Results are clearly
+ * labelled as auction/salvage reference data, NOT retail comparables.
+ */
+export async function scrapeCopart({ make, model, year, trim, province, isUS }) {
+  if (isUS) throw new Error('Copart: US not enabled yet')
+
+  // Copart public search endpoint (used by their SPA frontend)
+  const body = {
+    query: ['*'],
+    filter: {
+      MAKE: [make.toUpperCase()],
+      MODEL: [model.toUpperCase()],
+      YEAR: [`${year}`],
+      COUNTRY: ['CA'],
+    },
+    sort: ['auction_date_type desc'],
+    page: 0,
+    size: 25,
+    start: 0,
+    watchListOnly: false,
+    searchCopartOnly: false,
+  }
+
+  const res = await browserFetch('https://www.copart.com/public/lots/search-results', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Accept': 'application/json',
+      'Referer': 'https://www.copart.com/',
+    },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) throw new Error(`Copart HTTP ${res.status}`)
+
+  const json = await res.json()
+
+  // Copart wraps results under data.results.content
+  const content = json?.data?.results?.content || json?.returnCode === 'SUCCESS' && json?.data?.results?.content || []
+  if (!content.length) throw new Error('Copart: no results in response')
+
+  const listings = content
+    .map(l => {
+      const price = Number(l.fv ?? l.bid ?? l.currentBid ?? l.actualCashValue ?? l.lv ?? 0)
+      const mileage = Number(l.od ?? l.orr ?? l.mileage ?? 0)
+      const daysOnline = parseDaysOnline(l)
+      return { price, mileage, daysOnline }
+    })
+    .filter(l => l.price > 500 && l.mileage > 0)
+
+  if (!listings.length) throw new Error('Copart: no usable listings after normalisation')
+
+  const summary = summarise(listings)
+  return {
+    source: 'Copart Canada (auction/salvage)',
+    isSalvage: true,
+    ...summary,
+    listings,
+  }
+}
+
 // ── Main entry point ────────────────────────────────────────────────────────
 
 /**
- * Scrape market data from AutoTrader and CarGurus.
- * Returns { autotrader, cargurus } — either may be null if scraping failed.
- * Sends alert email for each failure.
+ * Scrape market data from AutoTrader, CarGurus, and Copart Canada.
+ * Returns { autotrader, cargurus, copart } — any may be null if scraping failed.
+ * Sends alert email for each retail scrape failure (Copart failure is silent).
  */
 export async function scrapeMarketData({ make, model, year, trim, postalCode, province, city, isUS, vehicleLabel }) {
   const opts = { make, model, year, trim, postalCode, province, isUS }
   const label = vehicleLabel || `${year} ${make} ${model}${trim ? ' ' + trim : ''}`
 
-  const [atResult, cgResult] = await Promise.allSettled([
+  const [atResult, cgResult, copartResult] = await Promise.allSettled([
     scrapeAutoTrader(opts),
     scrapeCarGurus(opts),
+    scrapeCopart(opts),
   ])
 
   let autotrader = null
   let cargurus = null
+  let copart = null
 
   if (atResult.status === 'fulfilled') {
     autotrader = atResult.value
@@ -346,5 +415,12 @@ export async function scrapeMarketData({ make, model, year, trim, postalCode, pr
     sendScrapeAlert({ source: 'CarGurus', vehicleLabel: label, error: cgResult.reason })
   }
 
-  return { autotrader, cargurus }
+  if (copartResult.status === 'fulfilled') {
+    copart = copartResult.value
+  } else {
+    // Copart is reference data only — log but don't alert
+    console.error('[scraper] Copart failed:', copartResult.reason?.message)
+  }
+
+  return { autotrader, cargurus, copart }
 }

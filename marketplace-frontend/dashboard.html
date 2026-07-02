@@ -895,6 +895,16 @@
                 </div>
               </div>
 
+              <!-- Auction API Key -->
+              <div class="pt-2 border-t border-slate-200 dark:border-slate-700">
+                <label class="block text-xs uppercase font-bold text-slate-400 dark:text-slate-500 mb-1.5 tracking-wider">Auction API Key <span class="normal-case text-slate-400 font-normal">(Manheim MMR, ADESA/OpenLane, or TradeRev)</span></label>
+                <div class="flex gap-2">
+                  <input type="password" id="ai-auction-key" autocomplete="off" placeholder="Paste your auction platform API key…" class="flex-1 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 font-mono">
+                  <button type="button" id="ai-auction-key-clear" class="hidden text-xs font-bold px-3 py-2 rounded-lg border border-red-300 dark:border-red-700 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 transition whitespace-nowrap">Clear</button>
+                </div>
+                <p id="ai-auction-key-hint" class="text-xs text-slate-400 mt-1">When set, real wholesale auction pricing is used in market reports instead of estimates. The key is stored encrypted.</p>
+              </div>
+
               <button id="ai-config-save-btn" class="bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-bold px-5 py-2 rounded-lg transition">Save Settings</button>
             </div>
 
@@ -1104,7 +1114,7 @@
     </section>
   </main>
 
-  <script src="dashboard.js?v=20260702h"></script>
+  <script src="dashboard.js?v=20260702i"></script>
   <script src="tour.js"></script>
 </body>
 </html>
