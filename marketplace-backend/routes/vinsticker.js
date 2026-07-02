@@ -699,7 +699,7 @@ export function registerRoutes(app) {
 
     try {
       const branding = dealer.branding || {}
-      const imageUrls = (vehicle.image_urls || []).slice(0, 4)
+      const imageUrls = (vehicle.image_urls || []).slice(0, 2)
       const [photosDataUris, logoDataUri] = await Promise.all([
         Promise.all(imageUrls.map(u => imgToDataUri(u))),
         branding.logo_url ? imgToDataUri(branding.logo_url) : Promise.resolve(null),
