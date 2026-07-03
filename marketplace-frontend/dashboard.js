@@ -4900,8 +4900,11 @@ document.addEventListener('DOMContentLoaded', () => {
     // Hot / Cold segments
     const hotEl = document.getElementById('inv-intel-hot')
     hotEl.innerHTML = hot_segments.length
-      ? hot_segments.map(s => `<div class="flex items-center justify-between py-1.5 border-b border-slate-100 dark:border-slate-700 last:border-0">
-          <span class="font-medium text-slate-900 dark:text-white">${s.make} ${s.model}</span>
+      ? hot_segments.map((s, i) => `<div class="flex items-center justify-between py-1.5 border-b border-slate-100 dark:border-slate-700 last:border-0">
+          <div class="flex items-center gap-2">
+            <span class="text-[10px] font-bold text-slate-400 w-4 text-right">${i + 1}</span>
+            <span class="font-medium text-slate-900 dark:text-white">${s.make} ${s.model}</span>
+          </div>
           <div class="text-right">
             <div class="text-xs font-bold text-emerald-600">${s.monthly_velocity}/mo</div>
             <div class="text-[10px] text-slate-400">${s.current_stock} in stock</div>
@@ -4911,8 +4914,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const coldEl = document.getElementById('inv-intel-cold')
     coldEl.innerHTML = cold_segments.length
-      ? cold_segments.map(s => `<div class="flex items-center justify-between py-1.5 border-b border-slate-100 dark:border-slate-700 last:border-0">
-          <span class="font-medium text-slate-900 dark:text-white">${s.make} ${s.model}</span>
+      ? cold_segments.map((s, i) => `<div class="flex items-center justify-between py-1.5 border-b border-slate-100 dark:border-slate-700 last:border-0">
+          <div class="flex items-center gap-2">
+            <span class="text-[10px] font-bold text-slate-400 w-4 text-right">${i + 1}</span>
+            <span class="font-medium text-slate-900 dark:text-white">${s.make} ${s.model}</span>
+          </div>
           <div class="text-right">
             <div class="text-xs font-bold text-slate-500">${s.current_stock} units</div>
             <div class="text-[10px] text-slate-400">${s.monthly_velocity}/mo sold</div>
