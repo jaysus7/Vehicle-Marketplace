@@ -281,9 +281,14 @@ async function _runInventorySyncInner(dealershipId) {
           const probe = PLATFORM_PROBES.find(p => p.platform === 'edealer')
           const firstPage = firstData && probe?.validate(firstData) ? probe.extract(firstData) : []
           const pageSize = firstPage.length || 24
+          // Track VINs to detect when the API loops (returns the same page regardless of params).
+          // Without dedup, every pagination style "works" on eDealer (same 25 vehicles every page)
+          // causing 100 duplicate requests that block the sync loop for minutes.
+          const seen = new Set(firstPage.map(v => v.VIN || v.vin || v.StockNumber || v.stocknumber).filter(Boolean))
           const all = [...firstPage]
 
-          // Detect which pagination param style this install supports (try page 2)
+          // Detect which pagination param style this install supports (try page 2).
+          // Only count it as "working" if it returns NEW vehicles not in page 1.
           const PARAM_STYLES = [
             p => `?pageNumber=${p}&pageSize=${pageSize}`,
             p => `?page=${p}&pageSize=${pageSize}`,
@@ -297,7 +302,13 @@ async function _runInventorySyncInner(dealershipId) {
               if (!r.ok) continue
               const d = await r.json()
               const batch = probe?.validate(d) ? probe.extract(d) : (Array.isArray(d) ? d : [])
-              if (batch.length > 0) { all.push(...batch); workingStyle = style; break }
+              const fresh = batch.filter(v => { const id = v.VIN || v.vin || v.StockNumber || v.stocknumber; return id && !seen.has(id) })
+              if (fresh.length > 0) {
+                fresh.forEach(v => seen.add(v.VIN || v.vin || v.StockNumber || v.stocknumber))
+                all.push(...fresh)
+                workingStyle = style
+                break
+              }
             } catch {}
           }
           if (workingStyle) {
@@ -308,9 +319,11 @@ async function _runInventorySyncInner(dealershipId) {
                 if (!r.ok) break
                 const d = await r.json()
                 const batch = probe?.validate(d) ? probe.extract(d) : (Array.isArray(d) ? d : [])
-                if (!batch.length) break
-                all.push(...batch)
-                if (batch.length < pageSize) break
+                const fresh = batch.filter(v => { const id = v.VIN || v.vin || v.StockNumber || v.stocknumber; return id && !seen.has(id) })
+                if (!fresh.length) break  // API looping — stop
+                fresh.forEach(v => seen.add(v.VIN || v.vin || v.StockNumber || v.stocknumber))
+                all.push(...fresh)
+                if (fresh.length < pageSize) break
                 page++
               } catch { break }
             }
