@@ -1,5 +1,5 @@
 import { supabaseAdmin, sleep, browserFetch, scraperApiFetch, parseEDealerHtml } from '../shared.js'
-import { renderAndCaptureInventory, renderAndScrapeEDealer, genericMapVehicle, inferUrlTemplate, renderUrlTemplate, fetchViaBrowser } from '../puppeteerRenderer.js'
+import { renderAndCaptureInventory, genericMapVehicle, inferUrlTemplate, renderUrlTemplate, fetchViaBrowser } from '../puppeteerRenderer.js'
 import { PLATFORM_PROBES, fetchConvertusInventory, fetchDealerPageInventory,
          fetchEDealerInventoryFromSitemap, extractEDealerDetailUrls, fetchEDealerDetailImageGroups,
          extractEDealerImageGroups, extractCarsFromJsonLd } from './platforms.js'
@@ -377,20 +377,7 @@ async function _runInventorySyncInner(dealershipId) {
             }
           }
 
-          // If pagination didn't expand beyond one page, the API ignores pagination
-          // params — fall back to headless Chrome to scrape the full inventory from the DOM.
-          if (all.length <= pageSize && (feed.source_dealer_url || origin)) {
-            const sourceUrl = feed.source_dealer_url || origin
-            console.log(`[sync] eDealer API stuck at ${all.length} — trying DOM scrape of ${sourceUrl}`)
-            const rendered = await renderAndScrapeEDealer(sourceUrl)
-            if (rendered.success && rendered.vehicles.length > all.length) {
-              vehicles = rendered.vehicles
-              console.log(`[sync] eDealer DOM scrape: ${vehicles.length} vehicles`)
-            } else {
-              vehicles = all
-            }
-          } else {
-            vehicles = all
+          vehicles = all
           }
           console.log(`[sync] eDealer: ${vehicles.length} vehicles from ${feed.feed_url}`)
         }
