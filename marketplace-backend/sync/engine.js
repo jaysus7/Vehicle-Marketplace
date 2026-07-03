@@ -1,4 +1,4 @@
-import { supabaseAdmin, sleep, browserFetch, scraperApiFetch, CRAWLER_HEADERS } from '../shared.js'
+import { supabaseAdmin, sleep, browserFetch, scraperApiFetch, parseEDealerHtml, CRAWLER_HEADERS } from '../shared.js'
 import { renderAndCaptureInventory, genericMapVehicle, inferUrlTemplate, renderUrlTemplate, fetchViaBrowser } from '../puppeteerRenderer.js'
 import { PLATFORM_PROBES, fetchConvertusInventory, fetchDealerPageInventory,
          fetchEDealerInventoryFromSitemap, extractEDealerDetailUrls, fetchEDealerDetailImageGroups,
@@ -373,20 +373,51 @@ async function _runInventorySyncInner(dealershipId) {
           } catch (e) { console.log(`[sync] eDealer sitemap walk failed: ${e.message}`) }
         }
 
-        // Method 2b: API via ScraperAPI (residential IP) — only if Googlebot didn't
-        // clear it and a key is configured. One request, fits the free tier.
-        if (!all.length && apiBlocked && process.env.SCRAPER_API_KEY) {
-          try {
-            const r = await scraperApiFetch(apiUrl)
-            if (r.ok) {
-              const d = await r.json().catch(() => null)
-              all = extractVehicles(d)
-              console.log(`[sync] eDealer API via ScraperAPI: extracted ${all.length} vehicles`)
-            } else {
-              console.log(`[sync] eDealer ScraperAPI returned HTTP ${r.status}`)
+        // Method 2b: JSON API via ScraperAPI (residential IP + Cloudflare bypass).
+        // The exact eDealer API path varies per install, so try the known candidates
+        // and stop at the first that returns vehicles. One successful call returns the
+        // FULL inventory, so this stays cheap on the free tier.
+        if (!all.length && apiBlocked && process.env.SCRAPER_API_KEY && origin) {
+          const apiCandidates = [
+            '/api/inventory/getall', '/api/vehicles', '/api/inventory/vehicles',
+            '/api/inventory', '/Inventory/GetInventory'
+          ]
+          for (const path of apiCandidates) {
+            try {
+              const r = await scraperApiFetch(`${origin}${path}`)
+              if (r.ok) {
+                const d = await r.json().catch(() => null)
+                const got = extractVehicles(d)
+                if (got.length) {
+                  all = got
+                  console.log(`[sync] eDealer via ScraperAPI ${path}: extracted ${all.length} vehicles`)
+                  break
+                }
+                console.log(`[sync] eDealer ScraperAPI ${path}: HTTP 200 but 0 vehicles`)
+              } else {
+                console.log(`[sync] eDealer ScraperAPI ${path}: HTTP ${r.status}`)
+              }
+            } catch (e) {
+              console.log(`[sync] eDealer ScraperAPI ${path} failed: ${e.message}`)
             }
-          } catch (e) {
-            console.log(`[sync] eDealer ScraperAPI failed: ${e.message}`)
+          }
+          // Last resort: render the listing page(s) through ScraperAPI and scrape the
+          // DOM (the same rendered cards the extension reads). Costs more credits, so
+          // only when the JSON endpoints all failed.
+          if (!all.length) {
+            const src = feed.source_dealer_url || `${origin}/inventory/new/`
+            try {
+              const r = await scraperApiFetch(src, { render: true })
+              if (r.ok) {
+                const html = await r.text()
+                all = parseEDealerHtml(html)
+                console.log(`[sync] eDealer via ScraperAPI render ${src}: extracted ${all.length} vehicles`)
+              } else {
+                console.log(`[sync] eDealer ScraperAPI render: HTTP ${r.status}`)
+              }
+            } catch (e) {
+              console.log(`[sync] eDealer ScraperAPI render failed: ${e.message}`)
+            }
           }
         }
 

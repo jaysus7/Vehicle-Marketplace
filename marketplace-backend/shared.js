@@ -83,10 +83,16 @@ export function browserFetch(url, init = {}) {
 // SCRAPER_API_KEY is set. Free tier: 1 000 requests/month.
 // render=true triggers their headless Chrome — JS executes, Cloudflare clears.
 // Returns a standard Response-like object with .ok, .status, .text(), .json().
-export async function scraperApiFetch(targetUrl, { render = false, timeoutMs = 45000 } = {}) {
+export async function scraperApiFetch(targetUrl, { render = false, ultraPremium = true, timeoutMs = 60000 } = {}) {
   const key = process.env.SCRAPER_API_KEY
   if (!key) throw new Error('SCRAPER_API_KEY env var not set')
-  const api = `https://api.scraperapi.com?api_key=${key}&url=${encodeURIComponent(targetUrl)}${render ? '&render=true' : ''}`
+  // ultra_premium routes through residential IPs with automatic Cloudflare/anti-bot
+  // bypass — required for Cloudflare-protected dealer sites. render executes JS.
+  const params = new URLSearchParams({ api_key: key, url: targetUrl })
+  if (render) params.set('render', 'true')
+  if (ultraPremium) params.set('ultra_premium', 'true')
+  params.set('country_code', 'ca')  // dealer sites are geo-fenced to Canada
+  const api = `https://api.scraperapi.com/?${params.toString()}`
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), timeoutMs)
   try {
