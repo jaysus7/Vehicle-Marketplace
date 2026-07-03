@@ -34,7 +34,9 @@ export const PLATFORM_PROBES = [
       vin: v.VIN || v.vin, year: v.Year || v.year, make: v.Make || v.make,
       model: v.Model || v.model, trim: v.Trim || v.trim,
       price: v.Price || v.ListPrice || v.price, mileage: v.Mileage || v.mileage,
-      condition: v.IsNew ? 'New' : 'Used', stocknumber: v.StockNumber || v.stocknumber,
+      // Preserve a condition already resolved upstream (e.g. from listing-page JSON-LD,
+      // which carries New/Used/Demo). Only fall back to the API's IsNew flag when unset.
+      condition: v.condition || (v.IsNew ? 'New' : 'Used'), stocknumber: v.StockNumber || v.stocknumber,
       exteriorcolor: v.ExteriorColour || v.ExteriorColor || v.exteriorcolor
     })
   },
@@ -413,6 +415,148 @@ export async function fetchEDealerInventoryFromSitemap(origin) {
     console.warn('[sync] EDealer sitemap walker failed:', e.message)
     return null
   }
+}
+
+// Map a Schema.org Vehicle/Car JSON-LD node to our canonical vehicle shape.
+// Schema.org is the ONE format nearly every North-American dealer platform emits
+// (Google requires it for vehicle rich-results), so this mapper is platform-agnostic:
+// eDealer, Dealer.com, DealerInspire, DealerOn, Sincro/CDK, VinSolutions, etc.
+export function schemaCarToVehicle(c) {
+  const cond = (c.itemCondition || '')
+  const cfg = typeof c.vehicleConfiguration === 'string' ? c.vehicleConfiguration : ''
+  const cfgParts = cfg.split(' ').filter(Boolean)
+  // Offers can be an object, an array, or an AggregateOffer wrapper.
+  const offer = Array.isArray(c.offers) ? c.offers[0]
+    : (c.offers?.offers ? (Array.isArray(c.offers.offers) ? c.offers.offers[0] : c.offers.offers) : c.offers)
+  const price = offer?.price || c.offers?.lowPrice || c.offers?.price || 0
+  const condText = `${cond} ${c.name || ''}`.toLowerCase()
+  const condition = /demo|démo/.test(condText) ? 'Demo'
+    : cond.includes('NewCondition') || /\bnew\b/.test(condText) ? 'New'
+    : cond.includes('UsedCondition') || /used|pre-owned|preowned|certified/.test(condText) ? 'Used'
+    : null
+  return {
+    vin: c.vehicleIdentificationNumber || c.vin || null,
+    year: c.vehicleModelDate ? parseInt(c.vehicleModelDate) : (c.modelDate ? parseInt(c.modelDate) : null),
+    make: c.brand?.name || c.manufacturer?.name || (typeof c.brand === 'string' ? c.brand : null),
+    model: typeof c.model === 'string' ? c.model : (c.model?.name || null),
+    trim: cfgParts.length > 1 ? cfgParts.slice(1).join(' ') : (c.vehicleConfiguration || null),
+    price: typeof price === 'string' ? parseInt(price.replace(/[^0-9]/g, '')) || 0 : (price || 0),
+    mileage: c.mileageFromOdometer?.value || c.mileageFromOdometer || 0,
+    exteriorcolor: c.color || null,
+    interiorcolor: c.vehicleInteriorColor || null,
+    transmission: c.vehicleTransmission || null,
+    fueltype: c.fuelType || c.vehicleEngine?.fuelType || null,
+    bodystyle: c.bodyType || null,
+    condition,
+    demo: condition === 'Demo',
+    stocknumber: c.sku || c.productID || c.mpn || null,
+    onweb: true, salepending: false,
+    image_urls: (() => {
+      let imgs = c.image
+      if (imgs && typeof imgs === 'object' && !Array.isArray(imgs)) imgs = imgs.url || imgs.contentUrl
+      imgs = Array.isArray(imgs) ? imgs : (imgs ? [imgs] : [])
+      return imgs
+        .map(i => typeof i === 'string' ? i : (i?.url || i?.contentUrl))
+        .filter(u => u && !u.includes('coming.png') && !u.includes('no-image'))
+    })()
+  }
+}
+
+// Pull FULL dealer inventory by paginating the LISTING page and reading the
+// Schema.org JSON-LD baked into each page. This is the UNIVERSAL fallback that
+// works across virtually every US/Canada dealer platform, because they all emit
+// Vehicle/Car JSON-LD for SEO. It avoids per-platform APIs (which cap/paginate
+// inconsistently) and heavy detail-page walks.
+//
+// Pagination formats vary by platform, so we auto-detect: on page 2 we try each
+// candidate format and keep whichever returns NEW vehicles (VIN/stock dedup).
+// If none return new vehicles, we stop with page 1 — never worse than a single page.
+// A broken paginator therefore can't loop or hang: dedup + MAX_PAGES cap it.
+//
+// listingUrl: the dealer's inventory listing page (e.g. /inventory/new/,
+//             /new-inventory/, /used-vehicles/). Pass source_dealer_url.
+export async function fetchListingPageInventory(listingUrl) {
+  let base
+  try {
+    const u = new URL(listingUrl)
+    base = u.origin + u.pathname.replace(/\/$/, '') + '/'
+  } catch { return null }
+
+  const jsonLdRe = /<script[^>]+type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi
+  const extractCarsFromHtml = (html) => {
+    const blocks = []
+    let m
+    while ((m = jsonLdRe.exec(html)) !== null) {
+      try { blocks.push(JSON.parse(m[1])) } catch {}
+    }
+    jsonLdRe.lastIndex = 0
+    const flat = []
+    const q = [...blocks]
+    while (q.length) {
+      const n = q.pop()
+      if (!n) continue
+      if (Array.isArray(n)) { for (const x of n) q.push(x); continue }
+      if (Array.isArray(n['@graph'])) { for (const x of n['@graph']) q.push(x); continue }
+      flat.push(n)
+    }
+    return extractCarsFromJsonLd(flat)
+  }
+  const fetchCars = async (url) => {
+    try {
+      const r = await browserFetch(url, { headers: { Accept: 'text/html' } })
+      if (!r.ok) return null
+      return extractCarsFromHtml(await r.text())
+    } catch { return null }
+  }
+
+  const seen = new Set()
+  const all = []
+  const addCars = (cars) => {
+    let fresh = 0
+    for (const c of cars || []) {
+      const v = schemaCarToVehicle(c)
+      const id = v.vin || (v.stocknumber ? `stk:${v.stocknumber}` : null)
+      if (!id || seen.has(id)) continue
+      seen.add(id); all.push(v); fresh++
+    }
+    return fresh
+  }
+
+  // Page 1
+  const firstCars = await fetchCars(base)
+  if (!firstCars || !firstCars.length) return null
+  const pageSize = addCars(firstCars) || firstCars.length
+
+  // Candidate pagination formats spanning the major platforms. p = 1-based page.
+  const FORMATS = [
+    p => `${base}?page=${p}`,                       // eDealer, DealerInspire, generic
+    p => `${base}?start=${(p - 1) * pageSize}`,     // Dealer.com (offset)
+    p => `${base}?pt=${p}`,                         // DealerOn
+    p => `${base}?pn=${p}`,                         // Sincro / CDK
+    p => `${base}page/${p}/`,                       // WordPress path style
+    p => `${base}?_dFR%5Bpage%5D=${p}`,             // Algolia-backed
+    p => `${base}?offset=${(p - 1) * pageSize}`,    // generic offset
+  ]
+
+  // Detect the working format on page 2.
+  let workingFormat = null
+  for (const fmt of FORMATS) {
+    const cars = await fetchCars(fmt(2))
+    if (cars && addCars(cars) > 0) { workingFormat = fmt; break }
+  }
+
+  if (workingFormat) {
+    const MAX_PAGES = 60  // 60 * ~25 = 1500 vehicles; hard ceiling
+    for (let page = 3; page <= MAX_PAGES; page++) {
+      const cars = await fetchCars(workingFormat(page))
+      if (!cars || !cars.length) break
+      if (addCars(cars) === 0) break  // only dupes → past the end / paginator stalled
+      await sleep(30)
+    }
+  }
+
+  console.log(`[sync] listing-page walk: ${all.length} vehicles from ${base}`)
+  return all.length > 0 ? all : null
 }
 
 export function extractEDealerDetailUrls(html, origin) {
