@@ -4910,7 +4910,7 @@ document.addEventListener('DOMContentLoaded', () => {
             <div class="text-[10px] text-slate-400">${s.current_stock} in stock</div>
           </div>
         </div>`).join('')
-      : '<p class="text-slate-400 text-sm">No hot segments detected</p>'
+      : '<p class="text-slate-400 text-sm">No hot vehicles detected</p>'
 
     const coldEl = document.getElementById('inv-intel-cold')
     coldEl.innerHTML = cold_segments.length
@@ -4924,7 +4924,7 @@ document.addEventListener('DOMContentLoaded', () => {
             <div class="text-[10px] text-slate-400">${s.monthly_velocity}/mo sold</div>
           </div>
         </div>`).join('')
-      : '<p class="text-slate-400 text-sm">No cold segments detected</p>'
+      : '<p class="text-slate-400 text-sm">No cold vehicles detected</p>'
 
     // Duplicates
     const dupsWrap = document.getElementById('inv-intel-dups-wrap')
