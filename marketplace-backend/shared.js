@@ -64,6 +64,8 @@ export const BROWSER_HEADERS = {
 
 // fetch() wrapper that sends browser-like headers plus a same-origin Referer/Origin.
 // Caller headers in init.headers win (e.g. JSON Accept / Sec-Fetch overrides).
+// Every request gets a hard 25s timeout unless the caller passes its own signal —
+// one hanging dealer site must never stall the sync loop for everyone else.
 export function browserFetch(url, init = {}) {
   let extra = {}
   try {
@@ -72,6 +74,7 @@ export function browserFetch(url, init = {}) {
   } catch {}
   return fetch(url, {
     ...init,
+    signal: init.signal ?? AbortSignal.timeout(25000),
     headers: { ...BROWSER_HEADERS, ...extra, ...(init.headers || {}) }
   })
 }

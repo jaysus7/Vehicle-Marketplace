@@ -117,6 +117,39 @@ async function _runInventorySyncInner(dealershipId) {
     try {
       let vehicles
 
+      if (feed.platform === 'needs_extension_capture') {
+        // This feed was flagged Cloudflare-blocked when it was added — but that
+        // detection can be wrong (e.g. it ran while the server was overloaded).
+        // Re-probe the eDealer API once, cheaply: if it answers server-side,
+        // permanently flip the feed to 'edealer' so it syncs without the extension.
+        // If it's genuinely blocked, skip fast — NO puppeteer, NO sitemap walker,
+        // nothing that can stall the sync loop for the other dealers.
+        let healed = false
+        try {
+          const feedOrigin = new URL(feed.source_dealer_url || feed.feed_url).origin
+          const probeUrl = `${feedOrigin}/api/inventory/getall`
+          const r = await browserFetch(probeUrl, { headers: { Accept: 'application/json' } })
+          if (r.ok && (r.headers.get('content-type') || '').includes('json')) {
+            const d = await r.json().catch(() => null)
+            const edealerProbe = PLATFORM_PROBES.find(p => p.platform === 'edealer')
+            if (d && edealerProbe?.validate(d)) {
+              console.log(`[sync] feed ${feed.id}: eDealer API reachable server-side — flipping platform to edealer`)
+              await supabaseAdmin
+                .from('inventory_feeds')
+                .update({ platform: 'edealer', feed_url: probeUrl })
+                .eq('id', feed.id)
+              feed.platform = 'edealer'
+              feed.feed_url = probeUrl
+              healed = true
+            }
+          }
+        } catch {}
+        if (!healed) {
+          console.log(`[sync] feed ${feed.id} requires Chrome extension — skipping server-side fetch`)
+          continue
+        }
+      }
+
       // Match this feed to its probe definition so we can apply the right field mapper
       const probe = PLATFORM_PROBES.find(p => p.platform === feed.platform)
 
@@ -339,20 +372,32 @@ async function _runInventorySyncInner(dealershipId) {
         })
         let ct = feedRes.headers.get('content-type') || ''
 
-        // Read the body once. On a Cloudflare/WAF block (403/503), refetch through
-        // real Chrome so the JS challenge clears and we get the actual feed body.
+        // Read the body once. On a Cloudflare/WAF block (403/503), skip fast.
+        // Retrying via headless Chrome is opt-in (ENABLE_PUPPETEER_FALLBACK=1):
+        // on the 512MB tier, launching Chrome starves the whole server — every
+        // other dealer's sync AND all dashboard API calls stall behind it.
         let bodyText
         if (feedRes.status === 403 || feedRes.status === 503) {
-          console.log(`[sync] feed ${feed.feed_url} blocked (HTTP ${feedRes.status}) — retrying via headless Chrome`)
-          const br = await fetchViaBrowser(`${feed.feed_url}?v=${Date.now()}`)
-          bodyText = br.ok ? br.body : ''
-          if (br.contentType) ct = br.contentType
+          if (process.env.ENABLE_PUPPETEER_FALLBACK === '1') {
+            console.log(`[sync] feed ${feed.feed_url} blocked (HTTP ${feedRes.status}) — retrying via headless Chrome`)
+            const br = await fetchViaBrowser(`${feed.feed_url}?v=${Date.now()}`)
+            bodyText = br.ok ? br.body : ''
+            if (br.contentType) ct = br.contentType
+          } else {
+            console.log(`[sync] feed ${feed.feed_url} blocked (HTTP ${feedRes.status}) — skipping (extension capture or ENABLE_PUPPETEER_FALLBACK=1)`)
+            bodyText = ''
+          }
         } else {
           bodyText = await feedRes.text()
         }
 
         const looksJson = ct.includes('json') || /^\s*[\[{]/.test(bodyText || '')
-        if (looksJson) {
+        if (!bodyText) {
+          // Blocked or empty response — nothing to parse, don't run the sitemap
+          // walker (it would just re-hit the same WAF 100 more times).
+          vehicles = []
+          jsonCache.set(feed.feed_url, vehicles)
+        } else if (looksJson) {
           let data = null
           try { data = JSON.parse(bodyText) } catch {}
           vehicles = data ? (data.vehicles || data.inventory || data.data || data.items || data.records || (Array.isArray(data) ? data : [])) : []
