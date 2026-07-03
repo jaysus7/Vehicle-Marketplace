@@ -754,17 +754,6 @@ Return ONLY valid JSON array (no markdown):
       .filter(([, arr]) => arr.length > 1)
       .map(([vin, units]) => ({ vin, units }))
 
-    // Notify about duplicate VIN check result
-    const dupMsg = duplicateVins.length > 0
-      ? `⚠️ ${duplicateVins.length} duplicate VIN${duplicateVins.length > 1 ? 's' : ''} detected in inventory scan`
-      : '✓ No duplicate VINs found in inventory scan'
-    await createNotification({
-      dealershipId: req.dealershipId,
-      type: 'duplicate_vin_check',
-      title: duplicateVins.length > 0 ? 'Duplicate VINs Detected' : 'VIN Check Complete',
-      body: dupMsg,
-    }).catch(() => {})
-
     // ── 2. Segment velocity (by make × model) ─────────────────────────────
     const seg90 = {}, seg30 = {}
     for (const v of sold90 || []) {
