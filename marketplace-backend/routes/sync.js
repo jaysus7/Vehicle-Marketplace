@@ -75,9 +75,12 @@ export function registerRoutes(app) {
         .from('dealerships').select('id').eq('id', targetDealershipId).single()
       if (!currentDealer) return res.status(404).json({ error: 'Target business identity not found.' })
 
-      const result = await runInventorySync(targetDealershipId)
-      if (!result.success) return res.status(404).json(result)
-      res.json(result)
+      // Respond immediately — sync runs in background so the HTTP connection
+      // doesn't time out on large inventories or slow dealer sites.
+      res.json({ success: true, message: 'Sync started' })
+      runInventorySync(targetDealershipId).catch(e =>
+        console.error(`[sync] background sync failed for ${targetDealershipId}:`, e.message)
+      )
     } catch (e) {
       res.status(500).json({ error: e.message })
     }
@@ -87,8 +90,10 @@ export function registerRoutes(app) {
     if (!process.env.SYNC_SECRET) return res.status(503).json({ error: 'Cron endpoint not configured' })
     const secret = req.headers['x-cron-secret'] || req.query.secret
     if (secret !== process.env.SYNC_SECRET) return res.status(401).json({ error: 'Unauthorized' })
-    const result = await syncAllDealerships('manual')
-    res.json(result)
+    res.json({ success: true, message: 'Full sync started' })
+    syncAllDealerships('manual').catch(e =>
+      console.error('[sync] background sync-all failed:', e.message)
+    )
   })
 
   app.post('/cron/drip', async (req, res) => {
