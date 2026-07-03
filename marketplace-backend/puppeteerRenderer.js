@@ -515,6 +515,79 @@ function deriveTemplate(url, fields) {
   return template
 }
 
+// Render an eDealer inventory page in headless Chrome and extract all vehicles
+// via page.evaluate(). eDealer renders all cards server-side (the REST API only
+// returns one page and ignores pagination params), so DOM scraping is the only
+// reliable way to get the full inventory count from the server side.
+//
+// Returns { success, vehicles, source_url, error }.
+export async function renderAndScrapeEDealer(dealerUrl, opts = {}) {
+  const timeoutMs = opts.timeoutMs ?? 30000
+  let page
+  try {
+    const browser = await getBrowser()
+    page = await browser.newPage()
+    await page.setUserAgent('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36')
+    await page.goto(dealerUrl, { waitUntil: 'domcontentloaded', timeout: timeoutMs }).catch(() => {})
+    // Wait for eDealer widget JS to inject vehicles into the DOM / window scope
+    await new Promise(r => setTimeout(r, 5000))
+
+    const vehicles = await page.evaluate(() => {
+      // 1. Window globals
+      const GLOBALS = ['inventoryData', 'inventory', 'inventoryItems', 'vehicles',
+                       'inventoryList', 'vehicleData', 'allVehicles']
+      for (const g of GLOBALS) {
+        const val = window[g]
+        const arr = Array.isArray(val) ? val
+          : Array.isArray(val?.vehicles) ? val.vehicles
+          : Array.isArray(val?.inventory) ? val.inventory
+          : Array.isArray(val?.items) ? val.items
+          : null
+        if (arr && arr.length && (arr[0]?.VIN || arr[0]?.vin)) return arr
+      }
+      // 2. DOM card scraping — [data-vin] elements rendered by eDealer widget
+      const cards = document.querySelectorAll('[data-vin],[data-vehicle-vin]')
+      if (cards.length) {
+        const out = []
+        for (const el of cards) {
+          const vin = el.dataset.vin || el.dataset.vehicleVin
+          if (!vin) continue
+          const priceText = el.querySelector('.price,[class*="price"]')?.textContent || ''
+          const price = parseInt(priceText.replace(/[^0-9]/g, ''), 10) || 0
+          const mileageText = el.querySelector('[class*="mileage"],[class*="odometer"]')?.textContent || ''
+          const mileage = parseInt(mileageText.replace(/[^0-9]/g, ''), 10) || 0
+          const imgSrc = el.querySelector('img[src]')?.src || null
+          const href = el.querySelector('a[href]')?.href || null
+          out.push({
+            VIN: vin, vin,
+            year: el.dataset.year || null,
+            make: el.dataset.make || null,
+            model: el.dataset.model || null,
+            trim: el.dataset.trim || null,
+            StockNumber: el.dataset.stock || el.dataset.stocknumber || null,
+            stocknumber: el.dataset.stock || el.dataset.stocknumber || null,
+            condition: el.dataset.condition || null,
+            price, saleprice: price, mileage,
+            image_urls: imgSrc ? [imgSrc] : [],
+            vdp_url: href
+          })
+        }
+        if (out.length) return out
+      }
+      return []
+    })
+
+    if (!vehicles || !vehicles.length) {
+      return { success: false, error: 'No vehicles found in DOM after render', source_url: dealerUrl }
+    }
+    return { success: true, vehicles, source_url: dealerUrl }
+  } catch (e) {
+    return { success: false, error: e.message, source_url: dealerUrl }
+  } finally {
+    if (page) { try { await page.close() } catch {} }
+  }
+}
+
 // Apply a saved template to a fresh vehicle. Returns the full URL or null if any
 // required placeholder can't be filled.
 export function renderUrlTemplate(template, vehicle) {

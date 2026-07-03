@@ -192,7 +192,9 @@ export function registerRoutes(app) {
 
     // For SPA-rendered dealers, keep the user's original URL — we need it to re-render
     // the site if the captured XHR URL stops working (e.g. auth tokens rotate).
-    const sourceDealerUrl = ['spa_render', 'convertus', 'needs_extension_capture', 'dealerpage'].includes(detectedPlatformSlug) ? rawUrl : null
+    // eDealer API only returns one page; we fall back to DOM scraping the dealer site.
+    // Keep the original URL so the scraper knows which page to render.
+    const sourceDealerUrl = ['spa_render', 'convertus', 'needs_extension_capture', 'dealerpage', 'edealer'].includes(detectedPlatformSlug) ? rawUrl : null
 
     // For LeadBox feeds, harvest per-vehicle URLs from the dealer's listing pages now
     // (their JSON feed doesn't include vehicle detail URLs). Saves a stock→URL map onto

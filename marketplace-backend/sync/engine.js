@@ -1,5 +1,5 @@
 import { supabaseAdmin, sleep, browserFetch } from '../shared.js'
-import { renderAndCaptureInventory, genericMapVehicle, inferUrlTemplate, renderUrlTemplate, fetchViaBrowser } from '../puppeteerRenderer.js'
+import { renderAndCaptureInventory, renderAndScrapeEDealer, genericMapVehicle, inferUrlTemplate, renderUrlTemplate, fetchViaBrowser } from '../puppeteerRenderer.js'
 import { PLATFORM_PROBES, fetchConvertusInventory, fetchDealerPageInventory,
          fetchEDealerInventoryFromSitemap, extractEDealerDetailUrls, fetchEDealerDetailImageGroups,
          extractEDealerImageGroups, extractCarsFromJsonLd } from './platforms.js'
@@ -280,14 +280,23 @@ async function _runInventorySyncInner(dealershipId) {
           headers: { Accept: 'application/json', 'Sec-Fetch-Dest': 'empty', 'Sec-Fetch-Mode': 'cors', 'Sec-Fetch-Site': 'same-origin' }
         })
         if (firstRes.status === 403 || firstRes.status === 503) {
-          // Cloudflare blocking — fall through to sitemap walker below
-          console.log(`[sync] eDealer API blocked by WAF (${firstRes.status}) — use the Chrome extension to capture this site`)
-          vehicles = []
+          // Cloudflare blocking — try headless Chrome render to scrape DOM
+          console.log(`[sync] eDealer API blocked (${firstRes.status}) — trying headless DOM scrape`)
+          const sourceUrl = feed.source_dealer_url || origin
+          const rendered = await renderAndScrapeEDealer(sourceUrl)
+          if (rendered.success && rendered.vehicles.length) {
+            vehicles = rendered.vehicles
+            console.log(`[sync] eDealer DOM scrape: ${vehicles.length} vehicles`)
+          } else {
+            console.log(`[sync] eDealer DOM scrape failed: ${rendered.error}`)
+            vehicles = []
+          }
         } else if (firstRes.ok) {
           const firstData = await firstRes.json().catch(() => null)
           const probe = PLATFORM_PROBES.find(p => p.platform === 'edealer')
           const firstPage = firstData && probe?.validate(firstData) ? probe.extract(firstData) : []
-          const pageSize = firstPage.length || 24
+          const pageSize = firstPage.length || 25
+          const seen = new Set(firstPage.map(v => v.VIN || v.vin || v.StockNumber || v.stocknumber).filter(Boolean))
           const all = [...firstPage]
 
           // Detect which pagination param style this install supports (try page 2)
@@ -296,6 +305,8 @@ async function _runInventorySyncInner(dealershipId) {
             p => `?page=${p}&pageSize=${pageSize}`,
             p => `?pageNum=${p}&pageSize=${pageSize}`,
             p => `?skip=${(p - 1) * pageSize}&take=${pageSize}`,
+            p => `?PageNumber=${p}&PageSize=${pageSize}`,
+            p => `?currentPage=${p}&pageSize=${pageSize}`,
           ]
           let workingStyle = null
           for (const style of PARAM_STYLES) {
@@ -304,7 +315,16 @@ async function _runInventorySyncInner(dealershipId) {
               if (!r.ok) continue
               const d = await r.json()
               const batch = probe?.validate(d) ? probe.extract(d) : (Array.isArray(d) ? d : [])
-              if (batch.length > 0) { all.push(...batch); workingStyle = style; break }
+              const fresh = batch.filter(v => {
+                const id = v.VIN || v.vin || v.StockNumber || v.stocknumber
+                return id && !seen.has(id)
+              })
+              if (fresh.length > 0) {
+                fresh.forEach(v => seen.add(v.VIN || v.vin || v.StockNumber || v.stocknumber))
+                all.push(...fresh)
+                workingStyle = style
+                break
+              }
             } catch {}
           }
           if (workingStyle) {
@@ -315,14 +335,33 @@ async function _runInventorySyncInner(dealershipId) {
                 if (!r.ok) break
                 const d = await r.json()
                 const batch = probe?.validate(d) ? probe.extract(d) : (Array.isArray(d) ? d : [])
-                if (!batch.length) break
-                all.push(...batch)
-                if (batch.length < pageSize) break
+                const fresh = batch.filter(v => {
+                  const id = v.VIN || v.vin || v.StockNumber || v.stocknumber
+                  return id && !seen.has(id)
+                })
+                if (!fresh.length) break
+                fresh.forEach(v => seen.add(v.VIN || v.vin || v.StockNumber || v.stocknumber))
+                all.push(...fresh)
                 page++
               } catch { break }
             }
           }
-          vehicles = all
+
+          // If pagination didn't expand beyond one page, the API ignores pagination
+          // params — fall back to headless Chrome to scrape the full inventory from the DOM.
+          if (all.length <= pageSize && (feed.source_dealer_url || origin)) {
+            const sourceUrl = feed.source_dealer_url || origin
+            console.log(`[sync] eDealer API stuck at ${all.length} — trying DOM scrape of ${sourceUrl}`)
+            const rendered = await renderAndScrapeEDealer(sourceUrl)
+            if (rendered.success && rendered.vehicles.length > all.length) {
+              vehicles = rendered.vehicles
+              console.log(`[sync] eDealer DOM scrape: ${vehicles.length} vehicles`)
+            } else {
+              vehicles = all
+            }
+          } else {
+            vehicles = all
+          }
           console.log(`[sync] eDealer: ${vehicles.length} vehicles from ${feed.feed_url}`)
         }
         jsonCache.set(feed.feed_url, vehicles)

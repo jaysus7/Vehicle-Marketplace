@@ -18,6 +18,94 @@
   const origin = location.origin
   const log = (...a) => console.log('[MarketSync extract]', ...a)
 
+  // Scrape vehicle data from an eDealer-rendered page. eDealer renders all
+  // inventory cards into the DOM after JS execution; API endpoints only return
+  // one page (25 vehicles) and ignore pagination params. DOM scraping gets all.
+  function eDealerScrapeDOM() {
+    const vehicles = []
+    const seen = new Set()
+
+    // 1. Window-level inventory globals injected by eDealer's JS bundle
+    const GLOBALS = ['inventoryData', 'inventory', 'inventoryItems', 'vehicles',
+                     'inventoryList', 'vehicleData', 'allVehicles']
+    for (const g of GLOBALS) {
+      const val = window[g]
+      const arr = Array.isArray(val) ? val
+        : Array.isArray(val?.vehicles) ? val.vehicles
+        : Array.isArray(val?.inventory) ? val.inventory
+        : Array.isArray(val?.items) ? val.items
+        : null
+      if (arr && arr.length && (arr[0]?.VIN || arr[0]?.vin)) {
+        for (const v of arr) {
+          const id = v.VIN || v.vin || v.StockNumber || v.stocknumber
+          if (id && !seen.has(id)) { seen.add(id); vehicles.push(v) }
+        }
+        if (vehicles.length) return vehicles
+      }
+    }
+
+    // 2. JSON embedded in <script> tags (eDealer sometimes inlines inventory
+    //    as a JSON assignment or array literal in a non-module script tag)
+    for (const s of document.querySelectorAll('script:not([src]):not([type="application/ld+json"])')) {
+      const text = s.textContent || ''
+      // Look for patterns like: var inventory=[{...}] or window.inventory=[{...}]
+      const m = text.match(/(?:var |window\.)(?:inventory|inventoryData|vehicles|inventoryItems)\s*=\s*(\[[\s\S]{20,}\])/i)
+        || text.match(/\binventory\s*:\s*(\[[\s\S]{20,}\])/i)
+      if (m) {
+        try {
+          const arr = JSON.parse(m[1])
+          if (Array.isArray(arr) && arr.length && (arr[0]?.VIN || arr[0]?.vin || arr[0]?.stocknumber)) {
+            for (const v of arr) {
+              const id = v.VIN || v.vin || v.StockNumber || v.stocknumber
+              if (id && !seen.has(id)) { seen.add(id); vehicles.push(v) }
+            }
+            if (vehicles.length) return vehicles
+          }
+        } catch {}
+      }
+    }
+
+    // 3. DOM card scraping — eDealer renders each vehicle as a card element
+    //    with data-* attributes for VIN, year, make, model, price, etc.
+    const cardSelectors = [
+      '[data-vin]', '[data-vehicle-vin]', '[data-vehiclevin]',
+      '.vehicle-card[data-vin]', '.inventory-card[data-vin]',
+      'li[data-vin]', 'article[data-vin]'
+    ]
+    for (const sel of cardSelectors) {
+      const cards = document.querySelectorAll(sel)
+      if (!cards.length) continue
+      for (const el of cards) {
+        const vin = el.dataset.vin || el.dataset.vehicleVin || el.dataset.vehiclevin
+        if (!vin || seen.has(vin)) continue
+        seen.add(vin)
+        // Try to read companion data attributes; fall back to text content parsing
+        const year = el.dataset.year || el.querySelector('[data-year]')?.dataset.year
+        const make = el.dataset.make || el.querySelector('[data-make]')?.dataset.make
+        const model = el.dataset.model || el.querySelector('[data-model]')?.dataset.model
+        const trim = el.dataset.trim || null
+        const stock = el.dataset.stock || el.dataset.stocknumber || el.dataset.stockNumber || null
+        const priceRaw = el.dataset.price || el.dataset.saleprice || el.dataset.salePrice
+          || el.querySelector('.price, [class*="price"]')?.textContent?.replace(/[^0-9]/g, '')
+        const price = priceRaw ? parseInt(priceRaw, 10) || 0 : 0
+        const condition = el.dataset.condition || el.dataset.type || null
+        const mileageRaw = el.dataset.mileage || el.dataset.odometer
+          || el.querySelector('[class*="mileage"], [class*="odometer"]')?.textContent?.replace(/[^0-9]/g, '')
+        const mileage = mileageRaw ? parseInt(mileageRaw, 10) || 0 : 0
+        const imgEl = el.querySelector('img[src]')
+        const image_urls = imgEl ? [imgEl.src] : []
+        const linkEl = el.querySelector('a[href]')
+        const vdp_url = linkEl ? (linkEl.href || null) : null
+        vehicles.push({ VIN: vin, vin, year: year || null, make: make || null, model: model || null,
+          trim, StockNumber: stock, stocknumber: stock, price, saleprice: price, mileage,
+          condition, image_urls, vdp_url })
+      }
+      if (vehicles.length) break
+    }
+
+    return vehicles
+  }
+
   // Detect which platform this dealer runs. Same probe shapes as the server
   // PLATFORM_PROBES array, but client-side. Each entry tries a candidate path,
   // validates the response shape, and returns normalized vehicles.
@@ -50,7 +138,7 @@
         return d?.vehicles || d?.Vehicles || d?.Items || []
       },
       paginate: async (basePath, firstPage) => {
-        const pageSize = firstPage.length || 24
+        const pageSize = firstPage.length || 25
         // Track VINs/stocknumbers to detect when API loops (returns same page repeatedly)
         const seen = new Set(firstPage.map(v => v.VIN || v.vin || v.StockNumber || v.stocknumber).filter(Boolean))
         const all = [...firstPage]
@@ -92,6 +180,8 @@
           p => `?skip=${(p - 1) * pageSize}&take=${pageSize}`,
           p => `?start=${(p - 1) * pageSize}&limit=${pageSize}`,
           p => `?offset=${(p - 1) * pageSize}&limit=${pageSize}`,
+          p => `?PageNumber=${p}&PageSize=${pageSize}`,
+          p => `?currentPage=${p}&pageSize=${pageSize}`,
         ]
         let workingStyle = null
         for (const style of PARAM_STYLES) {
@@ -115,24 +205,41 @@
             }
           } catch {}
         }
-        if (!workingStyle) return all
-        let page = 3
-        while (page <= 100) {
-          try {
-            const r = await fetch(`${origin}${basePath}${workingStyle(page)}`, { credentials: 'include', headers: { Accept: 'application/json' } })
-            if (!r.ok) break
-            const d = await r.json()
-            const batch = Array.isArray(d) ? d : (d?.vehicles || d?.Vehicles || d?.Items || [])
-            const fresh = batch.filter(v => {
-              const id = v.VIN || v.vin || v.StockNumber || v.stocknumber
-              return id && !seen.has(id)
-            })
-            if (!fresh.length) break
-            fresh.forEach(v => seen.add(v.VIN || v.vin || v.StockNumber || v.stocknumber))
-            all.push(...fresh)
-            try { chrome.runtime.sendMessage({ type: 'CAPTURE_PROGRESS', feed_id: window.__marketsyncFeedId || null, phase: 'scanning', current: all.length, total: all.length }) } catch {}
-            page++
-          } catch { break }
+        if (workingStyle) {
+          let page = 3
+          while (page <= 100) {
+            try {
+              const r = await fetch(`${origin}${basePath}${workingStyle(page)}`, { credentials: 'include', headers: { Accept: 'application/json' } })
+              if (!r.ok) break
+              const d = await r.json()
+              const batch = Array.isArray(d) ? d : (d?.vehicles || d?.Vehicles || d?.Items || [])
+              const fresh = batch.filter(v => {
+                const id = v.VIN || v.vin || v.StockNumber || v.stocknumber
+                return id && !seen.has(id)
+              })
+              if (!fresh.length) break
+              fresh.forEach(v => seen.add(v.VIN || v.vin || v.StockNumber || v.stocknumber))
+              all.push(...fresh)
+              try { chrome.runtime.sendMessage({ type: 'CAPTURE_PROGRESS', feed_id: window.__marketsyncFeedId || null, phase: 'scanning', current: all.length, total: all.length }) } catch {}
+              page++
+            } catch { break }
+          }
+          return all
+        }
+
+        // Strategy C: DOM scrape — eDealer renders vehicle cards server-side so the
+        // API only returns one page but ALL vehicles are in the rendered HTML.
+        // Extract from [data-vin] elements, window globals, or embedded JSON in <script>.
+        const domVehicles = eDealerScrapeDOM()
+        const domFresh = domVehicles.filter(v => {
+          const id = v.VIN || v.vin || v.StockNumber || v.stocknumber
+          return id && !seen.has(id)
+        })
+        if (domFresh.length > 0) {
+          log(`eDealer DOM scrape found ${domFresh.length} additional vehicles`)
+          domFresh.forEach(v => seen.add(v.VIN || v.vin || v.StockNumber || v.stocknumber))
+          all.push(...domFresh)
+          try { chrome.runtime.sendMessage({ type: 'CAPTURE_PROGRESS', feed_id: window.__marketsyncFeedId || null, phase: 'scanning', current: all.length, total: all.length }) } catch {}
         }
         return all
       }
@@ -239,6 +346,23 @@
   // For dealer_com and paginating probes, try with a high limit first,
   // then paginate if the response indicates more records are available.
   let result = null
+
+  // eDealer DOM-first: eDealer renders ALL inventory cards server-side so the
+  // API only returns 25 (one page) and ignores pagination. Check the DOM first
+  // to get the full set without any API round-trips.
+  {
+    const html = document.documentElement.innerHTML
+    const isEDealer = /e-dealer\.js|edealer/i.test(html)
+      || /cdn\.impel\.io\/spincar-static\/provider_scripts\/e-dealer/i.test(html)
+    if (isEDealer) {
+      const domVehicles = eDealerScrapeDOM()
+      if (domVehicles.length > 0) {
+        log(`✓ eDealer DOM scrape — ${domVehicles.length} vehicles`)
+        result = { platform: 'edealer', source_url: location.href, vehicles: domVehicles }
+      }
+    }
+  }
+
   for (const probe of PROBES) {
     for (const path of probe.paths) {
       // dealer_com: request max in one shot; other probes use their own path variants
