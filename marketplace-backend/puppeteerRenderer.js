@@ -47,15 +47,25 @@ async function getChromiumExecutable() {
   }
 }
 
+const SAFE_CHROMIUM_ARGS = [
+  '--disable-dev-shm-usage',
+  '--disable-gpu',
+  '--no-sandbox',
+  '--disable-setuid-sandbox',
+  '--disable-extensions',
+  '--single-process',
+]
+
 async function getBrowser() {
   if (cachedBrowser && cachedBrowser.connected !== false) return cachedBrowser
   if (cachedLaunchPromise) return cachedLaunchPromise
   cachedLaunchPromise = (async () => {
     const puppeteer = await getPuppeteer()
     const cfg = await getChromiumExecutable()
+    const safeArgs = [...new Set([...(cfg.args || []), ...SAFE_CHROMIUM_ARGS])]
     const browser = await puppeteer.launch({
       executablePath: cfg.executablePath,
-      args: cfg.args,
+      args: safeArgs,
       headless: cfg.headless,
       defaultViewport: { width: 1366, height: 900 }
     })
