@@ -30,15 +30,13 @@
     },
     {
       platform: 'edealer',
-      // eDealer: /api/inventory/getall nominally returns all, but some installations
-      // cap at 24. Try with explicit large pageSize, then paginate if needed.
+      // eDealer: /api/inventory/getall exists but caps at 24/page and doesn't
+      // return a totalCount, so we paginate until we get an empty page.
       paths: [
-        '/api/inventory/getall?pageSize=500',
-        '/api/inventory/getall?take=500',
         '/api/inventory/getall',
-        '/api/inventory/vehicles?pageSize=500',
-        '/api/vehicles?pageSize=500',
-        '/Inventory/GetInventory?pageSize=500'
+        '/api/inventory/vehicles',
+        '/api/vehicles',
+        '/Inventory/GetInventory'
       ],
       validate: d => {
         if (Array.isArray(d) && d[0]?.VIN) return true
@@ -51,36 +49,49 @@
         if (Array.isArray(d)) return d
         return d?.vehicles || d?.Vehicles || d?.Items || []
       },
-      paginate: async (basePath, firstPage, firstData) => {
-        // Try to determine total from response envelope
-        const total = firstData?.totalCount ?? firstData?.TotalCount ?? firstData?.total ?? firstData?.Total ?? null
+      paginate: async (basePath, firstPage) => {
         const all = [...firstPage]
-        if (!total || all.length >= total) return all
-        // eDealer paginates via ?page=N&pageSize=N or ?skip=N&take=N
         const pageSize = firstPage.length || 24
-        let page = 2, skip = pageSize
-        while (all.length < total && page <= 50) {
-          // Try both pagination styles
-          const attempts = [
-            `${origin}${basePath.split('?')[0]}?page=${page}&pageSize=${pageSize}`,
-            `${origin}${basePath.split('?')[0]}?skip=${skip}&take=${pageSize}`
-          ]
-          let fetched = false
-          for (const attemptUrl of attempts) {
-            try {
-              const r = await fetch(attemptUrl, { credentials: 'include', headers: { Accept: 'application/json' } })
-              if (!r.ok) continue
-              const d = await r.json()
-              const batch = Array.isArray(d) ? d : (d?.vehicles || d?.Vehicles || d?.Items || [])
-              if (!batch.length) break
+        // Paginate until empty — don't rely on totalCount since eDealer often omits it.
+        // Try multiple param styles; whichever works on this install will produce results.
+        const PARAM_STYLES = [
+          (p) => `?pageNumber=${p}&pageSize=${pageSize}`,
+          (p) => `?page=${p}&pageSize=${pageSize}`,
+          (p) => `?pageNum=${p}&pageSize=${pageSize}`,
+          (p) => `?skip=${(p - 1) * pageSize}&take=${pageSize}`,
+        ]
+        // Detect which param style the server responds to (try page 2 with each)
+        let workingStyle = null
+        for (const style of PARAM_STYLES) {
+          try {
+            const r = await fetch(`${origin}${basePath}${style(2)}`, { credentials: 'include', headers: { Accept: 'application/json' } })
+            if (!r.ok) continue
+            const d = await r.json()
+            const batch = Array.isArray(d) ? d : (d?.vehicles || d?.Vehicles || d?.Items || [])
+            if (batch.length > 0 && batch.length <= pageSize) {
               all.push(...batch)
-              fetched = true
-              try { chrome.runtime.sendMessage({ type: 'CAPTURE_PROGRESS', feed_id: window.__marketsyncFeedId || null, phase: 'scanning', current: all.length, total }) } catch {}
+              workingStyle = style
+              const total = d?.totalCount ?? d?.TotalCount ?? d?.total ?? d?.Total ?? null
+              try { chrome.runtime.sendMessage({ type: 'CAPTURE_PROGRESS', feed_id: window.__marketsyncFeedId || null, phase: 'scanning', current: all.length, total: total ?? all.length }) } catch {}
               break
-            } catch {}
-          }
-          if (!fetched) break
-          page++; skip += pageSize
+            }
+          } catch {}
+        }
+        if (!workingStyle) return all
+        // Continue from page 3 with the working style until we get an empty page
+        let page = 3
+        while (page <= 100) {
+          try {
+            const r = await fetch(`${origin}${basePath}${workingStyle(page)}`, { credentials: 'include', headers: { Accept: 'application/json' } })
+            if (!r.ok) break
+            const d = await r.json()
+            const batch = Array.isArray(d) ? d : (d?.vehicles || d?.Vehicles || d?.Items || [])
+            if (!batch.length) break
+            all.push(...batch)
+            try { chrome.runtime.sendMessage({ type: 'CAPTURE_PROGRESS', feed_id: window.__marketsyncFeedId || null, phase: 'scanning', current: all.length, total: all.length }) } catch {}
+            if (batch.length < pageSize) break
+            page++
+          } catch { break }
         }
         return all
       }
