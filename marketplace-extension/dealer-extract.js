@@ -50,35 +50,72 @@
         return d?.vehicles || d?.Vehicles || d?.Items || []
       },
       paginate: async (basePath, firstPage) => {
-        const all = [...firstPage]
         const pageSize = firstPage.length || 24
-        // Paginate until empty — don't rely on totalCount since eDealer often omits it.
-        // Try multiple param styles; whichever works on this install will produce results.
-        const PARAM_STYLES = [
-          (p) => `?pageNumber=${p}&pageSize=${pageSize}`,
-          (p) => `?page=${p}&pageSize=${pageSize}`,
-          (p) => `?pageNum=${p}&pageSize=${pageSize}`,
-          (p) => `?skip=${(p - 1) * pageSize}&take=${pageSize}`,
+        // Track VINs/stocknumbers to detect when API loops (returns same page repeatedly)
+        const seen = new Set(firstPage.map(v => v.VIN || v.vin || v.StockNumber || v.stocknumber).filter(Boolean))
+        const all = [...firstPage]
+
+        // Strategy A: condition-specific endpoints (new + used as separate calls)
+        // Some eDealer installs split inventory by type rather than paginating
+        const conditionPaths = [
+          '/api/inventory/new', '/api/inventory/used',
+          '/api/inventory/getall?conditionType=NEW', '/api/inventory/getall?conditionType=USED',
+          '/api/inventory/vehicles?condition=New', '/api/inventory/vehicles?condition=Used',
         ]
-        // Detect which param style the server responds to (try page 2 with each)
+        for (const cp of conditionPaths) {
+          if (cp === basePath) continue
+          try {
+            const r = await fetch(`${origin}${cp}`, { credentials: 'include', headers: { Accept: 'application/json' } })
+            if (!r.ok) continue
+            const ct = r.headers.get('content-type') || ''
+            if (!ct.includes('json')) continue
+            const d = await r.json()
+            const batch = Array.isArray(d) ? d : (d?.vehicles || d?.Vehicles || d?.Items || [])
+            const fresh = batch.filter(v => {
+              const id = v.VIN || v.vin || v.StockNumber || v.stocknumber
+              return id && !seen.has(id)
+            })
+            if (fresh.length > 0) { fresh.forEach(v => seen.add(v.VIN || v.vin || v.StockNumber || v.stocknumber)); all.push(...fresh) }
+          } catch {}
+        }
+        if (all.length > firstPage.length) {
+          try { chrome.runtime.sendMessage({ type: 'CAPTURE_PROGRESS', feed_id: window.__marketsyncFeedId || null, phase: 'scanning', current: all.length, total: all.length }) } catch {}
+          return all
+        }
+
+        // Strategy B: query-string pagination — try multiple param styles, use VIN dedup
+        // to detect loops (eDealer sometimes returns the same page regardless of params)
+        const PARAM_STYLES = [
+          p => `?pageNumber=${p}&pageSize=${pageSize}`,
+          p => `?page=${p}&pageSize=${pageSize}`,
+          p => `?pageNum=${p}&pageSize=${pageSize}`,
+          p => `?skip=${(p - 1) * pageSize}&take=${pageSize}`,
+          p => `?start=${(p - 1) * pageSize}&limit=${pageSize}`,
+          p => `?offset=${(p - 1) * pageSize}&limit=${pageSize}`,
+        ]
         let workingStyle = null
         for (const style of PARAM_STYLES) {
           try {
             const r = await fetch(`${origin}${basePath}${style(2)}`, { credentials: 'include', headers: { Accept: 'application/json' } })
             if (!r.ok) continue
+            const ct = r.headers.get('content-type') || ''
+            if (!ct.includes('json')) continue
             const d = await r.json()
             const batch = Array.isArray(d) ? d : (d?.vehicles || d?.Vehicles || d?.Items || [])
-            if (batch.length > 0 && batch.length <= pageSize) {
-              all.push(...batch)
+            const fresh = batch.filter(v => {
+              const id = v.VIN || v.vin || v.StockNumber || v.stocknumber
+              return id && !seen.has(id)
+            })
+            if (fresh.length > 0) {
+              fresh.forEach(v => seen.add(v.VIN || v.vin || v.StockNumber || v.stocknumber))
+              all.push(...fresh)
               workingStyle = style
-              const total = d?.totalCount ?? d?.TotalCount ?? d?.total ?? d?.Total ?? null
-              try { chrome.runtime.sendMessage({ type: 'CAPTURE_PROGRESS', feed_id: window.__marketsyncFeedId || null, phase: 'scanning', current: all.length, total: total ?? all.length }) } catch {}
+              try { chrome.runtime.sendMessage({ type: 'CAPTURE_PROGRESS', feed_id: window.__marketsyncFeedId || null, phase: 'scanning', current: all.length, total: all.length }) } catch {}
               break
             }
           } catch {}
         }
         if (!workingStyle) return all
-        // Continue from page 3 with the working style until we get an empty page
         let page = 3
         while (page <= 100) {
           try {
@@ -86,10 +123,14 @@
             if (!r.ok) break
             const d = await r.json()
             const batch = Array.isArray(d) ? d : (d?.vehicles || d?.Vehicles || d?.Items || [])
-            if (!batch.length) break
-            all.push(...batch)
+            const fresh = batch.filter(v => {
+              const id = v.VIN || v.vin || v.StockNumber || v.stocknumber
+              return id && !seen.has(id)
+            })
+            if (!fresh.length) break
+            fresh.forEach(v => seen.add(v.VIN || v.vin || v.StockNumber || v.stocknumber))
+            all.push(...fresh)
             try { chrome.runtime.sendMessage({ type: 'CAPTURE_PROGRESS', feed_id: window.__marketsyncFeedId || null, phase: 'scanning', current: all.length, total: all.length }) } catch {}
-            if (batch.length < pageSize) break
             page++
           } catch { break }
         }

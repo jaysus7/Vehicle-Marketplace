@@ -167,6 +167,13 @@ async function _runInventorySyncInner(dealershipId) {
         }
       }
 
+      if (feed.platform === 'needs_extension_capture') {
+        // Cloudflare-protected site — server can't reach it. Skip server sync;
+        // inventory arrives via Chrome extension capture (/feeds/:id/extension-capture).
+        console.log(`[sync] feed ${feed.id} (${feed.feed_url}) requires Chrome extension — skipping server-side fetch`)
+        continue
+      }
+
       if (jsonCache.has(feed.feed_url)) {
         vehicles = jsonCache.get(feed.feed_url)
       } else if (feed.platform === 'spa_render') {
