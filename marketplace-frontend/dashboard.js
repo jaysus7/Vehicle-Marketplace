@@ -1290,6 +1290,14 @@ async function loadInventoryFeeds() {
           🔒 <b>Cloudflare-protected</b> — our servers can't reach it, so it's pulled through your browser:
           <div class="mt-1">1. Click <b>Pull Inventory</b>. &nbsp;2. A dealer tab opens, scans, and closes itself — don't close it. &nbsp;3. Wait ~1–2 min. &nbsp;4. This list and your catalog refresh automatically when done.</div>
         </div>`;
+      // Same how-to, purple, for the fallback case: the server syncs this feed
+      // automatically, but if it comes back empty (e.g. the dealer added Cloudflare)
+      // you can always pull through your own browser with these steps.
+      const purpleSteps = `
+        <div class="text-sm leading-snug rounded bg-indigo-100 dark:bg-indigo-900/40 border border-indigo-300 dark:border-indigo-700 text-indigo-800 dark:text-indigo-200 px-2 py-1.5">
+          💡 <b>Server pulled nothing?</b> This dealer may block our servers — pull it through your browser instead:
+          <div class="mt-1">1. Click <b>Pull via extension</b>. &nbsp;2. A dealer tab opens, scans, and closes itself — don't close it. &nbsp;3. Wait ~1–2 min. &nbsp;4. This list and your catalog refresh automatically when done.</div>
+        </div>`;
       // The extension is now available as a fallback on EVERY feed: the server syncs
       // automatically, but if a dealer is Cloudflare-blocked (server pulls 0) the user
       // can always pull through their own browser. Cloudflare-flagged feeds get the full
@@ -1297,7 +1305,7 @@ async function loadInventoryFeeds() {
       // "Pull via extension" fallback so there's always a working third step.
       const extBlock = `
         <div class="ms-ext-capture mt-2" data-feed-id="${esc(f.id)}" data-feed-url="${esc(dealerPage)}">
-          ${needsExt ? orangeSteps : ''}
+          ${needsExt ? orangeSteps : purpleSteps}
           <div class="flex items-center gap-2 mt-2">
             <button class="ms-pull-btn ${needsExt ? 'bg-indigo-600 hover:bg-indigo-500 text-white' : 'bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200'} text-xs font-semibold px-3 py-1.5 rounded disabled:opacity-60">${needsExt ? 'Pull Inventory' : '↻ Pull via extension'}</button>
             <span class="ms-pull-status text-sm text-slate-500 dark:text-slate-400"></span>
