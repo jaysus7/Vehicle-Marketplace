@@ -1,4 +1,4 @@
-import { supabaseAdmin, sleep, browserFetch } from '../shared.js'
+import { supabaseAdmin, sleep, browserFetch, scraperApiFetch } from '../shared.js'
 import { renderAndCaptureInventory, genericMapVehicle, inferUrlTemplate, renderUrlTemplate, fetchViaBrowser } from '../puppeteerRenderer.js'
 import { PLATFORM_PROBES, fetchConvertusInventory, fetchDealerPageInventory,
          fetchEDealerInventoryFromSitemap, extractEDealerDetailUrls, fetchEDealerDetailImageGroups,
@@ -324,8 +324,9 @@ async function _runInventorySyncInner(dealershipId) {
           return list.filter(looksVehicle)
         }
 
-        // Method 1: JSON API
+        // Method 1: JSON API (direct)
         let all = []
+        let apiBlocked = false
         const apiUrl = `${origin}/api/inventory/getall`
         try {
           const r = await browserFetch(apiUrl, { headers: { Accept: 'application/json' } })
@@ -335,22 +336,44 @@ async function _runInventorySyncInner(dealershipId) {
             all = extractVehicles(d)
             console.log(`[sync] eDealer API: HTTP ${r.status}, extracted ${all.length} vehicles from ${apiUrl}`)
           } else {
+            apiBlocked = (r.status === 403 || r.status === 503)
             console.log(`[sync] eDealer API: HTTP ${r.status} (${ct || 'no content-type'}) at ${apiUrl} — trying fallbacks`)
           }
         } catch (e) {
           console.log(`[sync] eDealer API fetch failed: ${e.message} — trying fallbacks`)
         }
 
-        // Method 2: sitemap walker (Cloudflare-on-API fallback)
-        if (!all.length && origin) {
+        // Method 1b: API via ScraperAPI (residential IP) — clears a Cloudflare
+        // datacenter-IP block in ONE request, so it fits the free tier. Only runs
+        // when the direct API was blocked and a key is configured.
+        if (!all.length && apiBlocked && process.env.SCRAPER_API_KEY) {
+          try {
+            const r = await scraperApiFetch(apiUrl)
+            if (r.ok) {
+              const d = await r.json().catch(() => null)
+              all = extractVehicles(d)
+              console.log(`[sync] eDealer API via ScraperAPI: extracted ${all.length} vehicles`)
+            } else {
+              console.log(`[sync] eDealer ScraperAPI returned HTTP ${r.status}`)
+            }
+          } catch (e) {
+            console.log(`[sync] eDealer ScraperAPI failed: ${e.message}`)
+          }
+        }
+
+        // Method 2: sitemap walker — only worth trying when the API failed for a
+        // NON-block reason. If the API was 403-blocked, it's an IP-level Cloudflare
+        // block, so the detail pages are blocked too (walking them would just fail
+        // all N and waste minutes). Skip straight to ScraperAPI/extension in that case.
+        if (!all.length && !apiBlocked && origin) {
           try {
             const sm = await fetchEDealerInventoryFromSitemap(origin)
             if (sm && sm.length) { all = sm; console.log(`[sync] eDealer sitemap walk: ${all.length} vehicles`) }
           } catch (e) { console.log(`[sync] eDealer sitemap walk failed: ${e.message}`) }
         }
 
-        // Method 3: listing-page JSON-LD walk
-        if (!all.length) {
+        // Method 3: listing-page JSON-LD walk (skip if IP-blocked)
+        if (!all.length && !apiBlocked) {
           const listingUrls = []
           const src = feed.source_dealer_url
           if (src && /\/(inventory|inventaire|new|used|pre-owned|vehicles)\b/i.test(src)) {
