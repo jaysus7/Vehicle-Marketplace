@@ -261,6 +261,65 @@ async function _runInventorySyncInner(dealershipId) {
         vehicles = all
         jsonCache.set(feed.feed_url, vehicles)
         totalVehiclesFound += vehicles.length
+      } else if (feed.platform === 'edealer') {
+        // eDealer: /api/inventory/getall caps at 24/page with no totalCount.
+        // Paginate until we get an empty page, trying multiple param styles.
+        let origin
+        try { origin = new URL(feed.feed_url).origin } catch { origin = '' }
+        const basePath = feed.feed_url.replace(origin, '').split('?')[0]
+
+        // Check if Cloudflare blocks direct server access
+        const firstRes = await browserFetch(`${origin}${basePath}`, {
+          headers: { Accept: 'application/json', 'Sec-Fetch-Dest': 'empty', 'Sec-Fetch-Mode': 'cors', 'Sec-Fetch-Site': 'same-origin' }
+        })
+        if (firstRes.status === 403 || firstRes.status === 503) {
+          // Cloudflare blocking — fall through to sitemap walker below
+          console.log(`[sync] eDealer API blocked by WAF (${firstRes.status}) — use the Chrome extension to capture this site`)
+          vehicles = []
+        } else if (firstRes.ok) {
+          const firstData = await firstRes.json().catch(() => null)
+          const probe = PLATFORM_PROBES.find(p => p.platform === 'edealer')
+          const firstPage = firstData && probe?.validate(firstData) ? probe.extract(firstData) : []
+          const pageSize = firstPage.length || 24
+          const all = [...firstPage]
+
+          // Detect which pagination param style this install supports (try page 2)
+          const PARAM_STYLES = [
+            p => `?pageNumber=${p}&pageSize=${pageSize}`,
+            p => `?page=${p}&pageSize=${pageSize}`,
+            p => `?pageNum=${p}&pageSize=${pageSize}`,
+            p => `?skip=${(p - 1) * pageSize}&take=${pageSize}`,
+          ]
+          let workingStyle = null
+          for (const style of PARAM_STYLES) {
+            try {
+              const r = await browserFetch(`${origin}${basePath}${style(2)}`, { headers: { Accept: 'application/json' } })
+              if (!r.ok) continue
+              const d = await r.json()
+              const batch = probe?.validate(d) ? probe.extract(d) : (Array.isArray(d) ? d : [])
+              if (batch.length > 0) { all.push(...batch); workingStyle = style; break }
+            } catch {}
+          }
+          if (workingStyle) {
+            let page = 3
+            while (page <= 100) {
+              try {
+                const r = await browserFetch(`${origin}${basePath}${workingStyle(page)}`, { headers: { Accept: 'application/json' } })
+                if (!r.ok) break
+                const d = await r.json()
+                const batch = probe?.validate(d) ? probe.extract(d) : (Array.isArray(d) ? d : [])
+                if (!batch.length) break
+                all.push(...batch)
+                if (batch.length < pageSize) break
+                page++
+              } catch { break }
+            }
+          }
+          vehicles = all
+          console.log(`[sync] eDealer: ${vehicles.length} vehicles from ${feed.feed_url}`)
+        }
+        jsonCache.set(feed.feed_url, vehicles)
+        totalVehiclesFound += vehicles.length
       } else {
         const feedRes = await browserFetch(`${feed.feed_url}?v=${Date.now()}`, {
           headers: { 'Accept': 'application/json, text/plain, */*', 'Sec-Fetch-Dest': 'empty', 'Sec-Fetch-Mode': 'cors', 'Sec-Fetch-Site': 'same-origin' }
