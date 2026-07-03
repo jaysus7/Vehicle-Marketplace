@@ -378,7 +378,6 @@ async function _runInventorySyncInner(dealershipId) {
           }
 
           vehicles = all
-          }
           console.log(`[sync] eDealer: ${vehicles.length} vehicles from ${feed.feed_url}`)
         }
         jsonCache.set(feed.feed_url, vehicles)
