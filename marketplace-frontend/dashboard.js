@@ -1281,23 +1281,29 @@ async function loadInventoryFeeds() {
       const flaggedExt = f.platform === 'needs_extension_capture' || f.platform === 'extension_capture';
       const captured = flaggedExt && !!f.last_extension_sync_at;
       const needsExt = flaggedExt && !f.last_extension_sync_at;
+      // The page the extension should OPEN to scrape is the dealer's listing page,
+      // not the JSON/API feed_url. Prefer source_dealer_url when we have it.
+      const dealerPage = f.source_dealer_url || f.feed_url;
 
       const orangeSteps = `
         <div class="text-sm leading-snug rounded bg-amber-100 dark:bg-amber-900/40 border border-amber-300 dark:border-amber-700 text-amber-800 dark:text-amber-200 px-2 py-1.5">
           🔒 <b>Cloudflare-protected</b> — our servers can't reach it, so it's pulled through your browser:
           <div class="mt-1">1. Click <b>Pull Inventory</b>. &nbsp;2. A dealer tab opens, scans, and closes itself — don't close it. &nbsp;3. Wait ~1–2 min. &nbsp;4. This list and your catalog refresh automatically when done.</div>
         </div>`;
-      // After a successful capture we drop the whole instructional box and leave only
-      // a discreet "Pull again" button (the "Synced" pill in the header shows status).
-      const extBlock = flaggedExt ? `
-        <div class="ms-ext-capture mt-2" data-feed-id="${esc(f.id)}" data-feed-url="${esc(f.feed_url)}">
+      // The extension is now available as a fallback on EVERY feed: the server syncs
+      // automatically, but if a dealer is Cloudflare-blocked (server pulls 0) the user
+      // can always pull through their own browser. Cloudflare-flagged feeds get the full
+      // orange walkthrough + a primary button; every other feed gets a discreet
+      // "Pull via extension" fallback so there's always a working third step.
+      const extBlock = `
+        <div class="ms-ext-capture mt-2" data-feed-id="${esc(f.id)}" data-feed-url="${esc(dealerPage)}">
           ${needsExt ? orangeSteps : ''}
           <div class="flex items-center gap-2 mt-2">
-            <button class="ms-pull-btn ${needsExt ? 'bg-indigo-600 hover:bg-indigo-500 text-white' : 'bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200'} text-xs font-semibold px-3 py-1.5 rounded disabled:opacity-60">${needsExt ? 'Pull Inventory' : '↻ Pull again'}</button>
+            <button class="ms-pull-btn ${needsExt ? 'bg-indigo-600 hover:bg-indigo-500 text-white' : 'bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200'} text-xs font-semibold px-3 py-1.5 rounded disabled:opacity-60">${needsExt ? 'Pull Inventory' : '↻ Pull via extension'}</button>
             <span class="ms-pull-status text-sm text-slate-500 dark:text-slate-400"></span>
           </div>
           <div class="ms-pull-track mt-2 h-1.5 bg-slate-200 dark:bg-slate-800 rounded overflow-hidden" style="display:none"><div class="ms-pull-fill h-full bg-indigo-500" style="width:0%;transition:width .3s"></div></div>
-        </div>` : '';
+        </div>`;
 
       const borderCls = needsExt ? 'border-amber-300 dark:border-amber-700'
         : captured ? 'border-emerald-300 dark:border-emerald-800'

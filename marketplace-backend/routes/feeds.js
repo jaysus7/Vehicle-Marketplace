@@ -109,7 +109,7 @@ export function registerRoutes(app) {
     if (!req.dealershipId) return res.json([])
     const { data, error } = await supabaseAdmin
       .from('inventory_feeds')
-      .select('id, feed_url, feed_type, platform, created_at, last_extension_sync_at')
+      .select('id, feed_url, feed_type, platform, created_at, last_extension_sync_at, source_dealer_url')
       .eq('dealership_id', req.dealershipId)
       .order('created_at', { ascending: false })
     if (error) return res.status(500).json({ error: error.message })
