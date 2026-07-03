@@ -638,7 +638,7 @@ Respond with ONLY valid JSON (no markdown, no explanation, no trailing commas):
 
     const since180 = new Date(Date.now() - 180 * 86400000).toISOString()
 
-    const [{ data: sold }, { data: current }] = await Promise.all([
+    const [{ data: sold }, { data: current }, { data: competitors }] = await Promise.all([
       supabaseAdmin
         .from('inventory')
         .select('make, model, year')
@@ -651,7 +651,12 @@ Respond with ONLY valid JSON (no markdown, no explanation, no trailing commas):
         .from('inventory')
         .select('id, make, model, year, price, status, stocknumber')
         .eq('dealership_id', req.dealershipId)
-        .eq('status', 'available')
+        .eq('status', 'available'),
+      supabaseAdmin
+        .from('competitor_dealerships')
+        .select('name, last_scan_result')
+        .eq('dealership_id', req.dealershipId)
+        .not('last_scanned_at', 'is', null)
     ])
 
     // Tally sell-through by make/model
@@ -672,6 +677,16 @@ Respond with ONLY valid JSON (no markdown, no explanation, no trailing commas):
       stockMap[k].units.push({ id: v.id, stocknumber: v.stocknumber || null })
     }
 
+    // Summarise competitor stock from last scan results
+    const competitorSummary = (competitors || [])
+      .filter(c => c.last_scan_result && !c.last_scan_result.error)
+      .map(c => {
+        const r = c.last_scan_result
+        const topModels = Array.isArray(r.top_models) ? r.top_models.slice(0, 5).join(', ') : ''
+        const total = r.total_listings ?? r.unit_count ?? '?'
+        return `- ${c.name}: ${total} units on lot${topModels ? '; top models: ' + topModels : ''}`
+      }).join('\n')
+
     const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
     let recommendations = []
     try {
@@ -680,13 +695,14 @@ Respond with ONLY valid JSON (no markdown, no explanation, no trailing commas):
         max_tokens: 1200,
         messages: [{
           role: 'user',
-          content: `You are an automotive inventory strategist for a Canadian GM dealership in Ontario, Canada. Based on this dealership's 180-day sell-through data and current stock, recommend 5 specific vehicle acquisitions. Base your advice on Canadian market conditions, Ontario buyer preferences, and Canadian government incentives (iZEV program, Ontario rebates) — do NOT reference US programs like IRA or federal US credits.
+          content: `You are an automotive inventory strategist for a Canadian GM dealership in Ontario, Canada. Based on this dealership's 180-day sell-through data, current stock, and nearby competitor lots, recommend 5 specific vehicle acquisitions. Factor in Canadian market conditions (fuel prices, weather, rural vs urban mix), Ontario buyer preferences, seasonal demand, Canadian government incentives (iZEV program, Ontario rebates) — do NOT reference US programs. Also consider what competitors are stocking heavily (avoid oversupplied models) and where gaps exist.
 
 Sell-through (last 180 days):
 ${sell_through.map(s => `- ${s.make} ${s.model}: ${s.sold} sold`).join('\n') || 'No sold data available yet'}
 
 Current stock (available units):
 ${Object.entries(stockMap).map(([k, d]) => `- ${k.replace('|', ' ')}: ${d.count} units (${d.units.slice(0, 3).map(u => `id:${u.id}${u.stocknumber ? ' stock:' + u.stocknumber : ''}`).join(', ')}${d.units.length > 3 ? '…' : ''})`).join('\n') || 'No current stock'}
+${competitorSummary ? `\nNearby competitor lots (scanned):\n${competitorSummary}` : ''}
 
 Return ONLY valid JSON array (no markdown):
 [{"make":"...","model":"...","year_range":"...","reason":"...","priority":"high|medium|low","existing_units":[{"id":"...","stocknumber":"..."}]}]

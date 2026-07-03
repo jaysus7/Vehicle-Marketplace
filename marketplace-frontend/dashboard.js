@@ -3883,6 +3883,7 @@ function loadInvIntelPage() {
     upsell.classList.add('hidden');
     active.classList.remove('hidden');
     if (typeof window._loadIntel === 'function') window._loadIntel();
+    loadStockingRecommendations(false);
   } else {
     upsell.classList.remove('hidden');
     active.classList.add('hidden');
@@ -4383,46 +4384,74 @@ document.addEventListener('DOMContentLoaded', () => {
 
 // ── Stocking Recommendations ─────────────────────────────────────────────────
 
-document.addEventListener('DOMContentLoaded', () => {
-  document.getElementById('stocking-generate-btn')?.addEventListener('click', async () => {
-    const btn = document.getElementById('stocking-generate-btn');
-    const results = document.getElementById('stocking-results');
-    btn.disabled = true; btn.textContent = 'Generating…';
-    results?.classList.add('hidden');
+const STOCKING_CACHE_KEY = 'ms_stocking_recs';
+const STOCKING_CACHE_TTL = 6 * 60 * 60 * 1000; // 6 hours
+
+async function loadStockingRecommendations(force = false) {
+  const btn = document.getElementById('stocking-generate-btn');
+  const results = document.getElementById('stocking-results');
+  if (!btn || !results) return;
+
+  // Use cache unless forcing a refresh
+  if (!force) {
     try {
-      const res = await fetch(`${API}/ai/stocking-recommendations`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      const data = await res.json();
+      const cached = JSON.parse(localStorage.getItem(STOCKING_CACHE_KEY) || 'null');
+      if (cached && Date.now() - cached.ts < STOCKING_CACHE_TTL) {
+        renderStockingResults(cached.recs, results);
+        return;
+      }
+    } catch {}
+  }
+
+  btn.disabled = true;
+  btn.textContent = 'Generating…';
+  try {
+    const res = await fetch(`${API}/ai/stocking-recommendations`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed');
       const recs = data.recommendations || [];
       if (!recs.length) { showToast('No recommendations generated — add more inventory history.', 'info'); return; }
-      const priorityColors = { high: 'bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300', medium: 'bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300', low: 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400' };
-      results.innerHTML = `<div class="max-h-[420px] overflow-y-auto space-y-2 pr-1">${recs.map(r => {
-        const units = Array.isArray(r.existing_units) ? r.existing_units.filter(u => u?.id) : [];
-        const linksHtml = units.length
-          ? `<div class="mt-1.5 flex flex-wrap gap-1.5">${units.map(u => {
-              const label = u.stocknumber ? `#${u.stocknumber}` : 'View unit';
-              const search = u.stocknumber || u.id;
-              return `<a href="#" onclick="switchPage('inventory');document.getElementById('catalog-search').value='${search}';renderCatalog();return false;" class="text-[10px] font-semibold text-sky-600 dark:text-sky-400 hover:underline">${label} →</a>`;
-            }).join('')}</div>`
-          : '';
-        return `<div class="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-4 py-3">
-          <div class="flex items-start justify-between gap-2">
-            <div class="min-w-0">
-              <div class="text-sm font-bold text-slate-900 dark:text-white">${r.make} ${r.model} <span class="font-normal text-slate-500">${r.year_range || ''}</span></div>
-              <div class="text-xs text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">${r.reason}</div>
-              ${linksHtml}
-            </div>
-            <span class="flex-shrink-0 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full ${priorityColors[r.priority] || priorityColors.low}">${r.priority}</span>
-          </div>
-        </div>`;
-      }).join('')}</div>`;
-      results.classList.remove('hidden');
-      showToast('Recommendations generated', 'success');
+      try { localStorage.setItem(STOCKING_CACHE_KEY, JSON.stringify({ ts: Date.now(), recs })); } catch {}
+      renderStockingResults(recs, results);
+      if (force) showToast('Recommendations refreshed', 'success');
     } catch (e) { showToast(e.message, 'error'); }
-    finally { btn.disabled = false; btn.innerHTML = '<svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z"/></svg> Generate Recommendations'; }
-  });
+    finally {
+      btn.disabled = false;
+      btn.innerHTML = '<svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z"/></svg> Refresh';
+    }
+}
+
+function renderStockingResults(recs, results) {
+  const priorityColors = { high: 'bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300', medium: 'bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300', low: 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400' };
+  results.innerHTML = `<div class="max-h-[420px] overflow-y-auto space-y-2 pr-1">${recs.map((r, i) => {
+    const units = Array.isArray(r.existing_units) ? r.existing_units.filter(u => u?.id) : [];
+    const linksHtml = units.length
+      ? `<div class="mt-1.5 flex flex-wrap gap-1.5">${units.map(u => {
+          const label = u.stocknumber ? `#${u.stocknumber}` : 'View unit';
+          const search = u.stocknumber || u.id;
+          return `<a href="#" onclick="switchPage('inventory');document.getElementById('catalog-search').value='${search}';renderCatalog();return false;" class="text-[10px] font-semibold text-sky-600 dark:text-sky-400 hover:underline">${label} →</a>`;
+        }).join('')}</div>`
+      : '';
+    return `<div class="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-4 py-3">
+      <div class="flex items-start justify-between gap-2">
+        <div class="min-w-0 flex items-start gap-2.5">
+          <span class="text-xs font-black text-slate-400 mt-0.5 w-4 text-right flex-shrink-0">${i + 1}</span>
+          <div class="min-w-0">
+            <div class="text-sm font-bold text-slate-900 dark:text-white">${r.make} ${r.model} <span class="font-normal text-slate-500">${r.year_range || ''}</span></div>
+            <div class="text-xs text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">${r.reason}</div>
+            ${linksHtml}
+          </div>
+        </div>
+        <span class="flex-shrink-0 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full ${priorityColors[r.priority] || priorityColors.low}">${r.priority}</span>
+      </div>
+    </div>`;
+  }).join('')}</div>`;
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('stocking-generate-btn')?.addEventListener('click', () => loadStockingRecommendations(true));
 });
 
 // ── Competitor Monitoring ─────────────────────────────────────────────────────
