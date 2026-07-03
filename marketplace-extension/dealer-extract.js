@@ -30,25 +30,114 @@
     },
     {
       platform: 'edealer',
-      paths: ['/api/inventory/getall', '/api/vehicles', '/Inventory/GetInventory'],
+      // eDealer: /api/inventory/getall nominally returns all, but some installations
+      // cap at 24. Try with explicit large pageSize, then paginate if needed.
+      paths: [
+        '/api/inventory/getall?pageSize=500',
+        '/api/inventory/getall?take=500',
+        '/api/inventory/getall',
+        '/api/inventory/vehicles?pageSize=500',
+        '/api/vehicles?pageSize=500',
+        '/Inventory/GetInventory?pageSize=500'
+      ],
       validate: d => {
         if (Array.isArray(d) && d[0]?.VIN) return true
         if (Array.isArray(d?.vehicles) && d.vehicles[0]?.VIN) return true
+        if (Array.isArray(d?.Vehicles) && d.Vehicles[0]?.VIN) return true
+        if (d?.Items && Array.isArray(d.Items) && d.Items[0]?.VIN) return true
         return false
       },
-      extract: d => Array.isArray(d) ? d : (d?.vehicles || d?.Vehicles || [])
+      extract: d => {
+        if (Array.isArray(d)) return d
+        return d?.vehicles || d?.Vehicles || d?.Items || []
+      },
+      paginate: async (basePath, firstPage, firstData) => {
+        // Try to determine total from response envelope
+        const total = firstData?.totalCount ?? firstData?.TotalCount ?? firstData?.total ?? firstData?.Total ?? null
+        const all = [...firstPage]
+        if (!total || all.length >= total) return all
+        // eDealer paginates via ?page=N&pageSize=N or ?skip=N&take=N
+        const pageSize = firstPage.length || 24
+        let page = 2, skip = pageSize
+        while (all.length < total && page <= 50) {
+          // Try both pagination styles
+          const attempts = [
+            `${origin}${basePath.split('?')[0]}?page=${page}&pageSize=${pageSize}`,
+            `${origin}${basePath.split('?')[0]}?skip=${skip}&take=${pageSize}`
+          ]
+          let fetched = false
+          for (const attemptUrl of attempts) {
+            try {
+              const r = await fetch(attemptUrl, { credentials: 'include', headers: { Accept: 'application/json' } })
+              if (!r.ok) continue
+              const d = await r.json()
+              const batch = Array.isArray(d) ? d : (d?.vehicles || d?.Vehicles || d?.Items || [])
+              if (!batch.length) break
+              all.push(...batch)
+              fetched = true
+              try { chrome.runtime.sendMessage({ type: 'CAPTURE_PROGRESS', feed_id: window.__marketsyncFeedId || null, phase: 'scanning', current: all.length, total }) } catch {}
+              break
+            } catch {}
+          }
+          if (!fetched) break
+          page++; skip += pageSize
+        }
+        return all
+      }
     },
     {
       platform: 'dealer_inspire',
       paths: ['/wp-json/di-wp/v2/inventory', '/wp-json/inventory/v1/vehicles'],
       validate: d => Array.isArray(d) && d[0]?.vin,
-      extract: d => d
+      extract: d => d,
+      // Paginate via ?page=N&per_page=100
+      paginate: async (basePath, firstPage) => {
+        const all = [...firstPage]
+        const pageSize = firstPage.length
+        if (pageSize < 100) return all
+        let page = 2
+        while (page <= 50) {
+          try {
+            const r = await fetch(`${origin}${basePath}?page=${page}&per_page=100`, { credentials: 'include', headers: { Accept: 'application/json' } })
+            if (!r.ok) break
+            const d = await r.json()
+            if (!Array.isArray(d) || !d.length) break
+            all.push(...d)
+            if (d.length < 100) break
+            page++
+          } catch { break }
+        }
+        return all
+      }
     },
     {
       platform: 'dealer_com',
+      // dealer.com (used by GM/Ford/Chrysler OEM dealers): defaults to 24/page.
+      // Pass limit=500 to try grabbing everything in one shot; paginate via
+      // firstRecord offset if the response includes a totalCount.
       paths: ['/apis/widget/INVENTORY_LISTING_DEFAULT_AUTO_ALL:inventory-data-bus1/getInventory'],
       validate: d => Array.isArray(d?.inventory) && d.inventory.length > 0,
-      extract: d => d.inventory
+      extract: d => d.inventory,
+      paginate: async (basePath, firstPage, firstData) => {
+        const total = firstData?.totalCount ?? firstData?.total ?? null
+        const all = [...firstPage]
+        if (!total || all.length >= total) return all
+        const pageSize = firstPage.length || 100
+        let offset = pageSize
+        while (all.length < total && offset < total && offset < 2000) {
+          try {
+            const r = await fetch(`${origin}${basePath}?limit=${pageSize}&firstRecord=${offset}`, { credentials: 'include', headers: { Accept: 'application/json' } })
+            if (!r.ok) break
+            const d = await r.json()
+            const batch = d?.inventory
+            if (!Array.isArray(batch) || !batch.length) break
+            all.push(...batch)
+            offset += batch.length
+            try { chrome.runtime.sendMessage({ type: 'CAPTURE_PROGRESS', feed_id: window.__marketsyncFeedId || null, phase: 'scanning', current: all.length, total }) } catch {}
+          } catch { break }
+        }
+        return all
+      }
     },
     {
       platform: 'sincro',
@@ -58,7 +147,27 @@
         if (Array.isArray(d?.data) && d.data[0]?.vin) return true
         return false
       },
-      extract: d => d?.vehicles || d?.data || []
+      extract: d => d?.vehicles || d?.data || [],
+      // Paginate via ?page=N&pageSize=100
+      paginate: async (basePath, firstPage, firstData) => {
+        const total = firstData?.total ?? firstData?.totalCount ?? null
+        const all = [...firstPage]
+        if (!total || all.length >= total) return all
+        let page = 2
+        while (all.length < total && page <= 50) {
+          try {
+            const r = await fetch(`${origin}${basePath}?page=${page}&pageSize=100`, { credentials: 'include', headers: { Accept: 'application/json' } })
+            if (!r.ok) break
+            const d = await r.json()
+            const batch = d?.vehicles || d?.data || []
+            if (!batch.length) break
+            all.push(...batch)
+            page++
+            try { chrome.runtime.sendMessage({ type: 'CAPTURE_PROGRESS', feed_id: window.__marketsyncFeedId || null, phase: 'scanning', current: all.length, total }) } catch {}
+          } catch { break }
+        }
+        return all
+      }
     },
     {
       platform: 'strathcom',
@@ -75,10 +184,16 @@
   ]
 
   // Try each probe in order. First one that returns vehicles wins.
+  // For dealer_com and paginating probes, try with a high limit first,
+  // then paginate if the response indicates more records are available.
   let result = null
   for (const probe of PROBES) {
     for (const path of probe.paths) {
-      const url = origin + path
+      // dealer_com: request max in one shot; other probes use their own path variants
+      const fetchPath = probe.platform === 'dealer_com' && !path.includes('?')
+        ? `${path}?limit=500&firstRecord=0`
+        : path
+      const url = origin + fetchPath
       try {
         log('probing', url)
         // credentials: 'include' — sends the user's cookies for THIS origin,
@@ -92,12 +207,16 @@
         if (!ct.includes('json')) continue
         const data = await r.json()
         if (!probe.validate(data)) continue
-        result = {
-          platform: probe.platform,
-          source_url: url,
-          vehicles: probe.extract(data)
+        let vehicles = probe.extract(data)
+        log(`✓ matched ${probe.platform} at ${url} — ${vehicles.length} vehicles (initial)`)
+        // Run paginator if defined and first page might be incomplete
+        if (probe.paginate && vehicles.length > 0) {
+          // Pass the base path (no query string) so paginators can build clean URLs
+          const basePath = path.split('?')[0]
+          vehicles = await probe.paginate(basePath, vehicles, data)
+          log(`  paginated ${probe.platform} — total ${vehicles.length} vehicles`)
         }
-        log(`✓ matched ${probe.platform} at ${url} — ${result.vehicles.length} vehicles`)
+        result = { platform: probe.platform, source_url: url, vehicles }
         break
       } catch (e) {
         // Network error, parse error, or CORS — try the next path
