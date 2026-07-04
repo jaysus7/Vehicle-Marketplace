@@ -10,16 +10,22 @@ import { parseGenericFeed } from './genericFeed.js'
 export async function findInventoryFeedInPage(dealerUrl, origin) {
   try { origin = origin || new URL(dealerUrl).origin } catch { return null }
 
+  // Load the page HTML. Plain fetch first (fast); if that's blocked/empty, load it
+  // through headless Chrome, which clears a Cloudflare JS challenge on the page.
   let html = ''
   try {
     const r = await browserFetch(dealerUrl)
     if (r.ok) html = await r.text()
   } catch {}
-  // Even if the page didn't load, still try the well-known LeadBox path below.
+  if (!html || html.length < 500) {
+    try {
+      const br = await fetchViaBrowser(dealerUrl)
+      if (br.ok && br.body) html = br.body
+    } catch {}
+  }
 
   const candidates = new Set([`${origin}/wp-content/uploads/data/inventory.json`])
   const add = (u) => { try { candidates.add(new URL(u, origin).href) } catch {} }
-
   if (html) {
     // Absolute feed URLs referencing inventory/vehicles/feed, ending in .json/.xml
     for (const m of html.matchAll(/https?:\/\/[^"'\s)>]+?(?:inventory|vehicles?|feed|export)[^"'\s)>]*?\.(?:json|xml)/gi)) add(m[0])
@@ -30,13 +36,23 @@ export async function findInventoryFeedInPage(dealerUrl, origin) {
   }
 
   for (const url of candidates) {
+    // The feed itself is usually a static file that plain fetch CAN read (even when the
+    // page is challenged). Try plain fetch first — that keeps sync (which uses plain
+    // fetch) working — and only fall back to headless to confirm reachability.
+    let body = null, ct = ''
     try {
       const r = await browserFetch(url, { headers: { Accept: 'application/json, application/xml, text/xml, */*' } })
-      if (!r.ok) continue
-      const body = await r.text()
-      const { vehicles, format } = parseGenericFeed(body, r.headers.get('content-type') || '')
-      if (vehicles.length > 0) return { feed_url: url, format: format || 'json', count: vehicles.length }
+      if (r.ok) { body = await r.text(); ct = r.headers.get('content-type') || '' }
     } catch {}
+    if (!body) {
+      try {
+        const br = await fetchViaBrowser(url)
+        if (br.ok && br.body) { body = br.body; ct = br.contentType || '' }
+      } catch {}
+    }
+    if (!body) continue
+    const { vehicles, format } = parseGenericFeed(body, ct)
+    if (vehicles.length > 0) return { feed_url: url, format: format || 'json', count: vehicles.length }
   }
   return null
 }
