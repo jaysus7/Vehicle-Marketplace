@@ -1,6 +1,45 @@
 import { browserFetch, sleep } from '../shared.js'
 import { renderAndCaptureInventory, genericMapVehicle, harvestVehicleUrls,
          inferUrlTemplate, renderUrlTemplate, fetchUrlsViaBrowser, fetchViaBrowser } from '../puppeteerRenderer.js'
+import { parseGenericFeed } from './genericFeed.js'
+
+// Fetch a dealer's page and hunt for an inventory data-feed URL embedded in the HTML/JS
+// (inventory.json, a wp-content data feed, etc.), then validate each candidate actually
+// parses into vehicles. Returns { feed_url, format, count } or null. Fully generic —
+// no per-dealer hardcoding. Also tries the standard LeadBox path as a candidate.
+export async function findInventoryFeedInPage(dealerUrl, origin) {
+  try { origin = origin || new URL(dealerUrl).origin } catch { return null }
+
+  let html = ''
+  try {
+    const r = await browserFetch(dealerUrl)
+    if (r.ok) html = await r.text()
+  } catch {}
+  // Even if the page didn't load, still try the well-known LeadBox path below.
+
+  const candidates = new Set([`${origin}/wp-content/uploads/data/inventory.json`])
+  const add = (u) => { try { candidates.add(new URL(u, origin).href) } catch {} }
+
+  if (html) {
+    // Absolute feed URLs referencing inventory/vehicles/feed, ending in .json/.xml
+    for (const m of html.matchAll(/https?:\/\/[^"'\s)>]+?(?:inventory|vehicles?|feed|export)[^"'\s)>]*?\.(?:json|xml)/gi)) add(m[0])
+    // Relative wp-content data files
+    for (const m of html.matchAll(/["'](\/wp-content\/[^"'\s)>]+?\.(?:json|xml))["']/gi)) add(m[1])
+    // Any relative inventory/vehicles feed file
+    for (const m of html.matchAll(/["'](\/[^"'\s)>]*(?:inventory|vehicles?)[^"'\s)>]*\.(?:json|xml))["']/gi)) add(m[1])
+  }
+
+  for (const url of candidates) {
+    try {
+      const r = await browserFetch(url, { headers: { Accept: 'application/json, application/xml, text/xml, */*' } })
+      if (!r.ok) continue
+      const body = await r.text()
+      const { vehicles, format } = parseGenericFeed(body, r.headers.get('content-type') || '')
+      if (vehicles.length > 0) return { feed_url: url, format: format || 'json', count: vehicles.length }
+    } catch {}
+  }
+  return null
+}
 
 export const PLATFORM_PROBES = [
   {
@@ -1017,6 +1056,25 @@ export async function detectFeedPlatform(dealerUrl) {
       }
     } catch (e) {
       console.warn(`[probe] headless Cloudflare retry failed: ${e.message}`)
+    }
+  }
+
+  // Scan the dealer's own page HTML for a real inventory data-feed link. Many WordPress
+  // dealer sites (LeadBox etc.) reference their inventory.json / data feed right in the
+  // page — even when it sits at a non-standard path the fixed probes above didn't guess.
+  // This is fully generic: find any inventory JSON/XML URL in the page, validate it
+  // parses into vehicles, and use it. No hardcoded per-dealer paths.
+  const fromPage = await findInventoryFeedInPage(dealerUrl, origin)
+  if (fromPage) {
+    console.log(`[probe] Found feed link in page: ${fromPage.feed_url} (${fromPage.count} vehicles, ${fromPage.format})`)
+    return {
+      success: true,
+      platform: fromPage.format === 'json' && /\/wp-content\/uploads\/data\/inventory\.json$/i.test(fromPage.feed_url) ? 'leadbox' : 'direct_feed',
+      platform_label: fromPage.format === 'json' ? 'Direct JSON feed' : `Direct feed (${fromPage.format.toUpperCase()})`,
+      feed_url: fromPage.feed_url,
+      vehicle_count: fromPage.count,
+      sample_vehicles: [],
+      attempts
     }
   }
 
