@@ -10,19 +10,15 @@ import { parseGenericFeed } from './genericFeed.js'
 export async function findInventoryFeedInPage(dealerUrl, origin) {
   try { origin = origin || new URL(dealerUrl).origin } catch { return null }
 
-  // Load the page HTML. Plain fetch first (fast); if that's blocked/empty, load it
-  // through headless Chrome, which clears a Cloudflare JS challenge on the page.
+  // Load the page HTML with a plain fetch (fast). We deliberately do NOT spin up
+  // headless Chrome here — on the free tier it's slow/unstable and was timing out the
+  // synchronous Add request ("Load failed"). If plain fetch can't read the page, we
+  // just fall through to the standard candidate below and return fast.
   let html = ''
   try {
     const r = await browserFetch(dealerUrl)
     if (r.ok) html = await r.text()
   } catch {}
-  if (!html || html.length < 500) {
-    try {
-      const br = await fetchViaBrowser(dealerUrl)
-      if (br.ok && br.body) html = br.body
-    } catch {}
-  }
 
   const candidates = new Set([`${origin}/wp-content/uploads/data/inventory.json`])
   const add = (u) => { try { candidates.add(new URL(u, origin).href) } catch {} }
@@ -36,23 +32,16 @@ export async function findInventoryFeedInPage(dealerUrl, origin) {
   }
 
   for (const url of candidates) {
-    // The feed itself is usually a static file that plain fetch CAN read (even when the
-    // page is challenged). Try plain fetch first — that keeps sync (which uses plain
-    // fetch) working — and only fall back to headless to confirm reachability.
-    let body = null, ct = ''
+    // The feed is a static file that plain fetch can read even when the page is
+    // dynamic. Plain fetch only — keeps this fast and keeps sync (also plain fetch)
+    // consistent with what we detect.
     try {
       const r = await browserFetch(url, { headers: { Accept: 'application/json, application/xml, text/xml, */*' } })
-      if (r.ok) { body = await r.text(); ct = r.headers.get('content-type') || '' }
+      if (!r.ok) continue
+      const body = await r.text()
+      const { vehicles, format } = parseGenericFeed(body, r.headers.get('content-type') || '')
+      if (vehicles.length > 0) return { feed_url: url, format: format || 'json', count: vehicles.length }
     } catch {}
-    if (!body) {
-      try {
-        const br = await fetchViaBrowser(url)
-        if (br.ok && br.body) { body = br.body; ct = br.contentType || '' }
-      } catch {}
-    }
-    if (!body) continue
-    const { vehicles, format } = parseGenericFeed(body, ct)
-    if (vehicles.length > 0) return { feed_url: url, format: format || 'json', count: vehicles.length }
   }
   return null
 }
