@@ -1064,25 +1064,6 @@ export async function detectFeedPlatform(dealerUrl) {
     }
   }
 
-  // Scan the dealer's own page HTML for a real inventory data-feed link. Many WordPress
-  // dealer sites (LeadBox etc.) reference their inventory.json / data feed right in the
-  // page — even when it sits at a non-standard path the fixed probes above didn't guess.
-  // This is fully generic: find any inventory JSON/XML URL in the page, validate it
-  // parses into vehicles, and use it. No hardcoded per-dealer paths.
-  const fromPage = await findInventoryFeedInPage(dealerUrl, origin)
-  if (fromPage) {
-    console.log(`[probe] Found feed link in page: ${fromPage.feed_url} (${fromPage.count} vehicles, ${fromPage.format})`)
-    return {
-      success: true,
-      platform: fromPage.format === 'json' && /\/wp-content\/uploads\/data\/inventory\.json$/i.test(fromPage.feed_url) ? 'leadbox' : 'direct_feed',
-      platform_label: fromPage.format === 'json' ? 'Direct JSON feed' : `Direct feed (${fromPage.format.toUpperCase()})`,
-      feed_url: fromPage.feed_url,
-      vehicle_count: fromPage.count,
-      sample_vehicles: [],
-      attempts
-    }
-  }
-
   // Convertus / motocommerce (VMS) sites hide inventory behind a same-origin proxy;
   // none of the static paths match. Detect via the listing page's inventoryId.
   const convertus = await detectConvertus(dealerUrl)
