@@ -4504,7 +4504,7 @@ function showBrochureChoice(btn) {
           <div class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Pull the factory window sticker for this VIN, when available.</div>
         </button>
         <button data-choice="dealer" class="w-full text-left px-4 py-3 rounded-lg border border-slate-200 dark:border-slate-700 hover:border-indigo-400 dark:hover:border-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-950/30 transition ${__aiDocsActive ? '' : 'opacity-70'}">
-          <div class="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-1.5">Generate Dealer Brochure ${__aiDocsActive ? '' : '<span class="text-[10px] font-bold uppercase bg-violet-100 text-violet-700 dark:bg-violet-950/60 dark:text-violet-300 px-1.5 py-0.5 rounded">AI Boost</span>'}</div>
+          <div class="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-1.5">Generate Dealer Brochure <svg viewBox="0 0 24 24" width="14" height="14" class="inline-block flex-shrink-0" aria-hidden="true"><title>AI Boost feature — included in your plan</title><path d="M12 2.5l2.4 6.6 6.6 2.4-6.6 2.4L12 20.5l-2.4-6.6L3 11.5l6.6-2.4z" fill="#c4b5fd" fill-opacity="0.5" stroke="#6d28d9" stroke-width="1.4" stroke-linejoin="round"/></svg> ${__aiDocsActive ? '' : '<span class="text-[10px] font-bold uppercase bg-violet-100 text-violet-700 dark:bg-violet-950/60 dark:text-violet-300 px-1.5 py-0.5 rounded">AI Boost</span>'}</div>
           <div class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Build a branded 2-page MarketSync brochure.${__aiDocsActive ? '' : ' Included with AI Boost.'}</div>
         </button>
       </div>
