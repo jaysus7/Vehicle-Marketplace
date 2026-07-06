@@ -439,7 +439,7 @@ export function registerRoutes(app) {
   // Hit daily by Render Cron (or any scheduler). Sends warning emails to any
   // dealership whose trial ends within the next 24 hours.
   app.post('/cron/trial-expiry', async (req, res) => {
-    if (req.headers['x-cron-secret'] !== process.env.CRON_SECRET) {
+    if ((req.headers['x-cron-secret'] || '').trim() !== (process.env.CRON_SECRET || '').trim()) {
       return res.status(401).json({ error: 'Unauthorized' })
     }
 

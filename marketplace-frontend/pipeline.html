@@ -90,18 +90,37 @@
 
     let DATA = { columns: {}, counts: {} };
 
+    const money = (n) => n != null ? '$' + Number(n).toLocaleString() : '';
+    const km = (n) => n != null ? Number(n).toLocaleString() + ' km' : '';
+
     function card(c) {
       const others = COLS.map(x => x.key).filter(k => k !== c.stage);
       const opts = others.map(k => `<option value="${k}">${MOVE_LABEL[k]}</option>`).join('');
-      const rep = c.rep ? `<span class="text-slate-400">· ${esc(c.rep)}</span>` : '';
-      const link = c.fb_listing_url ? `<a href="${esc(c.fb_listing_url)}" target="_blank" rel="noopener" class="text-indigo-500 hover:text-indigo-400" title="Open on Facebook">↗</a>` : '';
+      const rep = c.rep ? ` · ${esc(c.rep)}` : '';
+      const link = c.fb_listing_url ? `<a href="${esc(c.fb_listing_url)}" target="_blank" rel="noopener" class="text-indigo-500 hover:text-indigo-400 flex-shrink-0" title="Open on Facebook">↗</a>` : '';
+      const sub = [c.trim, c.exterior_color].filter(Boolean).join(' · ');
+      const meta = [c.stocknumber ? '#' + esc(c.stocknumber) : '', c.mileage ? km(c.mileage) : ''].filter(Boolean).join(' · ');
+      const thumb = c.image
+        ? `<img src="${esc(c.image)}" alt="" loading="lazy" class="w-full h-24 object-cover rounded-md bg-slate-100 dark:bg-slate-800">`
+        : `<div class="w-full h-24 rounded-md bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-300 text-2xl">🚗</div>`;
+      // Green "Posted" tag, like the VIN-decode "posted" highlight.
+      const postedTag = `<span class="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300">Posted</span>`;
       return `
-        <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-3" data-card-label="${esc(c.label)}">
-          <div class="flex items-start justify-between gap-2">
-            <div class="text-sm font-semibold text-slate-900 dark:text-white leading-snug">${esc(c.label)}</div>
+        <div class="pl-card group bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-3 cursor-grab active:cursor-grabbing" draggable="true" data-card-id="${c.id}" data-card-label="${esc(c.label)}" data-card-stage="${c.stage}">
+          ${thumb}
+          <div class="flex items-start justify-between gap-2 mt-2">
+            <div class="min-w-0">
+              <div class="text-sm font-bold text-slate-900 dark:text-white leading-snug truncate">${esc(c.label)}</div>
+              ${sub ? `<div class="text-[11px] text-slate-500 dark:text-slate-400 truncate">${esc(sub)}</div>` : ''}
+            </div>
             ${link}
           </div>
-          <div class="text-[11px] text-slate-400 mt-1">${c.posted_at ? 'Posted ' + fmtDate(c.posted_at) : ''} ${rep}</div>
+          <div class="flex items-center justify-between gap-2 mt-1.5">
+            ${postedTag}
+            ${c.price ? `<span class="text-sm font-black text-slate-900 dark:text-white">${money(c.price)}</span>` : ''}
+          </div>
+          ${meta ? `<div class="text-[11px] text-slate-400 mt-1">${meta}</div>` : ''}
+          <div class="text-[11px] text-slate-400 mt-0.5">${c.posted_at ? 'Posted ' + fmtDate(c.posted_at) : ''}${rep}</div>
           ${c.stage === 'appointment_set' && c.appointment_at ? `
             <div class="mt-2 flex items-center justify-between gap-2 text-xs bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800 rounded px-2 py-1.5">
               <span class="font-semibold text-indigo-700 dark:text-indigo-300">📅 ${esc(fmtAppt(c.appointment_at))}</span>
@@ -114,6 +133,20 @@
         </div>`;
     }
 
+    // Apply a stage change (shared by the dropdown + drag-drop). Handles the
+    // appointment prompt when moving into Appointment Set.
+    async function moveCard(id, stage, label) {
+      const body = { stage };
+      if (stage === 'appointment_set') {
+        const appt = await askAppointment(label, null, null);
+        if (!appt) return false;
+        body.appointment_at = appt.at; body.appointment_note = appt.note;
+      }
+      const r = await api(`/pipeline/${id}`, { method: 'PATCH', body: JSON.stringify(body) });
+      if (!r.ok) throw new Error((await r.json()).error || 'Failed');
+      return true;
+    }
+
     function render() {
       const cols = COLS.map(col => {
         const cards = (DATA.columns[col.key] || []);
@@ -124,7 +157,7 @@
               <div class="flex items-center gap-2 text-sm font-bold text-slate-700 dark:text-slate-200"><span class="w-2 h-2 rounded-full ${col.dot}"></span>${col.label}</div>
               <span class="text-xs font-bold text-slate-400 bg-slate-100 dark:bg-slate-800 rounded-full px-2 py-0.5">${DATA.counts[col.key] || 0}</span>
             </div>
-            <div class="space-y-2.5 flex-1">${body}</div>
+            <div class="pl-dropzone space-y-2.5 flex-1 rounded-lg p-1 -m-1 transition" data-col="${col.key}">${body}</div>
           </div>`;
       }).join('');
 
@@ -162,20 +195,38 @@
 
       document.querySelectorAll('[data-move]').forEach(sel => sel.addEventListener('change', async () => {
         const stage = sel.value; if (!stage) return;
-        const body = { stage };
-        // Moving into Appointment Set → ask for the date/time first.
-        if (stage === 'appointment_set') {
-          const appt = await askAppointment(sel.closest('[data-card-label]')?.dataset.cardLabel, null, null);
-          if (!appt) { sel.value = ''; return; }
-          body.appointment_at = appt.at; body.appointment_note = appt.note;
-        }
+        const label = sel.closest('[data-card-label]')?.dataset.cardLabel;
         sel.disabled = true;
         try {
-          const r = await api(`/pipeline/${sel.dataset.move}`, { method: 'PATCH', body: JSON.stringify(body) });
-          if (!r.ok) throw new Error((await r.json()).error || 'Failed');
-          await load();
+          const ok = await moveCard(sel.dataset.move, stage, label);
+          if (ok) await load(); else { sel.disabled = false; sel.value = ''; }
         } catch (e) { alert(e.message); sel.disabled = false; sel.value = ''; }
       }));
+
+      // ── Drag and drop between columns ──
+      let dragId = null, dragStage = null, dragLabel = null;
+      document.querySelectorAll('.pl-card').forEach(el => {
+        el.addEventListener('dragstart', e => {
+          dragId = el.dataset.cardId; dragStage = el.dataset.cardStage; dragLabel = el.dataset.cardLabel;
+          el.classList.add('opacity-40');
+          e.dataTransfer.effectAllowed = 'move';
+        });
+        el.addEventListener('dragend', () => el.classList.remove('opacity-40'));
+      });
+      document.querySelectorAll('.pl-dropzone').forEach(zone => {
+        zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('bg-indigo-50', 'dark:bg-indigo-950/30'); });
+        zone.addEventListener('dragleave', () => zone.classList.remove('bg-indigo-50', 'dark:bg-indigo-950/30'));
+        zone.addEventListener('drop', async e => {
+          e.preventDefault();
+          zone.classList.remove('bg-indigo-50', 'dark:bg-indigo-950/30');
+          const target = zone.dataset.col;
+          if (!dragId || target === dragStage) return;
+          try {
+            const ok = await moveCard(dragId, target, dragLabel);
+            if (ok) await load();
+          } catch (err) { alert(err.message); }
+        });
+      });
     }
 
     async function load() {

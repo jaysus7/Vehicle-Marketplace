@@ -31,9 +31,12 @@ export function registerPipeline(app) {
     if (!req.dealershipId) return res.json({ columns: {}, counts: {} })
 
     const { data: inv } = await supabaseAdmin
-      .from('inventory').select('id').eq('dealership_id', req.dealershipId)
+      .from('inventory')
+      .select('id, year, make, model, trim, price, mileage, exterior_color, condition, stocknumber, image_urls')
+      .eq('dealership_id', req.dealershipId)
     const invIds = (inv || []).map(v => v.id)
     if (!invIds.length) return res.json({ columns: emptyCols(), counts: zeroCounts() })
+    const invById = Object.fromEntries((inv || []).map(v => [v.id, v]))
 
     let q = supabaseAdmin
       .from('listings')
@@ -58,9 +61,21 @@ export function registerPipeline(app) {
 
     const columns = emptyCols()
     for (const l of listings || []) {
+      const v = invById[l.inventory_id] || {}
+      const label = l.vehicle_label || [v.year, v.make, v.model].filter(Boolean).join(' ') || '—'
       const card = {
         id: l.id,
-        label: l.vehicle_label || '—',
+        label,
+        year: v.year || null,
+        make: v.make || null,
+        model: v.model || null,
+        trim: v.trim || null,
+        price: v.price || null,
+        mileage: v.mileage || null,
+        exterior_color: v.exterior_color || null,
+        condition: v.condition || null,
+        stocknumber: v.stocknumber || null,
+        image: Array.isArray(v.image_urls) ? v.image_urls[0] : null,
         rep: repNames[l.posted_by] || null,
         posted_at: l.posted_at,
         stage: stageFor(l),
@@ -164,7 +179,9 @@ export function registerPipeline(app) {
   // Creates an in-app notification for the store and emails the manager address
   // when set. Schedule this hourly/daily with the x-cron-secret header.
   app.post('/cron/appointment-reminders', async (req, res) => {
-    if (req.headers['x-cron-secret'] !== process.env.CRON_SECRET) {
+    // Trim both sides — a stray newline/space when pasting the secret into a
+    // scheduler is the usual cause of a spurious 401.
+    if ((req.headers['x-cron-secret'] || '').trim() !== (process.env.CRON_SECRET || '').trim()) {
       return res.status(401).json({ error: 'Unauthorized' })
     }
     const now = new Date()

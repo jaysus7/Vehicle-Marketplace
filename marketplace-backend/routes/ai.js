@@ -2184,7 +2184,7 @@ Units 60d+ on lot: ${stale}`
   //   Command:  curl -X POST https://<your-render-url>/cron/weekly-reports \
   //               -H "x-cron-secret: $CRON_SECRET"
   app.post('/cron/weekly-reports', async (req, res) => {
-    if (req.headers['x-cron-secret'] !== process.env.CRON_SECRET) {
+    if ((req.headers['x-cron-secret'] || '').trim() !== (process.env.CRON_SECRET || '').trim()) {
       return res.status(401).json({ error: 'Unauthorized' })
     }
 
