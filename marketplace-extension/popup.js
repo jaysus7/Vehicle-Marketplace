@@ -466,6 +466,7 @@ async function showInventoryScreen(token, user) {
   $('header-dealer').textContent = 'Loading profile...'
 
   loadInventory(token)
+  renderGuardrail(token)
 
   apiGet('/auth/me', token)
     .then(profile => {
@@ -489,7 +490,7 @@ async function showInventoryScreen(token, user) {
     .catch(() => {})
 
   $('logout-btn').onclick = () => chrome.storage.local.remove(['token', 'user'], () => location.reload())
-  $('refresh-btn').onclick = () => loadInventory(token)
+  $('refresh-btn').onclick = () => { loadInventory(token); renderGuardrail(token) }
 
   $('open-dashboard-btn').onclick = () => {
     chrome.storage.local.get(['token'], ({ token }) => {
@@ -624,6 +625,32 @@ function renderCaptureProgress(s) {
   if (subEl) subEl.textContent = sub
 }
 
+// Show the FB posting-safety status: posts today vs cap, and any cooldown.
+async function renderGuardrail(token) {
+  const el = $('ms-guardrail')
+  if (!el) return
+  let g
+  try { g = await apiGet('/posting/guardrail', token) } catch { el.style.display = 'none'; return }
+  if (!g || !g.enabled) { el.style.display = 'none'; return }
+
+  let bg, color, icon, text
+  if (g.reason === 'daily_limit') {
+    bg = 'rgba(220,38,38,.10)'; color = 'var(--red)'; icon = '⛔'
+    text = `Daily limit reached — ${g.posts_today}/${g.daily_cap} posts today`
+  } else if (g.reason === 'cooldown') {
+    const mins = Math.ceil((g.cooldown_seconds || 0) / 60)
+    bg = 'rgba(217,119,6,.10)'; color = 'var(--amber)'; icon = '⏳'
+    text = `Cooldown — wait ~${mins} min · ${g.posts_today}/${g.daily_cap} today`
+  } else {
+    bg = 'rgba(22,163,74,.10)'; color = 'var(--green)'; icon = '🛡️'
+    text = `Safe to post · ${g.remaining} of ${g.daily_cap} left today`
+  }
+  el.style.background = bg
+  el.style.color = color
+  el.innerHTML = `<span>${icon}</span><span>${text}</span>`
+  el.style.display = 'flex'
+}
+
 async function checkExtensionSyncNeeded(token) {
   try {
     const r = await fetch(`${API}/inventory-feeds`, {
@@ -717,6 +744,24 @@ async function markSold(listingId, vehicleName, token, kind, fbUrl) {
 async function postVehicle(inventoryId, token) {
   const btn = document.querySelector(`.post-btn[data-id="${inventoryId}"]`)
   if (!btn) return
+
+  // FB ban protection: check the rep hasn't hit the daily cap or is still in a
+  // spacing cooldown before we open Facebook.
+  try {
+    const g = await apiGet('/posting/guardrail', token)
+    if (g && g.enabled && !g.allowed) {
+      if (g.reason === 'daily_limit') {
+        alert(`Daily posting limit reached (${g.daily_cap}/day). This protects your Facebook account from posting-velocity flags. Try again tomorrow.`)
+      } else if (g.reason === 'cooldown') {
+        const mins = Math.ceil((g.cooldown_seconds || 0) / 60)
+        alert(`Please wait ~${mins} min before your next post. Spacing posts out keeps your Facebook account safe.`)
+      } else {
+        alert('Posting is paused by your dealership right now.')
+      }
+      return
+    }
+  } catch { /* guardrail check is best-effort — never block on a network hiccup */ }
+
   btn.classList.add('posting')
   btn.textContent = 'Generating AI copy...'
   btn.disabled = true

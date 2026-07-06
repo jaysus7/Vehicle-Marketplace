@@ -252,6 +252,12 @@ async function initializeDashboardEcosystem() {
     if (role === 'DEALER_GROUP' || role === 'OWNER' || role === 'DEALER_ADMIN') {
       document.getElementById('groups-settings-section')?.classList.remove('hidden');
     }
+
+    // Posting-safety (FB ban protection) settings — dealer-level.
+    if (['DEALER_ADMIN', 'OWNER', 'MANAGER'].includes(role)) {
+      document.getElementById('guardrail-settings-section')?.classList.remove('hidden');
+      loadGuardrailSettings();
+    }
     // Hide team-only nav items (Leaderboard) for solo reps — nothing to rank
     if (isSolo || !inDealership) {
       document.querySelectorAll('[data-team-nav]').forEach(el => el.classList.add('hidden'));
@@ -550,6 +556,42 @@ async function loadDealerManagementMatrix() {
     });
   } catch (e) {
     tableBody.innerHTML = `<tr><td colspan="8" class="p-4 text-red-400">${e.message}</td></tr>`;
+  }
+}
+
+async function loadGuardrailSettings() {
+  try {
+    const r = await fetch(`${API}/posting/guardrail`, { headers: { 'Authorization': `Bearer ${token}` } });
+    if (!r.ok) return;
+    const g = await r.json();
+    const en = document.getElementById('gr-enabled');
+    const cap = document.getElementById('gr-cap');
+    const sp = document.getElementById('gr-spacing');
+    if (en) en.checked = g.enabled !== false;
+    if (cap) cap.value = g.daily_cap ?? 25;
+    if (sp) sp.value = g.min_spacing_minutes ?? 4;
+  } catch {}
+  const btn = document.getElementById('gr-save');
+  if (btn && !btn._wired) {
+    btn._wired = true;
+    btn.addEventListener('click', async () => {
+      const msg = document.getElementById('gr-msg');
+      btn.disabled = true;
+      try {
+        const r = await fetch(`${API}/posting/guardrail-settings`, {
+          method: 'PUT',
+          headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            enabled: document.getElementById('gr-enabled').checked,
+            daily_cap: Number(document.getElementById('gr-cap').value),
+            min_spacing_minutes: Number(document.getElementById('gr-spacing').value),
+          }),
+        });
+        if (!r.ok) throw new Error((await r.json()).error || 'Failed');
+        msg.textContent = '✓ Saved'; msg.className = 'text-xs mt-2 text-emerald-600 dark:text-emerald-400';
+      } catch (e) { msg.textContent = e.message; msg.className = 'text-xs mt-2 text-red-500'; }
+      finally { msg.classList.remove('hidden'); btn.disabled = false; }
+    });
   }
 }
 

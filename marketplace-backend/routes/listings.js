@@ -40,7 +40,78 @@ async function finalizeSold(listingId, inventoryId) {
   }
 }
 
+const DEFAULT_GUARDRAILS = { enabled: true, daily_cap: 25, min_spacing_minutes: 4 }
+
+// Compute a rep's posting-guardrail status for their dealership.
+async function computeGuardrail(req) {
+  const { data: dealer } = await supabaseAdmin
+    .from('dealerships').select('posting_guardrails').eq('id', req.dealershipId).maybeSingle()
+  const g = { ...DEFAULT_GUARDRAILS, ...(dealer?.posting_guardrails || {}) }
+
+  const since = new Date(Date.now() - 24 * 3600 * 1000).toISOString()
+  const { data: recent } = await supabaseAdmin
+    .from('listings')
+    .select('posted_at')
+    .eq('posted_by', req.user.id)
+    .in('status', ['posted', 'sold'])
+    .gte('posted_at', since)
+    .order('posted_at', { ascending: false })
+    .limit(200)
+
+  const postsToday = (recent || []).length
+  const lastPostAt = recent?.[0]?.posted_at || null
+  const spacingMs = (g.min_spacing_minutes || 0) * 60000
+  let cooldownSeconds = 0
+  if (lastPostAt && spacingMs > 0) {
+    const elapsed = Date.now() - new Date(lastPostAt).getTime()
+    if (elapsed < spacingMs) cooldownSeconds = Math.ceil((spacingMs - elapsed) / 1000)
+  }
+
+  let allowed = true, reason = null
+  if (g.enabled) {
+    if (postsToday >= g.daily_cap) { allowed = false; reason = 'daily_limit' }
+    else if (cooldownSeconds > 0) { allowed = false; reason = 'cooldown' }
+  }
+  return {
+    allowed, reason,
+    enabled: g.enabled,
+    posts_today: postsToday,
+    daily_cap: g.daily_cap,
+    remaining: Math.max(0, g.daily_cap - postsToday),
+    min_spacing_minutes: g.min_spacing_minutes,
+    cooldown_seconds: cooldownSeconds,
+    next_allowed_at: cooldownSeconds > 0 ? new Date(Date.now() + cooldownSeconds * 1000).toISOString() : null,
+  }
+}
+
 export function registerRoutes(app) {
+  // ── Posting guardrails (FB ban protection) ──
+  // The extension calls this before a rep posts to show a "safe to post /
+  // cooldown / daily limit reached" indicator (rolling 24h window, per rep).
+  app.get('/posting/guardrail', requireAuth, async (req, res) => {
+    if (!req.dealershipId) return res.json({ allowed: true, enabled: false })
+    try { res.json(await computeGuardrail(req)) }
+    catch (e) { res.json({ allowed: true, enabled: false, error: e.message }) }
+  })
+
+  // Dealer admins configure the cap + spacing (or disable guardrails).
+  app.put('/posting/guardrail-settings', requireAuth, async (req, res) => {
+    if (!['DEALER_ADMIN', 'OWNER', 'MANAGER'].includes(req.profile.role)) {
+      return res.status(403).json({ error: 'Dealer admin required' })
+    }
+    if (!req.dealershipId) return res.status(400).json({ error: 'No dealership' })
+    const body = req.body || {}
+    const next = {
+      enabled: body.enabled !== undefined ? !!body.enabled : true,
+      daily_cap: Math.max(1, Math.min(500, parseInt(body.daily_cap) || DEFAULT_GUARDRAILS.daily_cap)),
+      min_spacing_minutes: Math.max(0, Math.min(120, parseInt(body.min_spacing_minutes) ?? DEFAULT_GUARDRAILS.min_spacing_minutes)),
+    }
+    const { error } = await supabaseAdmin
+      .from('dealerships').update({ posting_guardrails: next }).eq('id', req.dealershipId)
+    if (error) return res.status(500).json({ error: error.message })
+    res.json({ ok: true, posting_guardrails: next })
+  })
+
   // ── 7. LISTINGS ──
   app.post('/listings', requireAuth, async (req, res) => {
     const { inventory_id, fb_listing_id } = req.body
