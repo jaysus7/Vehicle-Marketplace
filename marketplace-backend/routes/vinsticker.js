@@ -402,397 +402,237 @@ function buildWindowStickerHtml(vehicle, dealer, branding, recalls, photoDataUri
 </body></html>`
 }
 
-function buildBrochureHtml(vehicle, dealer, branding, recalls, photosDataUris, logoDataUri) {
-  const primary   = branding.primary_color   || '#1a2e4a'
-  const secondary = branding.secondary_color || '#c8a84b'
-  const vd        = vehicle.vin_data || {}
+// ── AI brochure copy (models · trims · vehicle highlight) ─────────────────────
+// Generates the written content for the 4-page brochure via Claude. Falls back to
+// templated copy if the AI add-on isn't configured or the call fails/times out, so
+// the brochure ALWAYS generates.
+async function generateBrochureCopy(vehicle, dealer) {
+  const name = [vehicle.year, vehicle.make, vehicle.model].filter(Boolean).join(' ')
+  const trim = vehicle.trim || ''
+  const price = vehicle.price ? `$${Number(vehicle.price).toLocaleString()}` : 'Call for price'
 
-  const logoSrc  = logoDataUri || branding.logo_url || null
-  const logoHtml = logoSrc
-    ? `<img src="${logoSrc}" alt="${dealer.name || ''}" style="max-height:50px;max-width:170px;object-fit:contain;display:block;">`
-    : `<span style="font-size:16px;font-weight:900;color:${primary};letter-spacing:-.3px;">${dealer.name || 'Your Dealership'}</span>`
-
-  const price     = vehicle.price   ? `$${Number(vehicle.price).toLocaleString()}` : 'Call for Price'
-  const mileage   = vehicle.mileage ? `${Number(vehicle.mileage).toLocaleString()} km` : (vehicle.condition === 'new' ? 'New Vehicle' : '—')
-  const cap       = s => s ? s.charAt(0).toUpperCase() + s.slice(1) : null
-  const vehicleName = [vehicle.year, vehicle.make, vehicle.model].filter(Boolean).join(' ')
-  const plantStr  = [vd.plant_city, vd.plant_state, vd.plant_country].filter(Boolean).join(', ') || null
-
-  const getPhoto  = i => photosDataUris?.[i] || null
-
-  // ── Generate sales copy ───────────────────────────────────────────────────
-  const condWord  = vehicle.condition === 'new' ? 'brand-new' : vehicle.condition === 'certified' ? 'certified pre-owned' : 'pre-owned'
-  const driveStr  = vehicle.drivetrain ? vehicle.drivetrain.replace(/\//g, '/') : null
-  const engineStr = vehicle.engine || (vd.horsepower ? `${vd.horsepower} HP engine` : null)
-
-  const introPara = [
-    `Introducing the ${vehicleName}${vehicle.trim ? ' ' + vehicle.trim : ''} — a ${condWord} vehicle that combines performance, style, and value in one impressive package.`,
-    engineStr ? `Under the hood you'll find a ${engineStr}${driveStr ? ` paired with ${driveStr}` : ''}, delivering a confident and capable driving experience.` : null,
-    vehicle.exterior_color ? `Finished in ${vehicle.exterior_color}${vehicle.interior_color ? ` with a ${vehicle.interior_color} interior` : ''}, this ${vehicle.body_style || 'vehicle'} is ready to turn heads wherever you go.` : null,
-    vehicle.mileage ? `With ${mileage} on the odometer and ${recalls?.length ? `${recalls.length} outstanding recall${recalls.length > 1 ? 's' : ''} — please ask us about the remedy` : 'no open safety recalls on record'}, you can drive away with confidence.` : null,
-  ].filter(Boolean).join(' ')
-
-  const safetyItems = [
-    vd.abs === 'Standard' ? 'Anti-Lock Brakes (ABS)' : null,
-    vd.esc === 'Standard' ? 'Electronic Stability Control' : null,
-    vd.tpms === 'Direct' || vd.tpms === 'Indirect' ? 'Tire Pressure Monitoring' : null,
-    vd.forward_collision   && vd.forward_collision !== 'Not Applicable' ? 'Forward Collision Warning' : null,
-    vd.lane_departure      && vd.lane_departure !== 'Not Applicable'     ? 'Lane Departure Warning' : null,
-    vd.blind_spot_mon      && vd.blind_spot_mon !== 'Not Applicable'     ? 'Blind Spot Monitoring' : null,
-    vd.auto_brake          && vd.auto_brake !== 'Not Applicable'         ? 'Automatic Emergency Braking' : null,
-    vd.adaptive_cruise     && vd.adaptive_cruise !== 'Not Applicable'    ? 'Adaptive Cruise Control' : null,
-    vd.airbag_front        ? `Front Airbags — ${vd.airbag_front}` : null,
-    vd.airbag_curtain      ? `Curtain Airbags — ${vd.airbag_curtain}` : null,
-  ].filter(Boolean)
-
-  const safetyCopy = safetyItems.length
-    ? `${vehicleName} comes equipped with ${safetyItems.slice(0, 3).join(', ')}, and more — so you and your passengers are protected at every turn.`
-    : `${vehicleName} is engineered with modern safety systems designed to help protect you and your passengers every time you get behind the wheel.`
-
-  const valueCopy = `Priced at ${price}${vehicle.stocknumber ? ` (Stock #${vehicle.stocknumber})` : ''}, this is an exceptional opportunity${dealer.name ? ` available exclusively at ${dealer.name}` : ''}. ${dealer.website_url ? `Visit us online at ${dealer.website_url} or come in for a test drive today.` : 'Contact us today to schedule a test drive.'}`
-
-  // ── Feature list (from vin_data + description) ────────────────────────────
-  const desc      = (vehicle.description || '').toLowerCase()
-  const has       = kw => desc.includes(kw)
-  const nhtsa     = (val, label) => {
-    if (!val) return null
-    const v = val.toString().toLowerCase()
-    return (v === 'not applicable' || v === 'none' || v === '0') ? null : label
+  // Templated fallback — always valid, used when AI is unavailable.
+  const fallback = {
+    headline: `Discover the ${vehicle.make || ''} ${vehicle.model || ''}`.trim(),
+    cover_subhead: `The ${name}${trim ? ' ' + trim : ''} — engineered for the way you drive.`,
+    lineup_intro: `The ${[vehicle.make, vehicle.model].filter(Boolean).join(' ')} is offered across a range of trims, each building on a foundation of quality, comfort, and capability. Whether you prioritize value, technology, or premium features, there is a configuration designed to fit the way you live and drive.`,
+    trims: [
+      { name: 'Base / Standard', blurb: 'The essential trim delivers the core driving experience with dependable performance, key safety systems, and everyday comfort at an accessible price.' },
+      { name: 'Mid / Preferred', blurb: 'Adds popular convenience and technology upgrades — enhanced infotainment, comfort features, and styling touches that elevate everyday driving.' },
+      { name: 'Premium / Top', blurb: 'The fully-equipped trim brings premium materials, advanced driver-assistance features, and the most refined experience in the lineup.' },
+    ],
+    highlight: [
+      `This ${name}${trim ? ' ' + trim : ''} pairs standout style with the features today's drivers want most. Finished in ${vehicle.exterior_color || 'a striking exterior colour'}${vehicle.interior_color ? ` with a ${vehicle.interior_color} interior` : ''}, it's ready to make every drive feel special.`,
+      `Priced at ${price}${vehicle.stocknumber ? ` (Stock #${vehicle.stocknumber})` : ''}, it represents an exceptional opportunity${dealer?.name ? ` at ${dealer.name}` : ''}. Visit us to experience it in person and take it for a test drive.`,
+    ],
   }
 
-  const allFeatures = [
-    vehicle.engine                            && vehicle.engine,
-    vehicle.drivetrain                        && `${vehicle.drivetrain} Drivetrain`,
-    vehicle.transmission                      && `${vehicle.transmission} Transmission`,
-    vd.transmission_speeds                    && `${vd.transmission_speeds}-Speed`,
-    vehicle.fuel_type                         && `${vehicle.fuel_type} Fuel`,
-    vd.horsepower                             && `${vd.horsepower} HP`,
-    nhtsa(vd.turbo, 'Turbocharged'),
-    nhtsa(vd.abs, 'ABS Brakes'),
-    nhtsa(vd.esc, 'Electronic Stability Control'),
-    nhtsa(vd.tpms, 'Tire Pressure Monitoring'),
-    nhtsa(vd.forward_collision, 'Forward Collision Warning'),
-    nhtsa(vd.lane_departure, 'Lane Departure Warning'),
-    nhtsa(vd.blind_spot_mon, 'Blind Spot Monitoring'),
-    nhtsa(vd.auto_brake, 'Auto Emergency Braking'),
-    nhtsa(vd.adaptive_cruise, 'Adaptive Cruise Control'),
-    nhtsa(vd.keyless_ignition, 'Keyless Ignition'),
-    has('heated seat')        ? 'Heated Front Seats' : null,
-    has('heated steering')    ? 'Heated Steering Wheel' : null,
-    has('remote start')       ? 'Remote Start' : null,
-    has('sunroof') || has('moonroof') ? 'Sunroof / Moonroof' : null,
-    has('panoramic')          ? 'Panoramic Roof' : null,
-    has('power liftgate')     ? 'Power Liftgate' : null,
-    has('leather')            ? 'Leather Interior' : null,
-    has('apple carplay')      ? 'Apple CarPlay®' : null,
-    has('android auto')       ? 'Android Auto™' : null,
-    has('navigation')         ? 'Built-In Navigation' : null,
-    has('bluetooth')          ? 'Bluetooth Connectivity' : null,
-    has('backup camera') || has('rear camera') ? 'Rear-View Camera' : null,
-    has('wi-fi') || has('hotspot') ? 'Wi-Fi Hotspot' : null,
-    has('wireless charg')     ? 'Wireless Charging' : null,
-    has('third row') || has('3rd row') ? 'Third-Row Seating' : null,
-    vehicle.exterior_color    && `${vehicle.exterior_color} Exterior`,
-    vehicle.interior_color    && `${vehicle.interior_color} Interior`,
-    (derivedSeats || vd.seats) && `${derivedSeats || vd.seats} Passenger Capacity`,
-    plantStr                  && `Built in ${plantStr}`,
-  ].filter(Boolean)
+  if (!process.env.ANTHROPIC_API_KEY) return fallback
 
-  // Full spec table
-  const specRows = [
-    ['Year',          vehicle.year],
-    ['Make',          vehicle.make],
-    ['Model',         vehicle.model],
-    ['Trim',          vehicle.trim],
-    ['Condition',     cap(vehicle.condition)],
-    ['Body Style',    vehicle.body_style],
-    ['Doors',         derivedDoors ? String(derivedDoors) : null],
-    ['Ext. Colour',   vehicle.exterior_color],
-    ['Int. Colour',   vehicle.interior_color],
-    ['Mileage',       mileage],
-    ['Engine',        vehicle.engine],
-    ['Horsepower',    vd.horsepower ? `${vd.horsepower} HP` : null],
-    ['Fuel Type',     vehicle.fuel_type],
-    ['Drivetrain',    vehicle.drivetrain],
-    ['Transmission',  vehicle.transmission],
-    ['Trans Speeds',  vd.transmission_speeds],
-    ['Displacement',  vd.displacement_l ? `${vd.displacement_l}L` : null],
-    ['Cylinders',     vd.cylinders],
-    ['GVWR',          vd.gvwr],
-    ['Curb Weight',   vd.curb_weight_lb ? `${vd.curb_weight_lb} lbs` : null],
-    ['Stock #',       vehicle.stocknumber],
-    ['VIN',           vehicle.vin],
-  ].filter(([, v]) => v)
+  try {
+    const Anthropic = (await import('@anthropic-ai/sdk')).default
+    const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
+    const feats = (vehicle.description || '').slice(0, 600)
+    const prompt = `You are an automotive copywriter creating a printed sales brochure for a car dealership. Write brochure copy for this vehicle and return ONLY valid JSON (no markdown, no commentary) with EXACTLY this shape:
+{
+  "headline": "punchy cover headline, max 8 words",
+  "cover_subhead": "one benefit-focused sentence",
+  "lineup_intro": "one paragraph (3-5 sentences) introducing the ${[vehicle.make, vehicle.model].filter(Boolean).join(' ')} model line and what sets it apart",
+  "trims": [{"name": "trim name", "blurb": "2-3 sentences on what this trim offers"}],
+  "highlight": ["paragraph highlighting THIS specific vehicle and its ${trim || 'trim'}", "second paragraph on value and an invitation to visit the dealership"]
+}
+Provide 3 to 5 trims that are typical for this model/year. If you are unsure of exact trim names, describe the common trim tiers for this type of vehicle generally (do not invent specific option packages). Use warm, confident, benefit-focused Canadian English. Keep sentences readable for large print.
+
+VEHICLE
+Year/Make/Model: ${name}
+Trim: ${trim || 'n/a'}
+Condition: ${vehicle.condition || 'n/a'}
+Price: ${price}
+Mileage: ${vehicle.mileage ? Number(vehicle.mileage).toLocaleString() + ' km' : 'n/a'}
+Engine: ${vehicle.engine || 'n/a'}
+Drivetrain: ${vehicle.drivetrain || 'n/a'}
+Fuel: ${vehicle.fuel_type || 'n/a'}
+Body style: ${vehicle.body_style || 'n/a'}
+Exterior/Interior: ${vehicle.exterior_color || 'n/a'} / ${vehicle.interior_color || 'n/a'}
+Notable feature text: ${feats || 'n/a'}
+Dealership: ${dealer?.name || 'n/a'}`
+
+    const call = anthropic.messages.create({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 1600,
+      messages: [{ role: 'user', content: prompt }],
+    })
+    // Hard timeout so a slow AI call can't blow the background render budget.
+    const message = await Promise.race([
+      call,
+      new Promise((_, rej) => setTimeout(() => rej(new Error('AI copy timeout')), 45000)),
+    ])
+    let text = (message?.content?.[0]?.text || '').trim()
+    text = text.replace(/^```json\s*/i, '').replace(/^```\s*/, '').replace(/```\s*$/, '').trim()
+    const start = text.indexOf('{'), end = text.lastIndexOf('}')
+    if (start >= 0 && end > start) text = text.slice(start, end + 1)
+    const parsed = JSON.parse(text)
+    // Validate shape; fall back on anything missing.
+    return {
+      headline: parsed.headline || fallback.headline,
+      cover_subhead: parsed.cover_subhead || fallback.cover_subhead,
+      lineup_intro: parsed.lineup_intro || fallback.lineup_intro,
+      trims: Array.isArray(parsed.trims) && parsed.trims.length ? parsed.trims.slice(0, 5) : fallback.trims,
+      highlight: Array.isArray(parsed.highlight) && parsed.highlight.length ? parsed.highlight.slice(0, 3) : fallback.highlight,
+    }
+  } catch (e) {
+    console.warn('[brochure] AI copy failed, using fallback:', e.message)
+    return fallback
+  }
+}
+
+// ── 4-page large-text brochure ────────────────────────────────────────────────
+// Page 1 cover · Page 2 model line + trims · Page 3 this vehicle highlighted ·
+// Page 4 dealership information. `copy` comes from generateBrochureCopy().
+function buildBrochureHtml(vehicle, dealer, branding, recalls, photosDataUris, logoDataUri, copy) {
+  const primary   = branding.primary_color   || '#1a2e4a'
+  const secondary = branding.secondary_color || '#c8a84b'
+  const esc = s => String(s == null ? '' : s).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]))
+
+  const vehicleName = [vehicle.year, vehicle.make, vehicle.model].filter(Boolean).join(' ')
+  const trim   = vehicle.trim || ''
+  const price  = vehicle.price ? `$${Number(vehicle.price).toLocaleString()}` : 'Call for Price'
+  const mileage = vehicle.mileage ? `${Number(vehicle.mileage).toLocaleString()} km`
+    : (vehicle.condition === 'new' ? 'Brand New' : '—')
+  const photo0 = photosDataUris?.[0] || null
+  const photo1 = photosDataUris?.[1] || photosDataUris?.[0] || null
+
+  const logoSrc = logoDataUri || branding.logo_url || null
+  const logoImg = (h) => logoSrc
+    ? `<img src="${logoSrc}" alt="${esc(dealer.name || '')}" style="max-height:${h}px;max-width:${h * 3.4}px;object-fit:contain;display:block;">`
+    : `<span style="font-size:${Math.round(h * 0.42)}px;font-weight:900;color:${primary};">${esc(dealer.name || 'Your Dealership')}</span>`
+
+  const c = copy || {}
+  const trims = Array.isArray(c.trims) ? c.trims : []
+  const highlight = Array.isArray(c.highlight) ? c.highlight : []
+
+  const specTile = (label, val) => val ? `
+    <div class="spec-tile"><div class="st-label">${esc(label)}</div><div class="st-val">${esc(val)}</div></div>` : ''
+
+  // Dealership contact lines (guard every optional branding field).
+  const contactLines = [
+    branding.address ? `<div class="d-line">${esc(branding.address)}</div>` : '',
+    branding.phone ? `<div class="d-line"><b>${esc(branding.phone)}</b></div>` : '',
+    dealer.website_url ? `<div class="d-line">${esc(dealer.website_url)}</div>` : '',
+    branding.hours ? `<div class="d-line" style="margin-top:10px;">${esc(branding.hours)}</div>` : '',
+  ].filter(Boolean).join('')
 
   return `<!DOCTYPE html>
-<html lang="en">
-<head><meta charset="UTF-8">
-<style>
+<html lang="en"><head><meta charset="UTF-8"><style>
   *{margin:0;padding:0;box-sizing:border-box;}
-  body{font-family:'Arial',Helvetica,sans-serif;width:816px;background:#fff;color:#111;margin:0;padding:0;}
-  .page{width:816px;min-height:1056px;overflow:hidden;display:flex;flex-direction:column;page-break-after:always;}
+  body{font-family:'Georgia','Times New Roman',serif;width:816px;background:#fff;color:#1f2937;}
+  .page{width:816px;height:1056px;overflow:hidden;position:relative;page-break-after:always;display:flex;flex-direction:column;}
+  .sans{font-family:'Arial',Helvetica,sans-serif;}
+  .eyebrow{font-family:'Arial',sans-serif;font-size:13px;letter-spacing:5px;text-transform:uppercase;color:${secondary};font-weight:700;}
 
-  /* ════ PAGE 1 ════ */
-  /* Hero photo — full bleed top half */
-  .hero{position:relative;height:420px;background:${primary};overflow:hidden;flex-shrink:0;}
-  .hero img{width:100%;height:100%;object-fit:cover;object-position:center;}
-  .hero-none{width:100%;height:100%;background:linear-gradient(135deg,${primary} 0%,${secondary} 100%);}
-  .hero-grad{position:absolute;inset:0;background:linear-gradient(to bottom,rgba(0,0,0,0) 30%,rgba(0,0,0,.75) 100%);}
-  /* Dealer bar overlaid top-left of hero */
-  .hero-dealer{position:absolute;top:0;left:0;right:0;padding:16px 28px;display:flex;align-items:center;justify-content:space-between;}
-  .hero-dealer-badge{background:rgba(0,0,0,.45);backdrop-filter:blur(4px);border-radius:6px;padding:8px 14px;}
-  .hero-price-badge{background:${secondary};border-radius:6px;padding:8px 16px;text-align:center;}
-  .hero-price-badge .hpb-label{font-size:8px;letter-spacing:2px;text-transform:uppercase;color:rgba(255,255,255,.8);}
-  .hero-price-badge .hpb-val{font-size:22px;font-weight:900;color:#fff;line-height:1.1;}
-  /* Vehicle name at bottom of hero */
-  .hero-name-wrap{position:absolute;bottom:0;left:0;right:0;padding:18px 28px 20px;}
-  .hero-tag{font-size:10px;letter-spacing:3px;text-transform:uppercase;color:${secondary};margin-bottom:6px;}
-  .hero-title{font-size:36px;font-weight:900;color:#fff;line-height:1;letter-spacing:-.5px;}
-  .hero-trim{font-size:15px;color:rgba(255,255,255,.8);margin-top:5px;font-weight:400;}
+  /* PAGE 1 — COVER */
+  .cover-top{padding:40px 56px 0;display:flex;align-items:center;justify-content:space-between;}
+  .cover-hero{margin:26px 0 0;height:470px;background:${primary};}
+  .cover-hero img{width:100%;height:100%;object-fit:cover;}
+  .cover-hero .noimg{width:100%;height:100%;background:linear-gradient(135deg,${primary},${secondary});}
+  .cover-body{flex:1;padding:38px 56px 0;}
+  .cover-headline{font-size:52px;line-height:1.05;font-weight:900;color:${primary};letter-spacing:-1px;margin:14px 0 16px;}
+  .cover-sub{font-size:21px;line-height:1.5;color:#4b5563;font-style:italic;}
+  .cover-foot{margin-top:auto;background:${primary};padding:26px 56px;display:flex;align-items:center;justify-content:space-between;}
+  .cover-name{color:#fff;font-size:26px;font-weight:900;font-family:'Arial',sans-serif;}
+  .cover-trim{color:rgba(255,255,255,.75);font-size:16px;font-family:'Arial',sans-serif;margin-top:3px;}
+  .cover-price{background:${secondary};color:#fff;border-radius:8px;padding:14px 26px;text-align:center;}
+  .cover-price .lbl{font-family:'Arial',sans-serif;font-size:11px;letter-spacing:2px;text-transform:uppercase;opacity:.85;}
+  .cover-price .val{font-size:30px;font-weight:900;line-height:1.1;}
 
-  /* Spec strip under hero */
-  .spec-strip{display:flex;background:${primary};flex-shrink:0;}
-  .ss-item{flex:1;padding:9px 10px;border-right:1px solid rgba(255,255,255,.15);text-align:center;}
-  .ss-item:last-child{border-right:none;}
-  .ss-label{font-size:7.5px;color:rgba(255,255,255,.6);text-transform:uppercase;letter-spacing:.6px;}
-  .ss-val{font-size:11px;font-weight:700;color:#fff;margin-top:2px;}
+  /* SHARED interior header */
+  .ihdr{background:${primary};padding:34px 56px;}
+  .ihdr .eyebrow{color:${secondary};}
+  .ihdr h2{font-family:'Arial',sans-serif;color:#fff;font-size:34px;font-weight:900;margin-top:8px;letter-spacing:-.5px;}
+  .icontent{flex:1;padding:38px 56px;overflow:hidden;}
 
-  /* Sales copy section */
-  .sales-body{display:flex;flex:1;padding:0;}
+  /* PAGE 2 — lineup + trims */
+  .lineup-intro{font-size:19px;line-height:1.75;color:#374151;margin-bottom:30px;}
+  .trim{padding:20px 0;border-top:2px solid #eee;}
+  .trim:first-child{border-top:3px solid ${secondary};}
+  .trim h3{font-family:'Arial',sans-serif;font-size:22px;font-weight:800;color:${primary};margin-bottom:8px;}
+  .trim p{font-size:17px;line-height:1.7;color:#4b5563;}
 
-  /* Left: intro copy + 3 feature highlights */
-  .sales-left{flex:1;padding:20px 22px;border-right:2px solid #f1f5f9;}
-  .section-title{font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:1.5px;color:${secondary};margin-bottom:5px;}
-  .intro-para{font-size:11.5px;line-height:1.75;color:#334155;margin-bottom:18px;}
+  /* PAGE 3 — this vehicle */
+  .hl-photo{height:300px;background:${primary};margin-bottom:30px;border-radius:8px;overflow:hidden;}
+  .hl-photo img{width:100%;height:100%;object-fit:cover;}
+  .hl-para{font-size:19px;line-height:1.8;color:#374151;margin-bottom:22px;}
+  .spec-row{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-top:26px;}
+  .spec-tile{background:#f8fafc;border:1px solid #e5e7eb;border-top:4px solid ${secondary};border-radius:6px;padding:16px 14px;text-align:center;}
+  .st-label{font-family:'Arial',sans-serif;font-size:11px;letter-spacing:1px;text-transform:uppercase;color:#94a3b8;}
+  .st-val{font-family:'Arial',sans-serif;font-size:19px;font-weight:800;color:${primary};margin-top:5px;}
 
-  .highlight-row{display:flex;gap:12px;margin-bottom:18px;}
-  .highlight{flex:1;background:#f8fafc;border-top:3px solid ${secondary};border-radius:0 0 6px 6px;padding:12px 10px;}
-  .hl-icon{font-size:18px;margin-bottom:5px;}
-  .hl-title{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:${primary};margin-bottom:4px;}
-  .hl-body{font-size:9.5px;color:#64748b;line-height:1.5;}
+  /* PAGE 4 — dealership */
+  .d-page{align-items:stretch;}
+  .d-hero{background:${primary};flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:60px;}
+  .d-logo{background:#fff;border-radius:12px;padding:26px 34px;margin-bottom:34px;}
+  .d-name{color:#fff;font-size:40px;font-weight:900;font-family:'Arial',sans-serif;letter-spacing:-.5px;}
+  .d-tag{color:${secondary};font-size:20px;font-style:italic;margin-top:14px;max-width:560px;}
+  .d-contact{background:#fff;padding:46px 56px;text-align:center;}
+  .d-contact .eyebrow{display:block;margin-bottom:16px;}
+  .d-line{font-family:'Arial',sans-serif;font-size:19px;line-height:1.9;color:#374151;}
+  .d-cta{margin-top:26px;background:${secondary};color:#fff;font-family:'Arial',sans-serif;font-size:20px;font-weight:800;padding:16px 0;border-radius:8px;}
+  .d-vin{font-family:'Arial',sans-serif;font-size:12px;color:#9ca3af;margin-top:22px;letter-spacing:.5px;}
+</style></head><body>
 
-  /* Right: second photo + sales blurbs */
-  .sales-right{width:260px;display:flex;flex-direction:column;}
-  .photo2{height:165px;background:#0f172a;overflow:hidden;flex-shrink:0;}
-  .photo2 img{width:100%;height:100%;object-fit:contain;}
-  .photo2-none{width:100%;height:100%;display:flex;align-items:center;justify-content:center;background:#0f172a;}
-  .sales-right-body{flex:1;padding:14px 16px;display:flex;flex-direction:column;gap:12px;}
-  .sr-blurb{}
-  .sr-blurb-title{font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.8px;color:${primary};border-bottom:1.5px solid ${secondary};padding-bottom:2px;margin-bottom:5px;}
-  .sr-blurb-text{font-size:9.5px;line-height:1.6;color:#475569;}
-
-  /* Footer bar page 1 */
-  .p1-foot{background:${secondary};padding:8px 28px;display:flex;justify-content:space-between;align-items:center;font-size:9px;color:rgba(255,255,255,.85);flex-shrink:0;}
-  .p1-foot b{color:#fff;}
-
-  /* ════ PAGE 2 ════ */
-  /* Header */
-  .p2-hdr{background:${primary};padding:12px 24px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0;}
-  .p2-hdr-name{color:#fff;font-size:14px;font-weight:900;letter-spacing:-.2px;}
-  .p2-hdr-sub{color:rgba(255,255,255,.7);font-size:10px;margin-top:1px;}
-
-  /* Photo gallery row */
-  .gallery-row{display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px;height:160px;flex-shrink:0;}
-  .gp{overflow:hidden;background:#0f172a;display:flex;align-items:center;justify-content:center;}
-  .gp img{width:100%;height:100%;object-fit:contain;}
-  .gp-none{color:#94a3b8;font-size:10px;}
-
-  /* Body */
-  .p2-body{display:flex;flex:1;min-height:0;}
-  .p2-left{flex:1;padding:16px 20px;border-right:1px solid #e5e7eb;overflow:hidden;}
-  .p2-right{width:230px;padding:14px 16px;display:flex;flex-direction:column;gap:10px;flex-shrink:0;}
-
-  .sec{margin-bottom:14px;}
-  .sec-hdr{font-size:8.5px;font-weight:800;text-transform:uppercase;letter-spacing:1.2px;color:${primary};border-bottom:2px solid ${secondary};padding-bottom:2px;margin-bottom:7px;}
-  .desc-text{font-size:10.5px;line-height:1.7;color:#475569;}
-  .feat-grid{display:grid;grid-template-columns:1fr 1fr;gap:1px;}
-  .fi{font-size:9.5px;color:#334155;padding:2.5px 0 2.5px 11px;position:relative;line-height:1.3;}
-  .fi::before{content:"&#10003;";position:absolute;left:1px;color:${secondary};font-weight:900;font-size:10px;}
-  .spec-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px;}
-  .sg-item{background:#f8fafc;border:1px solid #e2e8f0;border-radius:3px;padding:5px 7px;}
-  .sg-label{font-size:7px;color:#94a3b8;text-transform:uppercase;letter-spacing:.4px;}
-  .sg-val{font-size:9.5px;font-weight:700;color:#0f172a;margin-top:1px;}
-
-  /* Price card */
-  .price-card{background:${primary};color:#fff;border-radius:6px;padding:14px;text-align:center;}
-  .prc-lbl{font-size:8px;letter-spacing:2px;text-transform:uppercase;opacity:.65;margin-bottom:2px;}
-  .prc-val{font-size:28px;font-weight:900;line-height:1;}
-  .prc-sub{font-size:9px;opacity:.7;margin-top:3px;}
-
-  .recall-ok{background:#f0fdf4;border:1px solid #86efac;border-radius:5px;padding:7px 9px;text-align:center;font-size:9.5px;font-weight:700;color:#15803d;}
-  .recall-bad{background:#fef2f2;border:1px solid #fca5a5;border-radius:5px;padding:7px 9px;text-align:center;font-size:9px;font-weight:700;color:#dc2626;}
-
-  .contact-card{background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:11px;}
-  .cc-name{font-size:13px;font-weight:900;color:${primary};margin-bottom:4px;}
-  .cc-line{font-size:9.5px;color:#475569;line-height:1.75;}
-  .cc-tag{font-size:9px;font-style:italic;color:#94a3b8;margin-top:5px;}
-
-  .vin-card{background:#f8fafc;border:1px solid #e2e8f0;border-radius:5px;padding:7px;text-align:center;}
-  .vin-lbl{font-size:7.5px;color:#94a3b8;text-transform:uppercase;letter-spacing:.5px;}
-  .vin-val{font-size:9px;font-weight:700;font-family:monospace;letter-spacing:.5px;word-break:break-all;color:#0f172a;margin-top:2px;line-height:1.3;}
-
-  .p2-foot{background:${primary};padding:7px 24px;display:flex;justify-content:space-between;align-items:center;font-size:8.5px;color:rgba(255,255,255,.75);flex-shrink:0;}
-  .p2-foot b{color:#fff;}
-</style>
-</head>
-<body>
-
-<!-- ══════════════ PAGE 1 — COVER ══════════════ -->
+<!-- PAGE 1 — COVER -->
 <div class="page">
-
-  <!-- Hero photo -->
-  <div class="hero">
-    ${getPhoto(0) ? `<img src="${getPhoto(0)}" alt="Vehicle">` : `<div class="hero-none"></div>`}
-    <div class="hero-grad"></div>
-    <!-- Dealer logo top-left, price top-right -->
-    <div class="hero-dealer">
-      <div class="hero-dealer-badge">${logoHtml}</div>
-      <div class="hero-price-badge">
-        <div class="hpb-label">Asking Price</div>
-        <div class="hpb-val">${price}</div>
-      </div>
-    </div>
-    <!-- Vehicle name bottom-left -->
-    <div class="hero-name-wrap">
-      ${branding.tagline ? `<div class="hero-tag">${branding.tagline}</div>` : `<div class="hero-tag">${dealer.name || ''}</div>`}
-      <div class="hero-title">${vehicleName}</div>
-      <div class="hero-trim">${[vehicle.trim, cap(vehicle.condition), mileage].filter(Boolean).join('&nbsp;&nbsp;·&nbsp;&nbsp;')}</div>
-    </div>
+  <div class="cover-top">${logoImg(52)}<span class="eyebrow">Vehicle Brochure</span></div>
+  <div class="cover-hero">${photo0 ? `<img src="${photo0}">` : `<div class="noimg"></div>`}</div>
+  <div class="cover-body">
+    <span class="eyebrow">${esc(vehicle.condition === 'new' ? 'New Arrival' : 'Featured Vehicle')}</span>
+    <div class="cover-headline">${esc(c.headline || vehicleName)}</div>
+    <div class="cover-sub">${esc(c.cover_subhead || '')}</div>
   </div>
-
-  <!-- Spec strip -->
-  <div class="spec-strip">
-    ${[
-      ['Engine',       vehicle.engine        || '—'],
-      ['Drivetrain',   vehicle.drivetrain    || '—'],
-      ['Transmission', vehicle.transmission  || '—'],
-      ['Fuel Type',    vehicle.fuel_type     || '—'],
-      ['Colour',       vehicle.exterior_color || '—'],
-      ['Stock #',      vehicle.stocknumber   || '—'],
-    ].map(([l,v]) => `<div class="ss-item"><div class="ss-label">${l}</div><div class="ss-val">${v}</div></div>`).join('')}
-  </div>
-
-  <!-- Sales body: intro copy left, photo + blurbs right -->
-  <div class="sales-body">
-    <div class="sales-left">
-      <div class="section-title">About This Vehicle</div>
-      <div class="intro-para">${introPara}</div>
-
-      <div class="highlight-row">
-        <div class="highlight">
-          <div class="hl-icon">&#9881;</div>
-          <div class="hl-title">Performance</div>
-          <div class="hl-body">${engineStr ? `${engineStr}${driveStr ? ` with ${driveStr}` : ''} — built for confident driving in any condition.` : 'Engineered for a smooth, confident drive every time.'}</div>
-        </div>
-        <div class="highlight">
-          <div class="hl-icon">&#10003;</div>
-          <div class="hl-title">Safety</div>
-          <div class="hl-body">${safetyItems.length ? `Equipped with ${safetyItems.slice(0,2).join(' and ')} for your peace of mind.` : 'Built with modern safety systems to protect you and your passengers.'}</div>
-        </div>
-        <div class="highlight">
-          <div class="hl-icon">&#9733;</div>
-          <div class="hl-title">Value</div>
-          <div class="hl-body">Priced at ${price} — ${recalls?.length ? 'ask us about the open recall remedy before you drive away.' : 'with no open recalls on record, this is a worry-free purchase.'}</div>
-        </div>
-      </div>
-    </div>
-
-    <div class="sales-right">
-      <div class="photo2">
-        ${getPhoto(1) ? `<img src="${getPhoto(1)}" alt="Vehicle">` : `<div class="photo2-none"></div>`}
-      </div>
-      <div class="sales-right-body">
-        <div class="sr-blurb">
-          <div class="sr-blurb-title">Safety &amp; Confidence</div>
-          <div class="sr-blurb-text">${safetyCopy}</div>
-        </div>
-        <div class="sr-blurb">
-          <div class="sr-blurb-title">Visit Us Today</div>
-          <div class="sr-blurb-text">${valueCopy}</div>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <div class="p1-foot">
-    <span><b>${dealer.name || ''}</b></span>
-    <span>${dealer.website_url || ''}</span>
-    <span>Stock # <b>${vehicle.stocknumber || '—'}</b></span>
+  <div class="cover-foot">
+    <div><div class="cover-name">${esc(vehicleName)}</div>${trim ? `<div class="cover-trim">${esc(trim)}</div>` : ''}</div>
+    <div class="cover-price"><div class="lbl">Our Price</div><div class="val">${esc(price)}</div></div>
   </div>
 </div>
 
-<!-- ══════════════ PAGE 2 — DETAIL ══════════════ -->
+<!-- PAGE 2 — LINEUP & TRIMS -->
 <div class="page">
-
-  <div class="p2-hdr">
-    <div>
-      <div class="p2-hdr-name">${vehicleName}${vehicle.trim ? ' ' + vehicle.trim : ''}</div>
-      <div class="p2-hdr-sub">${[cap(vehicle.condition), mileage, price].filter(Boolean).join('&nbsp;&nbsp;·&nbsp;&nbsp;')}</div>
-    </div>
-    ${logoHtml}
+  <div class="ihdr"><span class="eyebrow">The Lineup</span><h2>${esc([vehicle.make, vehicle.model].filter(Boolean).join(' '))} — Models &amp; Trims</h2></div>
+  <div class="icontent">
+    <p class="lineup-intro">${esc(c.lineup_intro || '')}</p>
+    ${trims.map(t => `<div class="trim"><h3>${esc(t.name || '')}</h3><p>${esc(t.blurb || '')}</p></div>`).join('')}
   </div>
+</div>
 
-  <!-- Photo gallery: up to 3 more photos -->
-  <div class="gallery-row">
-    ${[1,2,3].map(i => getPhoto(i)
-      ? `<div class="gp"><img src="${getPhoto(i)}" alt="Photo ${i+1}"></div>`
-      : `<div class="gp"><div class="gp-none"></div></div>`
-    ).join('')}
-  </div>
-
-  <div class="p2-body">
-    <div class="p2-left">
-
-      ${vehicle.description ? `
-      <div class="sec">
-        <div class="sec-hdr">Vehicle Description</div>
-        <div class="desc-text">${vehicle.description.slice(0, 700)}${vehicle.description.length > 700 ? '&hellip;' : ''}</div>
-      </div>` : ''}
-
-      <div class="sec">
-        <div class="sec-hdr">Features &amp; Equipment</div>
-        <div class="feat-grid">
-          ${allFeatures.map(f => `<div class="fi">${f}</div>`).join('')}
-        </div>
-      </div>
-
-      <div class="sec">
-        <div class="sec-hdr">Full Specifications</div>
-        <div class="spec-grid">
-          ${specRows.map(([l,v]) => `<div class="sg-item"><div class="sg-label">${l}</div><div class="sg-val">${v}</div></div>`).join('')}
-        </div>
-      </div>
-
-    </div>
-
-    <div class="p2-right">
-      <div class="price-card">
-        <div class="prc-lbl">Asking Price</div>
-        <div class="prc-val">${price}</div>
-        <div class="prc-sub">${cap(vehicle.condition)} &nbsp;&middot;&nbsp; ${mileage}</div>
-      </div>
-
-      ${recalls?.length
-        ? `<div class="recall-bad">&#9888; ${recalls.length} Open Recall${recalls.length > 1 ? 's' : ''}<br><span style="font-weight:400;font-size:8.5px;">Ask dealer for remedy details</span></div>`
-        : `<div class="recall-ok">&#10003; No Open Recalls on Record</div>`}
-
-      <div class="contact-card">
-        <div class="cc-name">${dealer.name || 'Your Dealership'}</div>
-        ${dealer.website_url ? `<div class="cc-line">${dealer.website_url}</div>` : ''}
-        ${branding.tagline   ? `<div class="cc-tag">&ldquo;${branding.tagline}&rdquo;</div>` : ''}
-      </div>
-
-      <div class="vin-card">
-        <div class="vin-lbl">Vehicle Identification Number</div>
-        <div class="vin-val">${vehicle.vin || 'Not Available'}</div>
-      </div>
+<!-- PAGE 3 — THIS VEHICLE -->
+<div class="page">
+  <div class="ihdr"><span class="eyebrow">Your Vehicle</span><h2>${esc(vehicleName)}${trim ? ' ' + esc(trim) : ''}</h2></div>
+  <div class="icontent">
+    <div class="hl-photo">${photo1 ? `<img src="${photo1}">` : ''}</div>
+    ${highlight.map(p => `<p class="hl-para">${esc(p)}</p>`).join('')}
+    <div class="spec-row">
+      ${specTile('Price', price)}
+      ${specTile('Mileage', mileage)}
+      ${specTile('Drivetrain', vehicle.drivetrain)}
+      ${specTile('Engine', vehicle.engine)}
+      ${specTile('Fuel', vehicle.fuel_type)}
+      ${specTile('Exterior', vehicle.exterior_color)}
     </div>
   </div>
+</div>
 
-  <div class="p2-foot">
-    <span>VIN: <b>${vehicle.vin || '&mdash;'}</b></span>
-    <span>${dealer.name || ''}</span>
-    <span>Generated: <b>${new Date().toLocaleDateString('en-CA')}</b></span>
+<!-- PAGE 4 — DEALERSHIP -->
+<div class="page d-page">
+  <div class="d-hero">
+    ${logoSrc ? `<div class="d-logo">${logoImg(70)}</div>` : ''}
+    <div class="d-name">${esc(dealer.name || 'Your Dealership')}</div>
+    ${branding.tagline ? `<div class="d-tag">&ldquo;${esc(branding.tagline)}&rdquo;</div>` : ''}
+  </div>
+  <div class="d-contact">
+    <span class="eyebrow">Visit Us Today</span>
+    ${contactLines || `<div class="d-line">Contact us to book your test drive.</div>`}
+    <div class="d-cta">Book Your Test Drive</div>
+    <div class="d-vin">${esc(vehicleName)}${trim ? ' ' + esc(trim) : ''}${vehicle.stocknumber ? ' · Stock #' + esc(vehicle.stocknumber) : ''}${vehicle.vin ? ' · VIN ' + esc(vehicle.vin) : ''}</div>
   </div>
 </div>
 
@@ -1150,7 +990,7 @@ export function registerRoutes(app) {
       try {
         const branding = dealer.branding || {}
         // Images are resized to WebP by imgToDataUri to keep HTML payload small
-        const imageUrls = (vehicle.image_urls || []).slice(0, 4)
+        const imageUrls = (vehicle.image_urls || []).slice(0, 2)
         const [photoDataUris, logoDataUri] = await Promise.all([
           Promise.all(imageUrls.map(u => imgToDataUri(u))),
           branding.logo_url ? imgToDataUri(branding.logo_url) : Promise.resolve(null),
@@ -1210,12 +1050,13 @@ export function registerRoutes(app) {
       try {
         const branding = dealer.branding || {}
         // Images are resized to WebP by imgToDataUri to keep HTML payload small
-        const imageUrls = (vehicle.image_urls || []).slice(0, 4)
+        const imageUrls = (vehicle.image_urls || []).slice(0, 2)
         const [photosDataUris, logoDataUri] = await Promise.all([
           Promise.all(imageUrls.map(u => imgToDataUri(u))),
           branding.logo_url ? imgToDataUri(branding.logo_url) : Promise.resolve(null),
         ])
-        const html = buildBrochureHtml(vehicle, dealer, branding, vehicle.recalls || [], photosDataUris.filter(Boolean), logoDataUri)
+        const copy = await generateBrochureCopy(vehicle, dealer)
+        const html = buildBrochureHtml(vehicle, dealer, branding, vehicle.recalls || [], photosDataUris.filter(Boolean), logoDataUri, copy)
         const pdf = await generatePdf(html, { landscape: false, viewportWidth: 860, viewportHeight: 1100, timeoutMs: 90000 })
         const path = `${req.dealershipId}/${vehicle.id}/brochure.pdf`
         const url = await uploadPdf(pdf, path)
