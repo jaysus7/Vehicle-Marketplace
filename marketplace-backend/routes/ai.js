@@ -28,44 +28,32 @@ export function registerAI(app) {
     if (!req.dealershipId) return res.status(400).json({ error: 'No dealership associated' })
     const { data, error } = await supabaseAdmin
       .from('dealerships')
-      .select('ai_boost_active, ai_tone, ai_required_fields, ai_manager_email, auction_api_key, vin_sticker_active, inv_intel_active')
+      .select('ai_boost_active, ai_tone, ai_required_fields, ai_manager_email, vin_sticker_active, inv_intel_active')
       .eq('id', req.dealershipId)
       .single()
     if (error) return res.status(500).json({ error: error.message })
     const isOwner = (req.user.email || '').toLowerCase() === OWNER_EMAIL
-    // Mask the key — return only a boolean indicating whether one is set,
-    // plus a redacted preview so the UI can show "••••••••abc123"
-    const auctionKeySet = !!data.auction_api_key
-    const auctionKeyPreview = data.auction_api_key
-      ? '••••••••' + data.auction_api_key.slice(-6)
-      : ''
-    const { auction_api_key: _, ...rest } = data
-    res.json({ ...rest, ai_boost_active: isOwner ? true : !!data.ai_boost_active, auction_key_set: auctionKeySet, auction_key_preview: auctionKeyPreview })
+    res.json({ ...data, ai_boost_active: isOwner ? true : !!data.ai_boost_active })
   })
 
   // PUT /ai/config — update dealership AI config (DEALER_ADMIN only)
   app.put('/ai/config', requireAuth, requireDealerAdmin, async (req, res) => {
     if (!req.dealershipId) return res.status(400).json({ error: 'No dealership associated' })
-    const { ai_tone, ai_required_fields, ai_manager_email, ai_boost_active, auction_api_key } = req.body
+    const { ai_tone, ai_required_fields, ai_manager_email, ai_boost_active } = req.body
     const update = {}
     if (ai_tone !== undefined) update.ai_tone = ai_tone
     if (ai_required_fields !== undefined) update.ai_required_fields = ai_required_fields
     if (ai_manager_email !== undefined) update.ai_manager_email = ai_manager_email
     if (ai_boost_active !== undefined) update.ai_boost_active = ai_boost_active
-    // Empty string clears the key; undefined = no change
-    if (auction_api_key !== undefined) update.auction_api_key = auction_api_key || null
 
     const { data, error } = await supabaseAdmin
       .from('dealerships')
       .update(update)
       .eq('id', req.dealershipId)
-      .select('ai_boost_active, ai_tone, ai_required_fields, ai_manager_email, auction_api_key')
+      .select('ai_boost_active, ai_tone, ai_required_fields, ai_manager_email')
       .single()
     if (error) return res.status(500).json({ error: error.message })
-    const auctionKeySet = !!data.auction_api_key
-    const auctionKeyPreview = data.auction_api_key ? '••••••••' + data.auction_api_key.slice(-6) : ''
-    const { auction_api_key: __, ...rest2 } = data
-    res.json({ ...rest2, auction_key_set: auctionKeySet, auction_key_preview: auctionKeyPreview })
+    res.json(data)
   })
 
   // POST /ai/enrich-listing — run AI enrichment on an inventory item
@@ -1231,7 +1219,16 @@ Units 60d+ on lot: ${stale}`
         } catch {}
       }
 
-      const res = await browserFetch(fetchUrl, { signal: AbortSignal.timeout(15000) })
+      let res
+      try {
+        res = await browserFetch(fetchUrl, { signal: AbortSignal.timeout(15000) })
+      } catch (fetchErr) {
+        // Network reset / timeout (common on Cloudflare-fronted sites) — the page
+        // never loaded, but the XML sitemap usually still does. Try it before giving up.
+        const sm = await sitemapCountFallback(sitemapOrigin)
+        if (sm) return sm
+        throw fetchErr
+      }
 
       // Strategy 3: on 403 (WAF/bot block) try JSON feed paths and Schema.org JSON-LD
       if (res.status === 403 || res.status === 401 || res.status === 429) {

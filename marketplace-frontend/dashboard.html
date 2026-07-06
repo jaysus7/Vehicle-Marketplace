@@ -1069,15 +1069,6 @@
               </div>
               <div class="flex items-start gap-3.5 px-5 py-4">
                 <div class="flex-shrink-0 w-8 h-8 bg-violet-100 dark:bg-violet-900/40 rounded-lg flex items-center justify-center mt-0.5">
-                  <span class="text-base">💰</span>
-                </div>
-                <div class="min-w-0">
-                  <div class="text-sm font-bold text-slate-900 dark:text-white">Manheim MMR &amp; ADESA Integration</div>
-                  <div class="text-xs text-slate-500 dark:text-slate-400 mt-0.5 leading-relaxed">Connect your auction platform API key to pull real wholesale MMR values directly into every price report — no estimates.</div>
-                </div>
-              </div>
-              <div class="flex items-start gap-3.5 px-5 py-4">
-                <div class="flex-shrink-0 w-8 h-8 bg-violet-100 dark:bg-violet-900/40 rounded-lg flex items-center justify-center mt-0.5">
                   <span class="text-base">🔄</span>
                 </div>
                 <div class="min-w-0">
@@ -1091,7 +1082,7 @@
                 </div>
                 <div class="min-w-0">
                   <div class="text-sm font-bold text-slate-900 dark:text-white">Live Auction Reference Data</div>
-                  <div class="text-xs text-slate-500 dark:text-slate-400 mt-0.5 leading-relaxed">Pulls Copart Canada auction results — wholesale salvage reference pricing shown alongside retail comparables. Connect Manheim MMR, ADESA, or TradeRev API for full wholesale data.</div>
+                  <div class="text-xs text-slate-500 dark:text-slate-400 mt-0.5 leading-relaxed">Pulls Copart Canada auction results — wholesale salvage reference pricing shown alongside your retail comparables in every price report.</div>
                 </div>
               </div>
               <div class="flex items-start gap-3.5 px-5 py-4">
@@ -1453,7 +1444,7 @@
               <div class="flex items-center gap-2.5 text-sm text-slate-700 dark:text-slate-300"><svg class="w-4 h-4 text-indigo-500 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5"/></svg>US &amp; Canada market price report with PDF export</div>
               <div class="flex items-center gap-2.5 text-sm text-slate-700 dark:text-slate-300"><svg class="w-4 h-4 text-indigo-500 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5"/></svg>Live AutoTrader &amp; CarGurus Canada market data</div>
               <div class="flex items-center gap-2.5 text-sm text-slate-700 dark:text-slate-300"><svg class="w-4 h-4 text-indigo-500 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5"/></svg>AutoTrader.com &amp; CarGurus.com US market data</div>
-              <div class="flex items-center gap-2.5 text-sm text-slate-700 dark:text-slate-300"><svg class="w-4 h-4 text-indigo-500 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5"/></svg>Copart Canada &amp; US auction reference pricing</div>
+              <div class="flex items-center gap-2.5 text-sm text-slate-700 dark:text-slate-300"><svg class="w-4 h-4 text-indigo-500 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5"/></svg>Copart Canada auction reference pricing</div>
               <div class="flex items-center gap-2.5 text-sm text-slate-700 dark:text-slate-300"><svg class="w-4 h-4 text-indigo-500 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5"/></svg>Inventory scan &amp; real-time activity log</div>
               <div class="flex items-center gap-2.5 text-sm text-slate-700 dark:text-slate-300"><svg class="w-4 h-4 text-indigo-500 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5"/></svg>Chrome extension deep scan on any listing</div>
             </div>
@@ -1585,16 +1576,6 @@
                     <span class="text-sm text-slate-700 dark:text-slate-300 font-medium">Description</span>
                   </label>
                 </div>
-              </div>
-
-              <!-- Auction API Key -->
-              <div class="pt-2 border-t border-slate-200 dark:border-slate-700">
-                <label class="block text-xs uppercase font-bold text-slate-400 dark:text-slate-500 mb-1.5 tracking-wider">Auction API Key <span class="normal-case text-slate-400 font-normal">(Manheim MMR, ADESA/OpenLane, or TradeRev)</span></label>
-                <div class="flex gap-2">
-                  <input type="password" id="ai-auction-key" autocomplete="off" placeholder="Paste your auction platform API key…" class="flex-1 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 font-mono">
-                  <button type="button" id="ai-auction-key-clear" class="hidden text-xs font-bold px-3 py-2 rounded-lg border border-red-300 dark:border-red-700 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 transition whitespace-nowrap">Clear</button>
-                </div>
-                <p id="ai-auction-key-hint" class="text-xs text-slate-400 mt-1">When set, real wholesale auction pricing is used in market reports instead of estimates. The key is stored encrypted.</p>
               </div>
 
               <button id="ai-config-save-btn" class="bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-bold px-5 py-2 rounded-lg transition">Save Settings</button>
@@ -1917,5 +1898,6 @@
 
   <script src="dashboard.js?v=20260704i"></script>
   <script src="tour.js"></script>
+  <script src="table-sort.js?v=20260706a"></script>
 </body>
 </html>

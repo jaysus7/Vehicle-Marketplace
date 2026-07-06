@@ -3151,34 +3151,6 @@ function renderAIBoostSection(cfg) {
     const emailEl = document.getElementById('ai-manager-email');
     if (emailEl) emailEl.value = cfg.ai_manager_email || '';
 
-    // Auction API key — show masked preview if one is already set
-    const auctionKeyEl = document.getElementById('ai-auction-key');
-    const auctionKeyClear = document.getElementById('ai-auction-key-clear');
-    const auctionKeyHint = document.getElementById('ai-auction-key-hint');
-    if (auctionKeyEl) {
-      auctionKeyEl.placeholder = cfg.auction_key_set
-        ? cfg.auction_key_preview || '••••••••••••'
-        : 'Paste your auction platform API key…';
-      auctionKeyEl.value = '';
-      if (auctionKeyClear) auctionKeyClear.classList.toggle('hidden', !cfg.auction_key_set);
-      if (auctionKeyHint && cfg.auction_key_set) {
-        auctionKeyHint.textContent = 'Auction API key is set. Leave blank to keep it unchanged, or paste a new key to replace it.';
-      }
-      auctionKeyClear?.addEventListener('click', async () => {
-        if (!confirm('Remove the auction API key? Market reports will fall back to AI estimates.')) return;
-        auctionKeyEl.value = '';
-        auctionKeyEl.placeholder = 'Paste your auction platform API key…';
-        auctionKeyClear.classList.add('hidden');
-        if (auctionKeyHint) auctionKeyHint.textContent = 'When set, real wholesale auction pricing is used in market reports instead of estimates. The key is stored encrypted.';
-        // Save the cleared key immediately
-        await fetch(`${API}/ai/config`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-          body: JSON.stringify({ auction_api_key: '' }),
-        });
-      });
-    }
-
     const reqFields = cfg.ai_required_fields || [];
     ['price', 'mileage', 'image_urls', 'description'].forEach(f => {
       const idMap = { price: 'ai-req-price', mileage: 'ai-req-mileage', image_urls: 'ai-req-photos', description: 'ai-req-description' };
@@ -3313,13 +3285,10 @@ function setupAIBoostListeners() {
     if (document.getElementById('ai-req-photos')?.checked) reqFields.push('image_urls');
     if (document.getElementById('ai-req-description')?.checked) reqFields.push('description');
 
-    const auctionKeyInput = document.getElementById('ai-auction-key')?.value.trim();
     const payload = {
       ai_tone: document.getElementById('ai-tone')?.value || 'professional',
       ai_manager_email: document.getElementById('ai-manager-email')?.value.trim() || null,
       ai_required_fields: reqFields,
-      // Only send auction_api_key if the user typed something — blank means "no change"
-      ...(auctionKeyInput ? { auction_api_key: auctionKeyInput } : {}),
     };
 
     try {
@@ -3333,15 +3302,6 @@ function setupAIBoostListeners() {
       msg.textContent = '✓ Saved';
       msg.className = 'text-xs font-medium px-2.5 py-1 rounded-md bg-emerald-100 dark:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300';
       msg.classList.remove('hidden');
-      // Update auction key UI state after save
-      if (auctionKeyInput) {
-        const keyEl = document.getElementById('ai-auction-key');
-        const clearBtn = document.getElementById('ai-auction-key-clear');
-        const hint = document.getElementById('ai-auction-key-hint');
-        if (keyEl) { keyEl.value = ''; keyEl.placeholder = data.auction_key_preview || '••••••••••••'; }
-        if (clearBtn) clearBtn.classList.remove('hidden');
-        if (hint) hint.textContent = 'Auction API key is set. Leave blank to keep it unchanged, or paste a new key to replace it.';
-      }
     } catch (err) {
       msg.textContent = err.message;
       msg.className = 'text-xs font-medium px-2.5 py-1 rounded-md bg-red-100 dark:bg-red-900/50 text-red-700 dark:text-red-300';
@@ -4574,14 +4534,27 @@ document.addEventListener('DOMContentLoaded', () => {
     btn.disabled = true; btn.textContent = 'Scanning…';
     compPanel?.classList.add('hidden');
     try {
-      // Kick off background scan + fetch our own lot stats in parallel
-      // Scan now returns immediately with { status: 'scanning', total }
-      const [scanRes, ourRes] = await Promise.all([
-        fetch(`${API}/ai/competitors/scan`, { method: 'POST', headers: { 'Authorization': `Bearer ${token}` } }),
-        fetch(`${API}/inventory/all`, { headers: { 'Authorization': `Bearer ${token}` } })
-      ]);
+      // Kick off the background scan on its own. Scan returns immediately with
+      // { status: 'scanning', total }. One retry for iOS cold-start / dropped
+      // connections so a transient network blip doesn't read as "scan failed".
+      let scanRes;
+      for (let i = 0; i < 2; i++) {
+        try {
+          scanRes = await fetch(`${API}/ai/competitors/scan`, { method: 'POST', headers: { 'Authorization': `Bearer ${token}` } });
+          break;
+        } catch (netErr) {
+          if (i === 1) throw new Error('Could not reach the server to start the scan. Check your connection and try again.');
+          await new Promise(r => setTimeout(r, 2500));
+        }
+      }
       const scanData = await scanRes.json();
       if (!scanRes.ok) throw new Error(scanData.error || 'Scan failed');
+
+      // Our own lot stats — fetched separately and tolerantly. A failure here
+      // must NOT abort the competitor scan (it's only used for the comparison).
+      let ourRes = null;
+      try { ourRes = await fetch(`${API}/inventory/all`, { headers: { 'Authorization': `Bearer ${token}` } }); }
+      catch { ourRes = null; }
 
       // Poll GET /ai/competitors until all entries have a fresh last_scanned_at
       const total = scanData.total || 1;
@@ -4605,7 +4578,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const scanDataFinal = { results: competitors.map(c => ({ id: c.id, name: c.name, result: c.last_scan_result })) };
 
       // Build our lot stats from available inventory
-      const ourVehicles = ourRes.ok ? (await ourRes.json()).filter(v => v.status === 'available' && v.price > 0) : [];
+      const ourVehicles = (ourRes && ourRes.ok) ? (await ourRes.json()).filter(v => v.status === 'available' && v.price > 0) : [];
       const ourPrices = ourVehicles.map(v => Number(v.price)).filter(p => p > 0).sort((a, b) => a - b);
       const ourAvg = ourPrices.length ? Math.round(ourPrices.reduce((a, b) => a + b, 0) / ourPrices.length) : null;
       const ourMin = ourPrices[0] || null;
