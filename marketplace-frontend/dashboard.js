@@ -5474,8 +5474,8 @@ document.addEventListener('DOMContentLoaded', () => {
             <span class="font-medium text-slate-900 dark:text-white">${s.make} ${s.model}</span>
           </div>
           <div class="text-right">
-            <div class="text-xs font-bold text-emerald-600">${s.monthly_velocity}/mo</div>
-            <div class="text-[10px] text-slate-400">${s.current_stock} in stock</div>
+            <div class="text-sm font-bold text-emerald-600 dark:text-emerald-400">${s.monthly_velocity}/mo</div>
+            <div class="text-sm text-slate-400">${s.current_stock} in stock</div>
           </div>
         </div>`).join('')
       : '<p class="text-slate-400 text-sm">No hot vehicles detected</p>'
@@ -5488,8 +5488,8 @@ document.addEventListener('DOMContentLoaded', () => {
             <span class="font-medium text-slate-900 dark:text-white">${s.make} ${s.model}</span>
           </div>
           <div class="text-right">
-            <div class="text-xs font-bold text-slate-500">${s.current_stock} units</div>
-            <div class="text-[10px] text-slate-400">${s.monthly_velocity}/mo sold</div>
+            <div class="text-sm font-bold text-red-600 dark:text-red-400">${s.monthly_velocity}/mo sold</div>
+            <div class="text-sm text-slate-400">${s.current_stock} units in stock</div>
           </div>
         </div>`).join('')
       : '<p class="text-slate-400 text-sm">No cold vehicles detected</p>'

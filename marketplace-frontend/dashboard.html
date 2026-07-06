@@ -31,6 +31,18 @@
     body:not(.ms-role-ready) [data-team-nav],
     body:not(.ms-role-ready) [data-admin-only],
     body:not(.ms-role-ready) [data-dealer-only] { display: none !important; }
+
+    /* Mobile: keep the nav uncrowded — only Inventory, VIN check, Pipeline and
+       Settings. Everything else is still available on desktop. */
+    @media (max-width: 767px) {
+      #dashboard-nav [data-page="insights"],
+      #dashboard-nav [data-page="leads"],
+      #dashboard-nav [data-page="leaderboard"],
+      #dashboard-nav [data-page="sales-team"],
+      #dashboard-nav #nav-ai-boost,
+      #dashboard-nav #nav-inv-intel,
+      #dashboard-nav #nav-ai-vision { display: none !important; }
+    }
   </style>
   <style id="ms-font-bump">html{font-size:17px}@media (max-width:640px){html{font-size:16px}}</style>
   <style>.chip{display:inline-flex;align-items:center;font-size:0.7rem;padding:1px 7px;border-radius:999px;background:rgb(241 245 249);color:rgb(71 85 105);border:1px solid rgb(226 232 240);white-space:nowrap}.dark .chip{background:rgb(30 41 59);color:rgb(148 163 184);border-color:rgb(51 65 85)}.scrollbar-none{-ms-overflow-style:none;scrollbar-width:none}.scrollbar-none::-webkit-scrollbar{display:none}</style>
@@ -1224,7 +1236,7 @@
                   </div>
                   <div id="inv-intel-hot" class="space-y-2 text-sm text-slate-500">—</div>
                 </div>
-                <div class="bg-white dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 rounded-xl p-4">
+                <div class="bg-white dark:bg-slate-800/60 border border-red-200 dark:border-red-800/50 rounded-xl p-4">
                   <div class="flex items-center gap-2 mb-3">
                     <span class="text-base">🧊</span>
                     <span class="text-sm font-bold text-slate-900 dark:text-white">Top 5 Cold Vehicles</span>
@@ -2028,7 +2040,7 @@
     </div>
   </div>
 
-  <script src="dashboard.js?v=20260706b"></script>
+  <script src="dashboard.js?v=20260706c"></script>
   <script src="tour.js"></script>
   <script src="table-sort.js?v=20260706a"></script>
 </body>
