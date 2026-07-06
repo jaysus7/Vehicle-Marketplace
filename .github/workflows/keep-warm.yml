@@ -1,0 +1,17 @@
+name: Keep backend warm
+
+# Pings the health endpoint on a short interval so the free-tier instance doesn't
+# spin down (a cold start added ~50s to the first request, which showed up as the
+# dashboard, pipeline/leads, and extension "stuck loading"). GitHub delays sub-hourly
+# schedules under load, so this won't be perfectly on-time — it just reduces cold starts.
+on:
+  schedule:
+    - cron: '*/10 * * * *'   # roughly every 10 minutes
+  workflow_dispatch: {}
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping /health
+        run: curl -fsS --max-time 90 --retry 3 --retry-all-errors "https://vehicle-marketplace-s0e4.onrender.com/health" || true

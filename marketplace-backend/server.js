@@ -26,6 +26,11 @@ app.set('trust proxy', 1)
 app.use(securityHeaders)
 app.use(cors({ origin: corsOriginCheck, credentials: true }))
 
+// Fast, dependency-free health check. A scheduled ping to this keeps the
+// free-tier instance from spinning down (which caused ~50s cold-start hangs on
+// the first request to the dashboard, pipeline/leads, and the extension).
+app.get('/health', (req, res) => res.json({ ok: true, ts: Date.now() }))
+
 // Bounce any stale *.html requests to the canonical frontend
 app.get(/\.html$/, (req, res) => {
   res.redirect(302, `${CANONICAL_FRONTEND}${req.originalUrl}`)
