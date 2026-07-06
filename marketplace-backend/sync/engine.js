@@ -320,11 +320,19 @@ async function _runInventorySyncInner(dealershipId) {
           }
         } catch (e) { console.log(`[sync] eDealer API failed: ${e.message}`) }
 
-        // 2. Sitemap walker — fetches the inventory sitemap, then each detail page's JSON-LD
-        if (!vehicles.length && origin) {
+        // 2. Sitemap walker — fetches the inventory sitemap, then each detail page's JSON-LD.
+        // The getall API caps at ~24/page and returns NO totalCount, so a small result is
+        // almost always TRUNCATED, not the real inventory. Whenever the API came back
+        // page-capped (≤ 25), run the walker too and keep whichever is larger. This is the
+        // fix for "sync only pulls 24" — previously any non-empty API result short-circuited
+        // the walker.
+        if ((vehicles.length === 0 || vehicles.length <= 25) && origin) {
           try {
             const sm = await fetchEDealerInventoryFromSitemap(origin)
-            if (sm && sm.length) { vehicles = sm; console.log(`[sync] eDealer sitemap walker: ${vehicles.length} vehicles`) }
+            if (sm && sm.length > vehicles.length) {
+              console.log(`[sync] eDealer sitemap walker: ${sm.length} vehicles (replacing ${vehicles.length} from capped API)`)
+              vehicles = sm
+            }
           } catch (e) { console.log(`[sync] eDealer sitemap walker failed: ${e.message}`) }
         }
 
