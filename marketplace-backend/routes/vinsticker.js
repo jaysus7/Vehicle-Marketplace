@@ -437,11 +437,11 @@ async function generateBrochureCopy(vehicle, dealer) {
 {
   "headline": "punchy cover headline, max 8 words",
   "cover_subhead": "one benefit-focused sentence",
-  "lineup_intro": "one paragraph (3-5 sentences) introducing the ${[vehicle.make, vehicle.model].filter(Boolean).join(' ')} model line and what sets it apart",
-  "trims": [{"name": "trim name", "blurb": "2-3 sentences on what this trim offers"}],
-  "highlight": ["paragraph highlighting THIS specific vehicle and its ${trim || 'trim'}", "second paragraph on value and an invitation to visit the dealership"]
+  "lineup_intro": "one short paragraph (2-4 sentences) introducing the ${[vehicle.make, vehicle.model].filter(Boolean).join(' ')} model line and what sets it apart",
+  "trims": [{"name": "trim name", "blurb": "1-2 concise sentences (max ~40 words) on what this trim offers"}],
+  "highlight": ["one paragraph (max ~55 words) highlighting THIS specific vehicle and its ${trim || 'trim'}", "one paragraph (max ~55 words) on value and an invitation to visit the dealership"]
 }
-Provide 3 to 5 trims that are typical for this model/year. If you are unsure of exact trim names, describe the common trim tiers for this type of vehicle generally (do not invent specific option packages). Use warm, confident, benefit-focused Canadian English. Keep sentences readable for large print.
+Provide 3 to 4 trims that are typical for this model/year. If you are unsure of exact trim names, describe the common trim tiers for this type of vehicle generally (do not invent specific option packages). Use warm, confident, benefit-focused Canadian English. Keep sentences readable for large print. Keep every blurb tight — this is a fixed-size printed page, so brevity matters.
 
 VEHICLE
 Year/Make/Model: ${name}
@@ -477,8 +477,8 @@ Dealership: ${dealer?.name || 'n/a'}`
       headline: parsed.headline || fallback.headline,
       cover_subhead: parsed.cover_subhead || fallback.cover_subhead,
       lineup_intro: parsed.lineup_intro || fallback.lineup_intro,
-      trims: Array.isArray(parsed.trims) && parsed.trims.length ? parsed.trims.slice(0, 5) : fallback.trims,
-      highlight: Array.isArray(parsed.highlight) && parsed.highlight.length ? parsed.highlight.slice(0, 3) : fallback.highlight,
+      trims: Array.isArray(parsed.trims) && parsed.trims.length ? parsed.trims.slice(0, 4) : fallback.trims,
+      highlight: Array.isArray(parsed.highlight) && parsed.highlight.length ? parsed.highlight.slice(0, 2) : fallback.highlight,
     }
   } catch (e) {
     console.warn('[brochure] AI copy failed, using fallback:', e.message)
@@ -508,8 +508,10 @@ function buildBrochureHtml(vehicle, dealer, branding, recalls, photosDataUris, l
     : `<span style="font-size:${Math.round(h * 0.42)}px;font-weight:900;color:${primary};">${esc(dealer.name || 'Your Dealership')}</span>`
 
   const c = copy || {}
-  const trims = Array.isArray(c.trims) ? c.trims : []
-  const highlight = Array.isArray(c.highlight) ? c.highlight : []
+  // Hard caps so a fixed-size printed page never overflows (belt-and-suspenders on
+  // top of the min-height/no-clip CSS): at most 4 trims and 2 highlight paragraphs.
+  const trims = (Array.isArray(c.trims) ? c.trims : []).slice(0, 4)
+  const highlight = (Array.isArray(c.highlight) ? c.highlight : []).slice(0, 2)
 
   const specTile = (label, val) => val ? `
     <div class="spec-tile"><div class="st-label">${esc(label)}</div><div class="st-val">${esc(val)}</div></div>` : ''
@@ -524,9 +526,12 @@ function buildBrochureHtml(vehicle, dealer, branding, recalls, photosDataUris, l
 
   return `<!DOCTYPE html>
 <html lang="en"><head><meta charset="UTF-8"><style>
-  *{margin:0;padding:0;box-sizing:border-box;}
+  *{margin:0;padding:0;box-sizing:border-box;overflow-wrap:break-word;word-break:break-word;}
   body{font-family:'Georgia','Times New Roman',serif;width:816px;background:#fff;color:#1f2937;}
-  .page{width:816px;height:1056px;overflow:hidden;position:relative;page-break-after:always;display:flex;flex-direction:column;}
+  /* min-height (not fixed height) + no overflow:hidden → copy can never be clipped;
+     a long page simply grows onto a second sheet instead of cutting words off. */
+  .page{width:816px;min-height:1056px;position:relative;page-break-after:always;display:flex;flex-direction:column;}
+  .page:last-child{page-break-after:auto;}
   .sans{font-family:'Arial',Helvetica,sans-serif;}
   .eyebrow{font-family:'Arial',sans-serif;font-size:13px;letter-spacing:5px;text-transform:uppercase;color:${secondary};font-weight:700;}
 
@@ -536,7 +541,7 @@ function buildBrochureHtml(vehicle, dealer, branding, recalls, photosDataUris, l
   .cover-hero img{width:100%;height:100%;object-fit:cover;}
   .cover-hero .noimg{width:100%;height:100%;background:linear-gradient(135deg,${primary},${secondary});}
   .cover-body{flex:1;padding:38px 56px 0;}
-  .cover-headline{font-size:52px;line-height:1.05;font-weight:900;color:${primary};letter-spacing:-1px;margin:14px 0 16px;}
+  .cover-headline{font-size:46px;line-height:1.08;font-weight:900;color:${primary};letter-spacing:-1px;margin:14px 0 16px;}
   .cover-sub{font-size:21px;line-height:1.5;color:#4b5563;font-style:italic;}
   .cover-foot{margin-top:auto;background:${primary};padding:26px 56px;display:flex;align-items:center;justify-content:space-between;}
   .cover-name{color:#fff;font-size:26px;font-weight:900;font-family:'Arial',sans-serif;}
@@ -549,14 +554,14 @@ function buildBrochureHtml(vehicle, dealer, branding, recalls, photosDataUris, l
   .ihdr{background:${primary};padding:34px 56px;}
   .ihdr .eyebrow{color:${secondary};}
   .ihdr h2{font-family:'Arial',sans-serif;color:#fff;font-size:34px;font-weight:900;margin-top:8px;letter-spacing:-.5px;}
-  .icontent{flex:1;padding:38px 56px;overflow:hidden;}
+  .icontent{flex:1;padding:36px 56px 44px;}
 
   /* PAGE 2 — lineup + trims */
-  .lineup-intro{font-size:19px;line-height:1.75;color:#374151;margin-bottom:30px;}
-  .trim{padding:20px 0;border-top:2px solid #eee;}
+  .lineup-intro{font-size:18px;line-height:1.7;color:#374151;margin-bottom:26px;}
+  .trim{padding:16px 0;border-top:2px solid #eee;}
   .trim:first-child{border-top:3px solid ${secondary};}
-  .trim h3{font-family:'Arial',sans-serif;font-size:22px;font-weight:800;color:${primary};margin-bottom:8px;}
-  .trim p{font-size:17px;line-height:1.7;color:#4b5563;}
+  .trim h3{font-family:'Arial',sans-serif;font-size:21px;font-weight:800;color:${primary};margin-bottom:6px;}
+  .trim p{font-size:16px;line-height:1.65;color:#4b5563;}
 
   /* PAGE 3 — this vehicle */
   .hl-photo{height:300px;background:${primary};margin-bottom:30px;border-radius:8px;overflow:hidden;}
