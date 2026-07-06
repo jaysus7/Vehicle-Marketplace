@@ -348,6 +348,121 @@ function switchPage(pageId) {
   if (pageId === 'inv-intel' && typeof window._invIntelPageHook === 'function') window._invIntelPageHook();
   if (pageId === 'ai-vision') loadAiVisionPage();
   if (pageId === 'pipeline') loadPipelinePage();
+  if (pageId === 'leads') loadLeadsPage();
+}
+
+// ── Leads (CRM ADF delivery) ─────────────────────────────────────────────────
+async function loadLeadsPage() {
+  const root = document.getElementById('leads-root');
+  if (!root) return;
+  let data, inv = [];
+  try {
+    const [lr, ir] = await Promise.all([
+      fetch(`${API}/leads`, { headers: { 'Authorization': `Bearer ${token}` } }),
+      fetch(`${API}/inventory/all`, { headers: { 'Authorization': `Bearer ${token}` } }).catch(() => null),
+    ]);
+    if (!lr.ok) throw new Error('Could not load leads');
+    data = await lr.json();
+    if (ir && ir.ok) inv = (await ir.json()).filter(v => String(v.status || 'available').toLowerCase() === 'available');
+  } catch (e) { root.innerHTML = `<div class="py-16 text-center text-sm text-slate-500">${esc(e.message)}</div>`; return; }
+
+  const vehOpts = inv.slice(0, 500).map(v => `<option value="${v.id}">${esc([v.year, v.make, v.model, v.trim].filter(Boolean).join(' '))}${v.stocknumber ? ' · #' + esc(v.stocknumber) : ''}</option>`).join('');
+  const crmSet = !!data.crm_adf_email;
+
+  const statusPill = (l) => {
+    if (l.adf_sent_at) return `<span class="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300">Sent to CRM</span>`;
+    if (l.adf_error) return `<span class="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded bg-red-100 text-red-700 dark:bg-red-950/50 dark:text-red-300" title="${esc(l.adf_error)}">Failed</span>`;
+    return `<span class="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400">Not delivered</span>`;
+  };
+  const rows = (data.leads || []).map(l => `
+    <tr class="border-b border-slate-100 dark:border-slate-800/60">
+      <td class="py-3 px-3"><div class="font-semibold text-slate-900 dark:text-white">${esc(l.name || '—')}</div><div class="text-xs text-slate-400">${esc(l.source || '')}</div></td>
+      <td class="py-3 px-3 text-slate-600 dark:text-slate-300">${esc(l.phone || '')}${l.phone && l.email ? '<br>' : ''}${esc(l.email || '')}</td>
+      <td class="py-3 px-3 text-slate-500 dark:text-slate-400 max-w-[220px]">${esc(l.comments || '')}</td>
+      <td class="py-3 px-3">${statusPill(l)}</td>
+      <td class="py-3 px-3 text-right">${!l.adf_sent_at && crmSet ? `<button class="lead-resend text-indigo-500 hover:text-indigo-400 text-xs font-bold" data-id="${l.id}">Send to CRM</button>` : '<span class="text-xs text-slate-400">—</span>'}</td>
+    </tr>`).join('') || '<tr><td colspan="5" class="py-8 text-center text-sm text-slate-400 italic">No leads yet.</td></tr>';
+
+  root.innerHTML = `
+    <div class="mb-5">
+      <h2 class="text-xl font-bold text-slate-900 dark:text-white">Leads</h2>
+      <p class="text-sm text-slate-500 dark:text-slate-400 mt-1">Log buyer leads — they're delivered to your CRM automatically as an ADF email.</p>
+    </div>
+
+    ${data.can_configure ? `
+    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-5">
+      <h3 class="text-sm font-bold text-slate-900 dark:text-white mb-1">CRM ADF email</h3>
+      <p class="text-xs text-slate-500 dark:text-slate-400 mb-3">Your CRM's lead-intake address (VinSolutions, DealerSocket, Elead, etc.). Leads are emailed here as ADF XML and auto-imported. Not sure? Ask your CRM admin for your "ADF" or "email lead" address.</p>
+      <div class="flex gap-2">
+        <input id="crm-email" type="email" value="${esc(data.crm_adf_email || '')}" placeholder="leads@yourcrm-intake.com" class="flex-1 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm">
+        <button id="crm-save" class="bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-bold px-4 py-2 rounded-lg transition">Save</button>
+      </div>
+      <p id="crm-msg" class="hidden text-xs mt-2"></p>
+    </div>` : ''}
+
+    ${!crmSet ? `<div class="bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-lg px-4 py-3 text-sm text-amber-700 dark:text-amber-300">No CRM address set yet — leads are still saved here, and will send once ${data.can_configure ? 'you add' : 'your admin adds'} the CRM ADF email.</div>` : ''}
+
+    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-5">
+      <h3 class="text-sm font-bold text-slate-900 dark:text-white mb-3">Log a lead</h3>
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <input id="lead-name" placeholder="Buyer name" class="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm">
+        <input id="lead-phone" placeholder="Phone" class="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm">
+        <input id="lead-email" type="email" placeholder="Email" class="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm">
+        <select id="lead-vehicle" class="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm"><option value="">Vehicle of interest (optional)</option>${vehOpts}</select>
+      </div>
+      <textarea id="lead-comments" rows="2" placeholder="Notes / what they asked about" class="w-full mt-3 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm"></textarea>
+      <div class="flex items-center gap-3 mt-3">
+        <button id="lead-save" class="bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-bold px-5 py-2 rounded-lg transition">Save lead${crmSet ? ' & send to CRM' : ''}</button>
+        <span id="lead-msg" class="hidden text-xs"></span>
+      </div>
+    </div>
+
+    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden">
+      <div class="overflow-x-auto"><table class="w-full text-sm text-left min-w-[640px]">
+        <thead><tr class="border-b border-slate-200 dark:border-slate-800 text-slate-500 dark:text-slate-400 uppercase text-xs tracking-wider">
+          <th class="py-3 px-3">Buyer</th><th class="py-3 px-3">Contact</th><th class="py-3 px-3">Notes</th><th class="py-3 px-3">CRM</th><th class="py-3 px-3 text-right">Action</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table></div>
+    </div>`;
+
+  document.getElementById('crm-save')?.addEventListener('click', async () => {
+    const msg = document.getElementById('crm-msg');
+    try {
+      const r = await fetch(`${API}/leads/crm-email`, { method: 'PUT', headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ crm_adf_email: document.getElementById('crm-email').value.trim() }) });
+      if (!r.ok) throw new Error((await r.json()).error || 'Failed');
+      msg.textContent = '✓ Saved'; msg.className = 'text-xs mt-2 text-emerald-600 dark:text-emerald-400'; msg.classList.remove('hidden');
+    } catch (e) { msg.textContent = e.message; msg.className = 'text-xs mt-2 text-red-500'; msg.classList.remove('hidden'); }
+  });
+
+  document.getElementById('lead-save')?.addEventListener('click', async () => {
+    const btn = document.getElementById('lead-save'); const msg = document.getElementById('lead-msg');
+    btn.disabled = true;
+    try {
+      const r = await fetch(`${API}/leads`, { method: 'POST', headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({
+        name: document.getElementById('lead-name').value.trim(),
+        phone: document.getElementById('lead-phone').value.trim(),
+        email: document.getElementById('lead-email').value.trim(),
+        inventory_id: document.getElementById('lead-vehicle').value || null,
+        comments: document.getElementById('lead-comments').value.trim(),
+      }) });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error || 'Failed');
+      msg.textContent = d.delivered ? '✓ Saved & sent to CRM' : (d.crm_configured ? 'Saved (CRM send failed — check address)' : 'Saved (set your CRM email to auto-send)');
+      msg.className = 'text-xs ' + (d.delivered ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400');
+      msg.classList.remove('hidden');
+      loadLeadsPage();
+    } catch (e) { msg.textContent = e.message; msg.className = 'text-xs text-red-500'; msg.classList.remove('hidden'); btn.disabled = false; }
+  });
+
+  root.querySelectorAll('.lead-resend').forEach(b => b.addEventListener('click', async () => {
+    b.disabled = true; b.textContent = 'Sending…';
+    try {
+      const r = await fetch(`${API}/leads/${b.dataset.id}/resend`, { method: 'POST', headers: { 'Authorization': `Bearer ${token}` } });
+      if (!r.ok) throw new Error((await r.json()).error || 'Failed');
+      loadLeadsPage();
+    } catch (e) { alert(e.message); b.disabled = false; b.textContent = 'Send to CRM'; }
+  }));
 }
 
 // ── Sales Pipeline (integrated page) ─────────────────────────────────────────
