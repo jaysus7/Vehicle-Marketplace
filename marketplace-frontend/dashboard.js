@@ -404,7 +404,6 @@ async function loadInsights() {
     document.getElementById('metric-posts-per-day').textContent = data.posts_per_day || '—';
     document.getElementById('metric-sell-through').textContent = data.sell_through_rate || 0;
     document.getElementById('metric-aged').textContent = data.inventory_aged_60d ?? 0;
-    document.getElementById('metric-clicks').textContent = data.link_clicks ?? 0;
 
     // Admin-only: show admin vs reps breakdown under Listings Posted
     if (data.scope === 'dealership') {
