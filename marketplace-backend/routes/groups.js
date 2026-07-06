@@ -26,6 +26,9 @@ function isGroupAdmin(profile) {
   return profile?.role === 'DEALER_GROUP' || profile?.role === 'OWNER'
 }
 
+const OWNER_EMAIL = (process.env.OWNER_EMAIL || 'massiejay@gmail.com').toLowerCase()
+const isOwner = (req) => (req.user?.email || '').toLowerCase() === OWNER_EMAIL || req.profile?.role === 'OWNER'
+
 export function registerGroups(app) {
   // Create a dealer group. The caller becomes its group admin. If the caller
   // already runs a dealership, that dealership is pulled into the new group.
@@ -126,7 +129,7 @@ export function registerGroups(app) {
     const groupId = req.profile.group_id
 
     let { data: group } = await supabaseAdmin
-      .from('dealer_groups').select('id, name, billing_mode, billing_status, join_code').eq('id', groupId).single()
+      .from('dealer_groups').select('id, name, billing_mode, billing_status, join_code, monthly_price_cents').eq('id', groupId).single()
     // Backfill a join code for groups created before invite codes existed.
     if (group && !group.join_code) {
       const code = makeJoinCode()
@@ -185,7 +188,7 @@ export function registerGroups(app) {
       sold: t.sold + s.sold,
     }), { stores: 0, reps: 0, listings: 0, posted: 0, sold: 0 })
 
-    res.json({ group: group || { id: groupId }, totals, stores: storesOut })
+    res.json({ group: group || { id: groupId }, totals, stores: storesOut, is_owner: isOwner(req) })
   })
 
   // Set how the group is billed: 'group' (one central subscription covers every
@@ -205,20 +208,53 @@ export function registerGroups(app) {
     res.json({ ok: true, billing_mode: mode })
   })
 
-  // Start a central group subscription checkout. Covers every store in the group
-  // while billing_mode='group'. Requires STRIPE_GROUP_PRICE_ID to be configured.
+  // Owner sets a group's negotiated monthly price (custom per group). Amount in
+  // dollars; stored as cents. Only the MarketSync owner can set it.
+  app.patch('/groups/:id/price', requireAuth, async (req, res) => {
+    if (!isOwner(req)) return res.status(403).json({ error: 'Only MarketSync can set a group price' })
+    const dollars = Number(req.body?.monthly_price)
+    if (!Number.isFinite(dollars) || dollars < 0 || dollars > 100000) {
+      return res.status(400).json({ error: 'monthly_price must be a dollar amount' })
+    }
+    const { error } = await supabaseAdmin
+      .from('dealer_groups').update({ monthly_price_cents: Math.round(dollars * 100) }).eq('id', req.params.id)
+    if (error) return res.status(500).json({ error: error.message })
+    res.json({ ok: true, monthly_price_cents: Math.round(dollars * 100) })
+  })
+
+  // Start a central group subscription checkout. The price is built inline from
+  // the group's own negotiated monthly amount (no per-group Stripe Price needed).
   app.post('/groups/billing/checkout', requireAuth, async (req, res) => {
     if (!isGroupAdmin(req.profile) || !req.profile.group_id) {
       return res.status(403).json({ error: 'Group admin required' })
     }
-    const price = process.env.STRIPE_GROUP_PRICE_ID
-    if (!stripe || !price) return res.status(503).json({ error: 'Group billing is not configured yet' })
+    if (!stripe) return res.status(503).json({ error: 'Billing is not configured' })
     try {
       const { data: group } = await supabaseAdmin
-        .from('dealer_groups').select('id, name, stripe_customer_id').eq('id', req.profile.group_id).single()
+        .from('dealer_groups').select('id, name, stripe_customer_id, monthly_price_cents').eq('id', req.profile.group_id).single()
+
+      // Prefer the group's custom negotiated price; fall back to a fixed env price
+      // only if one is configured. If neither, tell them to contact us.
+      let line_items
+      if (group.monthly_price_cents && group.monthly_price_cents > 0) {
+        line_items = [{
+          quantity: 1,
+          price_data: {
+            currency: 'cad',
+            unit_amount: group.monthly_price_cents,
+            recurring: { interval: 'month' },
+            product_data: { name: `MarketSync Dealer Group — ${group.name}` },
+          },
+        }]
+      } else if (process.env.STRIPE_GROUP_PRICE_ID) {
+        line_items = [{ price: process.env.STRIPE_GROUP_PRICE_ID, quantity: 1 }]
+      } else {
+        return res.status(503).json({ error: "Your group's price hasn't been set yet — contact MarketSync to finalize it." })
+      }
+
       const session = await stripe.checkout.sessions.create({
         mode: 'subscription',
-        line_items: [{ price, quantity: 1 }],
+        line_items,
         customer: group?.stripe_customer_id || undefined,
         client_reference_id: group.id,
         metadata: { group_id: group.id },

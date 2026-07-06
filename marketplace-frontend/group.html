@@ -107,10 +107,22 @@
           ${tile('Posted', t.posted || 0)}
           ${tile('Sold', t.sold || 0, 'text-emerald-600 dark:text-emerald-400')}
         </div>
+        ${(() => {
+          const cents = data.group?.monthly_price_cents;
+          const priceStr = cents ? `$${(cents / 100).toLocaleString(undefined, { minimumFractionDigits: (cents % 100 ? 2 : 0) })}/mo` : null;
+          const ownerSetter = data.is_owner ? `
+            <div class="mt-3 pt-3 border-t border-slate-200 dark:border-slate-800 flex items-center gap-2">
+              <span class="text-[10px] uppercase font-bold tracking-wider text-amber-600 dark:text-amber-400">Owner</span>
+              <span class="text-xs text-slate-500">Group monthly price $</span>
+              <input id="price-input" type="number" min="0" step="1" value="${cents ? (cents / 100) : ''}" placeholder="0" class="w-24 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded px-2 py-1 text-xs">
+              <button id="price-save" class="text-xs font-bold px-3 py-1 rounded bg-slate-800 dark:bg-slate-700 text-white">Set price</button>
+              <span id="price-msg" class="text-xs"></span>
+            </div>` : '';
+          return `
         <div class="mb-8 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl px-5 py-4">
           <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div>
-              <div class="text-sm font-bold text-slate-900 dark:text-white">Billing: ${data.group?.billing_mode === 'group' ? 'Central (group pays)' : 'Per-dealer'}</div>
+              <div class="text-sm font-bold text-slate-900 dark:text-white">Billing: ${data.group?.billing_mode === 'group' ? 'Central (group pays)' : 'Per-dealer'}${priceStr ? ` · ${priceStr}` : ''}</div>
               <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">${data.group?.billing_mode === 'group'
                 ? 'One subscription covers every store' + (data.group?.billing_status ? ` · ${esc(data.group.billing_status)}` : '') + '. Switch back to per-dealer anytime — a store can then bill on its own.'
                 : 'Each store keeps its own subscription, so one can leave without affecting the rest. Switch to central to cover them all under one bill.'}</p>
@@ -121,8 +133,10 @@
                 : `<button id="bill-central" class="text-xs font-bold px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white transition">Bill centrally</button>`}
             </div>
           </div>
+          ${ownerSetter}
           <p id="bill-msg" class="hidden text-xs mt-2"></p>
-        </div>
+        </div>`;
+        })()}
         <h2 class="text-sm font-bold uppercase tracking-wider text-slate-400 mb-3">Stores</h2>
         <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">${storeCards}</div>`;
 
@@ -131,6 +145,19 @@
         navigator.clipboard?.writeText(code).then(() => { copyBtn.textContent = 'Copied!'; setTimeout(() => copyBtn.textContent = 'Copy', 1500); }).catch(() => {});
       });
       document.querySelectorAll('.store-card').forEach(c => c.addEventListener('click', () => openStore(c.dataset.store)));
+
+      const priceSave = document.getElementById('price-save');
+      if (priceSave) priceSave.addEventListener('click', async () => {
+        const val = document.getElementById('price-input').value;
+        const pm = document.getElementById('price-msg');
+        priceSave.disabled = true;
+        try {
+          const r = await api(`/groups/${data.group.id}/price`, { method: 'PATCH', body: JSON.stringify({ monthly_price: Number(val) }) });
+          if (!r.ok) throw new Error((await r.json()).error || 'Failed');
+          pm.textContent = 'Saved'; pm.className = 'text-xs text-emerald-600 dark:text-emerald-400';
+          setTimeout(load, 700);
+        } catch (e) { pm.textContent = e.message; pm.className = 'text-xs text-red-500'; priceSave.disabled = false; }
+      });
 
       const billMsg = document.getElementById('bill-msg');
       document.getElementById('bill-central')?.addEventListener('click', async () => {
