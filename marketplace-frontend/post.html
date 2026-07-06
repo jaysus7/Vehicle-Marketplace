@@ -16,14 +16,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>MarketSync Blog</title>
   <meta name="description" content="MarketSync blog post.">
-  <script>
-    // Redirect to the canonical clean URL so humans and any crawlers that do
-    // execute JS land on the SSR page with full metadata.
-    (function(){
-      var slug = new URLSearchParams(location.search).get('slug');
-      if (slug) { location.replace('https://marketsync.link/blog/' + encodeURIComponent(slug)); }
-    })();
-  </script>
   <script>tailwind = { config: { darkMode: 'media' } }</script>
   <script src="https://cdn.tailwindcss.com"></script>
   <meta name="color-scheme" content="light dark">

@@ -87,7 +87,7 @@
           ? `<img src="${esc(p.cover_image_url)}" alt="${esc(p.title)}" loading="lazy" class="w-full h-44 object-cover">`
           : `<div class="w-full h-44 bg-gradient-to-br from-indigo-500/20 to-slate-500/10 flex items-center justify-center text-4xl">📝</div>`;
         const tags = (p.tags || []).slice(0, 2).map(t => `<span class="text-[10px] uppercase font-bold tracking-wider text-indigo-600 dark:text-indigo-400">${esc(t)}</span>`).join(' · ');
-        return `<a href="/blog/${encodeURIComponent(p.slug)}" class="group block bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden hover:shadow-lg hover:-translate-y-0.5 transition">
+        return `<a href="post.html?slug=${encodeURIComponent(p.slug)}" class="group block bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden hover:shadow-lg hover:-translate-y-0.5 transition">
           ${cover}
           <div class="p-5">
             <div class="flex items-center gap-2 mb-2">${tags}${tags ? '<span class="text-slate-300 dark:text-slate-700">·</span>' : ''}<span class="text-[11px] text-slate-400">${fmtDate(p.published_at)}</span></div>

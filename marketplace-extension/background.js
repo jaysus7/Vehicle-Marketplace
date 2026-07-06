@@ -230,6 +230,15 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           return
         }
         await setState({ status: 'done', count: body.upserted ?? msg.vehicles.length })
+        // Register this dealer site for scheduled background auto-capture. Cloudflare feeds
+        // can't sync server-side, so once we've captured one successfully we refresh it from
+        // the browser on a timer — no more manual pulling. Uses the clean page URL (strip any
+        // Cloudflare challenge token from the query string).
+        try {
+          const u = new URL(sender.tab?.url || msg.source_url || '')
+          u.search = ''; u.hash = ''
+          registerAutoCaptureSite(msg.feed_id, u.toString())
+        } catch {}
         sendResponse({ success: true, ...body })
         // Auto-close the tab we opened (only if it's not the user's active tab)
         if (sender.tab?.id) {
@@ -380,21 +389,96 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
 })
 
+// ── Inventory auto-capture (Cloudflare dealers) ───────────────────────────────
+// Cloudflare-blocked dealer feeds can't be synced server-side, so we re-capture them
+// from the user's own browser on a schedule — no clicks needed. A site is registered
+// automatically the first time it's captured (a manual pull), and only if the one-time
+// host-permission grant is in place. Runs shortly after Chrome starts (a "morning refresh")
+// and every 6 hours while Chrome stays open. Caveat: like all extensions, it only runs
+// while Chrome is running on that computer.
+const INV_CAPTURE_ALARM = 'invAutoCapture'
+const INV_CAPTURE_MAX_PER_RUN = 4            // cap concurrent dealer refreshes
+const INV_CAPTURE_STAGGER_MS = 90 * 1000     // 90s between sites — each capture is heavy
+
+async function registerAutoCaptureSite(feedId, url) {
+  if (!feedId || !url) return
+  try {
+    const origin = new URL(url).origin + '/*'
+    // Only register sites we actually hold host permission for (needed to inject in the bg).
+    if (!(await chrome.permissions.contains({ origins: [origin] }))) return
+    const { autoCaptureSites = {} } = await chrome.storage.local.get(['autoCaptureSites'])
+    autoCaptureSites[feedId] = { feedId, url, registeredAt: Date.now() }
+    await chrome.storage.local.set({ autoCaptureSites })
+    console.log(`[MarketSync] Registered ${url} for nightly auto-capture (feed ${feedId})`)
+  } catch {}
+}
+
+// Open a dealer page in a background tab and inject the extractor (same as a manual pull,
+// but triggered by the scheduler). The existing DEALER_INVENTORY_CAPTURED handler uploads
+// the result and auto-closes the tab.
+function openAndInjectCapture(url, feedId) {
+  chrome.tabs.create({ url, active: false }, (tab) => {
+    if (!tab) return
+    const onUpdated = (tabId, info) => {
+      if (tabId !== tab.id || info.status !== 'complete') return
+      chrome.tabs.onUpdated.removeListener(onUpdated)
+      chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        func: (fid) => { window.__marketsyncFeedId = fid },
+        args: [feedId || null]
+      }).then(() => chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        files: ['dealer-extract.js']
+      })).catch(err => console.error('[MarketSync] auto-capture injection failed:', err))
+    }
+    chrome.tabs.onUpdated.addListener(onUpdated)
+    // Safety net: stop listening + close the tab if the page never finishes / never uploads.
+    setTimeout(() => {
+      chrome.tabs.onUpdated.removeListener(onUpdated)
+      chrome.tabs.get(tab.id, (t) => { if (t && !t.active) chrome.tabs.remove(tab.id).catch(() => {}) })
+    }, 4 * 60 * 1000)
+  })
+}
+
+async function runInventoryAutoCapture() {
+  const { token, autoCaptureSites = {} } = await chrome.storage.local.get(['token', 'autoCaptureSites'])
+  if (!token) return
+  const sites = Object.values(autoCaptureSites)
+  if (!sites.length) return
+  // Keep only sites we still hold permission for (user may have revoked access).
+  const usable = []
+  for (const s of sites) {
+    try {
+      if (await chrome.permissions.contains({ origins: [new URL(s.url).origin + '/*'] })) usable.push(s)
+    } catch {}
+  }
+  const batch = usable.slice(0, INV_CAPTURE_MAX_PER_RUN)
+  if (!batch.length) return
+  console.log(`[MarketSync] Auto-capture: refreshing ${batch.length} dealer feed(s)`)
+  batch.forEach((s, i) => setTimeout(() => openAndInjectCapture(s.url, s.feedId), i * INV_CAPTURE_STAGGER_MS))
+}
+
 // Poll on install, on browser startup, and every 5 minutes.
 // Sold scan runs less often (4 hours) since it opens visible-ish background tabs.
-chrome.runtime.onInstalled.addListener(() => {
+function armAlarms() {
   chrome.alarms.create(FB_SYNC_ALARM, { periodInMinutes: 5 })
   chrome.alarms.create(SOLD_SCAN_ALARM, { periodInMinutes: 240 })
+  chrome.alarms.create(INV_CAPTURE_ALARM, { periodInMinutes: 360 })  // every 6h while open
+}
+chrome.runtime.onInstalled.addListener(() => {
+  armAlarms()
   pollFbSync()
   setTimeout(runSoldScan, 10 * 60 * 1000) // wait 10 min after install/boot before first scan
+  setTimeout(runInventoryAutoCapture, 3 * 60 * 1000) // morning/boot inventory refresh
 })
 chrome.runtime.onStartup.addListener(() => {
-  chrome.alarms.create(FB_SYNC_ALARM, { periodInMinutes: 5 })
-  chrome.alarms.create(SOLD_SCAN_ALARM, { periodInMinutes: 240 })
+  armAlarms()
   pollFbSync()
   setTimeout(runSoldScan, 10 * 60 * 1000)
+  setTimeout(runInventoryAutoCapture, 3 * 60 * 1000)
 })
 chrome.alarms.onAlarm.addListener((alarm) => {
   if (alarm.name === FB_SYNC_ALARM) pollFbSync()
   if (alarm.name === SOLD_SCAN_ALARM) runSoldScan()
+  if (alarm.name === INV_CAPTURE_ALARM) runInventoryAutoCapture()
 })
