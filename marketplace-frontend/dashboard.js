@@ -3500,7 +3500,7 @@ async function loadAIBoostSection() {
     if (!res.ok) return;
     const cfg = await res.json();
     __aiBoostActive = !!cfg.ai_boost_active;
-    __vinStickerActive = cfg.vin_sticker_active !== false;   // core — default on
+    __vinStickerActive = !!cfg.vin_sticker_active;           // = Inventory Intelligence tier
     __aiDocsActive = !!cfg.ai_docs_active;                   // generated docs = AI Boost
     __invIntelActive = !!cfg.inv_intel_active;
     __aiVisionActive = !!cfg.ai_vision_active;               // = AI Boost
@@ -4644,24 +4644,9 @@ function renderVinPageResults({ decoded, recalls }) {
   document.getElementById('vin-page-results').classList.remove('hidden');
 }
 
+// The VIN decoder is part of the Inventory Intelligence tier — send the user there.
 async function startVinStickerTrial() {
-  const token = localStorage.getItem('token');
-  const btn = document.getElementById('vin-sticker-page-upgrade-btn');
-  btn.disabled = true;
-  btn.textContent = 'Opening checkout…';
-  try {
-    const res = await fetch(`${API}/billing/subscribe-vin-sticker`, {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'Failed');
-    window.location.href = data.url;
-  } catch (e) {
-    alert(e.message);
-    btn.disabled = false;
-    btn.textContent = 'Start 3-Day Free Trial';
-  }
+  switchPage('inv-intel');
 }
 
 // Handle return from Stripe Checkout for VIN Sticker

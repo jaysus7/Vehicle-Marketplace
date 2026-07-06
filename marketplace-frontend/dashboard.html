@@ -452,17 +452,7 @@
             <span class="text-[9px] font-black uppercase tracking-wider bg-slate-200 dark:bg-slate-700 text-slate-500 dark:text-slate-400 px-1.5 py-0.5 rounded-full leading-none">Paid</span>
           </span>
         </button>
-        <!-- VIN Sticker & Brochure: visible to ALL roles (reps included) — hidden only until role resolved -->
-        <button type="button" id="nav-vin-sticker" title="VIN Sticker & Brochure" class="hidden flex-1 md:flex-none md:w-full flex items-center justify-center md:justify-start md:justify-between gap-2 px-2 md:px-3 py-2.5 md:py-2 rounded font-medium transition">
-          <span id="nav-vin-sticker-label" class="flex items-center gap-2.5">
-            <svg class="w-5 h-5 md:w-4 md:h-4 flex-shrink-0 opacity-60" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z"/></svg>
-            <span class="hidden md:inline">VIN &amp; Brochure</span>
-          </span>
-          <span class="hidden md:flex items-center gap-1 flex-shrink-0">
-            <span id="nav-vin-sticker-pill" class="hidden text-[9px] font-black uppercase tracking-wider bg-emerald-600 text-white px-1.5 py-0.5 rounded-full leading-none">Trial</span>
-            <span class="text-[9px] font-black uppercase tracking-wider bg-slate-200 dark:bg-slate-700 text-slate-500 dark:text-slate-400 px-1.5 py-0.5 rounded-full leading-none">Paid</span>
-          </span>
-        </button>
+        <!-- VIN Decoder now lives inside the Inventory Intelligence page (paid tier) -->
         <!-- Inventory Intelligence: admin-only, separate add-on -->
         <button type="button" id="nav-inv-intel" title="Inventory Intelligence" data-admin-nav class="hidden flex-1 md:flex-none md:w-full flex items-center justify-center md:justify-start md:justify-between gap-2 px-2 md:px-3 py-2.5 md:py-2 rounded font-medium transition">
           <span id="nav-inv-intel-label" class="flex items-center gap-2.5">
@@ -474,16 +464,7 @@
             <span class="text-[9px] font-black uppercase tracking-wider bg-slate-200 dark:bg-slate-700 text-slate-500 dark:text-slate-400 px-1.5 py-0.5 rounded-full leading-none">Paid</span>
           </span>
         </button>
-        <button type="button" id="nav-ai-vision" title="AI Vision" data-admin-nav class="hidden flex-1 md:flex-none md:w-full flex items-center justify-center md:justify-start md:justify-between gap-2 px-2 md:px-3 py-2.5 md:py-2 rounded font-medium transition">
-          <span id="nav-ai-vision-label" class="flex items-center gap-2.5">
-            <svg class="w-5 h-5 md:w-4 md:h-4 flex-shrink-0 opacity-60" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z"/><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
-            <span class="hidden md:inline">AI Vision</span>
-          </span>
-          <span class="hidden md:flex items-center gap-1 flex-shrink-0">
-            <span id="nav-ai-vision-pill" class="hidden text-[9px] font-black uppercase tracking-wider bg-amber-500 text-white px-1.5 py-0.5 rounded-full leading-none">Trial</span>
-            <span class="text-[9px] font-black uppercase tracking-wider bg-slate-200 dark:bg-slate-700 text-slate-500 dark:text-slate-400 px-1.5 py-0.5 rounded-full leading-none">Paid</span>
-          </span>
-        </button>
+        <!-- AI Vision now lives inside the AI Boost page -->
         <button type="button" data-page="profile" title="Settings" class="nav-item flex-1 md:flex-none md:w-full flex items-center justify-center md:justify-start gap-2.5 px-2 md:px-3 py-2.5 md:py-2 rounded font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition md:mt-auto">
           <svg class="w-5 h-5 md:w-4 md:h-4 flex-shrink-0 opacity-60" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path stroke-linecap="round" stroke-linejoin="round" d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
           <span class="hidden md:inline">Profile &amp; Settings</span>
@@ -1080,6 +1061,18 @@
         <!-- ── Active content ─────────────────────────────────────────────── -->
         <div id="inv-intel-active-content" class="hidden space-y-5">
 
+          <!-- VIN Decoder & Brochures entry point (part of the Inventory Intelligence tier) -->
+          <button type="button" onclick="switchPage('vin-sticker')" class="w-full text-left bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-5 flex items-center gap-4 hover:border-violet-400 dark:hover:border-violet-600 transition">
+            <div class="flex-shrink-0 w-11 h-11 rounded-xl bg-violet-100 dark:bg-violet-900/40 flex items-center justify-center">
+              <svg class="w-5 h-5 text-violet-600 dark:text-violet-400" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z"/></svg>
+            </div>
+            <div class="min-w-0 flex-1">
+              <div class="text-sm font-bold text-slate-900 dark:text-white">VIN Decoder, Window Stickers &amp; Brochures</div>
+              <div class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Decode any VIN, pull factory window stickers, and print branded stickers &amp; brochures.</div>
+            </div>
+            <svg class="w-5 h-5 text-slate-400 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
+          </button>
+
           <!-- What's Included accordion -->
           <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden">
             <button type="button" onclick="this.closest('.rounded-xl').classList.toggle('ai-accordion-open')" class="w-full px-5 py-3.5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between gap-2 text-left hover:bg-slate-50 dark:hover:bg-slate-800/40 transition">
@@ -1532,8 +1525,8 @@
         <div id="vin-sticker-page-upsell" class="hidden">
           <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden">
             <div class="px-6 py-5 border-b border-slate-200 dark:border-slate-800">
-              <h3 class="text-base font-bold text-slate-900 dark:text-white">Everything in VIN Sticker &amp; Brochure — $99.97/month</h3>
-              <p class="text-sm text-slate-500 dark:text-slate-400 mt-1">Start with a free 3-day trial. No credit card required.</p>
+              <h3 class="text-base font-bold text-slate-900 dark:text-white">The VIN decoder is part of Inventory Intelligence — $149.97/month</h3>
+              <p class="text-sm text-slate-500 dark:text-slate-400 mt-1">Decode VINs, pull factory window stickers, and print branded stickers &amp; brochures (branded/AI versions need AI Boost).</p>
             </div>
             <div class="px-6 py-5 grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-2.5">
               <div class="flex items-center gap-2.5 text-sm text-slate-700 dark:text-slate-300"><svg class="w-4 h-4 text-emerald-500 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5"/></svg>VIN decode via NHTSA — year, make, model, trim, engine</div>
@@ -1546,8 +1539,8 @@
               <div class="flex items-center gap-2.5 text-sm text-slate-700 dark:text-slate-300"><svg class="w-4 h-4 text-emerald-500 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5"/></svg>One-click apply decoded data back to inventory record</div>
             </div>
             <div class="px-6 py-5 border-t border-slate-200 dark:border-slate-800">
-              <button id="vin-sticker-page-upgrade-btn" class="bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-6 py-3 rounded-lg transition text-sm">Start 3-Day Free Trial</button>
-              <span class="ml-4 text-xs text-slate-400">No credit card required · $99.97/month after trial</span>
+              <button id="vin-sticker-page-upgrade-btn" class="bg-violet-600 hover:bg-violet-500 text-white font-bold px-6 py-3 rounded-lg transition text-sm">Get Inventory Intelligence →</button>
+              <span class="ml-4 text-xs text-slate-400">Included with Inventory Intelligence · $149.97/month</span>
             </div>
           </div>
         </div>
@@ -1627,6 +1620,18 @@
 
         <!-- ── Active content — feature detail, settings, stats, log ─────── -->
         <div id="ai-boost-active-content" class="space-y-5">
+
+          <!-- AI Vision entry point (AI Vision lives under AI Boost) -->
+          <button type="button" onclick="switchPage('ai-vision')" class="w-full text-left bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-5 flex items-center gap-4 hover:border-violet-400 dark:hover:border-violet-600 transition">
+            <div class="flex-shrink-0 w-11 h-11 rounded-xl bg-violet-100 dark:bg-violet-900/40 flex items-center justify-center">
+              <svg class="w-5 h-5 text-violet-600 dark:text-violet-400" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z"/><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+            </div>
+            <div class="min-w-0 flex-1">
+              <div class="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-1.5">AI Vision — Photo Scoring <svg viewBox="0 0 24 24" width="14" height="14" class="inline-block flex-shrink-0" aria-hidden="true"><title>AI Boost feature — included in your plan</title><path d="M12 2.5l2.4 6.6 6.6 2.4-6.6 2.4L12 20.5l-2.4-6.6L3 11.5l6.6-2.4z" fill="#c4b5fd" fill-opacity="0.5" stroke="#6d28d9" stroke-width="1.4" stroke-linejoin="round"/></svg></div>
+              <div class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Score every listing's photos 0–100 and fix the worst first — included with AI Boost.</div>
+            </div>
+            <svg class="w-5 h-5 text-slate-400 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
+          </button>
 
         <!-- What's included (subscribers see full detail) -->
         <div>
@@ -2079,7 +2084,7 @@
     </div>
   </div>
 
-  <script src="dashboard.js?v=20260706k"></script>
+  <script src="dashboard.js?v=20260706l"></script>
   <script src="tour.js"></script>
   <script src="table-sort.js?v=20260706a"></script>
 </body>

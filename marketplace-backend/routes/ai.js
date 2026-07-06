@@ -49,16 +49,17 @@ export function registerAI(app) {
     // Entitlement model:
     //  • AI Boost is the master switch for ALL AI (listing copy, price reports,
     //    AI Vision, generated/branded sticker & brochure, AI lot narrative).
-    //  • VIN decode + factory OEM stickers/brochures are core (always available).
-    //  • Inventory Intelligence is its own analytics tier; its AI narrative needs Boost too.
+    //  • Inventory Intelligence includes the VIN decoder + factory OEM docs.
+    //  • The AI lot narrative inside Inv Intel needs AI Boost too.
     const aiBoost = isOwner || !!data.ai_boost_active
+    const invIntel = isOwner || !!data.inv_intel_active
     res.json({
       ...data,
       ai_boost_active: aiBoost,
-      vin_sticker_active: true,          // VIN decode + OEM docs are core now
-      ai_docs_active: aiBoost,           // generated/branded sticker & brochure
+      inv_intel_active: invIntel,
+      vin_sticker_active: invIntel,      // VIN decoder is part of Inventory Intelligence
+      ai_docs_active: aiBoost,           // generated/branded sticker & AI brochure
       ai_vision_active: aiBoost,         // AI Vision folded into AI Boost
-      inv_intel_active: isOwner ? true : !!data.inv_intel_active,
     })
   })
 

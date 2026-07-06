@@ -20,12 +20,17 @@ function requireDealerAdmin(req, res, next) {
 
 const OWNER_EMAIL = (process.env.OWNER_EMAIL || 'massiejay@gmail.com').toLowerCase()
 
-// VIN decode + OEM (factory) window stickers/brochures are now part of the core
-// platform. Only the *generated* MarketSync-branded sticker and brochure (which use
-// AI copy) require the AI Boost add-on. This gate is the AI-Boost check.
+// Entitlements:
+//  • The VIN decoder + factory (OEM) window stickers/brochures are part of the
+//    Inventory Intelligence tier.
+//  • The generated/branded MarketSync sticker and AI-written brochure require AI Boost.
 function hasAiBoost(dealer, email) {
   if ((email || '').toLowerCase() === OWNER_EMAIL) return true
   return !!dealer?.ai_boost_active
+}
+function hasInvIntel(dealer, email) {
+  if ((email || '').toLowerCase() === OWNER_EMAIL) return true
+  return !!dealer?.inv_intel_active
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -38,7 +43,7 @@ function pick(obj, ...keys) {
 async function loadDealershipData(dealershipId) {
   const { data, error } = await supabaseAdmin
     .from('dealerships')
-    .select('id, name, website_url, branding, vin_sticker_active, ai_boost_active')
+    .select('id, name, website_url, branding, vin_sticker_active, ai_boost_active, inv_intel_active')
     .eq('id', dealershipId)
     .single()
   if (error) console.error('[loadDealershipData]', error.message)
@@ -846,6 +851,12 @@ export function registerRoutes(app) {
     const vin = (req.params.vin || '').trim().toUpperCase()
     if (!vin || vin.length < 11) return res.status(400).json({ error: 'Invalid VIN' })
 
+    // VIN decoder is part of the Inventory Intelligence tier.
+    const dealer = await loadDealershipData(req.dealershipId)
+    if (!hasInvIntel(dealer, req.user.email)) {
+      return res.status(403).json({ error: 'The VIN decoder is part of Inventory Intelligence' })
+    }
+
     try {
       const [decodeRes, recallRes] = await Promise.allSettled([
         fetch(`${NHTSA_DECODE}/${encodeURIComponent(vin)}?format=json`).then(r => r.json()),
@@ -1015,7 +1026,11 @@ export function registerRoutes(app) {
     if (!req.dealershipId) return res.status(400).json({ error: 'No dealership' })
 
     const dealer = await loadDealershipData(req.dealershipId)
-    // OEM factory stickers are core; the generated MarketSync sticker needs AI Boost.
+    // VIN decoder + factory OEM stickers are part of Inventory Intelligence.
+    if (!hasInvIntel(dealer, req.user.email)) {
+      return res.status(403).json({ error: 'The VIN decoder & window stickers are part of Inventory Intelligence' })
+    }
+    // The generated (branded) MarketSync sticker additionally needs AI Boost.
     if (req.query.source === 'generate' && !hasAiBoost(dealer, req.user.email)) {
       return res.status(403).json({ error: 'Generating a branded sticker requires AI Boost' })
     }
