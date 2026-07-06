@@ -1,5 +1,42 @@
 const API = 'https://vehicle-marketplace-s0e4.onrender.com';
 
+// GET a JSON endpoint with a cold-start-friendly retry. The backend runs on a
+// tier that spins down when idle, so the first request after a lull can hang or
+// return a 502/503/504 for ~30–60s while it wakes. We retry those (and network
+// errors) a few times with backoff, and surface the real status/message on final
+// failure instead of a generic "could not load".
+async function apiGetJson(path, { retries = 3, timeoutMs = 30000 } = {}) {
+  let lastErr;
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+    try {
+      const r = await fetch(`${API}${path}`, {
+        headers: { 'Authorization': `Bearer ${token || localStorage.getItem('token') || ''}` },
+        signal: ctrl.signal,
+      });
+      clearTimeout(timer);
+      if (r.ok) return await r.json();
+      // Transient (waking up / gateway) → retry; otherwise fail with the body.
+      if ([429, 500, 502, 503, 504].includes(r.status) && attempt < retries) {
+        lastErr = new Error(`HTTP ${r.status}`);
+      } else {
+        let msg = `HTTP ${r.status}`;
+        try { const b = await r.json(); if (b?.error) msg = b.error; } catch {}
+        throw new Error(msg);
+      }
+    } catch (e) {
+      clearTimeout(timer);
+      if (e.name === 'AbortError') lastErr = new Error('Request timed out');
+      else lastErr = e;
+      if (attempt >= retries) throw lastErr;
+    }
+    // Backoff: 1s, 2s, 4s — enough to ride out a cold start.
+    await new Promise(res => setTimeout(res, 1000 * Math.pow(2, attempt)));
+  }
+  throw lastErr || new Error('Request failed');
+}
+
 function showToast(message, type = 'info', duration = 4000) {
   const el = document.createElement('div');
   const colors = { success: 'bg-emerald-600', error: 'bg-red-600', info: 'bg-indigo-600' };
@@ -353,16 +390,15 @@ function switchPage(pageId) {
 async function loadLeadsPage() {
   const root = document.getElementById('leads-root');
   if (!root) return;
+  root.innerHTML = `<div class="py-16 text-center text-sm text-slate-400 italic">Loading leads…</div>`;
   let data, inv = [];
   try {
-    const [lr, ir] = await Promise.all([
-      fetch(`${API}/leads`, { headers: { 'Authorization': `Bearer ${token}` } }),
-      fetch(`${API}/inventory/all`, { headers: { 'Authorization': `Bearer ${token}` } }).catch(() => null),
-    ]);
-    if (!lr.ok) throw new Error('Could not load leads');
-    data = await lr.json();
-    if (ir && ir.ok) inv = (await ir.json()).filter(v => String(v.status || 'available').toLowerCase() === 'available');
-  } catch (e) { root.innerHTML = `<div class="py-16 text-center text-sm text-slate-500">${esc(e.message)}</div>`; return; }
+    data = await apiGetJson('/leads');
+    try { inv = (await apiGetJson('/inventory/all', { retries: 1 })).filter(v => String(v.status || 'available').toLowerCase() === 'available'); } catch {}
+  } catch (e) {
+    root.innerHTML = `<div class="py-16 text-center text-sm text-slate-500">Couldn't load leads: ${esc(e.message)}<br><button onclick="loadLeadsPage()" class="mt-3 text-indigo-500 hover:text-indigo-400 font-bold">Retry</button></div>`;
+    return;
+  }
 
   const vehOpts = inv.slice(0, 500).map(v => `<option value="${v.id}">${esc([v.year, v.make, v.model, v.trim].filter(Boolean).join(' '))}${v.stocknumber ? ' · #' + esc(v.stocknumber) : ''}</option>`).join('');
   const crmSet = !!data.crm_adf_email;
@@ -683,12 +719,15 @@ function plRender() {
 async function loadPipelinePage() {
   const root = document.getElementById('pipeline-root');
   if (!root) return;
+  root.innerHTML = `<div class="py-16 text-center text-sm text-slate-400 italic">Loading pipeline…</div>`;
   try {
-    const r = await fetch(`${API}/pipeline`, { headers: { 'Authorization': `Bearer ${token}` } });
-    if (!r.ok) throw new Error('Could not load pipeline');
-    PL_DATA = await r.json();
+    PL_DATA = await apiGetJson('/pipeline');
     plRender();
-  } catch (e) { root.innerHTML = `<div class="py-16 text-center text-sm text-slate-500">${esc(e.message)}</div>`; }
+  } catch (e) {
+    root.innerHTML = `<div class="py-16 text-center text-sm text-slate-500">Couldn't load the pipeline: ${esc(e.message)}<br><button onclick="loadPipelinePage()" class="mt-3 text-indigo-500 hover:text-indigo-400 font-bold">Retry</button></div>`;
+  }
+  // Leads live on the same page now — load them alongside the board.
+  if (document.getElementById('leads-root')) loadLeadsPage();
 }
 
 // Idempotent restore: makes sure leaderboard / team-insights / sales-team panels live
