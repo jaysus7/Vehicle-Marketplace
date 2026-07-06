@@ -2316,32 +2316,9 @@ function renderCatalog() {
           ${v.stocknumber ? `<span class="font-mono text-slate-400 dark:text-slate-500">#${v.stocknumber}</span>` : ''}
           <span class="text-slate-500">${mileage}</span>
         </div>
-        ${__vinStickerActive ? `
-        <div class="flex gap-1 mt-1">
-          <button class="vin-decode-btn flex-1 text-xs bg-slate-800/60 hover:bg-slate-700/80 border border-slate-600 text-slate-300 rounded py-1 transition" data-id="${v.id}" data-vin="${v.vin || ''}">VIN Decode</button>
-          <button class="window-sticker-btn flex-1 text-xs bg-slate-800/60 hover:bg-slate-700/80 border border-slate-600 text-slate-300 rounded py-1 transition" data-id="${v.id}" title="Real factory sticker if available, otherwise generated">Sticker</button>
-          <button class="sticker-gen-btn flex-1 text-xs bg-slate-800/60 hover:bg-slate-700/80 border border-slate-600 text-slate-300 rounded py-1 transition" data-id="${v.id}" title="Force-generate a MarketSync sticker (use when the factory one isn't available)">Generate</button>
-          <button class="brochure-btn flex-1 text-xs bg-slate-800/60 hover:bg-slate-700/80 border border-slate-600 text-slate-300 rounded py-1 transition" data-id="${v.id}">Brochure</button>
-        </div>` : ''}
       </${tag}>
     `;
   }).join('');
-
-  // Attach VIN Sticker button listeners after render
-  if (__vinStickerActive) {
-    list.querySelectorAll('.vin-decode-btn').forEach(btn => {
-      btn.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); openVinDecode(btn.dataset.id, btn.dataset.vin); });
-    });
-    list.querySelectorAll('.window-sticker-btn').forEach(btn => {
-      btn.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); generatePdf(btn.dataset.id, 'window-sticker', btn); });
-    });
-    list.querySelectorAll('.sticker-gen-btn').forEach(btn => {
-      btn.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); generatePdf(btn.dataset.id, 'window-sticker', btn, { forceGenerate: true }); });
-    });
-    list.querySelectorAll('.brochure-btn').forEach(btn => {
-      btn.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); generatePdf(btn.dataset.id, 'brochure', btn); });
-    });
-  }
 }
 
 function setupActionListeners() {
@@ -4443,7 +4420,7 @@ async function loadVinStickerInventory() {
             <div class="flex gap-2 flex-shrink-0 items-start pt-0.5">
               ${decodeBtn}
               <button class="vs-sticker-btn text-xs bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-1.5 rounded-lg transition font-bold" data-id="${v.id}">${stickerBtnLabel}</button>
-              <button class="vs-brochure-btn text-xs ${brochureBtnCls} text-white px-3 py-1.5 rounded-lg transition font-bold" data-id="${v.id}">${brochureBtnLabel}</button>
+              <button class="vs-brochure-btn text-xs ${brochureBtnCls} text-white px-3 py-1.5 rounded-lg transition font-bold" data-id="${v.id}" data-label="${label.replace(/"/g, '&quot;')}">${brochureBtnLabel} ▾</button>
             </div>
             </div>
           </div>
@@ -4459,11 +4436,49 @@ async function loadVinStickerInventory() {
       btn.addEventListener('click', () => generatePdf(btn.dataset.id, 'window-sticker', btn));
     });
     list.querySelectorAll('.vs-brochure-btn').forEach(btn => {
-      btn.addEventListener('click', () => generatePdf(btn.dataset.id, 'brochure', btn));
+      btn.addEventListener('click', () => showBrochureChoice(btn));
     });
   } catch {
     loading.textContent = 'Failed to load inventory.';
   }
+}
+
+// Brochure button → small popup letting the user pick the factory (OEM) document
+// or a generated MarketSync dealer brochure. Replaces the old separate
+// Generate + Brochure buttons.
+function showBrochureChoice(btn) {
+  const id = btn.dataset.id;
+  const label = btn.dataset.label || 'this vehicle';
+  document.getElementById('brochure-choice-modal')?.remove();
+  const modal = document.createElement('div');
+  modal.id = 'brochure-choice-modal';
+  modal.className = 'fixed inset-0 z-[60] bg-black/60 flex items-center justify-center p-4';
+  modal.innerHTML = `
+    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl w-full max-w-sm p-6 shadow-2xl">
+      <h3 class="text-base font-bold text-slate-900 dark:text-white mb-1">Brochure</h3>
+      <p class="text-xs text-slate-500 dark:text-slate-400 mb-4 truncate" title="${label}">${label}</p>
+      <div class="space-y-2.5">
+        <button data-choice="oem" class="w-full text-left px-4 py-3 rounded-lg border border-slate-200 dark:border-slate-700 hover:border-emerald-400 dark:hover:border-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/30 transition">
+          <div class="text-sm font-bold text-slate-900 dark:text-white">Get OEM Brochure</div>
+          <div class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Pull the factory window sticker for this VIN, when available.</div>
+        </button>
+        <button data-choice="dealer" class="w-full text-left px-4 py-3 rounded-lg border border-slate-200 dark:border-slate-700 hover:border-indigo-400 dark:hover:border-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-950/30 transition">
+          <div class="text-sm font-bold text-slate-900 dark:text-white">Generate Dealer Brochure</div>
+          <div class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Build a branded 2-page MarketSync brochure.</div>
+        </button>
+      </div>
+      <button data-choice="cancel" class="mt-4 w-full text-xs font-bold text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 py-1.5 transition">Cancel</button>
+    </div>`;
+  const close = () => modal.remove();
+  modal.addEventListener('click', (e) => {
+    if (e.target === modal) return close();
+    const choice = e.target.closest('[data-choice]')?.dataset.choice;
+    if (!choice) return;
+    close();
+    if (choice === 'oem') generatePdf(id, 'window-sticker', btn);
+    else if (choice === 'dealer') generatePdf(id, 'brochure', btn);
+  });
+  document.body.appendChild(modal);
 }
 
 async function runVinPageDecode() {
