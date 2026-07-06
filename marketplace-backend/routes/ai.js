@@ -3,6 +3,7 @@ import { supabaseAdmin, resend, EMAIL_FROM, browserFetch } from '../shared.js'
 import { requireAuth } from '../middleware.js'
 import { scrapeMarketData } from '../scraper.js'
 import { createNotification, createNotifications } from '../notifications.js'
+import { runPhotoVision } from '../sync/photoVision.js'
 
 const OWNER_EMAIL = (process.env.OWNER_EMAIL || 'massiejay@gmail.com').toLowerCase()
 
@@ -28,12 +29,12 @@ export function registerAI(app) {
     if (!req.dealershipId) return res.status(400).json({ error: 'No dealership associated' })
     const { data, error } = await supabaseAdmin
       .from('dealerships')
-      .select('ai_boost_active, ai_tone, ai_required_fields, ai_manager_email, vin_sticker_active, inv_intel_active')
+      .select('ai_boost_active, ai_tone, ai_required_fields, ai_manager_email, vin_sticker_active, inv_intel_active, ai_vision_active')
       .eq('id', req.dealershipId)
       .single()
     if (error) return res.status(500).json({ error: error.message })
     const isOwner = (req.user.email || '').toLowerCase() === OWNER_EMAIL
-    res.json({ ...data, ai_boost_active: isOwner ? true : !!data.ai_boost_active })
+    res.json({ ...data, ai_boost_active: isOwner ? true : !!data.ai_boost_active, ai_vision_active: isOwner ? true : !!data.ai_vision_active })
   })
 
   // PUT /ai/config — update dealership AI config (DEALER_ADMIN only)
@@ -916,6 +917,74 @@ Units 60d+ on lot: ${stale}`
     } catch {
       res.json({ narrative: null })
     }
+  })
+
+  // ── AI Vision — photo quality scoring ($49 add-on) ───────────────────────
+
+  async function visionActive(dealershipId, email) {
+    if ((email || '').toLowerCase() === OWNER_EMAIL) return true
+    const { data } = await supabaseAdmin
+      .from('dealerships').select('ai_vision_active').eq('id', dealershipId).single()
+    return !!data?.ai_vision_active
+  }
+
+  // Kick off a background photo scan of the dealership's inventory.
+  app.post('/ai/vision/scan', requireAuth, async (req, res) => {
+    if (!req.dealershipId) return res.status(400).json({ error: 'No dealership associated' })
+    if (!await visionActive(req.dealershipId, req.user.email)) {
+      return res.status(403).json({ error: 'AI Vision not active' })
+    }
+    const rescan = req.query.rescan === '1' || req.body?.rescan === true
+    // Count what will be scanned so the UI can show progress.
+    let q = supabaseAdmin.from('inventory')
+      .select('id', { count: 'exact', head: true })
+      .eq('dealership_id', req.dealershipId).eq('status', 'available')
+    if (!rescan) q = q.is('photo_checked_at', null)
+    const { count } = await q
+    res.json({ status: 'scanning', total: count || 0 })
+    // Fire-and-forget — results land on the inventory rows.
+    runPhotoVision(req.dealershipId, { rescan }).catch(e => console.warn('[ai-vision] scan failed:', e.message))
+  })
+
+  // Return scored vehicles (worst first) + a summary.
+  app.get('/ai/vision/results', requireAuth, async (req, res) => {
+    if (!req.dealershipId) return res.status(400).json({ error: 'No dealership associated' })
+    if (!await visionActive(req.dealershipId, req.user.email)) {
+      return res.status(403).json({ error: 'AI Vision not active' })
+    }
+    const { data, error } = await supabaseAdmin
+      .from('inventory')
+      .select('id, year, make, model, trim, stocknumber, image_urls, photo_score, photo_flags, photo_checked_at')
+      .eq('dealership_id', req.dealershipId)
+      .eq('status', 'available')
+    if (error) return res.status(500).json({ error: error.message })
+
+    const rows = data || []
+    const scored = rows.filter(r => r.photo_checked_at)
+    const vehicles = scored
+      .map(r => ({
+        id: r.id,
+        label: [r.year, r.make, r.model, r.trim].filter(Boolean).join(' '),
+        stocknumber: r.stocknumber || null,
+        photo_count: Array.isArray(r.image_urls) ? r.image_urls.length : 0,
+        thumb: Array.isArray(r.image_urls) ? r.image_urls[0] : null,
+        score: r.photo_score ?? 0,
+        flags: r.photo_flags || [],
+      }))
+      .sort((a, b) => a.score - b.score)
+
+    const avg = scored.length ? Math.round(scored.reduce((s, r) => s + (r.photo_score || 0), 0) / scored.length) : null
+    res.json({
+      summary: {
+        total: rows.length,
+        scored: scored.length,
+        unscored: rows.length - scored.length,
+        avg_score: avg,
+        needs_attention: vehicles.filter(v => v.score < 50).length,
+        no_photos: vehicles.filter(v => v.photo_count === 0).length,
+      },
+      vehicles,
+    })
   })
 
   // ── Competitor Monitoring ────────────────────────────────────────────────

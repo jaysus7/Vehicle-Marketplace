@@ -197,6 +197,7 @@ async function initializeDashboardEcosystem() {
     loadAIBoostSection();
     setupAIBoostListeners();
     setupInvIntelListeners();
+    setupAiVisionListeners();
 
     const isAdmin = role === 'DEALER_ADMIN' || role === 'OWNER';
     const inDealership = !!profileContext.dealership?.id;
@@ -312,10 +313,11 @@ function switchPage(pageId) {
   document.querySelectorAll('[data-page-content]').forEach(el => {
     el.classList.toggle('hidden', el.dataset.pageContent !== pageId);
   });
-  document.querySelectorAll('#dashboard-nav .nav-item, #nav-ai-boost, #nav-vin-sticker, #nav-inv-intel').forEach(btn => {
+  document.querySelectorAll('#dashboard-nav .nav-item, #nav-ai-boost, #nav-vin-sticker, #nav-inv-intel, #nav-ai-vision').forEach(btn => {
     const active = btn.id === 'nav-inv-intel' ? pageId === 'inv-intel'
                  : btn.id === 'nav-ai-boost'  ? pageId === 'ai-boost'
                  : btn.id === 'nav-vin-sticker'? pageId === 'vin-sticker'
+                 : btn.id === 'nav-ai-vision' ? pageId === 'ai-vision'
                  : btn.dataset.page === pageId;
     btn.classList.toggle('bg-indigo-100', active);
     btn.classList.toggle('dark:bg-indigo-950/50', active);
@@ -329,6 +331,7 @@ function switchPage(pageId) {
   if (pageId === 'vin-sticker') loadVinStickerPage();
   if (pageId === 'profile') loadProfileBranding();
   if (pageId === 'inv-intel' && typeof window._invIntelPageHook === 'function') window._invIntelPageHook();
+  if (pageId === 'ai-vision') loadAiVisionPage();
 }
 
 // Idempotent restore: makes sure leaderboard / team-insights / sales-team panels live
@@ -2485,6 +2488,7 @@ let __aiBoostActive = false;
 let __aiBoostConfigLoaded = false;
 let __vinStickerActive = false;
 let __invIntelActive = false;
+let __aiVisionActive = false;
 
 async function loadAIActivity() {
   const loading = document.getElementById('ai-activity-loading');
@@ -3059,6 +3063,8 @@ async function loadAIBoostSection() {
     __aiBoostActive = !!cfg.ai_boost_active;
     __vinStickerActive = !!cfg.vin_sticker_active;
     __invIntelActive = !!cfg.inv_intel_active;
+    __aiVisionActive = !!cfg.ai_vision_active;
+    renderAiVisionNav();
     __aiBoostConfigLoaded = true;
     // Pre-fetch intel caches so hot/cold tags appear on inventory cards
     // even if the user never visits the Inv. Intel page this session.
@@ -3855,6 +3861,145 @@ function setupInvIntelListeners() {
   document.getElementById('inv-intel-goto-page-btn')?.addEventListener('click', () => switchPage('inv-intel'));
 }
 
+// ── AI Vision ──────────────────────────────────────────────────────────────
+function renderAiVisionNav() {
+  const btn = document.getElementById('nav-ai-vision');
+  if (!btn) return;
+  const isAdmin = profileContext?.role === 'DEALER_ADMIN' || profileContext?.role === 'OWNER';
+  if (!isAdmin) { btn.classList.add('hidden'); return; }
+  btn.classList.remove('hidden');
+  btn.classList.add('text-slate-700', 'dark:text-slate-300', 'hover:bg-slate-100', 'dark:hover:bg-slate-800');
+  document.getElementById('nav-ai-vision-pill')?.classList.toggle('hidden', __aiVisionActive);
+  if (!btn._clickWired) { btn._clickWired = true; btn.addEventListener('click', () => switchPage('ai-vision')); }
+}
+
+async function startAiVisionCheckout() {
+  const btn = document.getElementById('ai-vision-upgrade-btn');
+  if (!btn) return;
+  btn.disabled = true;
+  btn.textContent = 'Opening checkout…';
+  try {
+    const res = await fetch(`${API}/billing/subscribe-ai-vision`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` },
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Failed');
+    window.location.href = data.url;
+  } catch (e) {
+    alert(e.message);
+    btn.disabled = false;
+    btn.textContent = 'Start 3-Day Free Trial';
+  }
+}
+
+function scoreColor(s) {
+  if (s >= 75) return 'text-emerald-600 dark:text-emerald-400';
+  if (s >= 50) return 'text-amber-600 dark:text-amber-400';
+  return 'text-red-600 dark:text-red-400';
+}
+
+function renderAiVisionResults(data) {
+  const stats = document.getElementById('ai-vision-stats');
+  const list = document.getElementById('ai-vision-list');
+  if (!stats || !list) return;
+  const s = data.summary || {};
+  const tile = (label, val, cls = '') => `
+    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg px-4 py-3">
+      <div class="text-[10px] uppercase font-bold tracking-wider text-slate-400">${label}</div>
+      <div class="text-xl font-black mt-0.5 ${cls}">${val}</div>
+    </div>`;
+  stats.innerHTML = [
+    tile('Avg photo score', s.avg_score != null ? `${s.avg_score}` : '—', s.avg_score != null ? scoreColor(s.avg_score) : ''),
+    tile('Need attention', s.needs_attention ?? 0, 'text-red-600 dark:text-red-400'),
+    tile('No photos', s.no_photos ?? 0, (s.no_photos ? 'text-red-600 dark:text-red-400' : '')),
+    tile('Scanned', `${s.scored ?? 0}/${s.total ?? 0}`),
+  ].join('');
+
+  const vehicles = data.vehicles || [];
+  if (!vehicles.length) {
+    list.innerHTML = '<div class="px-5 py-10 text-center text-sm text-slate-400 italic">No scored listings yet — run a scan.</div>';
+    return;
+  }
+  list.innerHTML = vehicles.map(v => {
+    const flags = (v.flags || []).map(f => `<span class="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-red-50 dark:bg-red-950/40 text-red-600 dark:text-red-400">${esc(f)}</span>`).join(' ');
+    const thumb = v.thumb
+      ? `<img src="${esc(v.thumb)}" alt="" class="w-14 h-14 rounded object-cover flex-shrink-0 bg-slate-100 dark:bg-slate-800">`
+      : `<div class="w-14 h-14 rounded bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-400 text-lg flex-shrink-0">🚗</div>`;
+    return `
+      <div class="px-5 py-3.5 flex items-center gap-3.5">
+        ${thumb}
+        <div class="flex-1 min-w-0">
+          <div class="text-sm font-semibold text-slate-900 dark:text-white truncate">${esc(v.label)}${v.stocknumber ? ` <span class="text-slate-400 font-normal">· #${esc(v.stocknumber)}</span>` : ''}</div>
+          <div class="text-xs text-slate-400 mt-0.5">${v.photo_count} photo${v.photo_count === 1 ? '' : 's'}</div>
+          ${flags ? `<div class="flex flex-wrap gap-1 mt-1.5">${flags}</div>` : ''}
+        </div>
+        <div class="text-right flex-shrink-0">
+          <div class="text-2xl font-black ${scoreColor(v.score)}">${v.score}</div>
+          <div class="text-[10px] uppercase font-bold tracking-wider text-slate-400">/100</div>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+async function loadAiVisionResults() {
+  try {
+    const res = await fetch(`${API}/ai/vision/results`, { headers: { 'Authorization': `Bearer ${token}` } });
+    if (!res.ok) return;
+    renderAiVisionResults(await res.json());
+  } catch {}
+}
+
+let __aiVisionScanning = false;
+async function runAiVisionScan() {
+  const btn = document.getElementById('ai-vision-scan-btn');
+  if (!btn || __aiVisionScanning) return;
+  __aiVisionScanning = true;
+  btn.disabled = true;
+  const orig = btn.innerHTML;
+  btn.textContent = 'Scanning…';
+  try {
+    const res = await fetch(`${API}/ai/vision/scan`, {
+      method: 'POST', headers: { 'Authorization': `Bearer ${token}` },
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Scan failed');
+    const total = data.total || 0;
+    if (!total) { showToast('All photos are already scored — nothing new to scan.', 'info'); await loadAiVisionResults(); return; }
+    showToast(`Scanning photos on ${total} listing${total === 1 ? '' : 's'} — this runs in the background.`, 'info', 6000);
+    // Poll results for ~2 min as the background scan fills in scores.
+    for (let i = 0; i < 20; i++) {
+      await new Promise(r => setTimeout(r, 6000));
+      await loadAiVisionResults();
+    }
+  } catch (e) {
+    showToast(e.message, 'error');
+  } finally {
+    __aiVisionScanning = false;
+    btn.disabled = false;
+    btn.innerHTML = orig;
+  }
+}
+
+function loadAiVisionPage() {
+  const upsell = document.getElementById('ai-vision-page-upsell');
+  const active = document.getElementById('ai-vision-active-content');
+  if (!upsell || !active) return;
+  if (__aiVisionActive) {
+    upsell.classList.add('hidden');
+    active.classList.remove('hidden');
+    loadAiVisionResults();
+  } else {
+    upsell.classList.remove('hidden');
+    active.classList.add('hidden');
+  }
+}
+
+function setupAiVisionListeners() {
+  document.getElementById('ai-vision-upgrade-btn')?.addEventListener('click', startAiVisionCheckout);
+  document.getElementById('ai-vision-scan-btn')?.addEventListener('click', runAiVisionScan);
+}
+
 async function loadVinStickerInventory() {
   const loading = document.getElementById('vin-sticker-inventory-loading');
   const empty = document.getElementById('vin-sticker-inventory-empty');
@@ -4145,6 +4290,26 @@ async function startVinStickerTrial() {
       __invIntelActive = true;
       history.replaceState({}, '', window.location.pathname);
       switchPage('inv-intel');
+    }
+  } catch {}
+})();
+
+// Handle return from Stripe Checkout for AI Vision
+(async () => {
+  const params = new URLSearchParams(window.location.search);
+  const sessionId = params.get('ai_vision_session');
+  if (!sessionId) return;
+  const tk = localStorage.getItem('token');
+  if (!tk) return;
+  try {
+    const res = await fetch(`${API}/billing/ai-vision-verify?session_id=${encodeURIComponent(sessionId)}`, {
+      headers: { 'Authorization': `Bearer ${tk}` }
+    });
+    if (res.ok) {
+      __aiVisionActive = true;
+      renderAiVisionNav();
+      history.replaceState({}, '', window.location.pathname);
+      switchPage('ai-vision');
     }
   } catch {}
 })();
