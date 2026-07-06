@@ -49,6 +49,13 @@ const jeepProvider     = stellantisProvider('jeep.com', 'Jeep')
 const ramProvider      = stellantisProvider('ramtrucks.com', 'Ram')
 const fiatProvider     = stellantisProvider('fiatusa.com', 'Fiat')
 
+// GM exposes a public window-sticker PDF by VIN for 2020+ Chevrolet, GMC,
+// Buick and Cadillac via its Consumer Web Services API.
+async function gmProvider(vin) {
+  const buf = await fetchPdf(`https://cws.gm.com/vs-cws/vehshop/v2/vehicle/windowsticker?vin=${encodeURIComponent(vin)}`)
+  return buf ? { buffer: buf, provider: 'GM' } : null
+}
+
 // Map a make to the providers worth trying (avoids pointless cross-brand calls).
 // Only brands with a genuinely public by-VIN endpoint are wired. Everything
 // else (GM, Toyota, Honda, Hyundai/Kia, Nissan, VW/Audi, and the luxury imports)
@@ -63,8 +70,9 @@ function providersFor(make) {
   if (/\bjeep\b/.test(m))                        list.push(jeepProvider)
   if (/\bram\b|ramtrucks/.test(m))               list.push(ramProvider)
   if (/\bfiat\b/.test(m))                        list.push(fiatProvider)
-  // Unknown/blank make → try the two public families before giving up.
-  if (!list.length) list.push(fordProvider, jeepProvider)
+  if (/chevrolet|chevy|\bgmc\b|buick|cadillac|\bgm\b/.test(m)) list.push(gmProvider)
+  // Unknown/blank make → try the public families before giving up.
+  if (!list.length) list.push(fordProvider, jeepProvider, gmProvider)
   return list
 }
 
