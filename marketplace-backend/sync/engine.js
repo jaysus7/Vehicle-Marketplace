@@ -5,6 +5,7 @@ import { PLATFORM_PROBES, fetchConvertusInventory, fetchDealerPageInventory,
          extractEDealerImageGroups, extractCarsFromJsonLd } from './platforms.js'
 import { mapFuel, buildDescription, fetchVehiclePhotos } from '../utils/description.js'
 import { parseGenericFeed } from './genericFeed.js'
+import { autoDecodeInventory } from './vinDecode.js'
 
 // Per-dealership in-flight sync tracking. Prevents the boot sync, the post-add
 // auto-sync, and a manual Sync Now click from all running for the same dealership
@@ -660,6 +661,10 @@ async function _runInventorySyncInner(dealershipId) {
   } catch (e) { console.warn('[sync] sold→FB queue failed (non-fatal):', e.message) }
 
   setSyncProgress(dealershipId, { phase: 'finalizing', pct: 99, message: 'Finalizing…' })
+
+  // Auto-decode any newly-synced VINs via NHTSA (free, incremental). Fire-and-
+  // forget so the sync response returns immediately — enrichment lands shortly after.
+  autoDecodeInventory(dealershipId).catch(e => console.warn('[sync] vin auto-decode failed:', e.message))
 
   const { count: availableCount } = await supabaseAdmin
     .from('inventory')

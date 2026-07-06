@@ -5,6 +5,7 @@ import { detectFeedPlatform, PLATFORM_PROBES } from '../sync/platforms.js'
 import { inventoryHasFeedId, normalizeFeedUrl, matchesFeedType, buildSourceUrl } from '../sync/engine.js'
 import { mapFuel, buildDescription } from '../utils/description.js'
 import { parseGenericFeed } from '../sync/genericFeed.js'
+import { autoDecodeInventory } from '../sync/vinDecode.js'
 
 export function registerRoutes(app) {
   app.post('/feeds/probe', async (req, res) => {
@@ -175,6 +176,11 @@ export function registerRoutes(app) {
         }
       } catch (e) { console.warn('[extension-capture] sold→FB queue failed (non-fatal):', e.message) }
     }
+
+    // Auto-decode newly-captured VINs via NHTSA (free, incremental). Fire-and-
+    // forget so the capture response returns immediately — this is the only path
+    // Cloudflare dealers have, so their inventory gets the same NHTSA enrichment.
+    autoDecodeInventory(req.dealershipId).catch(e => console.warn('[extension-capture] vin auto-decode failed:', e.message))
 
     console.log(`[extension-capture] feed=${feedId} upserted=${upserted} skipped=${skipped} removed=${removed}`)
     res.json({ success: true, upserted, skipped, removed, total: vehicles.length })
