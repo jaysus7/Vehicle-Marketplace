@@ -13,9 +13,11 @@ function stageFor(l) {
   if (l.status === 'sold' || l.pipeline_stage === 'claimed_sale') return 'claimed_sale'
   if (l.pipeline_stage === 'appointment_set') return 'appointment_set'
   if (l.pipeline_stage === 'need_relisting') return 'need_relisting'
-  // Auto: a post that's been up a while with no movement needs relisting.
-  if (l.status === 'posted' && l.posted_at) {
-    const days = (Date.now() - new Date(l.posted_at)) / 86400000
+  // Auto: a post that's been up a while with no movement needs relisting. The
+  // freshness clock resets when a listing is relisted.
+  const fresh = l.relisted_at || l.posted_at
+  if (l.status === 'posted' && fresh) {
+    const days = (Date.now() - new Date(fresh)) / 86400000
     if (days >= STALE_DAYS) return 'need_relisting'
   }
   return 'posted'
@@ -34,7 +36,7 @@ export function registerPipeline(app) {
 
     let q = supabaseAdmin
       .from('listings')
-      .select('id, inventory_id, posted_by, vehicle_label, status, posted_at, sold_at, pipeline_stage, fb_listing_url')
+      .select('id, inventory_id, posted_by, vehicle_label, status, posted_at, sold_at, pipeline_stage, fb_listing_url, relisted_at')
       .in('inventory_id', invIds)
       .in('status', ['posted', 'sold'])
       .order('posted_at', { ascending: false })
@@ -113,6 +115,30 @@ export function registerPipeline(app) {
     const { error } = await supabaseAdmin.from('listings').update(update).eq('id', req.params.id)
     if (error) return res.status(500).json({ error: error.message })
     res.json({ ok: true, stage })
+  })
+
+  // One-click relist: reset the freshness clock and return the vehicle's details
+  // so the rep can repost it to Facebook (the extension fills the form).
+  app.post('/pipeline/:id/relist', requireAuth, async (req, res) => {
+    const { data: listing } = await supabaseAdmin
+      .from('listings')
+      .select('id, inventory_id, posted_by, vehicle_label, inventory:inventory_id(dealership_id)')
+      .eq('id', req.params.id)
+      .single()
+    if (!listing) return res.status(404).json({ error: 'Listing not found' })
+    if (listing.inventory?.dealership_id !== req.dealershipId) {
+      return res.status(403).json({ error: 'Not your dealership' })
+    }
+    if (!isDealerLevel(req.profile) && listing.posted_by !== req.user.id) {
+      return res.status(403).json({ error: 'You can only relist your own listings' })
+    }
+    const { error } = await supabaseAdmin.from('listings').update({
+      relisted_at: new Date().toISOString(),
+      pipeline_stage: null,
+      pipeline_updated_at: new Date().toISOString(),
+    }).eq('id', req.params.id)
+    if (error) return res.status(500).json({ error: error.message })
+    res.json({ ok: true, inventory_id: listing.inventory_id, label: listing.vehicle_label })
   })
 }
 

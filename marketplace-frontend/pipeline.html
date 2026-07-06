@@ -61,6 +61,7 @@
             ${link}
           </div>
           <div class="text-[11px] text-slate-400 mt-1">${c.posted_at ? 'Posted ' + fmtDate(c.posted_at) : ''} ${rep}</div>
+          ${c.stage === 'need_relisting' ? `<button data-relist="${c.id}" class="mt-2 w-full text-xs font-bold bg-amber-500 hover:bg-amber-400 text-white rounded px-2 py-1.5 transition">↻ Relist on Facebook</button>` : ''}
           <select data-move="${c.id}" class="mt-2 w-full text-xs bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded px-2 py-1 text-slate-600 dark:text-slate-300">
             <option value="">Move to…</option>${opts}
           </select>
@@ -92,6 +93,17 @@
         <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-5">${cols}</div>`;
 
       document.getElementById('refresh').addEventListener('click', load);
+      document.querySelectorAll('[data-relist]').forEach(btn => btn.addEventListener('click', async () => {
+        btn.disabled = true; btn.textContent = 'Relisting…';
+        try {
+          const r = await api(`/pipeline/${btn.dataset.relist}/relist`, { method: 'POST' });
+          if (!r.ok) throw new Error((await r.json()).error || 'Failed');
+          // Open Facebook Marketplace so the extension can repost the vehicle.
+          window.open('https://www.facebook.com/marketplace/create/vehicle', '_blank', 'noopener');
+          await load();
+        } catch (e) { alert(e.message); btn.disabled = false; btn.textContent = '↻ Relist on Facebook'; }
+      }));
+
       document.querySelectorAll('[data-move]').forEach(sel => sel.addEventListener('change', async () => {
         const stage = sel.value; if (!stage) return;
         sel.disabled = true;
