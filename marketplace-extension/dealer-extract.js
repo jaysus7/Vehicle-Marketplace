@@ -440,24 +440,6 @@
   //
   let result = null
 
-  // eDealer + Cloudflare: the /api/inventory/getall call and the rendered DOM both cap
-  // at ~24 (one page). The reliable full pull is paginating the listing pages from the
-  // user's already-cleared session. If this is an eDealer site, do that first.
-  {
-    const html = document.documentElement.innerHTML
-    const isEDealer = /e-dealer\.js|edealer|inventory-listing-sitemap/i.test(html)
-      || /media\.edealer\.ca|websites\.edealer\.ca/i.test(html)
-    if (isEDealer) {
-      try {
-        const walked = await walkEDealerListingPages()
-        if (walked.length > 0) {
-          log(`✓ eDealer listing walk (browser session) — ${walked.length} vehicles`)
-          result = { platform: 'edealer', source_url: location.href, vehicles: walked }
-        }
-      } catch (e) { log('eDealer listing walk failed:', e.message) }
-    }
-  }
-
   for (const probe of PROBES) {
     for (const path of probe.paths) {
       // dealer_com: request max in one shot; other probes use their own path variants
