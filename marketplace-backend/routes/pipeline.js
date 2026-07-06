@@ -30,18 +30,13 @@ export function registerPipeline(app) {
   app.get('/pipeline', requireAuth, async (req, res) => {
     if (!req.dealershipId) return res.json({ columns: {}, counts: {} })
 
-    const { data: inv } = await supabaseAdmin
-      .from('inventory')
-      .select('id, year, make, model, trim, price, mileage, exterior_color, condition, stocknumber, image_urls, source_url')
-      .eq('dealership_id', req.dealershipId)
-    const invIds = (inv || []).map(v => v.id)
-    if (!invIds.length) return res.json({ columns: emptyCols(), counts: zeroCounts() })
-    const invById = Object.fromEntries((inv || []).map(v => [v.id, v]))
-
+    // Join inventory inline and filter by dealership on the embedded resource.
+    // (Avoids building a giant .in('inventory_id', [hundreds of IDs]) which blows
+    // PostgREST's URL length limit and makes the request hang on big stores.)
     let q = supabaseAdmin
       .from('listings')
-      .select('id, inventory_id, posted_by, vehicle_label, status, posted_at, sold_at, pipeline_stage, fb_listing_url, relisted_at, appointment_at, appointment_note')
-      .in('inventory_id', invIds)
+      .select('id, inventory_id, posted_by, vehicle_label, status, posted_at, sold_at, pipeline_stage, fb_listing_url, relisted_at, appointment_at, appointment_note, inventory:inventory_id!inner(dealership_id, year, make, model, trim, price, mileage, exterior_color, condition, stocknumber, image_urls, source_url)')
+      .eq('inventory.dealership_id', req.dealershipId)
       .in('status', ['posted', 'sold'])
       .order('posted_at', { ascending: false })
       .limit(2000)
@@ -62,7 +57,7 @@ export function registerPipeline(app) {
 
     const columns = emptyCols()
     for (const l of listings || []) {
-      const v = invById[l.inventory_id] || {}
+      const v = l.inventory || {}
       const label = l.vehicle_label || [v.year, v.make, v.model].filter(Boolean).join(' ') || '—'
       const card = {
         id: l.id,
