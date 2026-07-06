@@ -232,21 +232,6 @@ async function initializeDashboardEcosystem() {
     // Populate the pipeline summary strip on the inventory page.
     if (inDealership) loadPipelineStrip();
 
-    // Everyone working a dealership gets a Sales Pipeline link (reps see their
-    // own postings; dealer-level sees the whole store).
-    if (inDealership) {
-      const navEl = document.getElementById('dashboard-nav');
-      if (navEl && !document.getElementById('nav-pipeline')) {
-        const a = document.createElement('a');
-        a.id = 'nav-pipeline';
-        a.href = 'pipeline.html';
-        a.title = 'Sales Pipeline';
-        a.className = 'flex-1 md:flex-none md:w-full flex items-center justify-center md:justify-start gap-2.5 px-2 md:px-3 py-2.5 md:py-2 rounded font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition';
-        a.innerHTML = '<svg class="w-5 h-5 md:w-4 md:h-4 flex-shrink-0 opacity-60" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5"/></svg><span class="hidden md:inline">Pipeline</span>';
-        navEl.appendChild(a);
-      }
-    }
-
     // Groups live inside Profile & Settings — reveal that section for anyone who
     // can create or join a group (dealer admins, group admins, owner).
     if (role === 'DEALER_GROUP' || role === 'OWNER' || role === 'DEALER_ADMIN') {
@@ -362,6 +347,173 @@ function switchPage(pageId) {
   if (pageId === 'profile') loadProfileBranding();
   if (pageId === 'inv-intel' && typeof window._invIntelPageHook === 'function') window._invIntelPageHook();
   if (pageId === 'ai-vision') loadAiVisionPage();
+  if (pageId === 'pipeline') loadPipelinePage();
+}
+
+// ── Sales Pipeline (integrated page) ─────────────────────────────────────────
+const PL_COLS = [
+  { key: 'posted', label: 'Posted', dot: 'bg-blue-500' },
+  { key: 'appointment_set', label: 'Appointment Set', dot: 'bg-indigo-500' },
+  { key: 'claimed_sale', label: 'Claimed Sales', dot: 'bg-emerald-500' },
+  { key: 'need_relisting', label: 'Need Relisting', dot: 'bg-amber-500' },
+];
+const PL_MOVE_LABEL = { posted: 'Posted', appointment_set: 'Appointment Set', claimed_sale: 'Mark Sold', need_relisting: 'Need Relisting' };
+let PL_DATA = { columns: {}, counts: {} };
+const plMoney = (n) => n != null ? '$' + Number(n).toLocaleString() : '';
+const plKm = (n) => n != null ? Number(n).toLocaleString() + ' km' : '';
+const plPosted = (d) => { try { const days = Math.floor((Date.now() - new Date(d)) / 86400000); return days <= 0 ? 'today' : days + 'd ago'; } catch { return ''; } };
+const plAppt = (d) => { try { return new Date(d).toLocaleString(undefined, { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }); } catch { return ''; } };
+
+function plAskAppointment(label, existingAt, existingNote) {
+  return new Promise(resolve => {
+    const modal = document.getElementById('appt-modal');
+    const dt = document.getElementById('appt-dt'), note = document.getElementById('appt-note'), err = document.getElementById('appt-err');
+    document.getElementById('appt-veh').textContent = label || '';
+    err.classList.add('hidden');
+    const base = existingAt ? new Date(existingAt) : new Date(Date.now() + 3600000);
+    dt.value = new Date(base.getTime() - base.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+    note.value = existingNote || '';
+    modal.classList.remove('hidden');
+    const close = (val) => { modal.classList.add('hidden'); document.getElementById('appt-save').onclick = null; document.getElementById('appt-cancel').onclick = null; resolve(val); };
+    document.getElementById('appt-cancel').onclick = () => close(null);
+    document.getElementById('appt-save').onclick = () => {
+      if (!dt.value) { err.textContent = 'Pick a date and time.'; err.classList.remove('hidden'); return; }
+      close({ at: new Date(dt.value).toISOString(), note: note.value.trim() });
+    };
+  });
+}
+
+function plCard(c) {
+  const others = PL_COLS.map(x => x.key).filter(k => k !== c.stage);
+  const opts = others.map(k => `<option value="${k}">${PL_MOVE_LABEL[k]}</option>`).join('');
+  const rep = c.rep ? ` · ${esc(c.rep)}` : '';
+  const sub = [c.trim, c.exterior_color].filter(Boolean).join(' · ');
+  const meta = [c.stocknumber ? '#' + esc(c.stocknumber) : '', c.mileage ? plKm(c.mileage) : ''].filter(Boolean).join(' · ');
+  const thumb = c.image
+    ? `<img src="${esc(c.image)}" alt="" loading="lazy" class="w-full h-24 object-cover rounded-md bg-slate-100 dark:bg-slate-800">`
+    : `<div class="w-full h-24 rounded-md bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-300 text-2xl">🚗</div>`;
+  const postedTag = `<span class="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300">Posted</span>`;
+  return `
+    <div class="pl-card group bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-3 cursor-grab active:cursor-grabbing" draggable="true" data-card-id="${c.id}" data-card-label="${esc(c.label)}" data-card-stage="${c.stage}">
+      ${thumb}
+      <div class="mt-2 min-w-0">
+        <div class="text-sm font-bold text-slate-900 dark:text-white leading-snug truncate">${esc(c.label)}</div>
+        ${sub ? `<div class="text-[11px] text-slate-500 dark:text-slate-400 truncate">${esc(sub)}</div>` : ''}
+      </div>
+      <div class="flex items-center justify-between gap-2 mt-1.5">
+        ${postedTag}
+        ${c.price ? `<span class="text-sm font-black text-slate-900 dark:text-white">${plMoney(c.price)}</span>` : ''}
+      </div>
+      ${meta ? `<div class="text-[11px] text-slate-400 mt-1">${meta}</div>` : ''}
+      <div class="text-[11px] text-slate-400 mt-0.5">${c.posted_at ? 'Posted ' + plPosted(c.posted_at) : ''}${rep}</div>
+      ${c.stage === 'appointment_set' && c.appointment_at ? `
+        <div class="mt-2 flex items-center justify-between gap-2 text-xs bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800 rounded px-2 py-1.5">
+          <span class="font-semibold text-indigo-700 dark:text-indigo-300">📅 ${esc(plAppt(c.appointment_at))}</span>
+          <button data-appt-edit="${c.id}" data-label="${esc(c.label)}" data-at="${esc(c.appointment_at)}" data-note="${esc(c.appointment_note || '')}" class="text-indigo-500 hover:text-indigo-400 font-bold">Edit</button>
+        </div>${c.appointment_note ? `<div class="text-[11px] text-slate-400 mt-1">${esc(c.appointment_note)}</div>` : ''}` : ''}
+      ${c.stage === 'need_relisting' ? `<button data-relist="${c.id}" class="mt-2 w-full text-xs font-bold bg-amber-500 hover:bg-amber-400 text-white rounded px-2 py-1.5 transition">↻ Relist on Facebook</button>` : ''}
+      ${(c.fb_listing_url || c.source_url) ? `
+        <div class="mt-2 grid ${c.fb_listing_url && c.source_url ? 'grid-cols-2' : 'grid-cols-1'} gap-1.5">
+          ${c.fb_listing_url ? `<a href="${esc(c.fb_listing_url)}" target="_blank" rel="noopener" class="text-center text-xs font-bold px-2 py-1.5 rounded bg-[#1877F2]/10 text-[#1877F2] hover:bg-[#1877F2]/20 transition">Facebook ↗</a>` : ''}
+          ${c.source_url ? `<a href="${esc(c.source_url)}" target="_blank" rel="noopener" class="text-center text-xs font-bold px-2 py-1.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition">Listing ↗</a>` : ''}
+        </div>` : ''}
+      <select data-move="${c.id}" class="mt-2 w-full text-xs bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded px-2 py-1 text-slate-600 dark:text-slate-300">
+        <option value="">Move to…</option>${opts}
+      </select>
+    </div>`;
+}
+
+async function plMoveCard(id, stage, label) {
+  const body = { stage };
+  if (stage === 'appointment_set') {
+    const appt = await plAskAppointment(label, null, null);
+    if (!appt) return false;
+    body.appointment_at = appt.at; body.appointment_note = appt.note;
+  }
+  const r = await fetch(`${API}/pipeline/${id}`, { method: 'PATCH', headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  if (!r.ok) throw new Error((await r.json()).error || 'Failed');
+  return true;
+}
+
+function plRender() {
+  const root = document.getElementById('pipeline-root');
+  if (!root) return;
+  const cols = PL_COLS.map(col => {
+    const cards = (PL_DATA.columns[col.key] || []);
+    const bodyHtml = cards.length ? cards.map(plCard).join('') : '<div class="text-xs text-slate-400 italic py-6 text-center">Nothing here</div>';
+    return `
+      <div class="flex flex-col min-w-0">
+        <div class="flex items-center justify-between mb-3 px-1">
+          <div class="flex items-center gap-2 text-sm font-bold text-slate-700 dark:text-slate-200"><span class="w-2 h-2 rounded-full ${col.dot}"></span>${col.label}</div>
+          <span class="text-xs font-bold text-slate-400 bg-slate-100 dark:bg-slate-800 rounded-full px-2 py-0.5">${PL_DATA.counts[col.key] || 0}</span>
+        </div>
+        <div class="pl-dropzone space-y-2.5 flex-1 rounded-lg p-1 -m-1 transition" data-col="${col.key}">${bodyHtml}</div>
+      </div>`;
+  }).join('');
+
+  root.innerHTML = `
+    <div class="flex items-center justify-between mb-6 flex-wrap gap-3">
+      <div>
+        <h2 class="text-xl font-bold text-slate-900 dark:text-white">Sales Pipeline</h2>
+        <p class="text-sm text-slate-500 dark:text-slate-400 mt-1">${PL_DATA.can_manage_all ? 'Every posting across your store' : 'Your postings'} — move each one as the deal progresses.</p>
+      </div>
+      <button id="pl-refresh" class="text-sm font-bold px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition">Refresh</button>
+    </div>
+    <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-5">${cols}</div>`;
+
+  document.getElementById('pl-refresh').addEventListener('click', loadPipelinePage);
+  root.querySelectorAll('[data-relist]').forEach(btn => btn.addEventListener('click', async () => {
+    btn.disabled = true; btn.textContent = 'Relisting…';
+    try {
+      const r = await fetch(`${API}/pipeline/${btn.dataset.relist}/relist`, { method: 'POST', headers: { 'Authorization': `Bearer ${token}` } });
+      if (!r.ok) throw new Error((await r.json()).error || 'Failed');
+      window.open('https://www.facebook.com/marketplace/create/vehicle', '_blank', 'noopener');
+      loadPipelinePage();
+    } catch (e) { alert(e.message); btn.disabled = false; btn.textContent = '↻ Relist on Facebook'; }
+  }));
+  root.querySelectorAll('[data-appt-edit]').forEach(btn => btn.addEventListener('click', async () => {
+    const appt = await plAskAppointment(btn.dataset.label, btn.dataset.at, btn.dataset.note);
+    if (!appt) return;
+    try {
+      const r = await fetch(`${API}/pipeline/${btn.dataset.apptEdit}`, { method: 'PATCH', headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ stage: 'appointment_set', appointment_at: appt.at, appointment_note: appt.note }) });
+      if (!r.ok) throw new Error((await r.json()).error || 'Failed');
+      loadPipelinePage();
+    } catch (e) { alert(e.message); }
+  }));
+  root.querySelectorAll('[data-move]').forEach(sel => sel.addEventListener('change', async () => {
+    const stage = sel.value; if (!stage) return;
+    const label = sel.closest('[data-card-label]')?.dataset.cardLabel;
+    sel.disabled = true;
+    try { const ok = await plMoveCard(sel.dataset.move, stage, label); if (ok) loadPipelinePage(); else { sel.disabled = false; sel.value = ''; } }
+    catch (e) { alert(e.message); sel.disabled = false; sel.value = ''; }
+  }));
+
+  let dragId = null, dragStage = null, dragLabel = null;
+  root.querySelectorAll('.pl-card').forEach(el => {
+    el.addEventListener('dragstart', e => { dragId = el.dataset.cardId; dragStage = el.dataset.cardStage; dragLabel = el.dataset.cardLabel; el.classList.add('opacity-40'); e.dataTransfer.effectAllowed = 'move'; });
+    el.addEventListener('dragend', () => el.classList.remove('opacity-40'));
+  });
+  root.querySelectorAll('.pl-dropzone').forEach(zone => {
+    zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('bg-indigo-50', 'dark:bg-indigo-950/30'); });
+    zone.addEventListener('dragleave', () => zone.classList.remove('bg-indigo-50', 'dark:bg-indigo-950/30'));
+    zone.addEventListener('drop', async e => {
+      e.preventDefault(); zone.classList.remove('bg-indigo-50', 'dark:bg-indigo-950/30');
+      const target = zone.dataset.col;
+      if (!dragId || target === dragStage) return;
+      try { const ok = await plMoveCard(dragId, target, dragLabel); if (ok) loadPipelinePage(); } catch (err) { alert(err.message); }
+    });
+  });
+}
+
+async function loadPipelinePage() {
+  const root = document.getElementById('pipeline-root');
+  if (!root) return;
+  try {
+    const r = await fetch(`${API}/pipeline`, { headers: { 'Authorization': `Bearer ${token}` } });
+    if (!r.ok) throw new Error('Could not load pipeline');
+    PL_DATA = await r.json();
+    plRender();
+  } catch (e) { root.innerHTML = `<div class="py-16 text-center text-sm text-slate-500">${esc(e.message)}</div>`; }
 }
 
 // Idempotent restore: makes sure leaderboard / team-insights / sales-team panels live
@@ -615,6 +767,9 @@ async function loadPipelineStrip() {
         <div class="text-2xl font-black tabular-nums ${x.cls}">${c[x.k] || 0}</div>
         <div class="text-[10px] uppercase font-bold tracking-wider text-slate-400 mt-0.5">${x.label}</div>
       </div>`).join('');
+    // Open the integrated pipeline page rather than the old standalone file.
+    strip.setAttribute('href', 'javascript:void(0)');
+    strip.onclick = (e) => { e.preventDefault(); switchPage('pipeline'); };
     strip.classList.remove('hidden');
   } catch {}
 }

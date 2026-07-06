@@ -409,6 +409,10 @@
           <svg class="w-5 h-5 md:w-4 md:h-4 flex-shrink-0 opacity-60" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5 17H3a1 1 0 01-1-1v-4l2.5-5h11L18 12v4a1 1 0 01-1 1h-2"/><circle cx="7.5" cy="17.5" r="1.5"/><circle cx="16.5" cy="17.5" r="1.5"/><path stroke-linecap="round" d="M7.5 12h5"/></svg>
           <span class="hidden md:inline">Inventory</span>
         </button>
+        <button type="button" data-page="pipeline" title="Pipeline" class="nav-item flex-1 md:flex-none md:w-full flex items-center justify-center md:justify-start gap-2.5 px-2 md:px-3 py-2.5 md:py-2 rounded font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition">
+          <svg class="w-5 h-5 md:w-4 md:h-4 flex-shrink-0 opacity-60" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5"/></svg>
+          <span class="hidden md:inline">Pipeline</span>
+        </button>
         <button type="button" data-page="leaderboard" title="Leaderboard" class="nav-item flex-1 md:flex-none md:w-full flex items-center justify-center md:justify-start gap-2.5 px-2 md:px-3 py-2.5 md:py-2 rounded font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition">
           <svg class="w-5 h-5 md:w-4 md:h-4 flex-shrink-0 opacity-60" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M8 21V10M12 21V3M16 21v-6"/><path stroke-linecap="round" stroke-linejoin="round" d="M5 21h14"/></svg>
           <span class="hidden md:inline">Leaderboard</span>
@@ -1468,6 +1472,28 @@
           </div>
         </div>
       </div><!-- /ai-vision page -->
+
+      <!-- ── Sales Pipeline Page ──────────────────────────────────────────── -->
+      <div data-page-content="pipeline" class="page-content hidden space-y-6">
+        <div id="pipeline-root"><div class="py-16 text-center text-sm text-slate-400 italic">Loading pipeline…</div></div>
+      </div><!-- /pipeline page -->
+
+      <!-- Appointment modal (pipeline) -->
+      <div id="appt-modal" class="hidden fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4">
+        <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl w-full max-w-sm p-6">
+          <h3 class="text-base font-bold mb-1">Set appointment</h3>
+          <p id="appt-veh" class="text-xs text-slate-500 dark:text-slate-400 mb-4"></p>
+          <label class="block text-xs uppercase font-bold tracking-wider text-slate-400 mb-1.5">Date &amp; time</label>
+          <input id="appt-dt" type="datetime-local" class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm mb-3">
+          <label class="block text-xs uppercase font-bold tracking-wider text-slate-400 mb-1.5">Note (optional)</label>
+          <input id="appt-note" placeholder="Buyer name, phone…" class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm mb-4">
+          <div class="flex justify-end gap-2">
+            <button id="appt-cancel" class="text-sm font-bold px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition">Cancel</button>
+            <button id="appt-save" class="text-sm font-bold px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white transition">Save</button>
+          </div>
+          <p id="appt-err" class="hidden text-xs text-red-500 mt-2"></p>
+        </div>
+      </div>
 
       <!-- ── VIN Sticker & Brochure page ───────────────────────────────────── -->
       <div data-page-content="vin-sticker" class="page-content hidden space-y-6">
