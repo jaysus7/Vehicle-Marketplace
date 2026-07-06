@@ -2,7 +2,7 @@ import { supabaseAdmin, sleep, browserFetch } from '../shared.js'
 import { renderAndCaptureInventory, genericMapVehicle, inferUrlTemplate, renderUrlTemplate, fetchViaBrowser } from '../puppeteerRenderer.js'
 import { PLATFORM_PROBES, fetchConvertusInventory, fetchDealerPageInventory,
          fetchEDealerInventoryFromSitemap, extractEDealerDetailUrls, fetchEDealerDetailImageGroups,
-         extractEDealerImageGroups, extractCarsFromJsonLd, fetchListingPageInventory } from './platforms.js'
+         extractEDealerImageGroups, extractCarsFromJsonLd } from './platforms.js'
 import { mapFuel, buildDescription, fetchVehiclePhotos } from '../utils/description.js'
 import { parseGenericFeed } from './genericFeed.js'
 
@@ -398,21 +398,9 @@ async function _runInventorySyncInner(dealershipId) {
           const cars = extractCarsFromJsonLd(flat)
           const origin = new URL(feed.feed_url).origin
 
-          // Universal listing-page JSON-LD paginator — feed_url returned HTML, so it
-          // IS a listing page. Paginate it to get FULL inventory across every major
-          // US/Canada platform (Dealer.com, DealerInspire, DealerOn, Sincro/CDK,
-          // eDealer, VinSolutions, …). Falls back to the eDealer sitemap walker, then
-          // to single-page JSON-LD + detail enrichment.
-          const walked = await fetchListingPageInventory(feed.feed_url)
-          const sitemapVehicles = (!walked || walked.length <= cars.length)
-            ? await fetchEDealerInventoryFromSitemap(origin) : null
-          if (walked && walked.length > 0 && walked.length >= cars.length &&
-              (!sitemapVehicles || walked.length >= sitemapVehicles.length)) {
-            console.log(`[sync] Using listing-page walk (${walked.length} vehicles)`)
-            vehicles = walked
-            jsonCache.set(feed.feed_url, vehicles)
-            totalVehiclesFound += vehicles.length
-          } else if (sitemapVehicles && sitemapVehicles.length > cars.length) {
+          // Try the sitemap walker first — gets full paginated inventory (May flow).
+          const sitemapVehicles = await fetchEDealerInventoryFromSitemap(origin)
+          if (sitemapVehicles && sitemapVehicles.length > cars.length) {
             console.log(`[sync] Using sitemap walker (${sitemapVehicles.length} vehicles) instead of listing-page JSON-LD (${cars.length})`)
             vehicles = sitemapVehicles
             jsonCache.set(feed.feed_url, vehicles)
