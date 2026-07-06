@@ -3402,7 +3402,6 @@ function openVinDecode(vehicleId, existingVin) {
   document.getElementById('vin-decode-results').classList.add('hidden');
   document.getElementById('vin-decode-error').classList.add('hidden');
   document.getElementById('vin-decode-loading').classList.add('hidden');
-  document.getElementById('vin-apply-msg').classList.add('hidden');
   if (existingVin) input.value = existingVin;
   else input.value = '';
   modal.classList.remove('hidden');
@@ -3418,8 +3417,6 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('vin-decode-input')?.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') runVinDecode();
   });
-
-  document.getElementById('vin-apply-btn')?.addEventListener('click', applyVinDecode);
 
   // Branding Settings wiring
   const primaryPicker = document.getElementById('branding-primary-color');
@@ -3573,35 +3570,6 @@ function renderVinResults({ decoded, recalls }) {
   }
 
   document.getElementById('vin-decode-results').classList.remove('hidden');
-}
-
-async function applyVinDecode() {
-  if (!__vinDecodeData || !__vinDecodeVehicleId) return;
-  const token = localStorage.getItem('token');
-  const btn = document.getElementById('vin-apply-btn');
-  const msg = document.getElementById('vin-apply-msg');
-  btn.disabled = true;
-  btn.textContent = 'Applying…';
-  try {
-    const res = await fetch(`${API}/vin/apply/${__vinDecodeVehicleId}`, {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify(__vinDecodeData),
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'Apply failed');
-    msg.textContent = `✓ Applied ${data.updated?.length || 0} fields`;
-    msg.className = 'text-xs font-medium px-2.5 py-1 rounded-md bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300';
-    msg.classList.remove('hidden');
-    loadVinStickerInventory?.();
-  } catch (e) {
-    msg.textContent = e.message;
-    msg.className = 'text-xs font-medium px-2.5 py-1 rounded-md bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300';
-    msg.classList.remove('hidden');
-  } finally {
-    btn.disabled = false;
-    btn.textContent = 'Apply to Vehicle';
-  }
 }
 
 async function generatePdf(vehicleId, type, btn) {
