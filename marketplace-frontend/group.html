@@ -82,11 +82,25 @@
           </div>`;
       }).join('') || '<div class="col-span-full text-sm text-slate-400 italic py-8 text-center">No stores in this group yet.</div>';
 
+      const code = data.group?.join_code;
+      const inviteCard = code ? `
+        <div class="mb-6 bg-indigo-50 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-800 rounded-xl px-5 py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div>
+            <div class="text-xs font-bold uppercase tracking-wider text-indigo-700 dark:text-indigo-300">Invite your stores</div>
+            <p class="text-sm text-slate-600 dark:text-slate-400 mt-0.5">Share this code. Each dealer opens <b>Groups → Join a group</b> and enters it — their inventory, reps and history stay exactly as they are.</p>
+          </div>
+          <div class="flex items-center gap-2">
+            <code class="text-lg font-black tracking-widest bg-white dark:bg-slate-900 border border-indigo-200 dark:border-indigo-800 rounded-lg px-4 py-2">${esc(code)}</code>
+            <button id="copy-code" class="text-xs font-bold px-3 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white transition">Copy</button>
+          </div>
+        </div>` : '';
+
       root.innerHTML = `
         <div class="mb-6">
           <h1 class="text-2xl font-black tracking-tight">${esc(data.group?.name || 'Your Dealer Group')}</h1>
           <p class="text-sm text-slate-500 dark:text-slate-400 mt-1">${t.stores || 0} store${t.stores === 1 ? '' : 's'} · billing: ${esc(data.group?.billing_mode === 'group' ? 'central (group)' : 'per-dealer')}</p>
         </div>
+        ${inviteCard}
         <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
           ${tile('Stores', t.stores || 0)}
           ${tile('Reps', t.reps || 0)}
@@ -95,18 +109,56 @@
         </div>
         <h2 class="text-sm font-bold uppercase tracking-wider text-slate-400 mb-3">Stores</h2>
         <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">${storeCards}</div>`;
+
+      const copyBtn = document.getElementById('copy-code');
+      if (copyBtn && code) copyBtn.addEventListener('click', () => {
+        navigator.clipboard?.writeText(code).then(() => { copyBtn.textContent = 'Copied!'; setTimeout(() => copyBtn.textContent = 'Copy', 1500); }).catch(() => {});
+      });
     }
 
     function renderCreate() {
       root.innerHTML = `
-        <div class="max-w-md mx-auto mt-10 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-6">
-          <h1 class="text-xl font-black tracking-tight mb-1">Create your dealer group</h1>
-          <p class="text-sm text-slate-500 dark:text-slate-400 mb-5">A group gives you rollup visibility across every store — reps, listings posted, sold, and average days to sell. Your current dealership is added automatically; add more stores after.</p>
-          <label class="block text-xs uppercase font-bold tracking-wider text-slate-400 mb-1.5">Group name</label>
-          <input id="grp-name" placeholder="e.g. Prairie Auto Group" class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm mb-4 focus:outline-none focus:ring-2 focus:ring-indigo-500">
-          <button id="grp-create" class="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold px-4 py-2.5 rounded-lg transition text-sm">Create group</button>
-          <p id="grp-err" class="hidden text-xs text-red-500 mt-2"></p>
+        <div class="max-w-md mx-auto mt-10 space-y-5">
+          <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-6">
+            <h1 class="text-xl font-black tracking-tight mb-1">Join a dealer group</h1>
+            <p class="text-sm text-slate-500 dark:text-slate-400 mb-5">Already have a group code from your group HQ? Enter it — <b>your inventory, reps and history all stay exactly as they are.</b></p>
+            <label class="block text-xs uppercase font-bold tracking-wider text-slate-400 mb-1.5">Group code</label>
+            <div class="flex gap-2">
+              <input id="join-code" placeholder="e.g. K7P4-9QMX" class="flex-1 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm uppercase tracking-widest font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500">
+              <button id="join-btn" class="bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-4 py-2 rounded-lg transition text-sm whitespace-nowrap">Join</button>
+            </div>
+            <p id="join-msg" class="hidden text-xs mt-2"></p>
+          </div>
+
+          <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-6">
+            <h1 class="text-xl font-black tracking-tight mb-1">Or create your own group</h1>
+            <p class="text-sm text-slate-500 dark:text-slate-400 mb-5">Rollup visibility across every store — reps, posted, sold, and avg days to sell. Your current dealership is added automatically; invite the rest with a code.</p>
+            <label class="block text-xs uppercase font-bold tracking-wider text-slate-400 mb-1.5">Group name</label>
+            <input id="grp-name" placeholder="e.g. Prairie Auto Group" class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm mb-4 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+            <button id="grp-create" class="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold px-4 py-2.5 rounded-lg transition text-sm">Create group</button>
+            <p id="grp-err" class="hidden text-xs text-red-500 mt-2"></p>
+          </div>
         </div>`;
+
+      document.getElementById('join-btn').addEventListener('click', async () => {
+        const code = document.getElementById('join-code').value.trim();
+        const msg = document.getElementById('join-msg');
+        if (!code) { msg.textContent = 'Enter the code your group shared.'; msg.className = 'text-xs mt-2 text-red-500'; msg.classList.remove('hidden'); return; }
+        const btn = document.getElementById('join-btn');
+        btn.disabled = true; btn.textContent = 'Joining…';
+        try {
+          const r = await api('/groups/join', { method: 'POST', body: JSON.stringify({ code }) });
+          const d = await r.json();
+          if (!r.ok) throw new Error(d.error || 'Failed');
+          msg.textContent = `Joined ${d.group?.name || 'the group'}. Your data is untouched.`;
+          msg.className = 'text-xs mt-2 text-emerald-600 dark:text-emerald-400';
+          msg.classList.remove('hidden');
+        } catch (e) {
+          msg.textContent = e.message; msg.className = 'text-xs mt-2 text-red-500'; msg.classList.remove('hidden');
+          btn.disabled = false; btn.textContent = 'Join';
+        }
+      });
+
       document.getElementById('grp-create').addEventListener('click', async () => {
         const name = document.getElementById('grp-name').value.trim();
         const err = document.getElementById('grp-err');

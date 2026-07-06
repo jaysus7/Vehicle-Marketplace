@@ -1,5 +1,15 @@
 import { supabaseAdmin } from '../shared.js'
 import { requireAuth } from '../middleware.js'
+import { randomBytes } from 'crypto'
+
+// Short, human-shareable join code (no ambiguous chars). e.g. "K7P4-9QMX".
+function makeJoinCode() {
+  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
+  const bytes = randomBytes(8)
+  let s = ''
+  for (let i = 0; i < 8; i++) s += alphabet[bytes[i] % alphabet.length]
+  return `${s.slice(0, 4)}-${s.slice(4)}`
+}
 
 // Which dealership IDs can this profile see? Group admins see every dealership
 // in their group; everyone else sees their own dealership only.
@@ -27,8 +37,8 @@ export function registerGroups(app) {
 
     const { data: group, error } = await supabaseAdmin
       .from('dealer_groups')
-      .insert({ name: name.trim(), owner_profile_id: req.user.id })
-      .select('id, name, billing_mode, created_at')
+      .insert({ name: name.trim(), owner_profile_id: req.user.id, join_code: makeJoinCode() })
+      .select('id, name, billing_mode, join_code, created_at')
       .single()
     if (error) return res.status(500).json({ error: error.message })
 
@@ -38,6 +48,49 @@ export function registerGroups(app) {
       await supabaseAdmin.from('dealerships').update({ group_id: group.id }).eq('id', req.profile.dealership_id)
     }
     res.json({ group })
+  })
+
+  // Join an existing group with a shared code. A dealer admin enters the code
+  // and their whole dealership attaches to the group — nothing is copied or
+  // deleted, we only set the dealership's group_id, so ALL inventory, listings,
+  // reps and history stay exactly as they are.
+  app.post('/groups/join', requireAuth, async (req, res) => {
+    const canJoin = req.profile.role === 'DEALER_ADMIN' || req.profile.role === 'OWNER'
+    if (!canJoin) return res.status(403).json({ error: 'Only a dealer admin can join a group' })
+    if (!req.profile.dealership_id) return res.status(400).json({ error: 'Your account has no dealership to add' })
+
+    const code = String(req.body?.code || '').trim().toUpperCase()
+    if (!code) return res.status(400).json({ error: 'Enter the group join code' })
+
+    const { data: group } = await supabaseAdmin
+      .from('dealer_groups').select('id, name').eq('join_code', code).maybeSingle()
+    if (!group) return res.status(404).json({ error: 'No group found for that code — double-check it with the group.' })
+
+    const { error } = await supabaseAdmin
+      .from('dealerships').update({ group_id: group.id }).eq('id', req.profile.dealership_id)
+    if (error) return res.status(500).json({ error: error.message })
+    res.json({ ok: true, group: { id: group.id, name: group.name } })
+  })
+
+  // What group (if any) is my dealership in? Lets the dashboard show status.
+  app.get('/groups/mine', requireAuth, async (req, res) => {
+    if (!req.profile.dealership_id) return res.json({ group: null })
+    const { data: dealer } = await supabaseAdmin
+      .from('dealerships').select('group_id').eq('id', req.profile.dealership_id).single()
+    if (!dealer?.group_id) return res.json({ group: null })
+    const { data: group } = await supabaseAdmin
+      .from('dealer_groups').select('id, name').eq('id', dealer.group_id).single()
+    res.json({ group: group || null })
+  })
+
+  // Leave the group my dealership is currently in (keeps all our own data).
+  app.post('/groups/leave', requireAuth, async (req, res) => {
+    const canLeave = req.profile.role === 'DEALER_ADMIN' || req.profile.role === 'OWNER'
+    if (!canLeave || !req.profile.dealership_id) return res.status(403).json({ error: 'Dealer admin required' })
+    const { error } = await supabaseAdmin
+      .from('dealerships').update({ group_id: null }).eq('id', req.profile.dealership_id)
+    if (error) return res.status(500).json({ error: error.message })
+    res.json({ ok: true })
   })
 
   // Attach an existing dealership to the caller's group (by dealership id).
@@ -72,8 +125,14 @@ export function registerGroups(app) {
     }
     const groupId = req.profile.group_id
 
-    const { data: group } = await supabaseAdmin
-      .from('dealer_groups').select('id, name, billing_mode').eq('id', groupId).single()
+    let { data: group } = await supabaseAdmin
+      .from('dealer_groups').select('id, name, billing_mode, join_code').eq('id', groupId).single()
+    // Backfill a join code for groups created before invite codes existed.
+    if (group && !group.join_code) {
+      const code = makeJoinCode()
+      await supabaseAdmin.from('dealer_groups').update({ join_code: code }).eq('id', groupId)
+      group.join_code = code
+    }
     const { data: stores } = await supabaseAdmin
       .from('dealerships').select('id, name, billing_status').eq('group_id', groupId)
 

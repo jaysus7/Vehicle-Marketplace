@@ -229,16 +229,18 @@ async function initializeDashboardEcosystem() {
       document.querySelectorAll('[data-admin-nav]').forEach(el => el.classList.add('hidden'));
     }
 
-    // Group admins (and the owner) get a link to the multi-store Group dashboard.
-    if (role === 'DEALER_GROUP' || role === 'OWNER') {
+    // Dealer admins, group admins and the owner get a Groups link — where they
+    // can create a group, join one with a code, or see the multi-store rollup.
+    if (role === 'DEALER_GROUP' || role === 'OWNER' || role === 'DEALER_ADMIN') {
       const navEl = document.getElementById('dashboard-nav');
       if (navEl && !document.getElementById('nav-group-admin')) {
+        const label = role === 'DEALER_GROUP' ? 'Group Admin' : 'Groups';
         const a = document.createElement('a');
         a.id = 'nav-group-admin';
         a.href = 'group.html';
-        a.title = 'Group Admin';
+        a.title = label;
         a.className = 'flex-1 md:flex-none md:w-full flex items-center justify-center md:justify-start gap-2.5 px-2 md:px-3 py-2.5 md:py-2 rounded font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition';
-        a.innerHTML = '<svg class="w-5 h-5 md:w-4 md:h-4 flex-shrink-0 opacity-60" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3.75 21h16.5M4.5 3h15M5.25 3v18m13.5-18v18M9 6.75h1.5m-1.5 3h1.5m-1.5 3h1.5m3-6H15m-1.5 3H15m-1.5 3H15M9 21v-3.375c0-.621.504-1.125 1.125-1.125h3.75c.621 0 1.125.504 1.125 1.125V21"/></svg><span class="hidden md:inline">Group Admin</span>';
+        a.innerHTML = '<svg class="w-5 h-5 md:w-4 md:h-4 flex-shrink-0 opacity-60" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3.75 21h16.5M4.5 3h15M5.25 3v18m13.5-18v18M9 6.75h1.5m-1.5 3h1.5m-1.5 3h1.5m3-6H15m-1.5 3H15m-1.5 3H15M9 21v-3.375c0-.621.504-1.125 1.125-1.125h3.75c.621 0 1.125.504 1.125 1.125V21"/></svg><span class="hidden md:inline">' + label + '</span>';
         navEl.appendChild(a);
       }
     }
