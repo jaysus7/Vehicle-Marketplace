@@ -1033,8 +1033,10 @@ export function registerRoutes(app) {
 
         // ── OEM-first: try to fetch the authentic manufacturer window sticker ──
         // by VIN. When a public source has it (e.g. Ford), we use the real
-        // factory Monroney label instead of generating one.
-        const oem = await fetchOemWindowStickerPdf(vehicle)
+        // factory Monroney label instead of generating one. Skipped when the
+        // caller forces generation (?source=generate) — e.g. the "Generate"
+        // button, used when the factory sticker isn't available.
+        const oem = req.query.source === 'generate' ? null : await fetchOemWindowStickerPdf(vehicle)
         if (oem) {
           const url = await uploadPdf(oem.buffer, path)
           await supabaseAdmin.from('inventory')

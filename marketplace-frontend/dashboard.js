@@ -2314,7 +2314,8 @@ function renderCatalog() {
         ${__vinStickerActive ? `
         <div class="flex gap-1 mt-1">
           <button class="vin-decode-btn flex-1 text-xs bg-slate-800/60 hover:bg-slate-700/80 border border-slate-600 text-slate-300 rounded py-1 transition" data-id="${v.id}" data-vin="${v.vin || ''}">VIN Decode</button>
-          <button class="window-sticker-btn flex-1 text-xs bg-slate-800/60 hover:bg-slate-700/80 border border-slate-600 text-slate-300 rounded py-1 transition" data-id="${v.id}">Sticker</button>
+          <button class="window-sticker-btn flex-1 text-xs bg-slate-800/60 hover:bg-slate-700/80 border border-slate-600 text-slate-300 rounded py-1 transition" data-id="${v.id}" title="Real factory sticker if available, otherwise generated">Sticker</button>
+          <button class="sticker-gen-btn flex-1 text-xs bg-slate-800/60 hover:bg-slate-700/80 border border-slate-600 text-slate-300 rounded py-1 transition" data-id="${v.id}" title="Force-generate a MarketSync sticker (use when the factory one isn't available)">Generate</button>
           <button class="brochure-btn flex-1 text-xs bg-slate-800/60 hover:bg-slate-700/80 border border-slate-600 text-slate-300 rounded py-1 transition" data-id="${v.id}">Brochure</button>
         </div>` : ''}
       </${tag}>
@@ -2328,6 +2329,9 @@ function renderCatalog() {
     });
     list.querySelectorAll('.window-sticker-btn').forEach(btn => {
       btn.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); generatePdf(btn.dataset.id, 'window-sticker', btn); });
+    });
+    list.querySelectorAll('.sticker-gen-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); generatePdf(btn.dataset.id, 'window-sticker', btn, { forceGenerate: true }); });
     });
     list.querySelectorAll('.brochure-btn').forEach(btn => {
       btn.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); generatePdf(btn.dataset.id, 'brochure', btn); });
@@ -3927,12 +3931,14 @@ function renderVinResults({ decoded, recalls, all_fields }) {
   document.getElementById('vin-decode-results').classList.remove('hidden');
 }
 
-async function generatePdf(vehicleId, type, btn) {
+async function generatePdf(vehicleId, type, btn, opts = {}) {
   const token = localStorage.getItem('token');
   const origText = btn.textContent;
   btn.disabled = true;
   btn.textContent = 'Generating…';
   const label = type === 'window-sticker' ? 'Window Sticker' : 'Brochure';
+  // Force MarketSync-generated (skip the OEM lookup + overwrite any cached one).
+  const genQuery = opts.forceGenerate ? '?source=generate&regen=1' : '';
 
   const openUrl = (url, source) => {
     window.open(url, '_blank');
@@ -3973,7 +3979,7 @@ async function generatePdf(vehicleId, type, btn) {
 
   try {
     showToast(`Generating ${label} — this takes 15–30 seconds on first run…`, 'info', 35000);
-    const res = await fetch(`${API}/pdf/${type}/${vehicleId}`, {
+    const res = await fetch(`${API}/pdf/${type}/${vehicleId}${genQuery}`, {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
     });
