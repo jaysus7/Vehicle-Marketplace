@@ -661,12 +661,13 @@ async function renderGuardrail(token) {
     bg = 'rgba(220,38,38,.10)'; color = 'var(--red)'; icon = '⛔'
     text = `Daily limit reached — ${g.posts_today}/${g.daily_cap} posts today`
   } else if (g.reason === 'cooldown') {
-    const mins = Math.ceil((g.cooldown_seconds || 0) / 60)
+    const mins = Math.max(1, Math.ceil((g.cooldown_seconds || 0) / 60))
     bg = 'rgba(217,119,6,.10)'; color = 'var(--amber)'; icon = '⏳'
-    text = `Cooldown — wait ~${mins} min · ${g.posts_today}/${g.daily_cap} today`
+    text = `Posted ${g.burst_size || 5} in a row — quick ~${mins} min rest · ${g.posts_today}/${g.daily_cap} today`
   } else {
     bg = 'rgba(22,163,74,.10)'; color = 'var(--green)'; icon = '🛡️'
-    text = `Safe to post · ${g.remaining} of ${g.daily_cap} left today`
+    const br = g.burst_remaining != null ? g.burst_remaining : (g.burst_size || 5)
+    text = `Safe to post · ${br} before a short rest · ${g.remaining} of ${g.daily_cap} left today`
   }
   el.style.background = bg
   el.style.color = color
@@ -776,8 +777,8 @@ async function postVehicle(inventoryId, token) {
       if (g.reason === 'daily_limit') {
         alert(`Daily posting limit reached (${g.daily_cap}/day). This protects your Facebook account from posting-velocity flags. Try again tomorrow.`)
       } else if (g.reason === 'cooldown') {
-        const mins = Math.ceil((g.cooldown_seconds || 0) / 60)
-        alert(`Please wait ~${mins} min before your next post. Spacing posts out keeps your Facebook account safe.`)
+        const mins = Math.max(1, Math.ceil((g.cooldown_seconds || 0) / 60))
+        alert(`You've posted ${g.burst_size || 5} in a row — take a quick ~${mins} min break, then you can post another batch. Short rests keep your Facebook account safe.`)
       } else {
         alert('Posting is paused by your dealership right now.')
       }

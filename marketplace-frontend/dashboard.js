@@ -1091,9 +1091,11 @@ async function loadGuardrailSettings() {
     const en = document.getElementById('gr-enabled');
     const cap = document.getElementById('gr-cap');
     const sp = document.getElementById('gr-spacing');
+    const burst = document.getElementById('gr-burst');
     if (en) en.checked = g.enabled !== false;
     if (cap) cap.value = g.daily_cap ?? 25;
-    if (sp) sp.value = g.min_spacing_minutes ?? 4;
+    if (sp) sp.value = g.min_spacing_minutes ?? 2;
+    if (burst) burst.value = g.burst_size ?? 5;
   } catch {}
   const btn = document.getElementById('gr-save');
   if (btn && !btn._wired) {
@@ -1109,6 +1111,7 @@ async function loadGuardrailSettings() {
             enabled: document.getElementById('gr-enabled').checked,
             daily_cap: Number(document.getElementById('gr-cap').value),
             min_spacing_minutes: Number(document.getElementById('gr-spacing').value),
+            burst_size: Number(document.getElementById('gr-burst').value),
           }),
         });
         if (!r.ok) throw new Error((await r.json()).error || 'Failed');

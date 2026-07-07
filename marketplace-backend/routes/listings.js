@@ -40,13 +40,17 @@ async function finalizeSold(listingId, inventoryId) {
   }
 }
 
-const DEFAULT_GUARDRAILS = { enabled: true, daily_cap: 25, min_spacing_minutes: 4 }
+// Burst pacing: allow a short burst of posts back-to-back, then require a rest.
+// e.g. burst_size 5 + min_spacing_minutes 2 = "post 5, then wait 2 min" — friendlier
+// than a flat 4-min gap after every single post while still looking human to FB.
+const DEFAULT_GUARDRAILS = { enabled: true, daily_cap: 25, min_spacing_minutes: 2, burst_size: 5 }
 
 // Compute a rep's posting-guardrail status for their dealership.
 async function computeGuardrail(req) {
   const { data: dealer } = await supabaseAdmin
     .from('dealerships').select('posting_guardrails').eq('id', req.dealershipId).maybeSingle()
   const g = { ...DEFAULT_GUARDRAILS, ...(dealer?.posting_guardrails || {}) }
+  const burstSize = Math.max(1, g.burst_size || DEFAULT_GUARDRAILS.burst_size)
 
   const since = new Date(Date.now() - 24 * 3600 * 1000).toISOString()
   const { data: recent } = await supabaseAdmin
@@ -61,8 +65,25 @@ async function computeGuardrail(req) {
   const postsToday = (recent || []).length
   const lastPostAt = recent?.[0]?.posted_at || null
   const spacingMs = (g.min_spacing_minutes || 0) * 60000
+
+  // Count posts in the CURRENT burst — walk newest→oldest, stopping at the first
+  // gap of at least one rest period (that gap means the previous burst already
+  // "rested", so the streak restarts there).
+  let postsInBurst = 0
+  if (spacingMs > 0) {
+    let prev = Date.now()
+    for (const p of (recent || [])) {
+      const t = new Date(p.posted_at).getTime()
+      if (prev - t >= spacingMs) break
+      postsInBurst++
+      prev = t
+    }
+  }
+
+  // A cooldown is only required once the burst is used up; then wait one rest
+  // period after the most recent post before the next burst can start.
   let cooldownSeconds = 0
-  if (lastPostAt && spacingMs > 0) {
+  if (spacingMs > 0 && postsInBurst >= burstSize && lastPostAt) {
     const elapsed = Date.now() - new Date(lastPostAt).getTime()
     if (elapsed < spacingMs) cooldownSeconds = Math.ceil((spacingMs - elapsed) / 1000)
   }
@@ -79,6 +100,9 @@ async function computeGuardrail(req) {
     daily_cap: g.daily_cap,
     remaining: Math.max(0, g.daily_cap - postsToday),
     min_spacing_minutes: g.min_spacing_minutes,
+    burst_size: burstSize,
+    posts_in_burst: postsInBurst,
+    burst_remaining: Math.max(0, burstSize - postsInBurst),
     cooldown_seconds: cooldownSeconds,
     next_allowed_at: cooldownSeconds > 0 ? new Date(Date.now() + cooldownSeconds * 1000).toISOString() : null,
   }
@@ -105,6 +129,7 @@ export function registerRoutes(app) {
       enabled: body.enabled !== undefined ? !!body.enabled : true,
       daily_cap: Math.max(1, Math.min(500, parseInt(body.daily_cap) || DEFAULT_GUARDRAILS.daily_cap)),
       min_spacing_minutes: Math.max(0, Math.min(120, parseInt(body.min_spacing_minutes) ?? DEFAULT_GUARDRAILS.min_spacing_minutes)),
+      burst_size: Math.max(1, Math.min(50, parseInt(body.burst_size) || DEFAULT_GUARDRAILS.burst_size)),
     }
     const { error } = await supabaseAdmin
       .from('dealerships').update({ posting_guardrails: next }).eq('id', req.dealershipId)
