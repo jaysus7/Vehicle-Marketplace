@@ -1498,9 +1498,20 @@
           <div id="leads-root"><div class="py-16 text-center text-sm text-slate-400 italic">Loading leads…</div></div>
         </div>
 
-        <!-- Appointments calendar — hidden until the button is clicked -->
-        <div id="appointments-panel" class="hidden border-t border-slate-200 dark:border-slate-800 pt-8">
-          <div id="appointments-root"><div class="py-16 text-center text-sm text-slate-400 italic">Loading appointments…</div></div>
+        <!-- Appointments calendar — full-screen modal, opened by the button -->
+        <div id="appointments-panel" class="hidden fixed inset-0 z-50 bg-black/60 flex items-stretch justify-center p-0 sm:p-4 sm:items-start overflow-y-auto">
+          <div class="bg-white dark:bg-slate-900 sm:border border-slate-200 dark:border-slate-800 w-full sm:max-w-5xl sm:rounded-xl sm:my-6 min-h-screen sm:min-h-0 flex flex-col">
+            <div class="flex items-center justify-between px-5 py-3.5 border-b border-slate-200 dark:border-slate-800 sticky top-0 bg-white dark:bg-slate-900 z-10 sm:rounded-t-xl">
+              <div class="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                <svg class="w-4 h-4 flex-shrink-0 text-indigo-500" fill="none" stroke="currentColor" stroke-width="1.9" viewBox="0 0 24 24"><rect x="3" y="4.5" width="18" height="16" rx="2"/><path stroke-linecap="round" stroke-linejoin="round" d="M3 9.5h18M8 3v3m8-3v3"/></svg>
+                Appointments
+              </div>
+              <button type="button" id="close-appointments-btn" class="text-slate-400 hover:text-slate-700 dark:hover:text-white text-2xl leading-none px-1">&times;</button>
+            </div>
+            <div class="p-4 sm:p-6 flex-1">
+              <div id="appointments-root"><div class="py-16 text-center text-sm text-slate-400 italic">Loading appointments…</div></div>
+            </div>
+          </div>
         </div>
 
         <!-- Pipeline below -->
@@ -2197,7 +2208,7 @@
     </div>
   </div>
 
-  <script src="dashboard.js?v=20260707w"></script>
+  <script src="dashboard.js?v=20260707x"></script>
   <script src="tour.js"></script>
   <script src="table-sort.js?v=20260706a"></script>
 </body>

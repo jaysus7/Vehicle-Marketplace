@@ -513,23 +513,19 @@ function switchPage(pageId) {
   if (pageId === 'leads') loadLeadsPage();
 }
 
-// Appointments now live inside the Pipeline page — a button pulls up the calendar.
+// Appointments open in a full-screen modal from the Pipeline page.
 document.addEventListener('DOMContentLoaded', () => {
   const apptBtn = document.getElementById('open-appointments-btn');
-  if (!apptBtn) return;
-  apptBtn.addEventListener('click', () => {
-    const panel = document.getElementById('appointments-panel');
-    if (!panel) return;
-    const show = panel.classList.contains('hidden');
-    panel.classList.toggle('hidden', !show);
-    apptBtn.classList.toggle('bg-indigo-100', show);
-    apptBtn.classList.toggle('dark:bg-indigo-950/50', show);
-    apptBtn.classList.toggle('text-indigo-700', show);
-    if (show) {
-      loadAppointmentsPage();
-      panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }
-  });
+  const panel = document.getElementById('appointments-panel');
+  if (!apptBtn || !panel) return;
+  const closeBtn = document.getElementById('close-appointments-btn');
+  const openModal = () => { panel.classList.remove('hidden'); document.body.style.overflow = 'hidden'; loadAppointmentsPage(); };
+  const closeModal = () => { panel.classList.add('hidden'); document.body.style.overflow = ''; };
+  apptBtn.addEventListener('click', openModal);
+  closeBtn?.addEventListener('click', closeModal);
+  // Click the dark backdrop (but not the panel itself) to close.
+  panel.addEventListener('click', (e) => { if (e.target === panel) closeModal(); });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !panel.classList.contains('hidden')) closeModal(); });
 });
 
 // ── Leads (CRM ADF delivery) ─────────────────────────────────────────────────
