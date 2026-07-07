@@ -5381,14 +5381,22 @@ document.addEventListener('DOMContentLoaded', () => {
     finally { btn.disabled = false; btn.textContent = 'Apply Rules Now'; }
   });
 
-  // Load rules when the section is first visible
-  const repricingObs = new MutationObserver(() => {
-    if (!document.getElementById('repricing-days')?.closest('.ai-accordion-body')) return;
-    loadRepricingRules();
-    repricingObs.disconnect();
-  });
+  // Load rules when the section is first visible. It can start open (default
+  // expanded), so load immediately in that case; otherwise wait for the first open.
   const repricingBody = document.getElementById('repricing-days')?.closest('.rounded-xl');
-  if (repricingBody) repricingObs.observe(repricingBody, { attributes: true, attributeFilter: ['class'] });
+  if (repricingBody) {
+    if (repricingBody.classList.contains('ai-accordion-open')) {
+      loadRepricingRules();
+    } else {
+      const repricingObs = new MutationObserver(() => {
+        if (repricingBody.classList.contains('ai-accordion-open')) {
+          loadRepricingRules();
+          repricingObs.disconnect();
+        }
+      });
+      repricingObs.observe(repricingBody, { attributes: true, attributeFilter: ['class'] });
+    }
+  }
 });
 
 // ── Stocking Recommendations ─────────────────────────────────────────────────
@@ -5469,10 +5477,20 @@ async function loadCompetitors() {
   const listEl = document.getElementById('competitors-list');
   const loadingEl = document.getElementById('competitors-loading');
   if (!listEl) return;
+  let competitors;
   try {
-    const res = await fetch(`${API}/ai/competitors`, { headers: { 'Authorization': `Bearer ${token}` } });
-    if (!res.ok) return;
-    const { competitors } = await res.json();
+    const data = await apiGetJson('/ai/competitors', { onRetry: () => {
+      if (loadingEl) loadingEl.textContent = 'Still loading…';
+    }});
+    competitors = data.competitors || [];
+  } catch (e) {
+    // Always clear the spinner and offer a retry — a silent return here is what
+    // left "Loading…" hanging forever.
+    if (loadingEl) loadingEl.remove();
+    listEl.innerHTML = `<div class="text-xs text-slate-500 dark:text-slate-400">Couldn't load competitors: ${esc(e.message)} <button onclick="loadCompetitors()" class="text-indigo-500 hover:text-indigo-400 font-bold ml-1">Retry</button></div>`;
+    return;
+  }
+  try {
     if (loadingEl) loadingEl.remove();
     if (!competitors.length) {
       listEl.innerHTML = '<div class="text-xs text-slate-400 italic">No competitors added yet.</div>';
@@ -5730,15 +5748,21 @@ ${inner}
     finally { btn.disabled = false; btn.innerHTML = '<svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z"/><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg> Scan All'; }
   });
 
-  // Load competitors when accordion opens
+  // Load competitors when the accordion opens. It can now START open (default
+  // expanded), in which case the "class added" observer never fires — so load
+  // immediately if it's already open, and otherwise wait for the first open.
   const competitorAccordion = document.getElementById('competitors-list')?.closest('.rounded-xl');
   if (competitorAccordion) {
-    new MutationObserver((_, obs) => {
-      if (competitorAccordion.classList.contains('ai-accordion-open')) {
-        loadCompetitors();
-        obs.disconnect();
-      }
-    }).observe(competitorAccordion, { attributes: true, attributeFilter: ['class'] });
+    if (competitorAccordion.classList.contains('ai-accordion-open')) {
+      loadCompetitors();
+    } else {
+      new MutationObserver((_, obs) => {
+        if (competitorAccordion.classList.contains('ai-accordion-open')) {
+          loadCompetitors();
+          obs.disconnect();
+        }
+      }).observe(competitorAccordion, { attributes: true, attributeFilter: ['class'] });
+    }
   }
 });
 
