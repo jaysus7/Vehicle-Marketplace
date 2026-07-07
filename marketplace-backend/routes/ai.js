@@ -17,6 +17,25 @@ function skipPriceComp(vehicle) {
   return Number.isFinite(yr) && yr >= new Date().getFullYear()
 }
 
+// Build a price-comp flag from a scraped market median, with sanity guards so a
+// bad/mismatched comp set never surfaces an absurd number like "233% overpriced".
+// A real dealer car is essentially never off by more than ~45% vs true market — a
+// deviation that large means the scraper matched the wrong listings (wrong model,
+// salvage titles, parts), so we treat it as unreliable and don't flag.
+function buildPriceFlag(price, marketMedian, source, compCount) {
+  if (!marketMedian || marketMedian <= 0) return null
+  const pct_diff = ((Number(price) - marketMedian) / marketMedian) * 100
+  const reliable = (compCount == null || compCount >= 3) && Math.abs(pct_diff) <= 45
+  return {
+    flagged: reliable && Math.abs(pct_diff) > 15,
+    median: marketMedian,
+    pct_diff: Math.round(pct_diff * 10) / 10,
+    comp_count: compCount ?? null,
+    source,
+    reliable,
+  }
+}
+
 function requireDealerAdmin(req, res, next) {
   // Dealer-level access: dealer admins, owners, and managers (a manager has full
   // dealer access, just scoped to the store they're logged into).
@@ -178,16 +197,7 @@ export function registerAI(app) {
         const marketMedian = autotrader?.median_price ?? cargurus?.median_price ?? null
         const marketSource = autotrader ? 'AutoTrader' : cargurus ? 'CarGurus' : null
         const compCount = (autotrader?.count ?? 0) + (cargurus?.count ?? 0)
-        if (marketMedian) {
-          const pct_diff = ((Number(vehicle.price) - marketMedian) / marketMedian) * 100
-          price_flag = {
-            flagged: Math.abs(pct_diff) > 15,
-            median: marketMedian,
-            pct_diff: Math.round(pct_diff * 10) / 10,
-            comp_count: compCount,
-            source: marketSource,
-          }
-        }
+        price_flag = buildPriceFlag(vehicle.price, marketMedian, marketSource, compCount)
       } catch {}
     }
 
@@ -285,58 +295,64 @@ Write a compelling listing in under 280 words. Include the year/make/model/trim,
     // Run enrichments in the background sequentially to avoid Anthropic rate limits
     ;(async () => {
       for (const inventory_id of ids) {
+        // Every vehicle MUST produce exactly one activity row so the progress bar
+        // can reach 100%. We build the row defensively and always attempt the
+        // insert in a finally block — a scrape/fetch error for one car can never
+        // strand the scan at "166 of 167".
+        let vehicle = null
+        let warnings = []
+        let price_flag = null
         try {
-          const { data: vehicle } = await supabaseAdmin
+          const { data } = await supabaseAdmin
             .from('inventory').select('*').eq('id', inventory_id).single()
-          if (!vehicle) continue
+          vehicle = data
 
-          const warnings = []
-          const requiredFields = dealer.ai_required_fields || ['price', 'mileage', 'image_urls']
-          if (requiredFields.includes('price') && (!vehicle.price || Number(vehicle.price) === 0)) warnings.push('Missing or zero price')
-          if (requiredFields.includes('mileage') && vehicle.mileage == null) warnings.push('Missing mileage')
-          if (requiredFields.includes('image_urls') && (!vehicle.image_urls || vehicle.image_urls.length === 0)) warnings.push('No photos attached')
-          if (requiredFields.includes('description') && (!vehicle.description || vehicle.description.length < 20)) warnings.push('Description is missing or too short')
+          if (vehicle) {
+            const requiredFields = dealer.ai_required_fields || ['price', 'mileage', 'image_urls']
+            if (requiredFields.includes('price') && (!vehicle.price || Number(vehicle.price) === 0)) warnings.push('Missing or zero price')
+            if (requiredFields.includes('mileage') && vehicle.mileage == null) warnings.push('Missing mileage')
+            if (requiredFields.includes('image_urls') && (!vehicle.image_urls || vehicle.image_urls.length === 0)) warnings.push('No photos attached')
+            if (requiredFields.includes('description') && (!vehicle.description || vehicle.description.length < 20)) warnings.push('Description is missing or too short')
 
-          let price_flag = null
-          if (!skipPriceComp(vehicle) && vehicle.price && vehicle.make && vehicle.model && vehicle.year) {
-            try {
-              const { autotrader, cargurus } = await scrapeMarketData({
-                make: vehicle.make,
-                model: vehicle.model,
-                year: vehicle.year,
-                trim: vehicle.trim || '',
-                postalCode: dealer?.postal_code || '',
-                province: dealer?.province || '',
-                isUS: _syncIsUS,
-                vehicleLabel: `${vehicle.year} ${vehicle.make} ${vehicle.model}`,
-              })
-              const marketMedian = autotrader?.median_price ?? cargurus?.median_price ?? null
-              const marketSource = autotrader ? 'AutoTrader' : cargurus ? 'CarGurus' : null
-              if (marketMedian) {
-                const pct_diff = ((Number(vehicle.price) - marketMedian) / marketMedian) * 100
-                price_flag = {
-                  flagged: Math.abs(pct_diff) > 15,
-                  median: marketMedian,
-                  pct_diff: Math.round(pct_diff * 10) / 10,
-                  source: marketSource,
-                }
-              }
-            } catch {}
+            if (!skipPriceComp(vehicle) && vehicle.price && vehicle.make && vehicle.model && vehicle.year) {
+              try {
+                const { autotrader, cargurus } = await scrapeMarketData({
+                  make: vehicle.make,
+                  model: vehicle.model,
+                  year: vehicle.year,
+                  trim: vehicle.trim || '',
+                  postalCode: dealer?.postal_code || '',
+                  province: dealer?.province || '',
+                  isUS: _syncIsUS,
+                  vehicleLabel: `${vehicle.year} ${vehicle.make} ${vehicle.model}`,
+                })
+                const marketMedian = autotrader?.median_price ?? cargurus?.median_price ?? null
+                const marketSource = autotrader ? 'AutoTrader' : cargurus ? 'CarGurus' : null
+                const compCount = (autotrader?.count ?? 0) + (cargurus?.count ?? 0)
+                price_flag = buildPriceFlag(vehicle.price, marketMedian, marketSource, compCount)
+              } catch {}
+            }
           }
-
-          await supabaseAdmin.from('ai_activity').insert({
-            dealership_id: req.dealershipId,
-            inventory_id,
-            actor_id: req.user.id,
-            vehicle_label: [vehicle.year, vehicle.make, vehicle.model, vehicle.trim].filter(Boolean).join(' '),
-            warnings: warnings.length > 0 ? warnings : null,
-            price_flagged: !!(price_flag?.flagged),
-            price_pct_diff: price_flag?.pct_diff ?? null,
-            price_median: price_flag?.median ?? null,
-            copy_generated: false
-          })
-        } catch {}
-        await new Promise(r => setTimeout(r, 300)) // gentle rate limiting between vehicles
+        } catch {
+          // fall through to the guaranteed insert below
+        } finally {
+          try {
+            await supabaseAdmin.from('ai_activity').insert({
+              dealership_id: req.dealershipId,
+              inventory_id,
+              actor_id: req.user.id,
+              vehicle_label: vehicle
+                ? [vehicle.year, vehicle.make, vehicle.model, vehicle.trim].filter(Boolean).join(' ')
+                : 'Vehicle',
+              warnings: warnings.length > 0 ? warnings : null,
+              price_flagged: !!(price_flag?.flagged),
+              price_pct_diff: price_flag?.pct_diff ?? null,
+              price_median: price_flag?.median ?? null,
+              copy_generated: false
+            })
+          } catch {}
+          await new Promise(r => setTimeout(r, 300)) // gentle rate limiting between vehicles
+        }
       }
     })()
   })
@@ -545,14 +561,21 @@ Respond with ONLY valid JSON (no markdown, no explanation, no trailing commas):
 
     try {
       const message = await anthropic.messages.create({
-        model: 'claude-sonnet-4-6',
+        model: 'claude-sonnet-5',
         max_tokens: 1024,
         messages: [{ role: 'user', content: prompt }]
       })
       const text = message.content[0]?.text?.trim() || ''
-      // Strip any markdown fencing if present
+      // Strip any markdown fencing, then fall back to extracting the first {...}
+      // block so a stray sentence or trailing token can't fail the whole report.
       const jsonText = text.replace(/^```json?\s*/i, '').replace(/```\s*$/i, '').trim()
-      estimate = JSON.parse(jsonText)
+      try {
+        estimate = JSON.parse(jsonText)
+      } catch {
+        const braced = jsonText.match(/\{[\s\S]*\}/)
+        if (!braced) throw new Error('no JSON object in AI response')
+        estimate = JSON.parse(braced[0])
+      }
     } catch (aiErr) {
       return res.status(502).json({ error: `AI estimate failed: ${aiErr.message}` })
     }
@@ -759,7 +782,7 @@ Respond with ONLY valid JSON (no markdown, no explanation, no trailing commas):
     let recommendations = []
     try {
       const message = await anthropic.messages.create({
-        model: 'claude-sonnet-4-6',
+        model: 'claude-sonnet-5',
         max_tokens: 1200,
         messages: [{
           role: 'user',
