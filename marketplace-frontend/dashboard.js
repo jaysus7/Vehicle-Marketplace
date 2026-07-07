@@ -46,6 +46,20 @@ async function apiGetJson(path, { retries = 4, timeoutMs = 15000, onRetry } = {}
   throw lastErr || new Error('Request failed');
 }
 
+// Surface otherwise-invisible runtime errors so "stuck loading" symptoms become
+// diagnosable instead of silent. Deduped so a repeating error doesn't spam.
+;(function installGlobalErrorSurfacer() {
+  let last = '';
+  const show = (label, msg) => {
+    const text = `${label}: ${msg}`;
+    if (text === last) return; last = text;
+    console.error('[MarketSync]', text);
+    try { if (typeof showToast === 'function') showToast(text.slice(0, 160), 'error', 8000); } catch {}
+  };
+  window.addEventListener('error', (e) => show('JS error', e.message || String(e.error || e)));
+  window.addEventListener('unhandledrejection', (e) => show('Unhandled', (e.reason && (e.reason.message || e.reason)) || 'promise rejection'));
+})();
+
 function showToast(message, type = 'info', duration = 4000) {
   const el = document.createElement('div');
   const colors = { success: 'bg-emerald-600', error: 'bg-red-600', info: 'bg-indigo-600' };
