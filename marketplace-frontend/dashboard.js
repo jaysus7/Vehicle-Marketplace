@@ -1,5 +1,15 @@
 const API = 'https://vehicle-marketplace-s0e4.onrender.com';
 
+// Global HTML escaper. Used throughout the pipeline board, leads table, and other
+// renderers. It was previously only defined locally inside one function, so those
+// other call sites threw "Can't find variable: esc" mid-render — which left the
+// Pipeline & Leads page stuck on "Loading…" (the render crashed before painting).
+function esc(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, c => (
+    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+  ));
+}
+
 // GET a JSON endpoint with a cold-start-friendly retry. The backend runs on a
 // tier that spins down when idle, so the first request after a lull can hang or
 // return a 502/503/504 for ~30–60s while it wakes. We retry those (and network
@@ -478,7 +488,7 @@ async function loadLeadsPage() {
   let data, inv = [];
   try {
     data = await apiGetJson('/leads', { onRetry: (n, total) => {
-      root.innerHTML = `<div class="py-16 text-center text-sm text-slate-400 italic">Waking up the server… (${n}/${total})</div>`;
+      root.innerHTML = `<div class="py-16 text-center text-sm text-slate-400 italic">Still loading… retrying (${n}/${total})</div>`;
     }});
     try { inv = (await apiGetJson('/inventory/all', { retries: 1 })).filter(v => String(v.status || 'available').toLowerCase() === 'available'); } catch {}
   } catch (e) {
@@ -808,7 +818,7 @@ async function loadPipelinePage() {
   root.innerHTML = `<div class="py-16 text-center text-sm text-slate-400 italic">Loading pipeline…</div>`;
   try {
     PL_DATA = await apiGetJson('/pipeline', { onRetry: (n, total) => {
-      root.innerHTML = `<div class="py-16 text-center text-sm text-slate-400 italic">Waking up the server… (${n}/${total})</div>`;
+      root.innerHTML = `<div class="py-16 text-center text-sm text-slate-400 italic">Still loading… retrying (${n}/${total})</div>`;
     }});
     plRender();
   } catch (e) {
@@ -826,7 +836,7 @@ async function loadAppointmentsPage() {
   let data;
   try {
     data = await apiGetJson('/appointments', { onRetry: (n, total) => {
-      root.innerHTML = `<div class="py-16 text-center text-sm text-slate-400 italic">Waking up the server… (${n}/${total})</div>`;
+      root.innerHTML = `<div class="py-16 text-center text-sm text-slate-400 italic">Still loading… retrying (${n}/${total})</div>`;
     }});
   } catch (e) {
     root.innerHTML = `<div class="py-16 text-center text-sm text-slate-500">Couldn't load appointments: ${esc(e.message)}<br><button onclick="loadAppointmentsPage()" class="mt-3 text-indigo-500 hover:text-indigo-400 font-bold">Retry</button></div>`;
