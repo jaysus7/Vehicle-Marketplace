@@ -643,25 +643,36 @@ Respond with ONLY valid JSON (no markdown, no explanation, no trailing commas):
     const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
     let estimate = null
 
-    try {
-      const message = await anthropic.messages.create({
-        model: 'claude-sonnet-5',
-        max_tokens: 1024,
-        messages: [{ role: 'user', content: prompt }]
-      })
-      const text = message.content[0]?.text?.trim() || ''
-      // Strip any markdown fencing, then fall back to extracting the first {...}
-      // block so a stray sentence or trailing token can't fail the whole report.
-      const jsonText = text.replace(/^```json?\s*/i, '').replace(/```\s*$/i, '').trim()
+    // Ask for the report, retrying once if the model returns unparseable output.
+    let lastErr = null
+    for (let attempt = 0; attempt < 2 && !estimate; attempt++) {
       try {
-        estimate = JSON.parse(jsonText)
-      } catch {
-        const braced = jsonText.match(/\{[\s\S]*\}/)
-        if (!braced) throw new Error('no JSON object in AI response')
-        estimate = JSON.parse(braced[0])
+        const message = await anthropic.messages.create({
+          model: 'claude-sonnet-5',
+          max_tokens: 1600,
+          system: 'You are a precise automotive pricing engine. Respond with ONLY a single valid JSON object and nothing else — no prose, no markdown fences.',
+          messages: [{ role: 'user', content: prompt }]
+        })
+        // Concatenate ALL text blocks (not just content[0]) so nothing is dropped.
+        const text = (message.content || [])
+          .filter(b => b.type === 'text' && b.text)
+          .map(b => b.text).join('').trim()
+        const jsonText = text.replace(/^```json?\s*/i, '').replace(/```\s*$/i, '').trim()
+        try {
+          estimate = JSON.parse(jsonText)
+        } catch {
+          const braced = jsonText.match(/\{[\s\S]*\}/)
+          if (!braced) throw new Error('no JSON object in AI response')
+          estimate = JSON.parse(braced[0])
+        }
+      } catch (aiErr) {
+        lastErr = aiErr
+        // On a credit/billing/rate error, don't waste a second attempt.
+        if (/credit|billing|payment|429|rate.?limit/i.test(String(aiErr?.message || ''))) break
       }
-    } catch (aiErr) {
-      return res.status(502).json({ error: aiErrorMessage(aiErr) })
+    }
+    if (!estimate) {
+      return res.status(502).json({ error: aiErrorMessage(lastErr) })
     }
 
     const yourPrice = Number(vehicle.price)

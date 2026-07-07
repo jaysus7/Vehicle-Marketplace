@@ -5848,7 +5848,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
       const breakdownId = `hbd-${idx}`
       const breakdownHtml = `
-        <div id="${breakdownId}" class="col-span-5 bg-slate-50 dark:bg-slate-800/60 border-t border-slate-200 dark:border-slate-700 px-6 py-4">
+        <div id="${breakdownId}" class="hidden col-span-5 bg-slate-50 dark:bg-slate-800/60 border-t border-slate-200 dark:border-slate-700 px-6 py-4">
           <div class="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-3">
             ${segments.map(s => {
               const pct = Math.round((s.val / s.max) * 100)
@@ -5884,7 +5884,7 @@ document.addEventListener('DOMContentLoaded', () => {
         <td class="px-4 py-5 text-center tabular-nums text-base text-slate-700 dark:text-slate-300">${v.photos}</td>
         <td class="px-4 py-5 text-center tabular-nums text-base font-semibold ${v.days >= 60 ? 'text-red-500' : v.days >= 30 ? 'text-amber-500' : 'text-slate-700 dark:text-slate-300'}">${v.days}d</td>
         <td class="px-4 py-5 text-right pr-2">
-          <svg class="hbd-arrow w-4 h-4 text-slate-400 inline transition-transform duration-150 rotate-90" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
+          <svg class="hbd-arrow w-4 h-4 text-slate-400 inline transition-transform duration-150" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
         </td>
       </tr>
       <tr class="border-0"><td colspan="5" class="p-0">${breakdownHtml}</td></tr>`
