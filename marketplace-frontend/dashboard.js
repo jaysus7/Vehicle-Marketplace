@@ -204,6 +204,7 @@ async function initializeDashboardEcosystem() {
     // Pre-fill profile form
     document.getElementById('prof-name').value = profileContext.full_name || '';
     document.getElementById('prof-email').value = profileContext.email || user.email || '';
+    { const p = document.getElementById('prof-phone'); if (p) p.value = profileContext.phone || ''; }
     document.getElementById('prof-dealername').value = profileContext.dealership?.name || '';
     document.getElementById('prof-website').value = profileContext.dealership?.website_url || '';
     document.getElementById('prof-display-name').value = profileContext.display_name || '';
@@ -2487,6 +2488,7 @@ function setupActionListeners() {
     const payload = {
       fullName: document.getElementById('prof-name').value.trim(),
       displayName: document.getElementById('prof-display-name').value.trim(),
+      phone: document.getElementById('prof-phone')?.value.trim() || '',
       email: document.getElementById('prof-email').value.trim(),
       password: document.getElementById('prof-password').value,
       dealershipName: document.getElementById('prof-dealername').value.trim(),

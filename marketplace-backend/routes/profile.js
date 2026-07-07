@@ -18,6 +18,7 @@ export function registerRoutes(app) {
       email: req.user.email,
       full_name: req.profile.full_name,
       display_name: req.profile.display_name || null,
+      phone: req.profile.phone || null,
       avatar_url: req.profile.avatar_url || null,
       role: req.profile.role,
       dealership: req.profile.dealerships
@@ -41,7 +42,7 @@ export function registerRoutes(app) {
   })
 
   app.put('/profile/update', requireAuth, rateLimit('profile-update', 10, 60 * 60 * 1000), async (req, res) => {
-    const { fullName, displayName, email, password, dealershipName, websiteUrl, avatarUrl } = req.body
+    const { fullName, displayName, phone, email, password, dealershipName, websiteUrl, avatarUrl } = req.body
 
     try {
       const authUpdates = {}
@@ -61,6 +62,7 @@ export function registerRoutes(app) {
       const profileUpdates = {}
       if (fullName) profileUpdates.full_name = fullName
       if (displayName !== undefined) profileUpdates.display_name = displayName || null
+      if (phone !== undefined) profileUpdates.phone = (phone || '').trim() || null
       if (avatarUrl !== undefined) profileUpdates.avatar_url = avatarUrl || null
       if (Object.keys(profileUpdates).length > 0) {
         const { error: profileError } = await supabaseAdmin
