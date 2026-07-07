@@ -36,6 +36,20 @@ function buildPriceFlag(price, marketMedian, source, compCount) {
   }
 }
 
+// Turn a raw Anthropic error into a clear, dealer-friendly message. The most
+// common operational failure is the account running out of API credits, which
+// otherwise surfaces as a cryptic 400/402 — call it out explicitly.
+function aiErrorMessage(err) {
+  const raw = String(err?.message || err || '')
+  if (/credit balance is too low|insufficient.*credit|billing|payment/i.test(raw)) {
+    return 'AI is temporarily unavailable — the AI account is out of credits. Please top up Anthropic credits to generate new reports.'
+  }
+  if (/rate.?limit|429|overloaded|529/i.test(raw)) {
+    return 'AI is busy right now — please try again in a moment.'
+  }
+  return `AI request failed: ${raw}`
+}
+
 function requireDealerAdmin(req, res, next) {
   // Dealer-level access: dealer admins, owners, and managers (a manager has full
   // dealer access, just scoped to the store they're logged into).
@@ -242,7 +256,7 @@ Write a compelling listing in under 280 words. Include the year/make/model/trim,
       })
       copy = message.content[0]?.text || null
     } catch (aiErr) {
-      return res.status(502).json({ error: `AI generation failed: ${aiErr.message}` })
+      return res.status(502).json({ error: aiErrorMessage(aiErr) })
     }
 
     // Log activity so the dealer can see what AI found
@@ -577,7 +591,7 @@ Respond with ONLY valid JSON (no markdown, no explanation, no trailing commas):
         estimate = JSON.parse(braced[0])
       }
     } catch (aiErr) {
-      return res.status(502).json({ error: `AI estimate failed: ${aiErr.message}` })
+      return res.status(502).json({ error: aiErrorMessage(aiErr) })
     }
 
     const yourPrice = Number(vehicle.price)

@@ -3419,7 +3419,11 @@ async function openPriceReport(inventoryId, forceRefresh = false) {
     const res = await fetch(`${API}/ai/price-report/${inventoryId}${forceRefresh ? '?refresh=1' : ''}`, {
       headers: { 'Authorization': `Bearer ${token}` }
     });
-    if (!res.ok) throw new Error('Could not load report');
+    if (!res.ok) {
+      let msg = 'Could not load report';
+      try { const e = await res.json(); if (e?.error) msg = e.error; } catch {}
+      throw new Error(msg);
+    }
     const { vehicle, estimate, pct_diff, data_source, skipped, reason, cached, generated_at } = await res.json();
 
     // New / current-year / demo vehicles have no reliable used-market comp set —
