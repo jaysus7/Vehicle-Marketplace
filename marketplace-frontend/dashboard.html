@@ -1908,24 +1908,24 @@
             </div>
           </div>
 
-          <!-- Summary stat cards -->
+          <!-- Summary stat cards — click to filter the list below -->
           <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4">
+            <button type="button" data-ai-filter="all" class="ai-stat-card text-left bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4 transition hover:border-slate-300 dark:hover:border-slate-600 focus:outline-none">
               <div class="text-xs uppercase font-bold tracking-wider text-slate-400 mb-1">Total Checks</div>
               <div class="text-3xl font-black text-slate-900 dark:text-white" id="ai-stat-total">—</div>
-            </div>
-            <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4">
-              <div class="text-xs uppercase font-bold tracking-wider text-amber-500 mb-1">Missing Info</div>
-              <div class="text-3xl font-black text-amber-500" id="ai-stat-warnings">—</div>
-            </div>
-            <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4">
+            </button>
+            <button type="button" data-ai-filter="price" class="ai-stat-card text-left bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4 transition hover:border-red-300 dark:hover:border-red-700 focus:outline-none">
               <div class="text-xs uppercase font-bold tracking-wider text-red-500 mb-1">Price Flags</div>
               <div class="text-3xl font-black text-red-500" id="ai-stat-price-flags">—</div>
-            </div>
-            <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4">
+            </button>
+            <button type="button" data-ai-filter="missing" class="ai-stat-card text-left bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4 transition hover:border-amber-300 dark:hover:border-amber-700 focus:outline-none">
+              <div class="text-xs uppercase font-bold tracking-wider text-amber-500 mb-1">Missing Info</div>
+              <div class="text-3xl font-black text-amber-500" id="ai-stat-warnings">—</div>
+            </button>
+            <button type="button" data-ai-filter="copies" class="ai-stat-card text-left bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4 transition hover:border-emerald-300 dark:hover:border-emerald-700 focus:outline-none">
               <div class="text-xs uppercase font-bold tracking-wider text-emerald-500 mb-1">Copies Written</div>
               <div class="text-3xl font-black text-emerald-500" id="ai-stat-copies">—</div>
-            </div>
+            </button>
           </div>
 
           <!-- Activity feed -->
@@ -2193,7 +2193,7 @@
     </div>
   </div>
 
-  <script src="dashboard.js?v=20260707j"></script>
+  <script src="dashboard.js?v=20260707k"></script>
   <script src="tour.js"></script>
   <script src="table-sort.js?v=20260706a"></script>
 </body>

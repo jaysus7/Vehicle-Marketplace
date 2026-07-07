@@ -380,7 +380,17 @@ Write a compelling listing in under 280 words. Include the year/make/model/trim,
       .order('created_at', { ascending: false })
       .limit(limit)
     if (error) return res.status(500).json({ error: error.message })
-    res.json({ activity: data || [] })
+
+    // Attach each vehicle's stock number (dealers identify units by stock #, not label).
+    const rows = data || []
+    const invIds = [...new Set(rows.map(r => r.inventory_id).filter(Boolean))]
+    if (invIds.length) {
+      const { data: inv } = await supabaseAdmin
+        .from('inventory').select('id, stocknumber').in('id', invIds)
+      const stockById = new Map((inv || []).map(v => [v.id, v.stocknumber]))
+      for (const r of rows) r.stocknumber = r.inventory_id ? (stockById.get(r.inventory_id) || null) : null
+    }
+    res.json({ activity: rows })
   })
 
   // GET /ai/lot-report — aggregate the whole lot against AutoTrader/CarGurus market

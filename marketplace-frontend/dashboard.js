@@ -3164,47 +3164,107 @@ async function loadAIActivity() {
 
     if (items.length === 0) { if (empty) empty.classList.remove('hidden'); return; }
 
-    if (countEl) countEl.textContent = `${items.length} checks`;
-    list.innerHTML = items.map(item => {
-      const date = new Date(item.created_at).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
-      const badges = [];
-      if (item.warnings?.length > 0) badges.push(`<span class="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300">⚠ ${item.warnings.length} alert${item.warnings.length > 1 ? 's' : ''}</span>`);
-      if (item.price_flagged) {
-        const dir = (item.price_pct_diff || 0) > 0 ? 'overpriced' : 'underpriced';
-        const pct = Math.abs(item.price_pct_diff || 0);
-        badges.push(`<span class="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300">💰 ${pct}% ${dir}</span>`);
-      }
-      if (item.copy_generated) badges.push(`<span class="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300">✦ Copy written</span>`);
-      const warningList = item.warnings?.length > 0
-        ? `<ul class="mt-1.5 text-xs text-amber-700 dark:text-amber-300 space-y-0.5 list-disc list-inside">${item.warnings.map(w => `<li>${w}</li>`).join('')}</ul>`
-        : '';
-      // Every vehicle gets a clickable price report so the comparison is always
-      // viewable — not just the ones flagged high or low.
-      const clickable = !!item.inventory_id;
-      const hint = item.price_flagged ? 'Click for full price report →' : 'View price comparison →';
-      return `<li class="px-4 py-3.5 ${clickable ? 'cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/60 transition-colors' : ''}" ${clickable ? `data-price-report="${item.inventory_id}"` : ''}>
-        <div class="flex items-start justify-between gap-3">
-          <div class="min-w-0">
-            <div class="font-semibold text-sm text-slate-900 dark:text-white truncate">${item.vehicle_label || 'Unknown vehicle'}</div>
-            <div class="flex flex-wrap gap-1.5 mt-1.5">${badges.join('') || '<span class="text-xs text-slate-400">No issues found</span>'}</div>
-            ${warningList}
-            ${clickable ? `<div class="text-[10px] text-indigo-500 dark:text-indigo-400 mt-1">${hint}</div>` : ''}
-          </div>
-          <div class="text-xs text-slate-400 whitespace-nowrap flex-shrink-0 mt-0.5">${date}</div>
-        </div>
-      </li>`;
-    }).join('');
-    list.classList.remove('hidden');
-
-    // Wire price-report click handlers
-    list.querySelectorAll('[data-price-report]').forEach(li => {
-      li.addEventListener('click', () => openPriceReport(li.dataset.priceReport));
-    });
+    __aiActivityItems = items;
+    renderAiActivity();
   } catch (err) {
     if (loading) loading.classList.add('hidden');
     if (errorEl) { errorEl.textContent = err.message; errorEl.classList.remove('hidden'); }
   }
 }
+
+// Which category the Inventory Scan Results list is filtered to.
+let __aiActivityItems = [];
+let __aiActivityFilter = 'all';
+
+// Priority rank for ordering: price flags first, then missing info, then copies
+// written, then everything else — so the units that need action float to the top.
+function aiRowPriority(i) {
+  if (i.price_flagged) return 0;
+  if (i.warnings?.length > 0) return 1;
+  if (i.copy_generated) return 2;
+  return 3;
+}
+
+function renderAiActivity() {
+  const list = document.getElementById('ai-activity-list');
+  const empty = document.getElementById('ai-activity-empty');
+  const countEl = document.getElementById('ai-activity-count');
+  if (!list) return;
+
+  // Highlight the active filter card.
+  document.querySelectorAll('.ai-stat-card').forEach(c => {
+    const on = c.dataset.aiFilter === __aiActivityFilter;
+    c.classList.toggle('ring-2', on);
+    c.classList.toggle('ring-indigo-500', on);
+  });
+
+  const f = __aiActivityFilter;
+  const filtered = __aiActivityItems.filter(i =>
+    f === 'all' ? true :
+    f === 'price' ? i.price_flagged :
+    f === 'missing' ? (i.warnings?.length > 0) :
+    f === 'copies' ? i.copy_generated : true
+  );
+  // Sort by priority, then newest first within a group.
+  filtered.sort((a, b) => aiRowPriority(a) - aiRowPriority(b) || new Date(b.created_at) - new Date(a.created_at));
+
+  if (countEl) countEl.textContent = f === 'all' ? `${filtered.length} checks` : `${filtered.length} of ${__aiActivityItems.length}`;
+
+  if (!filtered.length) {
+    list.innerHTML = `<li class="px-4 py-8 text-center text-sm text-slate-400">No vehicles in this category.</li>`;
+    list.classList.remove('hidden');
+    if (empty) empty.classList.add('hidden');
+    return;
+  }
+
+  list.innerHTML = filtered.map(item => {
+    const date = new Date(item.created_at).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+    const stock = item.stocknumber ? `<span class="text-[11px] font-bold text-indigo-600 dark:text-indigo-400">#${esc(item.stocknumber)}</span>` : '';
+    const badges = [];
+    if (item.price_flagged) {
+      const dir = (item.price_pct_diff || 0) > 0 ? 'overpriced' : 'underpriced';
+      const pct = Math.abs(item.price_pct_diff || 0);
+      badges.push(`<span class="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300">${pct}% ${dir}</span>`);
+    }
+    if (item.warnings?.length > 0) badges.push(`<span class="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300">${item.warnings.length} alert${item.warnings.length > 1 ? 's' : ''}</span>`);
+    if (item.copy_generated) badges.push(`<span class="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300">Copy written</span>`);
+    const warningList = item.warnings?.length > 0
+      ? `<ul class="mt-1.5 text-xs text-amber-700 dark:text-amber-300 space-y-0.5 list-disc list-inside">${item.warnings.map(w => `<li>${esc(w)}</li>`).join('')}</ul>`
+      : '';
+    const clickable = !!item.inventory_id;
+    const hint = item.price_flagged ? 'Click for full price report →' : 'View price comparison →';
+    return `<li class="px-4 py-3.5 ${clickable ? 'cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/60 transition-colors' : ''}" ${clickable ? `data-price-report="${item.inventory_id}"` : ''}>
+      <div class="flex items-start justify-between gap-3">
+        <div class="min-w-0">
+          <div class="flex items-center gap-2 flex-wrap">
+            <span class="font-semibold text-sm text-slate-900 dark:text-white">${esc(item.vehicle_label || 'Unknown vehicle')}</span>
+            ${stock}
+          </div>
+          <div class="flex flex-wrap gap-1.5 mt-1.5">${badges.join('') || '<span class="text-xs text-slate-400">No issues found</span>'}</div>
+          ${warningList}
+          ${clickable ? `<div class="text-[10px] text-indigo-500 dark:text-indigo-400 mt-1">${hint}</div>` : ''}
+        </div>
+        <div class="text-xs text-slate-400 whitespace-nowrap flex-shrink-0 mt-0.5">${date}</div>
+      </div>
+    </li>`;
+  }).join('');
+  list.classList.remove('hidden');
+  if (empty) empty.classList.add('hidden');
+
+  list.querySelectorAll('[data-price-report]').forEach(li => {
+    li.addEventListener('click', () => openPriceReport(li.dataset.priceReport));
+  });
+}
+
+// Wire the stat cards as category filters.
+document.addEventListener('DOMContentLoaded', () => {
+  document.querySelectorAll('.ai-stat-card').forEach(card => {
+    card.addEventListener('click', () => {
+      __aiActivityFilter = card.dataset.aiFilter || 'all';
+      renderAiActivity();
+    });
+  });
+});
 
 // ── Price Report Modal ──────────────────────────────────────────────────────
 
