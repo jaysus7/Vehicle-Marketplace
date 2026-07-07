@@ -5,7 +5,7 @@ const API = 'https://vehicle-marketplace-s0e4.onrender.com';
 // return a 502/503/504 for ~30–60s while it wakes. We retry those (and network
 // errors) a few times with backoff, and surface the real status/message on final
 // failure instead of a generic "could not load".
-async function apiGetJson(path, { retries = 3, timeoutMs = 30000 } = {}) {
+async function apiGetJson(path, { retries = 4, timeoutMs = 15000, onRetry } = {}) {
   let lastErr;
   for (let attempt = 0; attempt <= retries; attempt++) {
     const ctrl = new AbortController();
@@ -32,8 +32,9 @@ async function apiGetJson(path, { retries = 3, timeoutMs = 30000 } = {}) {
       else lastErr = e;
       if (attempt >= retries) throw lastErr;
     }
-    // Backoff: 1s, 2s, 4s — enough to ride out a cold start.
-    await new Promise(res => setTimeout(res, 1000 * Math.pow(2, attempt)));
+    if (typeof onRetry === 'function') try { onRetry(attempt + 1, retries + 1); } catch {}
+    // Backoff: 1s, 2s, 4s, 6s — ride out a cold start without long silent hangs.
+    await new Promise(res => setTimeout(res, Math.min(6000, 1000 * (attempt + 1))));
   }
   throw lastErr || new Error('Request failed');
 }
@@ -394,7 +395,9 @@ async function loadLeadsPage() {
   root.innerHTML = `<div class="py-16 text-center text-sm text-slate-400 italic">Loading leads…</div>`;
   let data, inv = [];
   try {
-    data = await apiGetJson('/leads');
+    data = await apiGetJson('/leads', { onRetry: (n, total) => {
+      root.innerHTML = `<div class="py-16 text-center text-sm text-slate-400 italic">Waking up the server… (${n}/${total})</div>`;
+    }});
     try { inv = (await apiGetJson('/inventory/all', { retries: 1 })).filter(v => String(v.status || 'available').toLowerCase() === 'available'); } catch {}
   } catch (e) {
     root.innerHTML = `<div class="py-16 text-center text-sm text-slate-500">Couldn't load leads: ${esc(e.message)}<br><button onclick="loadLeadsPage()" class="mt-3 text-indigo-500 hover:text-indigo-400 font-bold">Retry</button></div>`;
@@ -722,7 +725,9 @@ async function loadPipelinePage() {
   if (!root) return;
   root.innerHTML = `<div class="py-16 text-center text-sm text-slate-400 italic">Loading pipeline…</div>`;
   try {
-    PL_DATA = await apiGetJson('/pipeline');
+    PL_DATA = await apiGetJson('/pipeline', { onRetry: (n, total) => {
+      root.innerHTML = `<div class="py-16 text-center text-sm text-slate-400 italic">Waking up the server… (${n}/${total})</div>`;
+    }});
     plRender();
   } catch (e) {
     root.innerHTML = `<div class="py-16 text-center text-sm text-slate-500">Couldn't load the pipeline: ${esc(e.message)}<br><button onclick="loadPipelinePage()" class="mt-3 text-indigo-500 hover:text-indigo-400 font-bold">Retry</button></div>`;
