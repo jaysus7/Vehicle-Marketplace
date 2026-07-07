@@ -4522,8 +4522,9 @@ async function generatePdf(vehicleId, type, btn, opts = {}) {
   btn.disabled = true;
   btn.textContent = 'Generating…';
   const label = type === 'window-sticker' ? 'Window Sticker' : 'Brochure';
-  // Force MarketSync-generated (skip the OEM lookup + overwrite any cached one).
-  const genQuery = opts.forceGenerate ? '?source=generate&regen=1' : '';
+  // oemOnly = fetch the factory sticker only (no fallback); forceGenerate = branded.
+  const genQuery = opts.oemOnly ? '?source=oem'
+    : opts.forceGenerate ? '?source=generate&regen=1' : '';
 
   const openUrl = (url, source) => {
     window.open(url, '_blank');
@@ -4569,6 +4570,13 @@ async function generatePdf(vehicleId, type, btn, opts = {}) {
       headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
     });
     const data = await res.json();
+    // OEM-only requested but none exists → offer to generate one instead.
+    if (res.status === 404 && data.error === 'no_oem') {
+      btn.disabled = false;
+      btn.textContent = origText;
+      showNoOemPrompt(vehicleId, btn);
+      return;
+    }
     if (!res.ok) throw new Error(data.error || 'PDF generation failed');
     if (data.url) {
       // Cached — open immediately
@@ -4582,6 +4590,39 @@ async function generatePdf(vehicleId, type, btn, opts = {}) {
     btn.disabled = false;
     btn.textContent = origText;
   }
+}
+
+// Shown when "Get OEM Sticker" finds no factory sticker for the VIN — explains and
+// offers to generate a branded dealer sticker instead.
+function showNoOemPrompt(vehicleId, btn) {
+  document.getElementById('no-oem-modal')?.remove();
+  const modal = document.createElement('div');
+  modal.id = 'no-oem-modal';
+  modal.className = 'fixed inset-0 z-[70] bg-black/60 flex items-center justify-center p-4';
+  modal.innerHTML = `
+    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl w-full max-w-sm p-6 shadow-2xl text-center">
+      <div class="w-11 h-11 mx-auto rounded-full bg-amber-100 dark:bg-amber-900/40 flex items-center justify-center mb-3">
+        <svg class="w-6 h-6 text-amber-600 dark:text-amber-400" fill="none" stroke="currentColor" stroke-width="1.9" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z"/></svg>
+      </div>
+      <h3 class="text-base font-bold text-slate-900 dark:text-white mb-1">No factory sticker found</h3>
+      <p class="text-xs text-slate-500 dark:text-slate-400 mb-4">There's no authentic OEM window sticker available for this VIN. You can generate a branded dealer sticker instead.</p>
+      <button data-act="generate" class="w-full bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-bold px-4 py-2.5 rounded-lg transition flex items-center justify-center gap-1.5">
+        Generate Dealer Sticker <svg viewBox="0 0 24 24" width="14" height="14" class="inline-block flex-shrink-0" aria-hidden="true"><title>AI Boost feature</title><path d="M12 2.5l2.4 6.6 6.6 2.4-6.6 2.4L12 20.5l-2.4-6.6L3 11.5l6.6-2.4z" fill="#c4b5fd" fill-opacity="0.5" stroke="#6d28d9" stroke-width="1.4" stroke-linejoin="round"/></svg>
+      </button>
+      <button data-act="cancel" class="mt-2.5 w-full text-xs font-bold text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 py-1.5 transition">Cancel</button>
+    </div>`;
+  const close = () => modal.remove();
+  modal.addEventListener('click', (e) => {
+    if (e.target === modal) return close();
+    const act = e.target.closest('[data-act]')?.dataset.act;
+    if (!act) return;
+    close();
+    if (act === 'generate') {
+      if (!__aiDocsActive) { switchPage('ai-boost'); return; }
+      generatePdf(vehicleId, 'window-sticker', btn, { forceGenerate: true });
+    }
+  });
+  document.body.appendChild(modal);
 }
 
 async function loadBrandingSettings() {
@@ -5094,7 +5135,7 @@ function showStickerChoice(btn) {
     if (!choice) return;
     if (choice === 'generate' && !__aiDocsActive) { close(); switchPage('ai-boost'); return; }
     close();
-    if (choice === 'oem') generatePdf(id, 'window-sticker', btn);
+    if (choice === 'oem') generatePdf(id, 'window-sticker', btn, { oemOnly: true });
     else if (choice === 'generate') generatePdf(id, 'window-sticker', btn, { forceGenerate: true });
   });
   document.body.appendChild(modal);

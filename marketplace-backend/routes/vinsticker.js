@@ -1043,6 +1043,20 @@ export function registerRoutes(app) {
       .single()
     if (error || !vehicle) return res.status(404).json({ error: 'Vehicle not found' })
 
+    // OEM-only: the "Get OEM Sticker" button asks for the authentic factory sticker
+    // and nothing else. If there's none to fetch, return a clear signal so the UI can
+    // offer to generate one instead of silently falling back.
+    if (req.query.source === 'oem') {
+      const oemProbe = await fetchOemWindowStickerPdf(vehicle).catch(() => null)
+      if (!oemProbe) {
+        return res.status(404).json({ error: 'no_oem', message: 'No factory (OEM) window sticker is available for this VIN.' })
+      }
+      const path = `${req.dealershipId}/${vehicle.id}/window-sticker.pdf`
+      const url = await uploadPdf(oemProbe.buffer, path)
+      await supabaseAdmin.from('inventory').update({ window_sticker_url: url, window_sticker_source: 'oem' }).eq('id', vehicle.id)
+      return res.json({ url, source: 'oem', cached: false })
+    }
+
     // If the factory sticker isn't available we fall back to generating one — that
     // fallback also requires AI Boost. Non-Boost users get OEM-or-nothing.
     if (req.query.source !== 'generate' && !hasAiBoost(dealer, req.user.email)) {
