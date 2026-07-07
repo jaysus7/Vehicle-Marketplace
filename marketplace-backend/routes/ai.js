@@ -1441,15 +1441,27 @@ Units 60d+ on lot: ${stale}`
       let sniffedXml = ''
       const tried = new Set()
 
+      // Cloudflare "Bot Fight Mode" blocks generic browser UAs but usually still
+      // serves robots.txt/sitemaps to search crawlers, so if a normal read is
+      // blocked we retry once as Googlebot before giving up.
+      const GOOGLEBOT_UA = 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)'
+      const fetchText = async (u, accept) => {
+        for (const ua of [null, GOOGLEBOT_UA]) {
+          try {
+            const headers = { 'Accept': accept }
+            if (ua) headers['User-Agent'] = ua
+            const r = await browserFetch(u, { signal: AbortSignal.timeout(9000), headers })
+            if (r.ok) return await r.text()
+          } catch {}
+        }
+        return null
+      }
+
       const collect = async (u, depth = 0) => {
         if (depth > 3 || seen.size > 8000 || tried.has(u)) return
         tried.add(u)
-        let xml = ''
-        try {
-          const r = await browserFetch(u, { signal: AbortSignal.timeout(9000), headers: { 'Accept': 'application/xml, text/xml, */*' } })
-          if (!r.ok) return
-          xml = await r.text()
-        } catch { return }
+        const xml = await fetchText(u, 'application/xml, text/xml, */*')
+        if (xml == null) return
         sniffedXml += xml.slice(0, 4000)
         const locs = [...xml.matchAll(/<loc>([^<]+)<\/loc>/gi)].map(m => m[1].trim().replace(/&amp;/g, '&'))
         // Sitemap index → recurse into child sitemaps that look inventory-related first,
@@ -1469,20 +1481,21 @@ Units 60d+ on lot: ${stale}`
 
       // 1) robots.txt → Sitemap: entries (Cloudflare-friendly, dealer-agnostic).
       const sitemapUrls = []
-      try {
-        const rb = await browserFetch(origin + '/robots.txt', { signal: AbortSignal.timeout(8000) })
-        if (rb.ok) {
-          const txt = await rb.text()
-          for (const m of txt.matchAll(/^\s*sitemap:\s*(\S+)/gim)) sitemapUrls.push(m[1].trim())
-        }
-      } catch {}
+      const robotsTxt = await fetchText(origin + '/robots.txt', 'text/plain, */*')
+      if (robotsTxt) {
+        for (const m of robotsTxt.matchAll(/^\s*sitemap:\s*(\S+)/gim)) sitemapUrls.push(m[1].trim())
+      }
 
-      // 2) common sitemap paths as a backstop.
+      // 2) common sitemap paths as a backstop (covers Dealer.com, DealerInspire,
+      //    eDealer, Convertus, Sincro, DI, and WordPress dealer themes).
       const candidates = [
         ...sitemapUrls,
         origin + '/inventory-listing-sitemap.xml', origin + '/vehicles-sitemap.xml',
         origin + '/inventory-sitemap.xml', origin + '/inventory_sitemap.xml',
         origin + '/sitemap_index.xml', origin + '/sitemap.xml', origin + '/sitemap-index.xml',
+        origin + '/sitemap/sitemap.xml', origin + '/sitemap/index.xml',
+        origin + '/vehicle-sitemap.xml', origin + '/used-inventory-sitemap.xml',
+        origin + '/new-inventory-sitemap.xml', origin + '/sitemapindex.xml',
       ]
       for (const url of candidates) {
         await collect(url)
