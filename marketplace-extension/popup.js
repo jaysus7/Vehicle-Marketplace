@@ -903,10 +903,13 @@ function initRegisterScreen() {
   })
 }
 
+let __popupToken = null
+
 document.addEventListener('DOMContentLoaded', () => {
   initLoginScreen()
   initRegisterScreen()
   chrome.storage.local.get(['token', 'user'], ({ token, user }) => {
+    __popupToken = token || null
     if (token && user) {
       showInventoryScreen(token, user)
       chrome.runtime.sendMessage({ type: 'FB_SYNC_NOW' })
@@ -914,4 +917,22 @@ document.addEventListener('DOMContentLoaded', () => {
       setScreen('login')
     }
   })
+})
+
+// Live-refresh the popup when auth changes in the background — e.g. the dashboard
+// bridge just signed us in (passkey login) or the user signed out elsewhere — so the
+// open popup updates itself instead of needing a close-and-reopen.
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area !== 'local' || !changes.token) return
+  const newTok = changes.token.newValue || null
+  if (newTok === __popupToken) return
+  __popupToken = newTok
+  if (newTok) {
+    chrome.storage.local.get(['user'], ({ user }) => {
+      showInventoryScreen(newTok, user)
+      chrome.runtime.sendMessage({ type: 'FB_SYNC_NOW' })
+    })
+  } else {
+    setScreen('login')
+  }
 })

@@ -80,7 +80,39 @@
     }
   }
 
+  // Lightweight one-way push: whenever the SITE has a token the extension doesn't
+  // (e.g. right after a passkey login, which sets localStorage after this script has
+  // already run), mirror it into the extension. Safe to call repeatedly — it only
+  // writes when they differ, and never touches the auto-login loop logic.
+  async function pushSiteToExt() {
+    const page = getPageAuth()
+    if (!page?.token) return
+    const ext = await getExtAuth()
+    if (!ext || ext.token !== page.token) {
+      sessionStorage.removeItem('ms_logged_out')
+      chrome.storage.local.set({ token: page.token, user: page.user ?? ext?.user ?? null })
+    }
+  }
+
   syncAuth()
+
+  // Passkey / async logins set the token milliseconds-to-seconds after this script
+  // runs and often without a navigation, so a single check at load misses them.
+  // Poll briefly after load, and re-check whenever the tab regains focus, so the
+  // extension picks up the login without the user reloading anything.
+  let _pushTicks = 0
+  const _pushTimer = setInterval(() => {
+    pushSiteToExt()
+    if (++_pushTicks >= 40) clearInterval(_pushTimer) // ~2 min of 3s polling, then stop
+  }, 3000)
+  window.addEventListener('focus', pushSiteToExt)
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) pushSiteToExt() })
+  // The dashboard can also nudge us the instant it finishes logging in.
+  window.addEventListener('message', (e) => {
+    if (e.source === window && e.data?.__marketsync === true && e.data.dir === 'from-page' && e.data.type === 'AUTH_CHANGED') {
+      pushSiteToExt()
+    }
+  })
 
   // Keep them in sync after load: if the extension logs out (popup sign-out) while
   // the dashboard is open, clear the site too; if it logs in, adopt that token.

@@ -477,8 +477,26 @@ function switchPage(pageId) {
   if (pageId === 'ai-vision') loadAiVisionPage();
   if (pageId === 'pipeline') loadPipelinePage();
   if (pageId === 'leads') loadLeadsPage();
-  if (pageId === 'appointments') loadAppointmentsPage();
 }
+
+// Appointments now live inside the Pipeline page — a button pulls up the calendar.
+document.addEventListener('DOMContentLoaded', () => {
+  const apptBtn = document.getElementById('open-appointments-btn');
+  if (!apptBtn) return;
+  apptBtn.addEventListener('click', () => {
+    const panel = document.getElementById('appointments-panel');
+    if (!panel) return;
+    const show = panel.classList.contains('hidden');
+    panel.classList.toggle('hidden', !show);
+    apptBtn.classList.toggle('bg-indigo-100', show);
+    apptBtn.classList.toggle('dark:bg-indigo-950/50', show);
+    apptBtn.classList.toggle('text-indigo-700', show);
+    if (show) {
+      loadAppointmentsPage();
+      panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  });
+});
 
 // ── Leads (CRM ADF delivery) ─────────────────────────────────────────────────
 async function loadLeadsPage() {
