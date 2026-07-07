@@ -1016,7 +1016,7 @@ Return ONLY valid JSON array (no markdown):
     const [{ data: available }, { data: sold90 }, { data: sold30 }] = await Promise.all([
       supabaseAdmin
         .from('inventory')
-        .select('id, vin, stocknumber, make, model, year, condition, price, mileage, description, image_urls, created_at')
+        .select('id, vin, stocknumber, make, model, year, condition, price, mileage, description, image_urls, created_at, photo_score, photo_flags, photo_checked_at')
         .eq('dealership_id', req.dealershipId)
         .eq('status', 'available'),
       supabaseAdmin
@@ -1132,6 +1132,10 @@ Return ONLY valid JSON array (no markdown):
         price: v.price,
         days,
         photos: photoCount,
+        // AI Vision photo-quality score/flags (folded into health — no separate page).
+        photo_score: v.photo_score ?? null,
+        photo_flags: Array.isArray(v.photo_flags) ? v.photo_flags : [],
+        photo_checked_at: v.photo_checked_at ?? null,
         score,
         breakdown: { photos: photoScore, days: daysScore, price: priceScore, mileage: mileageScore, description: descScore, fields: completeScore },
         issues: [

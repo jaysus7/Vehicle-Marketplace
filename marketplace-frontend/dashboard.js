@@ -4861,6 +4861,33 @@ async function loadAiVisionResults() {
 }
 
 let __aiVisionScanning = false;
+// "Score photos" button inside Vehicle Health Scores — runs the same AI Vision scan
+// and refreshes the health table so the new photo grades show inline (no separate page).
+document.addEventListener('DOMContentLoaded', () => {
+  const b = document.getElementById('health-score-photos-btn');
+  if (!b) return;
+  b.addEventListener('click', async () => {
+    if (b._busy) return;
+    b._busy = true; b.disabled = true;
+    const orig = b.textContent; b.textContent = 'Scoring photos…';
+    try {
+      const res = await fetch(`${API}/ai/vision/scan`, { method: 'POST', headers: { 'Authorization': `Bearer ${token}` } });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Scan failed');
+      const total = data.total || 0;
+      if (!total) { showToast('All photos are already scored.', 'info'); }
+      else { showToast(`Scoring photos on ${total} listing${total === 1 ? '' : 's'} — refresh in a moment to see grades fill in.`, 'info', 6000); }
+      try { if (typeof loadIntel === 'function') await loadIntel(true); } catch {}
+      // Refresh again after the background batch has had time to run.
+      if (total > (data.scored_now || 0)) setTimeout(() => { try { loadIntel(true); } catch {} }, 20000);
+    } catch (e) {
+      showToast(e.message, 'error');
+    } finally {
+      b._busy = false; b.disabled = false; b.textContent = orig;
+    }
+  });
+});
+
 async function runAiVisionScan() {
   const btn = document.getElementById('ai-vision-scan-btn');
   if (!btn || __aiVisionScanning) return;
@@ -6157,6 +6184,23 @@ document.addEventListener('DOMContentLoaded', () => {
               </div>`
             }).join('')}
           </div>
+          ${(() => {
+            // AI Vision photo quality — folded in here instead of a separate page.
+            if (v.photo_checked_at == null && v.photo_score == null) {
+              return `<div class="mb-3 text-[11px] text-slate-400 dark:text-slate-500">AI Vision: photos not scored yet.</div>`;
+            }
+            const ps = Number(v.photo_score || 0);
+            const barColor = ps >= 80 ? 'bg-emerald-500' : ps >= 50 ? 'bg-amber-400' : 'bg-red-400';
+            const flags = Array.isArray(v.photo_flags) ? v.photo_flags : [];
+            return `<div class="mb-3 rounded-lg bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-slate-700 p-2.5">
+              <div class="flex justify-between text-[10px] font-semibold text-slate-500 dark:text-slate-400 mb-1">
+                <span class="flex items-center gap-1"><svg viewBox="0 0 24 24" width="12" height="12" class="inline-block flex-shrink-0" aria-hidden="true"><path d="M12 2.5l2.4 6.6 6.6 2.4-6.6 2.4L12 20.5l-2.4-6.6L3 11.5l6.6-2.4z" fill="#c4b5fd" fill-opacity="0.5" stroke="#6d28d9" stroke-width="1.4" stroke-linejoin="round"/></svg> AI Vision — Photo Quality</span>
+                <span>${ps}/100</span>
+              </div>
+              <div class="h-1.5 rounded-full bg-slate-200 dark:bg-slate-700"><div class="h-1.5 rounded-full ${barColor}" style="width:${ps}%"></div></div>
+              ${flags.length ? `<div class="flex flex-wrap gap-1 mt-1.5">${flags.map(f => `<span class="text-[10px] bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 px-1.5 py-0.5 rounded">${esc(f)}</span>`).join('')}</div>` : '<div class="text-[10px] text-emerald-500 font-semibold mt-1.5">✓ Photos look good</div>'}
+            </div>`;
+          })()}
           ${v.issues.length ? `<div class="flex flex-wrap gap-1">${issueList}</div>` : '<div class="text-emerald-500 text-xs font-semibold">✓ No issues</div>'}
         </div>`
 

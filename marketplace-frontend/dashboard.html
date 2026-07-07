@@ -1280,9 +1280,12 @@
 
               <!-- Vehicle Health Scores -->
               <div class="bg-white dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 rounded-xl">
-                <div class="px-4 py-3 border-b border-slate-100 dark:border-slate-700 flex items-center justify-between">
+                <div class="px-4 py-3 border-b border-slate-100 dark:border-slate-700 flex items-center justify-between gap-3 flex-wrap">
                   <span class="text-sm font-bold text-slate-900 dark:text-white">Vehicle Health Scores</span>
-                  <span class="text-xs text-slate-400">Lowest scores first · click to open unit</span>
+                  <div class="flex items-center gap-3">
+                    <span class="text-xs text-slate-400 hidden sm:inline">Lowest scores first · click to open unit</span>
+                    <button type="button" id="health-score-photos-btn" class="text-xs font-bold px-3 py-1.5 rounded-lg bg-violet-600 hover:bg-violet-500 text-white transition">Score photos (AI Vision)</button>
+                  </div>
                 </div>
                 <div style="max-height:420px;overflow-x:auto;overflow-y:auto">
                   <table class="w-full text-sm">
@@ -1635,17 +1638,12 @@
         <!-- ── Active content — feature detail, settings, stats, log ─────── -->
         <div id="ai-boost-active-content" class="space-y-5">
 
-          <!-- AI Vision entry point (AI Vision lives under AI Boost) -->
-          <button type="button" onclick="switchPage('ai-vision')" class="w-full text-left bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-5 flex items-center gap-4 hover:border-violet-400 dark:hover:border-violet-600 transition">
-            <div class="flex-shrink-0 w-11 h-11 rounded-xl bg-violet-100 dark:bg-violet-900/40 flex items-center justify-center">
-              <svg class="w-5 h-5 text-violet-600 dark:text-violet-400" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z"/><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
-            </div>
-            <div class="min-w-0 flex-1">
-              <div class="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-1.5">AI Vision — Photo Scoring <svg viewBox="0 0 24 24" width="14" height="14" class="inline-block flex-shrink-0" aria-hidden="true"><title>AI Boost feature — included in your plan</title><path d="M12 2.5l2.4 6.6 6.6 2.4-6.6 2.4L12 20.5l-2.4-6.6L3 11.5l6.6-2.4z" fill="#c4b5fd" fill-opacity="0.5" stroke="#6d28d9" stroke-width="1.4" stroke-linejoin="round"/></svg></div>
-              <div class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Score every listing's photos 0–100 and fix the worst first — included with AI Boost.</div>
-            </div>
-            <svg class="w-5 h-5 text-slate-400 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
-          </button>
+          <!-- AI Vision photo scoring is folded into the Vehicle Health Scores on the
+               Inventory Intelligence page — no separate area. -->
+          <div class="bg-violet-50 dark:bg-violet-950/30 border border-violet-200 dark:border-violet-900 rounded-xl px-4 py-3 text-sm text-violet-800 dark:text-violet-200 flex items-center gap-2">
+            <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="1.9" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+            <span>AI Vision photo scoring now shows inside each unit's <button type="button" onclick="switchPage('inv-intel')" class="font-bold underline hover:no-underline">Vehicle Health Score</button> — open a unit to see its photo-quality grade and flags.</span>
+          </div>
 
         <!-- What's included (subscribers see full detail) -->
         <div>
@@ -2199,7 +2197,7 @@
     </div>
   </div>
 
-  <script src="dashboard.js?v=20260707s"></script>
+  <script src="dashboard.js?v=20260707t"></script>
   <script src="tour.js"></script>
   <script src="table-sort.js?v=20260706a"></script>
 </body>
