@@ -49,16 +49,28 @@ export function registerLeads(app) {
     if (!req.dealershipId) return res.json({ leads: [], crm_adf_email: null })
     const dealerLevel = ['DEALER_ADMIN', 'OWNER', 'MANAGER'].includes(req.profile.role)
     let q = supabaseAdmin.from('leads')
-      .select('id, name, email, phone, comments, source, status, adf_sent_at, adf_error, inventory_id, created_at')
+      .select('id, name, email, phone, comments, source, status, adf_sent_at, adf_error, inventory_id, created_by, created_at')
       .eq('dealership_id', req.dealershipId)
       .order('created_at', { ascending: false })
       .limit(300)
     if (!dealerLevel) q = q.eq('created_by', req.user.id)
     const { data, error } = await q
     if (error) return res.status(500).json({ error: error.message })
+
+    // Attribute each lead to the rep who logged it, so a dealer-level view shows
+    // the whole team's leads with who captured them.
+    const repIds = [...new Set((data || []).map(l => l.created_by).filter(Boolean))]
+    let repNames = {}
+    if (repIds.length) {
+      const { data: reps } = await supabaseAdmin
+        .from('profiles').select('id, full_name, display_name').in('id', repIds)
+      repNames = Object.fromEntries((reps || []).map(r => [r.id, r.full_name || r.display_name || '—']))
+    }
+    const leads = (data || []).map(l => ({ ...l, rep: repNames[l.created_by] || null }))
+
     const { data: dealer } = await supabaseAdmin
       .from('dealerships').select('crm_adf_email').eq('id', req.dealershipId).maybeSingle()
-    res.json({ leads: data || [], crm_adf_email: dealer?.crm_adf_email || null, can_configure: dealerLevel })
+    res.json({ leads, crm_adf_email: dealer?.crm_adf_email || null, can_configure: dealerLevel })
   })
 
   // Capture a lead and (if a CRM address is set) deliver it as ADF XML by email.

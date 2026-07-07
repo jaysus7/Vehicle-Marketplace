@@ -86,6 +86,56 @@ export function registerPipeline(app) {
     res.json({ columns, counts, can_manage_all: isDealerLevel(req.profile) })
   })
 
+  // A flat, chronological list of every booked appointment across the store
+  // (dealer-level) or just the rep's own. Same underlying data as the pipeline's
+  // "Appointment Set" column, but sorted by time and rep-attributed so a manager
+  // can see the whole team's day/week at a glance.
+  app.get('/appointments', requireAuth, async (req, res) => {
+    if (!req.dealershipId) return res.json({ appointments: [], can_manage_all: false })
+
+    let q = supabaseAdmin
+      .from('listings')
+      .select('id, posted_by, vehicle_label, appointment_at, appointment_note, fb_listing_url, inventory:inventory_id!inner(dealership_id, year, make, model, trim, stocknumber, image_urls, source_url)')
+      .eq('inventory.dealership_id', req.dealershipId)
+      .eq('pipeline_stage', 'appointment_set')
+      .not('appointment_at', 'is', null)
+      .order('appointment_at', { ascending: true })
+      .limit(1000)
+    // Reps only see their own appointments; dealer-level sees the whole team.
+    if (!isDealerLevel(req.profile)) q = q.eq('posted_by', req.user.id)
+    const { data: rows, error } = await q
+    if (error) return res.status(500).json({ error: error.message })
+
+    // Resolve rep names in one shot (same approach as /pipeline).
+    const repIds = [...new Set((rows || []).map(l => l.posted_by).filter(Boolean))]
+    let repNames = {}
+    if (repIds.length) {
+      const { data: reps } = await supabaseAdmin
+        .from('profiles').select('id, full_name, display_name').in('id', repIds)
+      repNames = Object.fromEntries((reps || []).map(r => [r.id, r.full_name || r.display_name || '—']))
+    }
+
+    const now = Date.now()
+    const appointments = (rows || []).map(l => {
+      const v = l.inventory || {}
+      const label = l.vehicle_label || [v.year, v.make, v.model].filter(Boolean).join(' ') || '—'
+      return {
+        id: l.id,
+        label,
+        trim: v.trim || null,
+        stocknumber: v.stocknumber || null,
+        image: Array.isArray(v.image_urls) ? v.image_urls[0] : null,
+        source_url: v.source_url || null,
+        fb_listing_url: l.fb_listing_url || null,
+        rep: repNames[l.posted_by] || null,
+        appointment_at: l.appointment_at,
+        appointment_note: l.appointment_note || null,
+        past: new Date(l.appointment_at).getTime() < now,
+      }
+    })
+    res.json({ appointments, can_manage_all: isDealerLevel(req.profile) })
+  })
+
   // Move a listing to a stage. Reps can only move their own posts.
   app.patch('/pipeline/:id', requireAuth, async (req, res) => {
     const stage = req.body?.stage
