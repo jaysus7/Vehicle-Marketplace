@@ -3291,7 +3291,7 @@ async function openLotReport() {
 
 function exportPriceReportPDF() {
   if (!__prData) return;
-  const { vehicle, estimate, pct_diff, label, currency } = __prData;
+  const { vehicle, estimate, pct_diff, label, currency, data_source } = __prData;
   const cl = currency === 'USD' ? 'USD' : 'CAD';
   const distUnit = cl === 'USD' ? 'mi' : 'km';
   const fmt = n => n != null ? '$' + Number(n).toLocaleString() + ' ' + cl : '—';
@@ -3465,7 +3465,7 @@ ${estimate?.note ? `
 </div>` : ''}
 
 <div class="footer">
-  <div class="fl"><strong>Sources:</strong> ${sourceNames.join(' · ') || 'AI market analysis'}&nbsp;&nbsp;·&nbsp;&nbsp;AI-analyzed from marketplace listings. Not a live data feed. ${isNew ? 'New vehicles matched by same year.' : 'Used vehicles matched by same year and trim.'} Not a guarantee of resale value.</div>
+  <div class="fl"><strong>Sources:</strong> ${sourceNames.join(' · ') || 'AI market analysis'}&nbsp;&nbsp;·&nbsp;&nbsp;${data_source === 'marketcheck' ? 'Live market data from MarketCheck.' : 'AI-analyzed from marketplace listings. Not a live data feed.'} ${isNew ? 'New vehicles matched by same year.' : 'Used vehicles matched by same year and trim.'} Not a guarantee of resale value.</div>
   <div class="fr">Generated ${new Date().toLocaleDateString('en-CA', { year:'numeric', month:'short', day:'numeric' })}</div>
 </div>
 
@@ -3629,7 +3629,9 @@ async function openPriceReport(inventoryId, forceRefresh = false) {
     const confLabel = document.getElementById('pr-confidence-label');
     if (estimate?.confidence) {
       const confMap = { high: 'High confidence', medium: 'Medium confidence', low: 'Low confidence — limited comparable data' };
-      const srcBadge = data_source === 'live'
+      const srcBadge = data_source === 'marketcheck'
+        ? '<span class="ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold bg-violet-100 dark:bg-violet-900/40 text-violet-700 dark:text-violet-300">● MarketCheck live data</span>'
+        : data_source === 'live'
         ? '<span class="ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300">● Live data</span>'
         : '<span class="ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400">AI estimate</span>';
       confLabel.innerHTML = (confMap[estimate.confidence] || estimate.confidence) + srcBadge;

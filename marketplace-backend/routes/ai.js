@@ -2,6 +2,7 @@ import Anthropic from '@anthropic-ai/sdk'
 import { supabaseAdmin, resend, EMAIL_FROM, browserFetch } from '../shared.js'
 import { requireAuth } from '../middleware.js'
 import { scrapeMarketData } from '../scraper.js'
+import { marketcheckMarket, marketcheckEnabled } from '../marketcheck.js'
 import { createNotification, createNotifications } from '../notifications.js'
 import { runPhotoVision, scoreVehiclePhotos } from '../sync/photoVision.js'
 
@@ -48,6 +49,32 @@ function aiErrorMessage(err) {
     return 'AI is busy right now — please try again in a moment.'
   }
   return `AI request failed: ${raw}`
+}
+
+// Market median for the inventory scan — MarketCheck first (accurate, trim-matched),
+// AutoTrader/CarGurus scrape as the fallback. Returns { median, source, count } or null.
+async function marketMedianForScan({ vehicle, dealer, isUS }) {
+  if (marketcheckEnabled()) {
+    try {
+      const mc = await marketcheckMarket({
+        make: vehicle.make, model: vehicle.model, year: Number(vehicle.year),
+        trim: vehicle.trim || '', mileage: vehicle.mileage ? Number(vehicle.mileage) : null,
+        postalCode: dealer?.postal_code || '', province: dealer?.province || '', isUS,
+      })
+      if (mc?.median_price) return { median: mc.median_price, source: 'MarketCheck', count: mc.count }
+    } catch {}
+  }
+  try {
+    const { autotrader, cargurus } = await scrapeMarketData({
+      make: vehicle.make, model: vehicle.model, year: vehicle.year, trim: vehicle.trim || '',
+      postalCode: dealer?.postal_code || '', province: dealer?.province || '', isUS,
+      vehicleLabel: `${vehicle.year} ${vehicle.make} ${vehicle.model}`, listedPrice: vehicle.price,
+    })
+    const median = autotrader?.median_price ?? cargurus?.median_price ?? null
+    const source = autotrader ? 'AutoTrader' : cargurus ? 'CarGurus' : null
+    const count = (autotrader?.count ?? 0) + (cargurus?.count ?? 0)
+    return median ? { median, source, count } : null
+  } catch { return null }
 }
 
 function requireDealerAdmin(req, res, next) {
@@ -194,26 +221,10 @@ export function registerAI(app) {
     // Skip for new vehicles — MSRP pricing doesn't need market comp.
     let price_flag = null
     if (!skipPriceComp(vehicle) && vehicle.price && vehicle.make && vehicle.model && vehicle.year) {
-      try {
-        const countryRaw = (dealer?.country || '').trim().toUpperCase()
-        const _isUS = countryRaw === 'US' || countryRaw === 'USA' || countryRaw === 'UNITED STATES'
-        const { autotrader, cargurus } = await scrapeMarketData({
-          make: vehicle.make,
-          model: vehicle.model,
-          year: vehicle.year,
-          trim: vehicle.trim || '',
-          postalCode: dealer?.postal_code || '',
-          province: dealer?.province || '',
-          isUS: _isUS,
-          vehicleLabel: `${vehicle.year} ${vehicle.make} ${vehicle.model}`,
-          listedPrice: vehicle.price,
-        })
-        // Use AutoTrader median first, fall back to CarGurus
-        const marketMedian = autotrader?.median_price ?? cargurus?.median_price ?? null
-        const marketSource = autotrader ? 'AutoTrader' : cargurus ? 'CarGurus' : null
-        const compCount = (autotrader?.count ?? 0) + (cargurus?.count ?? 0)
-        price_flag = buildPriceFlag(vehicle.price, marketMedian, marketSource, compCount)
-      } catch {}
+      const countryRaw = (dealer?.country || '').trim().toUpperCase()
+      const _isUS = countryRaw === 'US' || countryRaw === 'USA' || countryRaw === 'UNITED STATES'
+      const mm = await marketMedianForScan({ vehicle, dealer, isUS: _isUS })
+      if (mm) price_flag = buildPriceFlag(vehicle.price, mm.median, mm.source, mm.count)
     }
 
     // ── Generate AI copy via Anthropic ──
@@ -330,23 +341,8 @@ Write a compelling listing in under 280 words. Include the year/make/model/trim,
             if (requiredFields.includes('description') && (!vehicle.description || vehicle.description.length < 20)) warnings.push('Description is missing or too short')
 
             if (!skipPriceComp(vehicle) && vehicle.price && vehicle.make && vehicle.model && vehicle.year) {
-              try {
-                const { autotrader, cargurus } = await scrapeMarketData({
-                  make: vehicle.make,
-                  model: vehicle.model,
-                  year: vehicle.year,
-                  trim: vehicle.trim || '',
-                  postalCode: dealer?.postal_code || '',
-                  province: dealer?.province || '',
-                  isUS: _syncIsUS,
-                  vehicleLabel: `${vehicle.year} ${vehicle.make} ${vehicle.model}`,
-          listedPrice: vehicle.price,
-                })
-                const marketMedian = autotrader?.median_price ?? cargurus?.median_price ?? null
-                const marketSource = autotrader ? 'AutoTrader' : cargurus ? 'CarGurus' : null
-                const compCount = (autotrader?.count ?? 0) + (cargurus?.count ?? 0)
-                price_flag = buildPriceFlag(vehicle.price, marketMedian, marketSource, compCount)
-              } catch {}
+              const mm = await marketMedianForScan({ vehicle, dealer, isUS: _syncIsUS })
+              if (mm) price_flag = buildPriceFlag(vehicle.price, mm.median, mm.source, mm.count)
             }
           }
         } catch {
@@ -503,7 +499,7 @@ Write a compelling listing in under 280 words. Include the year/make/model/trim,
     // Fetch dealership location and country for market context
     const { data: dealer } = await supabaseAdmin
       .from('dealerships')
-      .select('city, province, country')
+      .select('city, province, country, postal_code')
       .eq('id', req.dealershipId)
       .single()
 
@@ -534,8 +530,82 @@ Write a compelling listing in under 280 words. Include the year/make/model/trim,
       ? `This vehicle has ${mileageDelta > 0 ? mileageDelta.toLocaleString() + ' ' + distanceUnit + ' MORE than expected' : Math.abs(mileageDelta).toLocaleString() + ' ' + distanceUnit + ' LESS than expected'} for its age (expected ~${expectedMileage.toLocaleString()} ${distanceUnit} for a ${vehicleAge}-year-old vehicle at typical ${marketLabel} annual rates of ${isUS ? '13,500 mi/yr' : '19,000 km/yr'}).`
       : 'Mileage unknown.'
 
-    // Attempt live market scraping (best-effort; falls back to AI-only on failure)
     const vehicleLabel = `${vehicle.year} ${vehicle.make} ${vehicle.model}${trimText}`
+    const yourPrice = Number(vehicle.price)
+
+    // ── PRIMARY: MarketCheck licensed data ──────────────────────────────────
+    // When a MarketCheck key is configured we build the report from real
+    // aggregated market stats (dealer-grade, same class of data as vAuto) and use
+    // the AI only for a short written insight. Falls through to the scraper below
+    // when there's no key or MarketCheck has no comps for this exact vehicle.
+    if (marketcheckEnabled()) {
+      const mc = await marketcheckMarket({
+        make: vehicle.make, model: vehicle.model, year: Number(vehicle.year),
+        trim: vehicle.trim || '', mileage: vehicleMileage,
+        postalCode: dealer?.postal_code || '', province: dealer?.province || '', isUS,
+      })
+      if (mc && mc.median_price) {
+        const mid = mc.median_price
+        const pct_diff = Math.round(((yourPrice - mid) / mid) * 1000) / 10
+        const ptm = Math.round((yourPrice / mid) * 100)
+        // Mileage rating vs the MarketCheck market average mileage.
+        let mileageRating = 'average', mileageImpact = 0
+        if (mc.median_mileage && vehicleMileage) {
+          const d = (vehicleMileage - mc.median_mileage) / mc.median_mileage
+          mileageRating = d <= -0.3 ? 'well below average' : d <= -0.1 ? 'below average'
+            : d >= 0.3 ? 'well above average' : d >= 0.1 ? 'above average' : 'average'
+          // ~$0.08/km (CA) or ~$0.10/mi (US) rough odometer adjustment, capped.
+          const rate = isUS ? 0.10 : 0.08
+          mileageImpact = Math.max(-4000, Math.min(4000, Math.round((mc.median_mileage - vehicleMileage) * rate)))
+        }
+
+        // Short AI insight (best-effort — the numbers stand on their own if this fails).
+        let note = `Based on ${mc.count.toLocaleString()} comparable ${marketLabel} listings, the market average for this ${vehicleLabel} is ${'$' + mid.toLocaleString()} ${currency}. Your price is ${Math.abs(pct_diff)}% ${pct_diff > 0 ? 'above' : pct_diff < 0 ? 'below' : 'in line with'} market.`
+        try {
+          if (process.env.ANTHROPIC_API_KEY) {
+            const anthropicN = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
+            const msg = await anthropicN.messages.create({
+              model: 'claude-sonnet-5', max_tokens: 300,
+              system: 'You are a concise automotive pricing analyst. Reply with two plain sentences, no markdown, no preamble.',
+              messages: [{ role: 'user', content: `Write a two-sentence market insight for a dealer about this vehicle. Be specific and factual. Vehicle: ${vehicleLabel}, ${mileageText}, listed at $${yourPrice.toLocaleString()} ${currency} in ${location}. Real market data from ${mc.count} comparable listings: average $${mid.toLocaleString()} ${currency} (range $${mc.low_price.toLocaleString()}–$${mc.high_price.toLocaleString()}), average mileage ${mc.median_mileage ? mc.median_mileage.toLocaleString() + ' ' + distanceUnit : 'n/a'}. The listing is ${Math.abs(pct_diff)}% ${pct_diff > 0 ? 'above' : 'below'} market.` }]
+            })
+            const t = (msg.content || []).filter(b => b.type === 'text').map(b => b.text).join('').trim()
+            if (t) note = t
+          }
+        } catch {}
+
+        const estimate = {
+          low: mc.low_price, mid, high: mc.high_price, currency,
+          price_to_market_pct: ptm,
+          days_on_market_estimate: pct_diff > 15 ? 75 : pct_diff > 5 ? 55 : pct_diff < -5 ? 25 : 40,
+          confidence: mc.count >= 25 ? 'high' : mc.count >= 8 ? 'medium' : 'low',
+          note,
+          marketplace_averages: [
+            { name: 'MarketCheck (live market)', avg: mid, estimated_listings: `${mc.count.toLocaleString()} listings`, avg_mileage: mc.median_mileage || null },
+          ],
+          mileage_analysis: {
+            market_avg_mileage: mc.median_mileage || null,
+            mileage_rating: mileageRating,
+            mileage_price_impact: mileageImpact,
+            mileage_note: mc.median_mileage && vehicleMileage
+              ? `At ${vehicleMileage.toLocaleString()} ${distanceUnit} vs a market average of ${mc.median_mileage.toLocaleString()} ${distanceUnit}, this unit is ${mileageRating}.`
+              : 'Mileage comparison unavailable.',
+          },
+        }
+
+        const payload = { vehicle, estimate, pct_diff, data_source: 'marketcheck', copart: null }
+        supabaseAdmin.from('price_reports').upsert({
+          inventory_id, dealership_id: req.dealershipId, report: payload,
+          price_at_generation: yourPrice, generated_at: new Date().toISOString(),
+        }, { onConflict: 'inventory_id' }).then(({ error }) => {
+          if (error) console.warn('[price-report] cache write failed:', error.message)
+        })
+        return res.json(payload)
+      }
+    }
+
+    // ── FALLBACK: AutoTrader/CarGurus scrape + AI estimate ───────────────────
+    // Attempt live market scraping (best-effort; falls back to AI-only on failure)
     let scraped = { autotrader: null, cargurus: null, copart: null }
     let dataSource = 'ai_estimate'
     try {
@@ -675,7 +745,6 @@ Respond with ONLY valid JSON (no markdown, no explanation, no trailing commas):
       return res.status(502).json({ error: aiErrorMessage(lastErr) })
     }
 
-    const yourPrice = Number(vehicle.price)
     const pct_diff = estimate?.mid
       ? Math.round(((yourPrice - estimate.mid) / estimate.mid) * 1000) / 10
       : null
