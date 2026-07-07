@@ -103,9 +103,43 @@ function clearLocalStorage() {
   Object.entries(saved).forEach(([k, v]) => { try { localStorage.setItem(k, v); } catch {} });
 }
 
+// "Keep me signed in" window: if it has lapsed, drop the stored session so the
+// user is returned to login instead of riding a stale token.
+(function enforceRememberWindow() {
+  try {
+    const until = Number(localStorage.getItem('ms_remember_until') || '0');
+    if (until && Date.now() > until) clearLocalStorage();
+  } catch {}
+})();
+
 // Local Security Handshake Validations
 let token = localStorage.getItem('token');
 const userRaw = localStorage.getItem('user');
+
+// Silently refresh the Supabase access token using the stored refresh token, so a
+// "keep me signed in" session stays alive for its full window without the user
+// re-authenticating. Runs on load and every 30 minutes.
+async function refreshSessionSilently() {
+  const rt = localStorage.getItem('refresh_token');
+  if (!rt) return;
+  const until = Number(localStorage.getItem('ms_remember_until') || '0');
+  if (until && Date.now() > until) return; // window lapsed — bootstrap handles logout
+  try {
+    const r = await fetch(`${API}/auth/refresh`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ refresh_token: rt }),
+    });
+    if (!r.ok) return; // keep the current token; it may still be valid
+    const d = await r.json();
+    if (d.access_token) { token = d.access_token; localStorage.setItem('token', d.access_token); }
+    if (d.refresh_token) localStorage.setItem('refresh_token', d.refresh_token);
+  } catch {}
+}
+if (token && localStorage.getItem('refresh_token')) {
+  refreshSessionSilently();
+  setInterval(refreshSessionSilently, 30 * 60 * 1000);
+}
 
 // True while we're waiting to see if the extension's single-sign-on bridge will
 // inject a token. Blocks the dashboard init from running (and failing) in that window.

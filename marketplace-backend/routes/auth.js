@@ -136,6 +136,7 @@ export function registerRoutes(app) {
     audit(req, AuditAction.USER_LOGIN, { method: 'password', user_id: data.user.id })
     res.json({
       access_token: data.session.access_token,
+      refresh_token: data.session.refresh_token,
       user: { id: data.user.id, email: data.user.email }
     })
   })
@@ -482,6 +483,7 @@ export function registerRoutes(app) {
 
       res.json({
         access_token: verifyData.session.access_token,
+        refresh_token: verifyData.session.refresh_token,
         user: { id: user.id, email: user.email }
       })
     } catch (err) {
@@ -605,10 +607,28 @@ export function registerRoutes(app) {
 
       res.json({
         access_token: data.access_token,
+        refresh_token: data.refresh_token,
         user: { id: data.user?.id, email: data.user?.email }
       })
     } catch (err) {
       res.status(500).json({ error: err.message })
+    }
+  })
+
+  // Exchange a refresh token for a fresh session — powers "keep me signed in".
+  app.post('/auth/refresh', rateLimit('token-refresh', 60, 15 * 60 * 1000), async (req, res) => {
+    const refresh_token = req.body?.refresh_token
+    if (!refresh_token) return res.status(400).json({ error: 'refresh_token required' })
+    try {
+      const { data, error } = await supabase.auth.refreshSession({ refresh_token })
+      if (error || !data?.session) return res.status(401).json({ error: 'Session expired. Please sign in again.' })
+      res.json({
+        access_token: data.session.access_token,
+        refresh_token: data.session.refresh_token,
+        user: { id: data.user?.id, email: data.user?.email },
+      })
+    } catch (err) {
+      res.status(401).json({ error: 'Session expired. Please sign in again.' })
     }
   })
 

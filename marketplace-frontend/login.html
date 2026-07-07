@@ -49,6 +49,10 @@
         </div>
         <input type="password" id="password" required class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded px-3.5 py-3 text-base text-slate-900 dark:text-white focus:outline-none focus:border-indigo-500">
       </div>
+      <label class="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300 select-none cursor-pointer">
+        <input type="checkbox" id="remember-me" checked class="rounded border-slate-300 dark:border-slate-600 text-indigo-600 focus:ring-indigo-500">
+        Keep me signed in for 30 days
+      </label>
       <button type="submit" id="submit-btn" class="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-2.5 rounded text-sm shadow transition">Sign In</button>
 
       <div class="relative my-3">
@@ -85,6 +89,18 @@
     const API = 'https://vehicle-marketplace-s0e4.onrender.com';
     let mfaState = null;  // { factor_id, partial_token } when MFA challenge is pending
 
+    // Persist the session. "Keep me signed in" stores a refresh token + a 30-day
+    // window the dashboard uses to silently refresh the access token; unchecked
+    // falls back to a 12-hour window.
+    function storeSession(data) {
+      const remember = document.getElementById('remember-me')?.checked !== false;
+      localStorage.setItem('token', data.access_token);
+      localStorage.setItem('user', JSON.stringify(data.user));
+      if (data.refresh_token) localStorage.setItem('refresh_token', data.refresh_token);
+      const days = remember ? 30 : 0.5;
+      localStorage.setItem('ms_remember_until', String(Date.now() + days * 86400000));
+    }
+
     document.getElementById('login-form').addEventListener('submit', async (e) => {
       e.preventDefault();
       const btn = document.getElementById('submit-btn');
@@ -114,8 +130,7 @@
 
         if (!res.ok || data.error) throw new Error(data.error || 'Identity rejection');
 
-        localStorage.setItem('token', data.access_token);
-        localStorage.setItem('user', JSON.stringify(data.user));
+        storeSession(data);
         window.location.href = 'dashboard.html';
       } catch (err) {
         errBox.textContent = err.message;
@@ -149,8 +164,7 @@
           alert(`✓ Backup code used. You have ${data.recovery_codes_remaining} backup code${data.recovery_codes_remaining === 1 ? '' : 's'} left.\n\nYou should make new backup codes from your dashboard's Security section soon.`);
         }
 
-        localStorage.setItem('token', data.access_token);
-        localStorage.setItem('user', JSON.stringify(data.user));
+        storeSession(data);
         window.location.href = 'dashboard.html';
       } catch (err) {
         errBox.textContent = err.message;
@@ -200,8 +214,7 @@
         const data = await finishRes.json();
         if (!finishRes.ok) throw new Error(data.error || 'Passkey sign-in failed.');
 
-        localStorage.setItem('token', data.access_token);
-        localStorage.setItem('user', JSON.stringify(data.user));
+        storeSession(data);
         window.location.href = 'dashboard.html';
       } catch (err) {
         // User cancelling the browser prompt throws an AbortError — handle nicely
