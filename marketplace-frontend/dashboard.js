@@ -2709,9 +2709,44 @@ function renderCatalog() {
           ${v.stocknumber ? `<span class="font-mono text-slate-400 dark:text-slate-500">#${v.stocknumber}</span>` : ''}
           <span class="text-slate-500">${mileage}</span>
         </div>
+        ${__vinStickerActive ? (() => {
+          // Recall status + VIN/sticker/brochure actions live on the card for
+          // Inventory Intelligence dealers (no separate page).
+          const rc = Array.isArray(v.recalls) ? v.recalls.length : 0;
+          const recallLine = rc > 0
+            ? `<div class="text-[11px] font-bold text-red-600 dark:text-red-400">⚠ ${rc} open recall${rc > 1 ? 's' : ''}</div>`
+            : v.recalls_checked_at
+              ? `<div class="text-[11px] font-semibold text-emerald-600 dark:text-emerald-400">✓ No open recalls</div>`
+              : `<div class="text-[11px] text-slate-400 dark:text-slate-500">Recalls not checked yet</div>`;
+          const b = 'text-[10px] font-bold px-2 py-1 rounded transition';
+          const vinAttr = v.vin ? `data-vin="${v.vin}"` : '';
+          const lbl = `${v.year} ${v.make} ${v.model}${v.trim ? ' ' + v.trim : ''}`.replace(/"/g, '&quot;');
+          return `
+            <div class="mt-1.5 pt-2 border-t border-slate-200 dark:border-slate-800 flex flex-col gap-1.5" onclick="event.preventDefault();event.stopPropagation();">
+              ${recallLine}
+              ${v.vin ? `<div class="flex flex-wrap gap-1">
+                <button class="inv-vin-btn ${b} bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-300 dark:hover:bg-slate-700" data-id="${v.id}" ${vinAttr}>VIN &amp; Recalls</button>
+                <button class="inv-sticker-btn ${b} bg-emerald-600 hover:bg-emerald-500 text-white" data-id="${v.id}" data-label="${lbl}">Sticker ▾</button>
+                <button class="inv-brochure-btn ${b} bg-indigo-600 hover:bg-indigo-500 text-white" data-id="${v.id}" data-label="${lbl}">Brochure</button>
+              </div>` : `<div class="text-[10px] text-slate-400 italic">No VIN on file — can't decode or build docs.</div>`}
+            </div>`;
+        })() : ''}
       </${tag}>
     `;
   }).join('');
+
+  // Wire the on-card Inventory-Intelligence actions (VIN decode, sticker, brochure).
+  if (__vinStickerActive) {
+    list.querySelectorAll('.inv-vin-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); openVinDecode(btn.dataset.id, btn.dataset.vin); });
+    });
+    list.querySelectorAll('.inv-sticker-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); showStickerChoice(btn); });
+    });
+    list.querySelectorAll('.inv-brochure-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); generatePdf(btn.dataset.id, 'brochure', btn); });
+    });
+  }
 }
 
 function setupActionListeners() {

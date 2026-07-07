@@ -1066,17 +1066,12 @@
         <!-- ── Active content ─────────────────────────────────────────────── -->
         <div id="inv-intel-active-content" class="hidden space-y-5">
 
-          <!-- VIN Decoder & Brochures entry point (part of the Inventory Intelligence tier) -->
-          <button type="button" onclick="switchPage('vin-sticker')" class="w-full text-left bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-5 flex items-center gap-4 hover:border-violet-400 dark:hover:border-violet-600 transition">
-            <div class="flex-shrink-0 w-11 h-11 rounded-xl bg-violet-100 dark:bg-violet-900/40 flex items-center justify-center">
-              <svg class="w-5 h-5 text-violet-600 dark:text-violet-400" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z"/></svg>
-            </div>
-            <div class="min-w-0 flex-1">
-              <div class="text-sm font-bold text-slate-900 dark:text-white">VIN Decoder, Window Stickers &amp; Brochures</div>
-              <div class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Decode any VIN, pull factory window stickers, and print branded stickers &amp; brochures.</div>
-            </div>
-            <svg class="w-5 h-5 text-slate-400 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
-          </button>
+          <!-- VIN decode, recalls, window stickers & brochures now live on each
+               vehicle in the Inventory page (part of Inventory Intelligence). -->
+          <div class="bg-violet-50 dark:bg-violet-950/30 border border-violet-200 dark:border-violet-900 rounded-xl px-4 py-3 text-sm text-violet-800 dark:text-violet-200 flex items-center gap-2">
+            <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="1.9" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+            <span>VIN decode, recall checks, window stickers &amp; brochures are now on each vehicle under <button type="button" onclick="switchPage('inventory')" class="font-bold underline hover:no-underline">Inventory</button>.</span>
+          </div>
 
           <!-- What's Included accordion -->
           <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden">
@@ -2204,7 +2199,7 @@
     </div>
   </div>
 
-  <script src="dashboard.js?v=20260707r"></script>
+  <script src="dashboard.js?v=20260707s"></script>
   <script src="tour.js"></script>
   <script src="table-sort.js?v=20260706a"></script>
 </body>
