@@ -4960,8 +4960,8 @@ async function loadVinStickerInventory() {
             </div>
             <div class="flex gap-2 flex-shrink-0 items-start pt-0.5">
               ${decodeBtn}
-              <button class="vs-sticker-btn text-xs bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-1.5 rounded-lg transition font-bold" data-id="${v.id}">${stickerBtnLabel}</button>
-              <button class="vs-brochure-btn text-xs ${brochureBtnCls} text-white px-3 py-1.5 rounded-lg transition font-bold" data-id="${v.id}" data-label="${label.replace(/"/g, '&quot;')}">${brochureBtnLabel} ▾</button>
+              <button class="vs-sticker-btn text-xs bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-1.5 rounded-lg transition font-bold" data-id="${v.id}" data-label="${label.replace(/"/g, '&quot;')}">${stickerBtnLabel} ▾</button>
+              <button class="vs-brochure-btn text-xs ${brochureBtnCls} text-white px-3 py-1.5 rounded-lg transition font-bold" data-id="${v.id}" data-label="${label.replace(/"/g, '&quot;')}">${brochureBtnLabel}</button>
             </div>
             </div>
           </div>
@@ -4974,38 +4974,38 @@ async function loadVinStickerInventory() {
       btn.addEventListener('click', () => openVinDecode(btn.dataset.id, btn.dataset.vin));
     });
     list.querySelectorAll('.vs-sticker-btn').forEach(btn => {
-      btn.addEventListener('click', () => generatePdf(btn.dataset.id, 'window-sticker', btn));
+      btn.addEventListener('click', () => showStickerChoice(btn));
     });
     list.querySelectorAll('.vs-brochure-btn').forEach(btn => {
-      btn.addEventListener('click', () => showBrochureChoice(btn));
+      btn.addEventListener('click', () => generatePdf(btn.dataset.id, 'brochure', btn));
     });
   } catch {
     loading.textContent = 'Failed to load inventory.';
   }
 }
 
-// Brochure button → small popup letting the user pick the factory (OEM) document
-// or a generated MarketSync dealer brochure. Replaces the old separate
-// Generate + Brochure buttons.
-function showBrochureChoice(btn) {
+// Sticker button → small popup letting the user pick the factory (OEM) window
+// sticker or an AI-generated MarketSync dealer sticker. The Brochure button just
+// generates a brochure directly (no popup).
+function showStickerChoice(btn) {
   const id = btn.dataset.id;
   const label = btn.dataset.label || 'this vehicle';
-  document.getElementById('brochure-choice-modal')?.remove();
+  document.getElementById('sticker-choice-modal')?.remove();
   const modal = document.createElement('div');
-  modal.id = 'brochure-choice-modal';
+  modal.id = 'sticker-choice-modal';
   modal.className = 'fixed inset-0 z-[60] bg-black/60 flex items-center justify-center p-4';
   modal.innerHTML = `
     <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl w-full max-w-sm p-6 shadow-2xl">
-      <h3 class="text-base font-bold text-slate-900 dark:text-white mb-1">Brochure</h3>
+      <h3 class="text-base font-bold text-slate-900 dark:text-white mb-1">Window Sticker</h3>
       <p class="text-xs text-slate-500 dark:text-slate-400 mb-4 truncate" title="${label}">${label}</p>
       <div class="space-y-2.5">
         <button data-choice="oem" class="w-full text-left px-4 py-3 rounded-lg border border-slate-200 dark:border-slate-700 hover:border-emerald-400 dark:hover:border-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/30 transition">
-          <div class="text-sm font-bold text-slate-900 dark:text-white">Get OEM Brochure</div>
-          <div class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Pull the factory window sticker for this VIN, when available.</div>
+          <div class="text-sm font-bold text-slate-900 dark:text-white">Get OEM Sticker</div>
+          <div class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Pull the authentic factory window sticker for this VIN, when available.</div>
         </button>
-        <button data-choice="dealer" class="w-full text-left px-4 py-3 rounded-lg border border-slate-200 dark:border-slate-700 hover:border-indigo-400 dark:hover:border-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-950/30 transition ${__aiDocsActive ? '' : 'opacity-70'}">
-          <div class="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-1.5">Generate Dealer Brochure <svg viewBox="0 0 24 24" width="14" height="14" class="inline-block flex-shrink-0" aria-hidden="true"><title>AI Boost feature — included in your plan</title><path d="M12 2.5l2.4 6.6 6.6 2.4-6.6 2.4L12 20.5l-2.4-6.6L3 11.5l6.6-2.4z" fill="#c4b5fd" fill-opacity="0.5" stroke="#6d28d9" stroke-width="1.4" stroke-linejoin="round"/></svg> ${__aiDocsActive ? '' : '<span class="text-[10px] font-bold uppercase bg-violet-100 text-violet-700 dark:bg-violet-950/60 dark:text-violet-300 px-1.5 py-0.5 rounded">AI Boost</span>'}</div>
-          <div class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Build a branded 2-page MarketSync brochure.${__aiDocsActive ? '' : ' Included with AI Boost.'}</div>
+        <button data-choice="generate" class="w-full text-left px-4 py-3 rounded-lg border border-slate-200 dark:border-slate-700 hover:border-indigo-400 dark:hover:border-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-950/30 transition ${__aiDocsActive ? '' : 'opacity-70'}">
+          <div class="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-1.5">Generate Dealer Sticker <svg viewBox="0 0 24 24" width="14" height="14" class="inline-block flex-shrink-0" aria-hidden="true"><title>AI Boost feature — included in your plan</title><path d="M12 2.5l2.4 6.6 6.6 2.4-6.6 2.4L12 20.5l-2.4-6.6L3 11.5l6.6-2.4z" fill="#c4b5fd" fill-opacity="0.5" stroke="#6d28d9" stroke-width="1.4" stroke-linejoin="round"/></svg> ${__aiDocsActive ? '' : '<span class="text-[10px] font-bold uppercase bg-violet-100 text-violet-700 dark:bg-violet-950/60 dark:text-violet-300 px-1.5 py-0.5 rounded">AI Boost</span>'}</div>
+          <div class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Build a branded MarketSync window sticker.${__aiDocsActive ? '' : ' Included with AI Boost.'}</div>
         </button>
       </div>
       <button data-choice="cancel" class="mt-4 w-full text-xs font-bold text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 py-1.5 transition">Cancel</button>
@@ -5015,10 +5015,10 @@ function showBrochureChoice(btn) {
     if (e.target === modal) return close();
     const choice = e.target.closest('[data-choice]')?.dataset.choice;
     if (!choice) return;
-    if (choice === 'dealer' && !__aiDocsActive) { close(); switchPage('ai-boost'); return; }
+    if (choice === 'generate' && !__aiDocsActive) { close(); switchPage('ai-boost'); return; }
     close();
     if (choice === 'oem') generatePdf(id, 'window-sticker', btn);
-    else if (choice === 'dealer') generatePdf(id, 'brochure', btn);
+    else if (choice === 'generate') generatePdf(id, 'window-sticker', btn, { forceGenerate: true });
   });
   document.body.appendChild(modal);
 }
