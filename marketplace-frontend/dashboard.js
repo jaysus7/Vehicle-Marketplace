@@ -73,12 +73,29 @@ function clearLocalStorage() {
 }
 
 // Local Security Handshake Validations
-const token = localStorage.getItem('token');
+let token = localStorage.getItem('token');
 const userRaw = localStorage.getItem('user');
 
+// True while we're waiting to see if the extension's single-sign-on bridge will
+// inject a token. Blocks the dashboard init from running (and failing) in that window.
+let __authPending = false;
+
 if (!token) {
-  clearLocalStorage();
-  window.location.href = 'login.html';
+  // Don't bounce straight to login. The extension bridge (dashboard-bridge.js)
+  // runs at document_idle and mirrors the extension's session into localStorage —
+  // redirecting before it lands is exactly what caused the dashboard↔login flash
+  // when a user is signed into the extension but not yet the site. Wait briefly for
+  // the token to appear; reload cleanly if it does, only then fall back to login.
+  __authPending = true;
+  (async () => {
+    for (let i = 0; i < 20; i++) {          // ~2s grace window
+      await new Promise(r => setTimeout(r, 100));
+      const t = localStorage.getItem('token');
+      if (t) { token = t; location.reload(); return; }
+    }
+    clearLocalStorage();
+    window.location.href = 'login.html';
+  })();
 }
 
 const user = userRaw ? JSON.parse(userRaw) : {};
@@ -127,6 +144,10 @@ function prefetchInvIntelTags() {
 
 // Run Engine Boot Lifecycle
 document.addEventListener('DOMContentLoaded', () => {
+  // Don't boot the dashboard while we're still waiting on the extension SSO bridge
+  // (or if there's genuinely no session) — otherwise the init fires auth'd requests
+  // with no token and flashes a broken UI before the redirect/reload lands.
+  if (__authPending || !localStorage.getItem('token')) return;
   // Show insights immediately — mobile sees content before the auth fetch completes.
   // role-gated items (data-admin-nav etc.) stay hidden until ms-role-ready is set inside init.
   // Wire AI Boost nav immediately — before the async /ai/config fetch completes —
