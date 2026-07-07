@@ -1430,7 +1430,7 @@ Units 60d+ on lot: ${stale}`
         // then any remaining ones if we still have no hits.
         if (/<sitemapindex/i.test(xml)) {
           const invChildren = locs.filter(c => /inventory|vehicle|listing|vdp|used|new|certified/i.test(c))
-          for (const child of invChildren) await collect(child, depth + 1)
+          for (const child of invChildren.slice(0, 15)) await collect(child, depth + 1)
           if (seen.size === 0) {
             for (const child of locs.slice(0, 8)) await collect(child, depth + 1)
           }
@@ -1656,7 +1656,7 @@ Units 60d+ on lot: ${stale}`
         // 3c: Puppeteer — real browser, clears JS challenges (same path inventory sync uses)
         try {
           const { fetchViaBrowser } = await import('../puppeteerRenderer.js')
-          const r = await fetchViaBrowser(url, { timeoutMs: 30000 })
+          const r = await fetchViaBrowser(url, { timeoutMs: 15000 })
           if (r.ok && r.body) {
             const { prices: sp, listing_count: slc } = parseSchemaOrg(r.body)
             if (sp.length || slc) {
@@ -1809,34 +1809,44 @@ Units 60d+ on lot: ${stale}`
     // Respond immediately — scan runs in background to avoid platform timeout
     res.json({ status: 'scanning', total: compList.length })
 
+    // Scan every competitor CONCURRENTLY with a hard per-site time budget, so one
+    // slow/blocked site (a giant sitemap index, a Puppeteer challenge) can't stall
+    // the batch and leave the UI polling forever. Each competitor always gets its
+    // last_scanned_at stamped within the budget, so the frontend's "done/total"
+    // reliably reaches total.
+    const PER_SITE_MS = 40000
+    const scanOne = async (comp) => {
+      if (!comp.autotrader_url) {
+        return { error: 'No URL configured', scanned_at: new Date().toISOString() }
+      }
+      try {
+        return await Promise.race([
+          scrapeInventoryUrl(comp.autotrader_url),
+          new Promise((_, rej) => setTimeout(() => rej(new Error('timed_out')), PER_SITE_MS)),
+        ])
+      } catch (err) {
+        let msg
+        if (err.message === 'timed_out') {
+          msg = 'Timed out reading this site. It may be heavily bot-protected — try their CarGurus or AutoTrader dealer page URL instead.'
+        } else if (err.message === 'no_inventory_data') {
+          msg = 'No inventory data found at this URL. Try the dealership\'s inventory page or their AutoTrader dealer URL (autotrader.ca/dealers/…).'
+        } else if (/403|401|429|blocking/i.test(err.message)) {
+          msg = 'Site is blocking automated scans (WAF/bot protection). Try their CarGurus or AutoTrader dealer page URL instead.'
+        } else {
+          msg = `Scan failed: ${err.message}`
+        }
+        return { error: msg, scanned_at: new Date().toISOString() }
+      }
+    }
+
     ;(async () => {
-      for (const comp of compList) {
-        if (!comp.autotrader_url) {
-          await supabaseAdmin
-            .from('competitor_dealerships')
-            .update({ last_scan_result: { error: 'No URL configured', scanned_at: new Date().toISOString() }, last_scanned_at: new Date().toISOString() })
-            .eq('id', comp.id)
-          continue
-        }
-        let scanResult
-        try {
-          scanResult = await scrapeInventoryUrl(comp.autotrader_url)
-        } catch (err) {
-          let msg
-          if (err.message === 'no_inventory_data') {
-            msg = 'No inventory data found at this URL. Try the dealership\'s inventory page or their AutoTrader dealer URL (autotrader.ca/dealers/…).'
-          } else if (/403|401|429|blocking/i.test(err.message)) {
-            msg = 'Site is blocking automated scans (WAF/bot protection). Try their CarGurus or AutoTrader dealer page URL instead.'
-          } else {
-            msg = `Scan failed: ${err.message}`
-          }
-          scanResult = { error: msg, scanned_at: new Date().toISOString() }
-        }
+      await Promise.allSettled(compList.map(async (comp) => {
+        const scanResult = await scanOne(comp)
         await supabaseAdmin
           .from('competitor_dealerships')
           .update({ last_scan_result: scanResult, last_scanned_at: new Date().toISOString() })
           .eq('id', comp.id)
-      }
+      }))
     })().catch(e => console.error('[competitor scan background]', e.message))
   })
 
