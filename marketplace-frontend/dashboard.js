@@ -854,7 +854,12 @@ async function loadPipelinePage() {
   if (document.getElementById('leads-root')) loadLeadsPage();
 }
 
-// ── Appointments (all reps, chronological) ───────────────────────────────────
+// ── Appointments — month calendar with clickable detail modal ────────────────
+let __apptData = [];            // all appointments from the API
+let __apptCanManageAll = false;
+let __apptMonth = new Date();   // the month currently displayed (day ignored)
+const __apptDayKey = (d) => { const x = new Date(d); return `${x.getFullYear()}-${x.getMonth()}-${x.getDate()}`; };
+
 async function loadAppointmentsPage() {
   const root = document.getElementById('appointments-root');
   if (!root) return;
@@ -868,42 +873,147 @@ async function loadAppointmentsPage() {
     root.innerHTML = `<div class="py-16 text-center text-sm text-slate-500">Couldn't load appointments: ${esc(e.message)}<br><button onclick="loadAppointmentsPage()" class="mt-3 text-indigo-500 hover:text-indigo-400 font-bold">Retry</button></div>`;
     return;
   }
+  __apptData = data.appointments || [];
+  __apptCanManageAll = !!data.can_manage_all;
+  // Jump to the month of the soonest upcoming appointment on first load.
+  const nextUp = __apptData.find(a => !a.past) || __apptData[0];
+  __apptMonth = nextUp ? new Date(nextUp.appointment_at) : new Date();
+  renderApptCalendar();
+}
 
-  const appts = data.appointments || [];
-  const fmt = (d) => { try { return new Date(d).toLocaleString(undefined, { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }); } catch { return ''; } };
-  const upcoming = appts.filter(a => !a.past);
-  const past = appts.filter(a => a.past);
+function renderApptCalendar() {
+  const root = document.getElementById('appointments-root');
+  if (!root) return;
 
-  const row = (a) => `
-    <div class="flex items-start gap-3 p-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl ${a.past ? 'opacity-60' : ''}">
-      ${a.image
-        ? `<img src="${esc(a.image)}" alt="" loading="lazy" class="w-14 h-14 rounded-lg object-cover bg-slate-100 dark:bg-slate-800 flex-shrink-0">`
-        : `<div class="w-14 h-14 rounded-lg bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-300 text-xl flex-shrink-0">🚗</div>`}
-      <div class="min-w-0 flex-1">
-        <div class="font-bold text-slate-900 dark:text-white truncate">${esc(a.label)}</div>
-        <div class="text-sm font-semibold text-indigo-600 dark:text-indigo-400 mt-0.5">📅 ${esc(fmt(a.appointment_at))}</div>
-        ${a.appointment_note ? `<div class="text-xs text-slate-500 dark:text-slate-400 mt-1">${esc(a.appointment_note)}</div>` : ''}
-        <div class="text-[11px] text-slate-400 mt-1">${a.rep ? 'Rep: ' + esc(a.rep) : ''}${a.stocknumber ? (a.rep ? ' · ' : '') + '#' + esc(a.stocknumber) : ''}</div>
-      </div>
-      ${a.fb_listing_url
-        ? `<a href="${esc(a.fb_listing_url)}" target="_blank" rel="noopener" class="flex-shrink-0 text-xs font-bold px-3 py-1.5 rounded bg-[#1877F2]/10 text-[#1877F2] hover:bg-[#1877F2]/20 transition">Facebook ↗</a>`
-        : ''}
-    </div>`;
+  // Group appointments by local day-key.
+  const byDay = {};
+  __apptData.forEach((a, idx) => {
+    const k = __apptDayKey(a.appointment_at);
+    (byDay[k] = byDay[k] || []).push({ ...a, _idx: idx });
+  });
+
+  const view = new Date(__apptMonth.getFullYear(), __apptMonth.getMonth(), 1);
+  const monthName = view.toLocaleString(undefined, { month: 'long', year: 'numeric' });
+  const firstDow = view.getDay();                         // 0=Sun
+  const daysInMonth = new Date(view.getFullYear(), view.getMonth() + 1, 0).getDate();
+  const todayKey = __apptDayKey(new Date());
+
+  const dow = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const cells = [];
+  for (let i = 0; i < firstDow; i++) cells.push('<div class="bg-slate-50/60 dark:bg-slate-900/40 min-h-[92px]"></div>');
+  for (let day = 1; day <= daysInMonth; day++) {
+    const k = `${view.getFullYear()}-${view.getMonth()}-${day}`;
+    const items = (byDay[k] || []).sort((a, b) => new Date(a.appointment_at) - new Date(b.appointment_at));
+    const isToday = k === todayKey;
+    const chips = items.slice(0, 3).map(a => {
+      const t = new Date(a.appointment_at).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+      const cls = a.past
+        ? 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400'
+        : 'bg-indigo-100 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-200 dark:hover:bg-indigo-900';
+      return `<button data-appt-idx="${a._idx}" class="w-full text-left truncate text-[10px] font-semibold px-1.5 py-1 rounded ${cls} transition" title="${esc(t + ' · ' + a.label)}">${esc(t)} ${esc(a.label)}</button>`;
+    }).join('');
+    const more = items.length > 3 ? `<div class="text-[10px] text-slate-400 px-1.5">+${items.length - 3} more</div>` : '';
+    cells.push(`
+      <div class="bg-white dark:bg-slate-900 min-h-[92px] p-1.5 flex flex-col gap-1 ${isToday ? 'ring-2 ring-inset ring-indigo-400' : ''}">
+        <div class="text-[11px] font-bold ${isToday ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-400'}">${day}</div>
+        ${chips}${more}
+      </div>`);
+  }
+  // Pad the final week so the grid stays rectangular.
+  while (cells.length % 7 !== 0) cells.push('<div class="bg-slate-50/60 dark:bg-slate-900/40 min-h-[92px]"></div>');
 
   root.innerHTML = `
-    <div class="mb-5 flex items-center justify-between flex-wrap gap-3">
+    <div class="mb-4 flex items-center justify-between flex-wrap gap-3">
       <div>
         <h2 class="text-xl font-bold text-slate-900 dark:text-white">Appointments</h2>
-        <p class="text-sm text-slate-500 dark:text-slate-400 mt-1">${data.can_manage_all ? 'Every appointment your reps have booked' : 'Your booked appointments'} — soonest first.</p>
+        <p class="text-sm text-slate-500 dark:text-slate-400 mt-0.5">${__apptCanManageAll ? 'Every appointment your reps have booked' : 'Your booked appointments'} — tap one for details.</p>
       </div>
-      <button onclick="loadAppointmentsPage()" class="text-sm font-bold px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition">Refresh</button>
+      <div class="flex items-center gap-1.5">
+        <button id="appt-prev" class="w-8 h-8 flex items-center justify-center rounded-lg border border-slate-300 dark:border-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition" title="Previous month"><svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg></button>
+        <div class="text-sm font-bold text-slate-800 dark:text-slate-200 min-w-[140px] text-center">${monthName}</div>
+        <button id="appt-next" class="w-8 h-8 flex items-center justify-center rounded-lg border border-slate-300 dark:border-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition" title="Next month"><svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg></button>
+        <button id="appt-today" class="text-xs font-bold px-3 h-8 rounded-lg border border-slate-300 dark:border-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition">Today</button>
+      </div>
     </div>
-    ${appts.length === 0
-      ? `<div class="py-16 text-center text-sm text-slate-400 italic">No appointments yet. Reps book these by moving a vehicle into “Appointment Set” on the pipeline.</div>`
-      : `
-        ${upcoming.length ? `<div class="space-y-3">${upcoming.map(row).join('')}</div>` : `<div class="text-sm text-slate-400 italic py-4">No upcoming appointments.</div>`}
-        ${past.length ? `<div class="mt-8"><h3 class="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3">Past</h3><div class="space-y-3">${past.map(row).join('')}</div></div>` : ''}
-      `}`;
+    <div class="grid grid-cols-7 gap-px bg-slate-200 dark:bg-slate-800 rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800">
+      ${dow.map(d => `<div class="bg-slate-50 dark:bg-slate-950 text-center text-[10px] font-bold uppercase tracking-wider text-slate-400 py-2">${d}</div>`).join('')}
+      ${cells.join('')}
+    </div>
+    ${__apptData.length === 0 ? `<div class="py-10 text-center text-sm text-slate-400 italic">No appointments yet. Reps book these by moving a vehicle into “Appointment Set” on the pipeline.</div>` : ''}`;
+
+  document.getElementById('appt-prev')?.addEventListener('click', () => { __apptMonth = new Date(view.getFullYear(), view.getMonth() - 1, 1); renderApptCalendar(); });
+  document.getElementById('appt-next')?.addEventListener('click', () => { __apptMonth = new Date(view.getFullYear(), view.getMonth() + 1, 1); renderApptCalendar(); });
+  document.getElementById('appt-today')?.addEventListener('click', () => { __apptMonth = new Date(); renderApptCalendar(); });
+  root.querySelectorAll('[data-appt-idx]').forEach(btn => {
+    btn.addEventListener('click', () => openApptDetail(__apptData[Number(btn.dataset.apptIdx)]));
+  });
+}
+
+function openApptDetail(a) {
+  if (!a) return;
+  let modal = document.getElementById('appt-detail-modal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'appt-detail-modal';
+    modal.className = 'fixed inset-0 z-50 bg-black/70 flex items-start justify-center p-4 overflow-y-auto';
+    document.body.appendChild(modal);
+    modal.addEventListener('click', e => { if (e.target === modal) modal.classList.add('hidden'); });
+  }
+  modal.classList.remove('hidden');
+
+  const money = n => n != null ? '$' + Number(n).toLocaleString() : null;
+  const when = new Date(a.appointment_at).toLocaleString(undefined, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' });
+  const specs = [
+    a.trim ? esc(a.trim) : null,
+    a.exterior_color ? esc(a.exterior_color) : null,
+    a.mileage != null ? Number(a.mileage).toLocaleString() + ' km' : null,
+    a.condition ? esc(a.condition) : null,
+  ].filter(Boolean).join(' · ');
+
+  modal.innerHTML = `
+    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl w-full max-w-md mt-12 mb-12 overflow-hidden shadow-2xl">
+      <div class="flex items-center justify-between px-5 py-3.5 border-b border-slate-200 dark:border-slate-800">
+        <div class="text-[10px] font-bold uppercase tracking-wider text-indigo-500 flex items-center gap-1.5">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="1.9" viewBox="0 0 24 24"><rect x="3" y="4.5" width="18" height="16" rx="2"/><path stroke-linecap="round" stroke-linejoin="round" d="M3 9.5h18M8 3v3m8-3v3"/></svg>
+          Appointment ${a.past ? '· Past' : ''}
+        </div>
+        <button id="appt-detail-close" class="text-slate-400 hover:text-slate-700 dark:hover:text-white text-2xl leading-none">&times;</button>
+      </div>
+
+      <!-- Car card -->
+      ${a.image ? `<img src="${esc(a.image)}" alt="" class="w-full h-44 object-cover bg-slate-100 dark:bg-slate-800">` : ''}
+      <div class="p-5 space-y-4">
+        <div>
+          <div class="text-lg font-black text-slate-900 dark:text-white">${esc(a.label)}</div>
+          ${specs ? `<div class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">${specs}</div>` : ''}
+          <div class="flex items-center gap-3 mt-2">
+            ${money(a.price) ? `<span class="text-lg font-black text-slate-900 dark:text-white">${money(a.price)}</span>` : ''}
+            ${a.stocknumber ? `<span class="text-[11px] font-bold text-indigo-600 dark:text-indigo-400">#${esc(a.stocknumber)}</span>` : ''}
+          </div>
+        </div>
+
+        <!-- Appointment details -->
+        <div class="rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 p-3.5 space-y-2">
+          <div class="flex items-start gap-2">
+            <svg class="w-4 h-4 mt-0.5 text-indigo-500 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="1.9" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6l4 2"/><circle cx="12" cy="12" r="9"/></svg>
+            <div class="text-sm font-semibold text-slate-900 dark:text-white">${esc(when)}</div>
+          </div>
+          ${a.rep ? `<div class="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300"><svg class="w-4 h-4 text-slate-400 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="1.9" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.5 20.25a7.5 7.5 0 0115 0"/></svg>Rep: ${esc(a.rep)}</div>` : ''}
+        </div>
+
+        <!-- Person / buyer info (from the rep's note) -->
+        <div>
+          <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Buyer / Notes</div>
+          <div class="text-sm text-slate-700 dark:text-slate-300 whitespace-pre-wrap">${a.appointment_note ? esc(a.appointment_note) : '<span class="text-slate-400 italic">No buyer details were added.</span>'}</div>
+        </div>
+
+        <div class="flex flex-wrap gap-2 pt-1">
+          ${a.fb_listing_url ? `<a href="${esc(a.fb_listing_url)}" target="_blank" rel="noopener" class="text-xs font-bold px-3 py-2 rounded-lg bg-[#1877F2]/10 text-[#1877F2] hover:bg-[#1877F2]/20 transition">View on Facebook ↗</a>` : ''}
+          ${a.source_url ? `<a href="${esc(a.source_url)}" target="_blank" rel="noopener" class="text-xs font-bold px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition">Vehicle page ↗</a>` : ''}
+        </div>
+      </div>
+    </div>`;
+  document.getElementById('appt-detail-close')?.addEventListener('click', () => modal.classList.add('hidden'));
 }
 
 // Idempotent restore: makes sure leaderboard / team-insights / sales-team panels live

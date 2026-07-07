@@ -95,7 +95,7 @@ export function registerPipeline(app) {
 
     let q = supabaseAdmin
       .from('listings')
-      .select('id, posted_by, vehicle_label, appointment_at, appointment_note, fb_listing_url, inventory:inventory_id!inner(dealership_id, year, make, model, trim, stocknumber, image_urls, source_url)')
+      .select('id, posted_by, vehicle_label, appointment_at, appointment_note, fb_listing_url, inventory:inventory_id!inner(dealership_id, year, make, model, trim, price, mileage, exterior_color, condition, stocknumber, image_urls, source_url)')
       .eq('inventory.dealership_id', req.dealershipId)
       .eq('pipeline_stage', 'appointment_set')
       .not('appointment_at', 'is', null)
@@ -122,7 +122,14 @@ export function registerPipeline(app) {
       return {
         id: l.id,
         label,
+        year: v.year || null,
+        make: v.make || null,
+        model: v.model || null,
         trim: v.trim || null,
+        price: v.price != null ? Number(v.price) : null,
+        mileage: v.mileage != null ? Number(v.mileage) : null,
+        exterior_color: v.exterior_color || null,
+        condition: v.condition || null,
         stocknumber: v.stocknumber || null,
         image: Array.isArray(v.image_urls) ? v.image_urls[0] : null,
         source_url: v.source_url || null,
