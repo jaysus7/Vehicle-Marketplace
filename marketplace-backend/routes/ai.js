@@ -419,6 +419,63 @@ Write a compelling listing in under 280 words. Include the year/make/model/trim,
     res.json(await getUsage(req.dealershipId))
   })
 
+  // POST /ai/lead-reply — draft a tone-matched reply to a Marketplace lead (AI Boost).
+  app.post('/ai/lead-reply', requireAuth, async (req, res) => {
+    if (!req.dealershipId) return res.status(400).json({ error: 'No dealership associated' })
+    const { lead_id } = req.body || {}
+    if (!lead_id) return res.status(400).json({ error: 'lead_id required' })
+
+    const { data: lead } = await supabaseAdmin
+      .from('leads').select('id, name, comments, inventory_id')
+      .eq('id', lead_id).eq('dealership_id', req.dealershipId).maybeSingle()
+    if (!lead) return res.status(404).json({ error: 'Lead not found' })
+
+    const { data: dealer } = await supabaseAdmin
+      .from('dealerships').select('name, ai_tone, ai_boost_active').eq('id', req.dealershipId).maybeSingle()
+    const isOwner = (req.user.email || '').toLowerCase() === OWNER_EMAIL
+    if (!isOwner && !dealer?.ai_boost_active) return res.status(403).json({ error: 'AI Boost not active' })
+    if (!process.env.ANTHROPIC_API_KEY) return res.status(503).json({ error: 'AI features not configured' })
+    if (!(await aiAllowed(req.dealershipId, isOwner))) {
+      return res.status(429).json({ error: 'Monthly AI limit reached — resets at the start of next month.' })
+    }
+
+    let vehicle = null
+    if (lead.inventory_id) {
+      const { data } = await supabaseAdmin.from('inventory')
+        .select('year, make, model, trim, price, mileage, stocknumber').eq('id', lead.inventory_id).maybeSingle()
+      vehicle = data
+    }
+
+    const tone = dealer?.ai_tone || 'professional'
+    const toneLine = tone === 'friendly' ? 'warm, friendly and personable'
+      : tone === 'aggressive' ? 'energetic and deal-focused (but never pushy or rude)'
+      : 'professional, clear and courteous'
+    const vLabel = vehicle ? `${vehicle.year} ${vehicle.make} ${vehicle.model}${vehicle.trim ? ' ' + vehicle.trim : ''}` : null
+    const vLine = vehicle
+      ? `They're asking about: ${vLabel}${vehicle.price ? `, listed at $${Number(vehicle.price).toLocaleString()}` : ''}${vehicle.mileage ? `, ${Number(vehicle.mileage).toLocaleString()} on the odometer` : ''}${vehicle.stocknumber ? ` (stock #${vehicle.stocknumber})` : ''}.`
+      : 'No specific vehicle is attached to this lead.'
+
+    const prompt = `You are a salesperson at ${dealer?.name || 'a car dealership'} replying to a customer inquiry that came in from Facebook Marketplace. Write a ${toneLine} reply.
+Customer name: ${lead.name || 'there'}.
+Their message: "${(lead.comments || '').slice(0, 800) || '(no message text — they tapped "is this still available?")'}"
+${vLine}
+Guidelines: under 90 words; answer their question if they asked one; confirm the vehicle is available; end by inviting them to book a time to come see it or take a test drive. Do NOT invent specs, financing terms, or prices you weren't given. Return ONLY the reply text — no subject line, no signature, no markdown.`
+
+    try {
+      const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
+      const msg = await Promise.race([
+        anthropic.messages.create({ model: 'claude-haiku-4-5-20251001', max_tokens: 300, messages: [{ role: 'user', content: prompt }] }),
+        new Promise((_, rej) => setTimeout(() => rej(new Error('ai timeout')), 25000)),
+      ])
+      const draft = (msg?.content?.[0]?.text || '').trim()
+      if (!draft) throw new Error('No reply generated')
+      recordUsage(req.dealershipId, { ai: 1 })
+      res.json({ ok: true, draft, vehicle_label: vLabel })
+    } catch (e) {
+      res.status(500).json({ error: e.message })
+    }
+  })
+
   // Decode a VIN to year/make/model/trim via NHTSA (free, no key). Used by the
   // Trade Appraisal form's "Decode" button to prefill the manual fields.
   app.post('/ai/vin-decode', requireAuth, async (req, res) => {

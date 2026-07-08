@@ -5,6 +5,7 @@ import { fetchOemWindowStickerPdf } from '../utils/oemWindowSticker.js'
 import { fetchOemBrochurePdf } from '../utils/oemBrochure.js'
 import { brandVehiclePhotos } from '../utils/photoOverlay.js'
 import { fontFaceCss } from '../utils/brochureFonts.js'
+import { recordUsage } from '../usage.js'
 import multer from 'multer'
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 3 * 1024 * 1024 } })
@@ -51,7 +52,25 @@ async function loadDealershipData(dealershipId) {
   return data
 }
 
-function buildWindowStickerHtml(vehicle, dealer, branding, recalls, photoDataUris, logoDataUri) {
+// Short AI "why buy this" line for the branded window sticker (AI Boost).
+async function buildStickerBlurb(vehicle) {
+  if (!process.env.ANTHROPIC_API_KEY) return null
+  try {
+    const Anthropic = (await import('@anthropic-ai/sdk')).default
+    const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
+    const label = [vehicle.year, vehicle.make, vehicle.model, vehicle.trim].filter(Boolean).join(' ')
+    const prompt = `Write ONE punchy sentence (max 22 words) for a car-dealership window sticker highlighting why this vehicle is a great buy. No markdown, no quotes, no emojis.
+Vehicle: ${label}${vehicle.mileage ? `, ${Number(vehicle.mileage).toLocaleString()} km` : ''}${vehicle.price ? `, $${Number(vehicle.price).toLocaleString()}` : ''}.
+Notable: ${(vehicle.description || '').slice(0, 400) || 'well-equipped'}.`
+    const msg = await Promise.race([
+      anthropic.messages.create({ model: 'claude-haiku-4-5-20251001', max_tokens: 80, messages: [{ role: 'user', content: prompt }] }),
+      new Promise((_, rej) => setTimeout(() => rej(new Error('ai timeout')), 15000)),
+    ])
+    return (msg?.content?.[0]?.text || '').trim().replace(/^["']|["']$/g, '') || null
+  } catch { return null }
+}
+
+function buildWindowStickerHtml(vehicle, dealer, branding, recalls, photoDataUris, logoDataUri, blurb) {
   const photoDataUri = Array.isArray(photoDataUris) ? photoDataUris[0] : photoDataUris
   const allPhotos = (Array.isArray(photoDataUris) ? photoDataUris : [photoDataUri]).filter(Boolean)
   const primary   = branding.primary_color   || '#003087'
@@ -383,6 +402,8 @@ function buildWindowStickerHtml(vehicle, dealer, branding, recalls, photoDataUri
       <div class="pb-total"><span>TOTAL PRICE</span><span>${price}</span></div>
       ` : `<div class="pb-row"><span>Contact dealer for pricing.</span></div>`}
     </div>
+
+    ${blurb ? `<div style="margin-top:10px;padding:10px 12px;border-left:3px solid ${secondary};background:rgba(0,0,0,.035);font-size:12px;font-style:italic;color:#333;line-height:1.4;">${blurb}</div>` : ''}
 
     <div class="vin-blk">
       <div class="vin-lbl">Vehicle Identification Number</div>
@@ -1116,7 +1137,10 @@ export function registerRoutes(app) {
           Promise.all(imageUrls.map(u => imgToDataUri(u))),
           branding.logo_url ? imgToDataUri(branding.logo_url) : Promise.resolve(null),
         ])
-        const html = buildWindowStickerHtml(vehicle, dealer, branding, vehicle.recalls || [], photoDataUris.filter(Boolean), logoDataUri)
+        // AI enhancement (AI Boost): a one-line "why buy this" on the branded sticker.
+        const stickerBlurb = await buildStickerBlurb(vehicle)
+        if (stickerBlurb) recordUsage(req.dealershipId, { ai: 1 })
+        const html = buildWindowStickerHtml(vehicle, dealer, branding, vehicle.recalls || [], photoDataUris.filter(Boolean), logoDataUri, stickerBlurb)
         const pdf = await generatePdf(html, { landscape: true, viewportWidth: 1100, viewportHeight: 860, timeoutMs: 90000 })
         const url = await uploadPdf(pdf, path)
         await supabaseAdmin.from('inventory')

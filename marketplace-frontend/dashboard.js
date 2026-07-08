@@ -802,7 +802,10 @@ async function loadLeadsPage() {
       <td class="py-3 px-3 text-slate-600 dark:text-slate-300">${esc(l.phone || '')}${l.phone && l.email ? '<br>' : ''}${esc(l.email || '')}</td>
       <td class="py-3 px-3 text-slate-500 dark:text-slate-400 max-w-[220px]">${esc(l.comments || '')}</td>
       <td class="py-3 px-3">${statusPill(l)}</td>
-      <td class="py-3 px-3 text-right">${!l.adf_sent_at && crmSet ? `<button class="lead-resend text-indigo-500 hover:text-indigo-400 text-xs font-bold" data-id="${l.id}">Send to CRM</button>` : '<span class="text-xs text-slate-400">—</span>'}</td>
+      <td class="py-3 px-3 text-right whitespace-nowrap">
+        <button class="lead-ai-reply text-violet-600 hover:text-violet-500 text-xs font-bold" data-id="${l.id}">✦ Draft reply</button>
+        ${!l.adf_sent_at && crmSet ? `<button class="lead-resend text-indigo-500 hover:text-indigo-400 text-xs font-bold ml-3" data-id="${l.id}">Send to CRM</button>` : ''}
+      </td>
     </tr>`).join('') || '<tr><td colspan="5" class="py-8 text-center text-sm text-slate-400 italic">No leads yet.</td></tr>';
 
   root.innerHTML = `
@@ -885,6 +888,54 @@ async function loadLeadsPage() {
       loadLeadsPage();
     } catch (e) { alert(e.message); b.disabled = false; b.textContent = 'Send to CRM'; }
   }));
+
+  root.querySelectorAll('.lead-ai-reply').forEach(b => b.addEventListener('click', () => openLeadReply(b.dataset.id)));
+}
+
+// AI reply draft for a Marketplace lead (AI Boost). Non-subscribers → upgrade modal.
+async function openLeadReply(leadId) {
+  if (!__aiBoostActive) { openUpgradeModal('ai_boost'); return; }
+  const modal = document.createElement('div');
+  modal.className = 'fixed inset-0 z-[60] bg-black/70 flex items-start justify-center p-4 overflow-y-auto';
+  modal.innerHTML = `<div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl w-full max-w-lg mt-16 p-6 shadow-2xl">
+    <div class="flex items-center justify-between mb-3">
+      <h3 class="text-base font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
+        <svg viewBox="0 0 24 24" width="15" height="15" class="flex-shrink-0" aria-hidden="true"><path d="M12 2.5l2.4 6.6 6.6 2.4-6.6 2.4L12 20.5l-2.4-6.6L3 11.5l6.6-2.4z" fill="#c4b5fd" fill-opacity="0.5" stroke="#6d28d9" stroke-width="1.4" stroke-linejoin="round"/></svg>
+        AI reply draft
+      </h3>
+      <button data-x class="text-slate-400 hover:text-slate-700 dark:hover:text-white text-2xl leading-none">&times;</button>
+    </div>
+    <div data-body class="text-sm text-slate-500 dark:text-slate-400 py-10 text-center italic">Drafting a reply…</div>
+  </div>`;
+  document.body.appendChild(modal);
+  const close = () => modal.remove();
+  modal.addEventListener('click', e => { if (e.target === modal || e.target.closest('[data-x]')) close(); });
+  const body = modal.querySelector('[data-body]');
+  try {
+    const r = await fetch(`${API}/ai/lead-reply`, {
+      method: 'POST', headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ lead_id: leadId }),
+    });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error || 'Failed to draft reply');
+    body.className = 'space-y-3';
+    body.innerHTML = `
+      ${data.vehicle_label ? `<div class="text-xs text-slate-400">Re: ${esc(data.vehicle_label)}</div>` : ''}
+      <textarea id="lead-reply-text" rows="7" class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white">${esc(data.draft)}</textarea>
+      <div class="flex gap-2">
+        <button id="lead-reply-copy" class="flex-1 bg-violet-600 hover:bg-violet-500 text-white text-sm font-bold px-4 py-2 rounded-lg transition">Copy reply</button>
+        <button data-x class="px-4 py-2 text-sm font-bold text-slate-500 hover:text-slate-700 dark:hover:text-slate-200">Close</button>
+      </div>
+      <p class="text-[11px] text-slate-400">Review before sending — AI can miss details. Paste into your Marketplace chat.</p>`;
+    modal.querySelector('#lead-reply-copy')?.addEventListener('click', () => {
+      const t = modal.querySelector('#lead-reply-text');
+      t.select();
+      (navigator.clipboard?.writeText(t.value) || Promise.reject()).then(() => showToast('Reply copied', 'success')).catch(() => { try { document.execCommand('copy'); showToast('Reply copied', 'success'); } catch {} });
+    });
+  } catch (e) {
+    body.className = 'py-8 text-center text-sm text-red-500';
+    body.textContent = e.message;
+  }
 }
 
 // Mobile "all pages" sheet — lists every nav page the user can access.
