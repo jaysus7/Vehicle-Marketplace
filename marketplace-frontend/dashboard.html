@@ -669,16 +669,10 @@
         </div>
       </div>
 
-      <!-- ───────── TEAM SECTION (admin only) — per-rep players + trend charts ───────── -->
+      <!-- ───────── TEAM SECTION (admin only) — trend charts ───────── -->
+      <!-- Per-rep "players" cards moved to the Sales Team page — click a rep's
+           name there to see their tier, points & stats in a modal. -->
       <div id="insights-team-section" class="hidden space-y-6">
-
-      <!-- Per-rep player cards (one per sales rep with tier + stats) -->
-      <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-4 sm:p-6">
-        <div class="text-xs uppercase font-bold tracking-wider text-slate-500 dark:text-slate-400 mb-3">Players · per-rep contribution &amp; tier progress</div>
-        <div id="ti-rep-cards" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-          <div class="text-xs text-slate-500 italic col-span-full">Loading players...</div>
-        </div>
-      </div>
 
       <!-- Charts grid — 3x2 = 6 charts -->
       <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-4 sm:p-6">
@@ -770,6 +764,21 @@
               <p class="text-xs text-slate-500 mt-0.5" id="rep-detail-meta">—</p>
             </div>
             <button id="rep-detail-close" class="text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white dark:text-white text-xl px-2">×</button>
+          </div>
+
+          <!-- Player card — tier, points & progress (moved here from Insights) -->
+          <div class="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg p-4 mb-5">
+            <div class="flex items-center justify-between gap-2 mb-2">
+              <div class="flex items-center gap-2">
+                <span id="rep-detail-tier" class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold border"></span>
+                <span id="rep-detail-points" class="text-xs text-slate-500 font-mono"></span>
+              </div>
+              <span id="rep-detail-conv" class="text-xs font-bold text-amber-600 dark:text-amber-400"></span>
+            </div>
+            <div class="w-full h-1.5 bg-slate-200 dark:bg-slate-800 rounded-full overflow-hidden">
+              <div id="rep-detail-progress" class="h-full bg-gradient-to-r from-indigo-500 to-purple-500 transition-all duration-700" style="width:0%"></div>
+            </div>
+            <div id="rep-detail-next" class="text-xs text-slate-500 mt-1"></div>
           </div>
 
           <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
@@ -2064,7 +2073,7 @@
     </div>
   </div>
 
-  <script src="dashboard.js?v=20260708n"></script>
+  <script src="dashboard.js?v=20260708o"></script>
   <script src="tour.js"></script>
   <script src="table-sort.js?v=20260706a"></script>
 </body>

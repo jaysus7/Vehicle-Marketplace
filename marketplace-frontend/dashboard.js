@@ -1655,6 +1655,27 @@ async function openRepDetail(repId) {
     document.getElementById('rep-detail-active').textContent = data.totals.active;
     document.getElementById('rep-detail-sold').textContent = data.totals.sold;
     document.getElementById('rep-detail-deleted').textContent = data.totals.deleted;
+
+    // Player card — tier / points / progress (same scoring as the old Insights cards).
+    const listings = Number(data.totals.total) || 0;
+    const sold = Number(data.totals.sold) || 0;
+    const points = listings * 100 + sold * 500;
+    const tier = tierFor(points);
+    const next = nextTierFor(points);
+    const pct = next ? Math.min(100, Math.round(((points - tier.min) / (next.min - tier.min)) * 100)) : 100;
+    const conv = listings > 0 ? Math.round((sold / listings) * 100) : 0;
+    const tierEl = document.getElementById('rep-detail-tier');
+    if (tierEl) {
+      tierEl.className = `inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold border ${tier.cls}`;
+      tierEl.innerHTML = `<span>${tier.icon}</span><span>${tier.name}</span>`;
+    }
+    const set = (id, txt) => { const e = document.getElementById(id); if (e) e.textContent = txt; };
+    set('rep-detail-points', `${points.toLocaleString()} pts`);
+    set('rep-detail-conv', `${conv}% conversion`);
+    const bar = document.getElementById('rep-detail-progress');
+    if (bar) bar.style.width = `${pct}%`;
+    set('rep-detail-next', next ? `${(next.min - points).toLocaleString()} pts to ${next.icon} ${next.name}` : 'Top tier');
+
     renderRecentListings('rep-detail-recent', data.recent);
   } catch (err) {
     document.getElementById('rep-detail-recent').innerHTML = `<div class="text-xs text-red-400">${err.message}</div>`;
@@ -2012,7 +2033,7 @@ async function loadCharts() {
     renderActiveByRepChart(data.active_days_by_rep || []);
     renderSellThroughByRepChart(data.sell_through_by_rep || []);
     renderTimeToSellByRepChart(data.time_to_sell_by_rep || []);
-    renderRepCards(data.by_rep || [], data.sold_by_rep || [], data.active_days_by_rep || []);
+    // Per-rep "player" cards now live in the Sales Team page's rep-detail modal.
   } catch (e) {
     console.warn('Charts failed:', e.message);
   }
