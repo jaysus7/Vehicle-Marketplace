@@ -167,9 +167,12 @@ export function registerAI(app) {
       .single()
     if (dealerErr) return res.status(500).json({ error: dealerErr.message })
 
-    if (!dealer.ai_boost_active) {
+    const isOwner = (req.user.email || '').toLowerCase() === OWNER_EMAIL
+    if (!isOwner && !dealer.ai_boost_active) {
       return res.status(403).json({ error: 'AI Boost subscription is not active for this dealership' })
     }
+    // Meter the AI listing-copy generation against the soft AI cap.
+    recordUsage(req.dealershipId, { ai: 1 })
 
     // Check Anthropic API key
     if (!process.env.ANTHROPIC_API_KEY) {
@@ -461,7 +464,7 @@ Write a compelling listing in under 280 words. Include the year/make/model/trim,
     const targetGross = Math.max(0, b.target_gross != null && b.target_gross !== '' ? Number(b.target_gross) : 2500)
 
     const { data: dealer } = await supabaseAdmin
-      .from('dealerships').select('name, country, province, postal_code, inv_intel_active').eq('id', req.dealershipId).maybeSingle()
+      .from('dealerships').select('name, country, province, postal_code, inv_intel_active, ai_boost_active').eq('id', req.dealershipId).maybeSingle()
     // Trade Appraisal is part of the Inventory Intelligence add-on.
     const isOwner = (req.user.email || '').toLowerCase() === OWNER_EMAIL
     if (!isOwner && !dealer?.inv_intel_active) return res.status(403).json({ error: 'Inventory Intelligence add-on required' })
@@ -494,6 +497,27 @@ Write a compelling listing in under 280 words. Include the year/make/model/trim,
     for (const l of compList) { const k = l.region || 'Other'; locMap[k] = (locMap[k] || 0) + 1 }
     const locations = Object.entries(locMap).map(([region, count]) => ({ region, count })).sort((a, b) => b.count - a.count)
 
+    // AI enhancement (AI Boost): a plain-English summary that explains/justifies
+    // the number on the customer-facing sheet. Owner exempt; metered (soft AI cap).
+    let ai_summary = null
+    const aiBoost = isOwner || !!dealer?.ai_boost_active
+    if (aiBoost && process.env.ANTHROPIC_API_KEY && await aiAllowed(req.dealershipId, isOwner)) {
+      try {
+        const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
+        const cur = isUS ? 'USD' : 'CAD', du = isUS ? 'mi' : 'km'
+        const prompt = `Write a professional 2–3 sentence market summary for a vehicle trade-appraisal sheet a dealer hands to a customer. Explain the offer in plain English and justify it with the market data. No markdown, no bullet points, no greeting.
+Vehicle: ${year} ${make} ${model}${trim ? ' ' + trim : ''}${mileage ? `, ${mileage.toLocaleString()} ${du}` : ''}.
+Retail market from ${market.count} comparable listings: median ${cur} $${retailMid.toLocaleString()}, range $${(market.low_price || retailMid).toLocaleString()}–$${(market.high_price || retailMid).toLocaleString()}${market.avg_mileage ? `, average mileage ${Math.round(market.avg_mileage).toLocaleString()} ${du}` : ''}.
+Suggested trade offer: ${cur} $${suggestedOffer.toLocaleString()} — ${pctToMarket}% of retail market — after ${cur} $${recon.toLocaleString()} reconditioning and a ${cur} $${targetGross.toLocaleString()} target gross.`
+        const msg = await Promise.race([
+          anthropic.messages.create({ model: 'claude-haiku-4-5-20251001', max_tokens: 220, messages: [{ role: 'user', content: prompt }] }),
+          new Promise((_, rej) => setTimeout(() => rej(new Error('ai timeout')), 20000)),
+        ])
+        ai_summary = (msg?.content?.[0]?.text || '').trim() || null
+        if (ai_summary) recordUsage(req.dealershipId, { ai: 1 })
+      } catch { /* summary is a nice-to-have — never fail the appraisal for it */ }
+    }
+
     res.json({
       ok: true,
       vehicle,
@@ -517,6 +541,7 @@ Write a compelling listing in under 280 words. Include the year/make/model/trim,
         target_gross: targetGross,
         gross_pct: grossPct,
         pct_to_market: pctToMarket,
+        ai_summary,
       },
       // Sample comps (price + mileage + location) for the PDF charts.
       comps: compList.slice(0, 50).map(l => ({ price: l.price, miles: l.miles, city: l.city, region: l.region })),

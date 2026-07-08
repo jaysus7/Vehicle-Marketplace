@@ -612,6 +612,13 @@ function renderAppraisal(d) {
         </div>
         <div class="text-xs text-indigo-100 mt-2">Retail ${money(ap.retail_mid)} − recon ${money(ap.recon)} − gross ${money(ap.target_gross)}${ap.gross_pct != null ? ` (${ap.gross_pct}%)` : ''}</div>
       </div>
+      ${ap.ai_summary ? `<div class="bg-violet-50 dark:bg-violet-950/30 border border-violet-200 dark:border-violet-900 rounded-xl p-4">
+        <div class="flex items-center gap-1.5 mb-1">
+          <svg viewBox="0 0 24 24" width="14" height="14" class="flex-shrink-0" aria-hidden="true"><path d="M12 2.5l2.4 6.6 6.6 2.4-6.6 2.4L12 20.5l-2.4-6.6L3 11.5l6.6-2.4z" fill="#c4b5fd" fill-opacity="0.5" stroke="#6d28d9" stroke-width="1.4" stroke-linejoin="round"/></svg>
+          <span class="text-xs font-bold text-violet-700 dark:text-violet-300 uppercase tracking-wider">AI Market Insight</span>
+        </div>
+        <p class="text-sm text-slate-700 dark:text-slate-300 leading-relaxed">${esc(ap.ai_summary)}</p>
+      </div>` : ''}
       <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
         ${apprTile('Retail market', money(rt.median), `${rt.count ?? '—'} comps`)}
         ${apprTile('Retail range', `${money(rt.low)}–${money(rt.high)}`, 'fair retail')}
@@ -713,6 +720,11 @@ function generateAppraisalPdf() {
     <div class="n">${money(ap.suggested_offer)} <span style="font-size:15px;opacity:.8">${cur}</span></div>
     ${ap.pct_to_market != null ? `<div style="font-size:12px;opacity:.85;margin-top:4px">${ap.pct_to_market}% of retail market</div>` : ''}
   </div>
+
+  ${ap.ai_summary ? `<div class="card" style="background:#f5f3ff;border-color:#ddd6fe">
+    <div style="font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:#6d28d9;font-weight:800;margin-bottom:4px">AI Market Insight</div>
+    <div style="font-size:13px;color:#334155;line-height:1.5">${esc(ap.ai_summary)}</div>
+  </div>` : ''}
 
   <h2>Price breakdown</h2>
   <div class="card"><table>
@@ -2960,6 +2972,12 @@ function renderCatalog() {
           ${v.stocknumber ? `<span class="font-mono text-slate-400 dark:text-slate-500">#${v.stocknumber}</span>` : ''}
           <span class="text-slate-500">${mileage}</span>
         </div>
+        <div class="mt-1.5 flex" onclick="event.preventDefault();event.stopPropagation();">
+          <button class="inv-aiwrite-btn text-[10px] font-bold px-2 py-1 rounded transition bg-violet-600 hover:bg-violet-500 text-white flex items-center gap-1" data-id="${v.id}">
+            <svg viewBox="0 0 24 24" width="11" height="11" class="flex-shrink-0" aria-hidden="true"><path d="M12 2.5l2.4 6.6 6.6 2.4-6.6 2.4L12 20.5l-2.4-6.6L3 11.5l6.6-2.4z" fill="#ffffff" fill-opacity="0.35" stroke="#ffffff" stroke-width="1.4" stroke-linejoin="round"/></svg>
+            Write with AI
+          </button>
+        </div>
         ${__vinStickerActive ? (() => {
           // Recall status + VIN/sticker/brochure actions live on the card for
           // Inventory Intelligence dealers (no separate page).
@@ -2985,6 +3003,15 @@ function renderCatalog() {
       </${tag}>
     `;
   }).join('');
+
+  // One-click AI listing copy (AI Boost). Non-subscribers get the upgrade modal.
+  list.querySelectorAll('.inv-aiwrite-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.preventDefault(); e.stopPropagation();
+      if (__aiBoostActive) openAIEnrich(btn.dataset.id);
+      else openUpgradeModal('ai_boost');
+    });
+  });
 
   // Wire the on-card Inventory-Intelligence actions (VIN decode, sticker, brochure).
   if (__vinStickerActive) {
