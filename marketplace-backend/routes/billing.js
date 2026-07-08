@@ -190,7 +190,7 @@ export function registerRoutes(app) {
             const nextDate = periodEnd
               ? new Date(periodEnd * 1000).toLocaleDateString('en-CA', { month: 'short', day: 'numeric', year: 'numeric' })
               : null
-            const subtotal = addons.reduce((s, a) => s + (a === 'ai_boost' ? 199 : a === 'vin_sticker' ? 79 : 49), 0)
+            const subtotal = addons.reduce((s, a) => s + (a === 'ai_boost' ? 129 : a === 'inv_intel' ? 299 : a === 'vin_sticker' ? 79 : 49), 0)
             await sendPaymentConfirmed({
               to: dealer.ai_manager_email,
               dealerName: dealer.name,
@@ -201,7 +201,7 @@ export function registerRoutes(app) {
             }).catch(() => {})
           }
           if (dealer?.id) {
-            const subtotal = addons.reduce((s, a) => s + (a === 'ai_boost' ? 199 : a === 'vin_sticker' ? 79 : 49), 0)
+            const subtotal = addons.reduce((s, a) => s + (a === 'ai_boost' ? 129 : a === 'inv_intel' ? 299 : a === 'vin_sticker' ? 79 : 49), 0)
             await createNotification({
               dealershipId: dealer.id,
               type: 'billing',
@@ -238,7 +238,7 @@ export function registerRoutes(app) {
             const retryDate = retryTs
               ? new Date(retryTs * 1000).toLocaleDateString('en-CA', { month: 'short', day: 'numeric' })
               : null
-            const subtotal = addons.reduce((s, a) => s + (a === 'ai_boost' ? 199 : a === 'vin_sticker' ? 79 : 49), 0)
+            const subtotal = addons.reduce((s, a) => s + (a === 'ai_boost' ? 129 : a === 'inv_intel' ? 299 : a === 'vin_sticker' ? 79 : 49), 0)
             await sendPaymentFailed({
               to: dealer.ai_manager_email,
               dealerName: dealer.name,

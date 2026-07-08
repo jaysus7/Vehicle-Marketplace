@@ -282,13 +282,16 @@ Write a compelling listing in under 280 words. Include the year/make/model/trim,
 
     const { data: dealer } = await supabaseAdmin
       .from('dealerships')
-      .select('ai_boost_active, ai_tone, ai_required_fields, ai_manager_email, city, province, country, postal_code')
+      .select('ai_boost_active, inv_intel_active, ai_tone, ai_required_fields, ai_manager_email, city, province, country, postal_code')
       .eq('id', req.dealershipId)
       .single()
 
     const isOwner = (req.user.email || '').toLowerCase() === OWNER_EMAIL
-    if (!isOwner && !dealer?.ai_boost_active) {
-      return res.status(403).json({ error: 'AI Boost not active' })
+    // The Inventory Scan lives on the Inventory page and is part of the Inventory
+    // Intelligence add-on — it refreshes each vehicle's market comps / % to market
+    // (a metered MarketCheck call), so we gate it to Inventory Intelligence.
+    if (!isOwner && !dealer?.inv_intel_active) {
+      return res.status(403).json({ error: 'Inventory Intelligence add-on required' })
     }
 
     const { data: vehicles, error } = await supabaseAdmin
@@ -522,10 +525,11 @@ Write a compelling listing in under 280 words. Include the year/make/model/trim,
     if (!req.dealershipId) return res.status(400).json({ error: 'No dealership associated' })
 
     const { data: dealer } = await supabaseAdmin
-      .from('dealerships').select('ai_boost_active').eq('id', req.dealershipId).single()
+      .from('dealerships').select('inv_intel_active').eq('id', req.dealershipId).single()
     const isOwner = (req.user.email || '').toLowerCase() === OWNER_EMAIL
-    if (!isOwner && !dealer?.ai_boost_active) {
-      return res.status(403).json({ error: 'AI Boost not active' })
+    // Lot Average Report is part of the Inventory Scan → Inventory Intelligence.
+    if (!isOwner && !dealer?.inv_intel_active) {
+      return res.status(403).json({ error: 'Inventory Intelligence add-on required' })
     }
 
     // Latest scan result per vehicle that produced a (reliable) market median.

@@ -215,9 +215,6 @@ document.addEventListener('DOMContentLoaded', () => {
   if (__authPending || !localStorage.getItem('token')) return;
   // Show insights immediately — mobile sees content before the auth fetch completes.
   // role-gated items (data-admin-nav etc.) stay hidden until ms-role-ready is set inside init.
-  // Wire AI Boost nav immediately — before the async /ai/config fetch completes —
-  // so clicking the sparkle always opens the page regardless of timing.
-  document.getElementById('nav-ai-boost')?.addEventListener('click', () => switchPage('ai-boost'));
   switchPage('insights');
   initializeDashboardEcosystem();
   setupActionListeners();
@@ -371,7 +368,7 @@ async function initializeDashboardEcosystem() {
       document.getElementById('feeds-panel').classList.remove('hidden');
       document.getElementById('catalog-panel').classList.remove('hidden');
       // Defer the actual data loads until the Inventory page is first opened.
-      __pageInit.inventory = () => { loadInventoryFeeds(); loadInventoryCatalog(); prefetchInvIntelTags(); };
+      __pageInit.inventory = () => { loadInventoryFeeds(); loadInventoryCatalog(); prefetchInvIntelTags(); loadAIActivity(); };
     }
 
     if (!canManageFeeds) {
@@ -486,9 +483,8 @@ function switchPage(pageId) {
   document.querySelectorAll('[data-page-content]').forEach(el => {
     el.classList.toggle('hidden', el.dataset.pageContent !== pageId);
   });
-  document.querySelectorAll('#dashboard-nav .nav-item, #nav-ai-boost, #nav-vin-sticker, #nav-inv-intel, #nav-ai-vision').forEach(btn => {
+  document.querySelectorAll('#dashboard-nav .nav-item, #nav-vin-sticker, #nav-inv-intel, #nav-ai-vision').forEach(btn => {
     const active = btn.id === 'nav-inv-intel' ? pageId === 'inv-intel'
-                 : btn.id === 'nav-ai-boost'  ? pageId === 'ai-boost'
                  : btn.id === 'nav-vin-sticker'? pageId === 'vin-sticker'
                  : btn.id === 'nav-ai-vision' ? pageId === 'ai-vision'
                  : btn.dataset.page === pageId;
@@ -504,7 +500,6 @@ function switchPage(pageId) {
   // leaderboard, guardrail settings, inventory-intelligence tags).
   runPageInit(pageId);
 
-  if (pageId === 'ai-boost') loadAIActivity();
   if (pageId === 'vin-sticker') loadVinStickerPage();
   if (pageId === 'profile') loadProfileBranding();
   if (pageId === 'inv-intel' && typeof window._invIntelPageHook === 'function') window._invIntelPageHook();
@@ -3569,23 +3564,23 @@ async function loadAIActivity() {
   const errorEl = document.getElementById('ai-activity-error');
   const list = document.getElementById('ai-activity-list');
   const countEl = document.getElementById('ai-activity-count');
-  const upsell = document.getElementById('ai-boost-page-upsell');
-  const activeContent = document.getElementById('ai-boost-active-content');
+  // Inventory Scan now lives on the Inventory page and is part of the Inventory
+  // Intelligence add-on. Toggle the scan controls/results vs the upgrade CTA.
+  const controls = document.getElementById('inv-scan-controls');
+  const activeWrap = document.getElementById('inv-scan-active');
+  const upsell = document.getElementById('inv-scan-upsell');
 
-  // Don't flip visibility until the /ai/config fetch has resolved.
-  // If the user lands here before config loads, show the activity loading
-  // spinner inside the activeContent and wait — loadAIBoostSection() will
-  // call loadAIActivity() again once it has the real value.
+  // Wait for /ai/config so we know the add-on state before flipping visibility.
+  // loadAIBoostSection() calls loadAIActivity() again once config resolves.
   if (!__aiBoostConfigLoaded) {
-    if (upsell) upsell.classList.add('hidden');
-    if (activeContent) activeContent.classList.remove('hidden');
     if (loading) loading.classList.remove('hidden');
     return;
   }
 
-  const active = !!__aiBoostActive;
+  const active = !!__invIntelActive;
+  if (controls) controls.classList.toggle('hidden', !active);
+  if (activeWrap) activeWrap.classList.toggle('hidden', !active);
   if (upsell) upsell.classList.toggle('hidden', active);
-  if (activeContent) activeContent.classList.toggle('hidden', !active);
   if (!active) {
     if (loading) loading.classList.add('hidden');
     return;
@@ -3721,6 +3716,90 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
 });
+
+// ── Reusable Upgrade / Purchase Modal ───────────────────────────────────────
+// Opened by every locked AI / Inventory-Intelligence CTA. Shows the add-on's
+// feature list + price and starts checkout — replaces the old AI Boost page.
+const UPGRADE_PLANS = {
+  inv_intel: {
+    eyebrow: 'Flagship add-on',
+    title: 'Inventory Intelligence',
+    tagline: 'Know exactly where every unit sits vs the live market — and value every trade.',
+    price: '$299',
+    cta: 'Start 3-Day Free Trial',
+    endpoint: 'subscribe-inv-intel',
+    features: [
+      '“% to market” on every used vehicle',
+      'Inventory Scan — live market comps across your whole lot',
+      'vAuto-style trade appraisals with printable PDF',
+      'Lot Average Report — your lot vs the market',
+      'Hot / cold detection, turn rate & health scores',
+      'Duplicate VIN detection & automated repricing rules',
+      'Competitor lot monitoring',
+      'VIN decoder, recalls & factory window stickers',
+    ],
+  },
+  ai_boost: {
+    eyebrow: 'Add-on',
+    title: 'AI Boost',
+    tagline: 'AI listing tools that write, check and polish every vehicle.',
+    price: '$129',
+    cta: 'Start 3-Day Free Trial',
+    endpoint: 'subscribe-ai-boost',
+    features: [
+      'AI listing copy in your dealership’s tone',
+      'Missing-info alerts (photos, price, mileage)',
+      'AI Vision photo scoring 0–100',
+      'Branded window stickers & AI dealer brochures',
+      'Price intelligence flags on every unit',
+    ],
+  },
+};
+
+function openUpgradeModal(addon) {
+  const plan = UPGRADE_PLANS[addon];
+  const modal = document.getElementById('upgrade-modal');
+  if (!plan || !modal) return;
+  document.getElementById('upgrade-modal-eyebrow').textContent = plan.eyebrow;
+  document.getElementById('upgrade-modal-title').textContent = plan.title;
+  document.getElementById('upgrade-modal-tagline').textContent = plan.tagline;
+  document.getElementById('upgrade-modal-price').textContent = plan.price;
+  document.getElementById('upgrade-modal-features').innerHTML = plan.features.map(f =>
+    `<li class="flex items-start gap-2.5 text-sm text-slate-700 dark:text-slate-300"><svg class="w-4 h-4 text-violet-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5"/></svg><span>${esc(f)}</span></li>`
+  ).join('');
+  const buy = document.getElementById('upgrade-modal-buy');
+  buy.textContent = plan.cta;
+  buy.disabled = false;
+  buy.onclick = async () => {
+    buy.disabled = true;
+    buy.textContent = 'Redirecting…';
+    try {
+      const res = await fetch(`${API}/billing/${plan.endpoint}`, {
+        method: 'POST', headers: { 'Authorization': `Bearer ${token}` },
+      });
+      const data = await res.json();
+      if (data.url) { window.location.href = data.url; return; }
+      throw new Error(data.error || 'Failed to start checkout');
+    } catch (e) {
+      buy.disabled = false;
+      buy.textContent = plan.cta;
+      alert('Could not start checkout: ' + e.message);
+    }
+  };
+  modal.classList.remove('hidden');
+}
+
+function closeUpgradeModal() {
+  document.getElementById('upgrade-modal')?.classList.add('hidden');
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('upgrade-modal')?.addEventListener('click', e => {
+    if (e.target === e.currentTarget) closeUpgradeModal();
+  });
+});
+window.openUpgradeModal = openUpgradeModal;
+window.closeUpgradeModal = closeUpgradeModal;
 
 // ── Price Report Modal ──────────────────────────────────────────────────────
 
@@ -4282,8 +4361,8 @@ async function verifyAIBoostSession(sessionId) {
       headers: { 'Authorization': `Bearer ${token}` }
     });
     if (!res.ok) return; // webhook will still handle it; fail silently
-    showToast('🎉 AI Boost activated! Your settings are ready below.', 'success', 6000);
-    switchPage('ai-boost');
+    showToast('🎉 AI Boost activated! Its AI tools are now live on every vehicle.', 'success', 6000);
+    switchPage('inventory');
   } catch {}
 }
 
@@ -4313,10 +4392,10 @@ async function loadAIBoostSection() {
     initVinStickerPage();
     renderInvIntelSidebar(cfg);
     if (__vinStickerActive) loadBrandingSettings();
-    // If the user is already on the AI Boost page (navigated there before config loaded),
-    // refresh the visible content now that __aiBoostActive is set correctly.
-    const aiPage = document.querySelector('[data-page-content="ai-boost"]');
-    if (aiPage && !aiPage.classList.contains('hidden')) loadAIActivity();
+    // If the user is already on the Inventory page (navigated there before config
+    // loaded), refresh the Inventory Scan card now that the add-on flags are set.
+    const invPage = document.querySelector('[data-page-content="inventory"]');
+    if (invPage && !invPage.classList.contains('hidden')) loadAIActivity();
   } catch {}
 }
 
@@ -4342,32 +4421,8 @@ function renderAIBoostSection(cfg) {
     }
   }
 
-  // Sidebar nav item — AI Boost is admin-only (data-admin-nav hides it for reps via CSS).
-  // JS only needs to style it based on active/inactive state.
-  const navBtn = document.getElementById('nav-ai-boost');
-  const navPill = document.getElementById('nav-ai-boost-pill');
-  if (navBtn) {
-    const isAdmin = profileContext?.role === 'DEALER_ADMIN' || profileContext?.role === 'OWNER' || profileContext?.role === 'MANAGER';
-    if (!isAdmin) {
-      navBtn.classList.add('hidden'); // belt-and-suspenders for reps
-    } else {
-      navBtn.classList.remove('hidden');
-      if (cfg.ai_boost_active) {
-        navBtn.classList.remove('text-slate-400', 'dark:text-slate-600', 'hover:bg-indigo-50', 'dark:hover:bg-indigo-950/30');
-        navBtn.classList.add('text-slate-700', 'dark:text-slate-300', 'hover:bg-slate-100', 'dark:hover:bg-slate-800');
-        if (navPill) navPill.classList.add('hidden');
-      } else {
-        navBtn.classList.remove('text-slate-700', 'dark:text-slate-300', 'hover:bg-slate-100', 'dark:hover:bg-slate-800');
-        navBtn.classList.add('text-slate-400', 'dark:text-slate-600', 'hover:bg-indigo-50', 'dark:hover:bg-indigo-950/30', 'cursor-pointer');
-        if (navPill) navPill.classList.remove('hidden');
-      }
-      navBtn.dataset.page = 'ai-boost';
-      if (!navBtn._clickWired) {
-        navBtn._clickWired = true;
-        navBtn.addEventListener('click', () => switchPage('ai-boost'));
-      }
-    }
-  }
+  // AI Boost no longer has a sidebar nav item or dedicated page — it's sold via
+  // the in-context upgrade modal and configured in this Profile section.
 
   if (cfg.ai_boost_active) {
     badge.textContent = 'Active';
@@ -4421,7 +4476,7 @@ async function startAIBoostCheckout(btn, resetLabel) {
 
 function setupAIBoostListeners() {
   document.getElementById('ai-boost-upgrade-btn')?.addEventListener('click', (e) => {
-    startAIBoostCheckout(e.currentTarget, 'Start 3-Day Free Trial — $199/month after');
+    startAIBoostCheckout(e.currentTarget, 'Start 3-Day Free Trial — $129/month after');
   });
 
   document.getElementById('ai-boost-upsell-btn')?.addEventListener('click', (e) => {
@@ -4436,7 +4491,7 @@ function setupAIBoostListeners() {
   document.getElementById('ai-activity-refresh')?.addEventListener('click', loadAIActivity);
 
   document.getElementById('ai-boost-goto-page-btn')?.addEventListener('click', () => {
-    switchPage('ai-boost');
+    switchPage('inventory');
   });
 
   document.getElementById('ai-sync-all-btn')?.addEventListener('click', async () => {
@@ -4899,7 +4954,7 @@ function showNoOemPrompt(vehicleId, btn, type = 'window-sticker') {
     if (!act) return;
     close();
     if (act === 'generate') {
-      if (!__aiDocsActive) { switchPage('ai-boost'); return; }
+      if (!__aiDocsActive) { openUpgradeModal('ai_boost'); return; }
       generatePdf(vehicleId, type, btn, { forceGenerate: true });
     }
   });
@@ -4936,7 +4991,7 @@ function showBrochureChoice(btn) {
     if (e.target === modal) return close();
     const choice = e.target.closest('[data-choice]')?.dataset.choice;
     if (!choice) return;
-    if (choice === 'generate' && !__aiDocsActive) { close(); switchPage('ai-boost'); return; }
+    if (choice === 'generate' && !__aiDocsActive) { close(); openUpgradeModal('ai_boost'); return; }
     close();
     if (choice === 'oem') generatePdf(id, 'brochure', btn, { oemOnly: true });
     else if (choice === 'generate') generatePdf(id, 'brochure', btn, { forceGenerate: true });
@@ -4945,6 +5000,10 @@ function showBrochureChoice(btn) {
 }
 
 async function loadBrandingSettings() {
+  // The old AI Boost branding card was removed — branding is now managed in
+  // Profile & Settings (loadProfileBranding / prof-brand-*). If those legacy
+  // elements aren't in the DOM, there's nothing to populate here.
+  if (!document.getElementById('branding-primary-color')) return;
   const token = localStorage.getItem('token');
   try {
     const res = await fetch(`${API}/branding`, { headers: { 'Authorization': `Bearer ${token}` } });
@@ -5198,9 +5257,9 @@ function renderAiVisionNav() {
   if (!btn._clickWired) { btn._clickWired = true; btn.addEventListener('click', () => switchPage('ai-vision')); }
 }
 
-// AI Vision is now part of AI Boost — send the user to the AI Boost page to subscribe.
+// AI Vision is part of AI Boost — open the AI Boost purchase modal to subscribe.
 function startAiVisionCheckout() {
-  switchPage('ai-boost');
+  openUpgradeModal('ai_boost');
 }
 
 function scoreColor(s) {
@@ -5477,7 +5536,7 @@ function showStickerChoice(btn) {
     if (e.target === modal) return close();
     const choice = e.target.closest('[data-choice]')?.dataset.choice;
     if (!choice) return;
-    if (choice === 'generate' && !__aiDocsActive) { close(); switchPage('ai-boost'); return; }
+    if (choice === 'generate' && !__aiDocsActive) { close(); openUpgradeModal('ai_boost'); return; }
     close();
     if (choice === 'oem') generatePdf(id, 'window-sticker', btn, { oemOnly: true });
     else if (choice === 'generate') generatePdf(id, 'window-sticker', btn, { forceGenerate: true });
