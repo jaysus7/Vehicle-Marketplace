@@ -605,7 +605,10 @@ function renderAppraisal(d) {
         <div class="flex items-start justify-between gap-3">
           <div>
             <div class="text-xs font-bold uppercase tracking-wider text-indigo-200">Suggested trade / cash offer</div>
-            <div class="text-3xl font-black mt-1">${money(ap.suggested_offer)} <span class="text-base font-semibold text-indigo-200">${cur}</span></div>
+            <div class="flex items-center gap-2 mt-1 flex-wrap">
+              <div class="text-3xl font-black">${money(ap.suggested_offer)} <span class="text-base font-semibold text-indigo-200">${cur}</span></div>
+              ${ap.pct_to_market != null ? `<span class="text-[11px] font-bold bg-white/15 rounded-full px-2 py-0.5">${ap.pct_to_market}% of market</span>` : ''}
+            </div>
           </div>
           <button onclick="generateAppraisalPdf()" class="flex-shrink-0 flex items-center gap-1.5 bg-white/15 hover:bg-white/25 text-white text-xs font-bold px-3 py-2 rounded-lg transition">
             <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
@@ -713,6 +716,7 @@ function generateAppraisalPdf() {
   <div class="offer">
     <div style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;opacity:.8;font-weight:700">Suggested trade / cash offer</div>
     <div class="n">${money(ap.suggested_offer)} <span style="font-size:15px;opacity:.8">${cur}</span></div>
+    ${ap.pct_to_market != null ? `<div style="font-size:12px;opacity:.85;margin-top:4px">${ap.pct_to_market}% of retail market</div>` : ''}
   </div>
 
   <h2>Price breakdown</h2>
@@ -722,6 +726,7 @@ function generateAppraisalPdf() {
     ${row('− Target gross' + (ap.gross_pct != null ? ' (' + ap.gross_pct + '%)' : ''), '−' + money(ap.target_gross))}
     <tr><td colspan="2"><div style="border-top:1px solid #e2e8f0;margin:4px 0"></div></td></tr>
     ${row('Suggested offer', money(ap.suggested_offer), true)}
+    ${ap.pct_to_market != null ? row('Offer as % of retail market', ap.pct_to_market + '%') : ''}
   </table></div>
 
   <div class="grid">

@@ -451,6 +451,8 @@ Write a compelling listing in under 280 words. Include the year/make/model/trim,
     const retailMid = market.median_price
     const suggestedOffer = Math.max(0, retailMid - recon - targetGross)
     const grossPct = retailMid > 0 ? Math.round((targetGross / retailMid) * 1000) / 10 : null
+    // Offer as a % of retail market value (vAuto-style "% to market").
+    const pctToMarket = retailMid > 0 ? Math.round((suggestedOffer / retailMid) * 100) : null
 
     // Location breakdown (province/state → count) for the "where these are" chart.
     const compList = (comps?.listings || [])
@@ -480,6 +482,7 @@ Write a compelling listing in under 280 words. Include the year/make/model/trim,
         recon,
         target_gross: targetGross,
         gross_pct: grossPct,
+        pct_to_market: pctToMarket,
       },
       // Sample comps (price + mileage + location) for the PDF charts.
       comps: compList.slice(0, 50).map(l => ({ price: l.price, miles: l.miles, city: l.city, region: l.region })),
