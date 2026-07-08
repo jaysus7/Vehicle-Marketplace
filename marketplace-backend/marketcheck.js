@@ -54,8 +54,8 @@ export async function marketcheckCompetitorStats({ url, isUS }) {
   try { domain = new URL(url).hostname.replace(/^www\./i, '').toLowerCase() } catch { return null }
   if (!domain) return null
 
-  const path = isUS ? '/search/car/active' : '/search/car/ca/active'
-  const params = new URLSearchParams({ api_key: key, source: domain, stats: 'price', rows: '0' })
+  const path = '/search/car/active'
+  const params = new URLSearchParams({ api_key: key, country: isUS ? 'us' : 'ca', source: domain, stats: 'price', rows: '0' })
   try {
     const r = await fetch(`${BASE}${path}?${params.toString()}`, {
       headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(12000),
@@ -88,10 +88,12 @@ export async function marketcheckMarket({ make, model, year, trim, mileage, post
   const key = process.env.MARKETCHECK_API_KEY
   if (!key || !make || !model || !year) return null
 
-  // US and Canada are separate datasets/paths on MarketCheck.
-  const path = isUS ? '/search/car/active' : '/search/car/ca/active'
+  // One active-listings endpoint for both markets; `country` selects US vs Canada.
+  // (The /search/car/ca/active path 404s — Canada is served via country=ca here.)
+  const path = '/search/car/active'
   const params = new URLSearchParams({
     api_key: key,
+    country: isUS ? 'us' : 'ca',
     car_type: 'used',
     make: String(make),
     model: String(model),
