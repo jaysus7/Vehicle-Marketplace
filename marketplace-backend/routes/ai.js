@@ -419,6 +419,70 @@ Write a compelling listing in under 280 words. Include the year/make/model/trim,
     res.json(await getUsage(req.dealershipId))
   })
 
+  // GET /ai/daily-digest — a "today's briefing" of what needs attention on the lot.
+  // The signal counts are free for any dealer admin; the one-line summary is an AI
+  // Boost enhancement (owner exempt, metered) and falls back to a templated line.
+  app.get('/ai/daily-digest', requireAuth, async (req, res) => {
+    if (!req.dealershipId) return res.json({ items: [], summary: null })
+    const isOwner = (req.user.email || '').toLowerCase() === OWNER_EMAIL
+    const now = Date.now()
+
+    const { data: inv } = await supabaseAdmin.from('inventory')
+      .select('id, price, image_urls, photo_score, created_at')
+      .eq('dealership_id', req.dealershipId).eq('status', 'available')
+    const list = inv || []
+    const total = list.length
+    const photoCount = v => Array.isArray(v.image_urls) ? v.image_urls.filter(Boolean).length : 0
+    const aging = list.filter(v => v.created_at && (now - new Date(v.created_at)) > 60 * 86400000).length
+    const lowPhotos = list.filter(v => photoCount(v) < 4 || (v.photo_score != null && v.photo_score < 50)).length
+    const noPrice = list.filter(v => !v.price || Number(v.price) === 0).length
+
+    const since = new Date(now - 7 * 86400000).toISOString()
+    const { data: leads } = await supabaseAdmin.from('leads')
+      .select('id, created_at, adf_sent_at').eq('dealership_id', req.dealershipId).gte('created_at', since)
+    const leadsWaiting = (leads || []).filter(l => !l.adf_sent_at).length
+    const leads7 = (leads || []).length
+
+    const { data: acts } = await supabaseAdmin.from('ai_activity')
+      .select('price_flagged, created_at').eq('dealership_id', req.dealershipId)
+      .order('created_at', { ascending: false }).limit(400)
+    const priceFlags = (acts || []).filter(a => a.price_flagged && (now - new Date(a.created_at)) < 2 * 86400000).length
+
+    const items = []
+    if (leadsWaiting) items.push({ icon: '📬', text: `${leadsWaiting} lead${leadsWaiting > 1 ? 's' : ''} waiting for follow-up`, page: 'pipeline' })
+    if (lowPhotos) items.push({ icon: '📸', text: `${lowPhotos} listing${lowPhotos > 1 ? 's' : ''} need better photos`, page: 'inv-intel' })
+    if (priceFlags) items.push({ icon: '💲', text: `${priceFlags} vehicle${priceFlags > 1 ? 's' : ''} priced off market`, page: 'inv-intel' })
+    if (noPrice) items.push({ icon: '⚠️', text: `${noPrice} listing${noPrice > 1 ? 's' : ''} missing a price`, page: 'inventory' })
+    if (aging) items.push({ icon: '🕒', text: `${aging} unit${aging > 1 ? 's' : ''} aging 60+ days`, page: 'inv-intel' })
+
+    let summary = null
+    if (!items.length) {
+      summary = 'Everything looks good today — no urgent items on the lot.'
+    } else {
+      const { data: dealer } = await supabaseAdmin.from('dealerships').select('ai_boost_active').eq('id', req.dealershipId).maybeSingle()
+      const aiBoost = isOwner || !!dealer?.ai_boost_active
+      if (aiBoost && process.env.ANTHROPIC_API_KEY && await aiAllowed(req.dealershipId, isOwner)) {
+        const facts = `Lot: ${total} available. ${leadsWaiting} leads waiting (${leads7} in 7 days). ${lowPhotos} weak photos. ${priceFlags} priced off market. ${noPrice} missing price. ${aging} aging 60+ days.`
+        try {
+          const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
+          const msg = await Promise.race([
+            anthropic.messages.create({ model: 'claude-haiku-4-5-20251001', max_tokens: 150, messages: [{ role: 'user', content: `You are a dealership GM's assistant writing a ONE-sentence morning briefing. Be direct and say what to tackle first. No markdown, no greeting, no lists. Data: ${facts}` }] }),
+            new Promise((_, rej) => setTimeout(() => rej(new Error('ai timeout')), 15000)),
+          ])
+          summary = (msg?.content?.[0]?.text || '').trim() || null
+          if (summary) recordUsage(req.dealershipId, { ai: 1 })
+        } catch { /* fall through to templated */ }
+      }
+      if (!summary) summary = `${items.length} thing${items.length > 1 ? 's' : ''} to look at today — start with ${items[0].text.toLowerCase()}.`
+    }
+
+    res.json({
+      date: new Date().toISOString().slice(0, 10),
+      items, summary,
+      counts: { total, leadsWaiting, lowPhotos, priceFlags, noPrice, aging },
+    })
+  })
+
   // POST /ai/lead-reply — draft a tone-matched reply to a Marketplace lead (AI Boost).
   app.post('/ai/lead-reply', requireAuth, async (req, res) => {
     if (!req.dealershipId) return res.status(400).json({ error: 'No dealership associated' })

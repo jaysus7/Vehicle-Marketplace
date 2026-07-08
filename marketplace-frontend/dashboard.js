@@ -392,6 +392,9 @@ async function initializeDashboardEcosystem() {
       document.getElementById('groups-settings-section')?.classList.remove('hidden');
     }
 
+    // Today's Briefing (AI daily digest) on the Insights home page — admins only.
+    if (isAdmin) loadDailyDigest();
+
     // Posting-safety (FB ban protection) settings — dealer-level.
     if (['DEALER_ADMIN', 'OWNER', 'MANAGER'].includes(role)) {
       document.getElementById('guardrail-settings-section')?.classList.remove('hidden');
@@ -3704,6 +3707,29 @@ async function loadAIActivity() {
     if (loading) loading.classList.add('hidden');
     if (errorEl) { errorEl.textContent = err.message; errorEl.classList.remove('hidden'); }
   }
+}
+
+// Today's Briefing — AI daily operator digest on the Insights (home) page.
+async function loadDailyDigest() {
+  const card = document.getElementById('daily-digest');
+  if (!card) return;
+  try {
+    const r = await fetch(`${API}/ai/daily-digest`, { headers: { 'Authorization': `Bearer ${token}` } });
+    if (!r.ok) return;
+    const d = await r.json();
+    const summaryEl = document.getElementById('digest-summary');
+    const itemsEl = document.getElementById('digest-items');
+    const dateEl = document.getElementById('digest-date');
+    if (dateEl && d.date) dateEl.textContent = new Date(d.date + 'T12:00:00').toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' });
+    if (summaryEl) summaryEl.textContent = d.summary || '';
+    if (itemsEl) {
+      itemsEl.innerHTML = (d.items || []).map(it =>
+        `<button type="button" class="digest-item flex items-center gap-1.5 text-xs font-semibold bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 px-3 py-1.5 rounded-full transition" data-page="${esc(it.page)}"><span>${it.icon}</span>${esc(it.text)}</button>`
+      ).join('');
+      itemsEl.querySelectorAll('.digest-item').forEach(b => b.addEventListener('click', () => switchPage(b.dataset.page)));
+    }
+    card.classList.remove('hidden');
+  } catch {}
 }
 
 // Monthly live-market usage vs the soft cap (cached lookups don't count).
