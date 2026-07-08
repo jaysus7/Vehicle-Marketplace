@@ -3586,6 +3586,8 @@ async function loadAIActivity() {
     return;
   }
 
+  loadScanUsage();
+
   if (!list) return;
 
   if (loading) loading.classList.remove('hidden');
@@ -3621,6 +3623,21 @@ async function loadAIActivity() {
     if (loading) loading.classList.add('hidden');
     if (errorEl) { errorEl.textContent = err.message; errorEl.classList.remove('hidden'); }
   }
+}
+
+// Monthly live-market usage vs the soft cap (cached lookups don't count).
+async function loadScanUsage() {
+  const el = document.getElementById('inv-scan-usage');
+  if (!el) return;
+  try {
+    const r = await fetch(`${API}/ai/usage`, { headers: { 'Authorization': `Bearer ${token}` } });
+    if (!r.ok) return;
+    const u = await r.json();
+    if (!u?.marketcheck) return;
+    const { used, limit } = u.marketcheck;
+    el.textContent = `Live market lookups this month: ${used.toLocaleString()} / ${limit.toLocaleString()} · cached lookups are free`;
+    el.classList.remove('hidden');
+  } catch {}
 }
 
 // Which category the Inventory Scan Results list is filtered to.

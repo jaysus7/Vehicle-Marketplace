@@ -2,6 +2,7 @@ import Anthropic from '@anthropic-ai/sdk'
 import { supabaseAdmin, resend, EMAIL_FROM, browserFetch } from '../shared.js'
 import { requireAuth } from '../middleware.js'
 import { marketcheckMarket, marketcheckListings, marketcheckEnabled, marketcheckCompetitorStats, marketcheckPing } from '../marketcheck.js'
+import { getMarketData, recordUsage, aiAllowed, getUsage } from '../usage.js'
 import { createNotification, createNotifications } from '../notifications.js'
 import { runPhotoVision, scoreVehiclePhotos } from '../sync/photoVision.js'
 
@@ -52,13 +53,19 @@ function aiErrorMessage(err) {
 
 // Market median for the inventory scan — MarketCheck only (licensed, trim-matched).
 // Returns { median, source, count }, or null when there's no key / no comps.
-async function marketMedianForScan({ vehicle, dealer, isUS }) {
+async function marketMedianForScan({ vehicle, dealer, isUS, dealershipId, isOwner }) {
   if (!marketcheckEnabled()) return null
   try {
-    const mc = await marketcheckMarket({
-      make: vehicle.make, model: vehicle.model, year: Number(vehicle.year),
-      trim: vehicle.trim || '', mileage: vehicle.mileage ? Number(vehicle.mileage) : null,
-      postalCode: dealer?.postal_code || '', province: dealer?.province || '', isUS,
+    // Routed through the cost layer: served from the shared 7-day cache when
+    // possible, counted against the dealer's monthly quota otherwise, and skipped
+    // (returns null → caller falls back) once a soft cap or the global budget is hit.
+    const { data: mc } = await getMarketData({
+      dealershipId, isOwner,
+      params: {
+        make: vehicle.make, model: vehicle.model, year: Number(vehicle.year),
+        trim: vehicle.trim || '', mileage: vehicle.mileage ? Number(vehicle.mileage) : null,
+        isUS,
+      },
     })
     if (mc?.median_price) return { median: mc.median_price, source: 'MarketCheck', count: mc.count }
     return null
@@ -211,7 +218,8 @@ export function registerAI(app) {
     if (!skipPriceComp(vehicle) && vehicle.price && vehicle.make && vehicle.model && vehicle.year) {
       const countryRaw = (dealer?.country || '').trim().toUpperCase()
       const _isUS = countryRaw === 'US' || countryRaw === 'USA' || countryRaw === 'UNITED STATES'
-      const mm = await marketMedianForScan({ vehicle, dealer, isUS: _isUS })
+      const _isOwner = (req.user.email || '').toLowerCase() === OWNER_EMAIL
+      const mm = await marketMedianForScan({ vehicle, dealer, isUS: _isUS, dealershipId: req.dealershipId, isOwner: _isOwner })
       if (mm) price_flag = buildPriceFlag(vehicle.price, mm.median, mm.source, mm.count)
     }
 
@@ -294,6 +302,19 @@ Write a compelling listing in under 280 words. Include the year/make/model/trim,
       return res.status(403).json({ error: 'Inventory Intelligence add-on required' })
     }
 
+    // Light cooldown so "Scan All" can't be hammered (owner exempt). Caching
+    // already makes re-scans cheap; this is just abuse protection.
+    if (!isOwner) {
+      const { data: last } = await supabaseAdmin
+        .from('ai_activity').select('created_at')
+        .eq('dealership_id', req.dealershipId)
+        .order('created_at', { ascending: false }).limit(1).maybeSingle()
+      const cooldownMin = Number(process.env.SCAN_COOLDOWN_MIN || 10)
+      if (last && (Date.now() - new Date(last.created_at)) < cooldownMin * 60000) {
+        return res.status(429).json({ error: `Inventory was just scanned — please wait a few minutes before running it again.` })
+      }
+    }
+
     const { data: vehicles, error } = await supabaseAdmin
       .from('inventory')
       .select('id')
@@ -332,7 +353,7 @@ Write a compelling listing in under 280 words. Include the year/make/model/trim,
             if (requiredFields.includes('description') && (!vehicle.description || vehicle.description.length < 20)) warnings.push('Description is missing or too short')
 
             if (!skipPriceComp(vehicle) && vehicle.price && vehicle.make && vehicle.model && vehicle.year) {
-              const mm = await marketMedianForScan({ vehicle, dealer, isUS: _syncIsUS })
+              const mm = await marketMedianForScan({ vehicle, dealer, isUS: _syncIsUS, dealershipId: req.dealershipId, isOwner })
               if (mm) price_flag = buildPriceFlag(vehicle.price, mm.median, mm.source, mm.count)
             }
           }
@@ -389,6 +410,12 @@ Write a compelling listing in under 280 words. Include the year/make/model/trim,
     res.json(await marketcheckPing())
   })
 
+  // GET /ai/usage — this dealership's monthly live-data / AI usage vs its soft caps.
+  app.get('/ai/usage', requireAuth, async (req, res) => {
+    if (!req.dealershipId) return res.json({ marketcheck: null, ai: null })
+    res.json(await getUsage(req.dealershipId))
+  })
+
   // Decode a VIN to year/make/model/trim via NHTSA (free, no key). Used by the
   // Trade Appraisal form's "Decode" button to prefill the manual fields.
   app.post('/ai/vin-decode', requireAuth, async (req, res) => {
@@ -442,7 +469,11 @@ Write a compelling listing in under 280 words. Include the year/make/model/trim,
     const isUS = c === 'US' || c === 'USA' || c === 'UNITED STATES'
 
     // Robust market value + the clean comp listings it was built from (charts/locations).
-    const market = await marketcheckMarket({ make, model, year, trim, mileage, isUS })
+    // Cached + metered via the cost layer (shared with the scan & price report).
+    const { data: market } = await getMarketData({
+      dealershipId: req.dealershipId, isOwner,
+      params: { make, model, year, trim, mileage, isUS },
+    })
 
     const vehicle = { year, make, model, trim: trim || null, mileage, vin: (b.vin ? String(b.vin).trim().toUpperCase() : null) }
 
@@ -678,10 +709,13 @@ Write a compelling listing in under 280 words. Include the year/make/model/trim,
     // the AI only for a short written insight. Falls through to an AI-only estimate
     // below when there's no key or MarketCheck has no comps for this exact vehicle.
     if (marketcheckEnabled()) {
-      const mc = await marketcheckMarket({
-        make: vehicle.make, model: vehicle.model, year: Number(vehicle.year),
-        trim: vehicle.trim || '', mileage: vehicleMileage,
-        postalCode: dealer?.postal_code || '', province: dealer?.province || '', isUS,
+      const _prIsOwner = (req.user.email || '').toLowerCase() === OWNER_EMAIL
+      const { data: mc } = await getMarketData({
+        dealershipId: req.dealershipId, isOwner: _prIsOwner,
+        params: {
+          make: vehicle.make, model: vehicle.model, year: Number(vehicle.year),
+          trim: vehicle.trim || '', mileage: vehicleMileage, isUS,
+        },
       })
       if (mc && mc.median_price) {
         const mid = mc.median_price
@@ -965,7 +999,7 @@ Respond with ONLY valid JSON (no markdown, no explanation, no trailing commas):
       // line with the store's own copies. Fall back to the internal-inventory median
       // when no market data is available.
       let med = null
-      const mm = await marketMedianForScan({ vehicle, dealer, isUS: _reIsUS })
+      const mm = await marketMedianForScan({ vehicle, dealer, isUS: _reIsUS, dealershipId: req.dealershipId, isOwner: (req.user.email || '').toLowerCase() === OWNER_EMAIL })
       if (mm?.median) med = mm.median
       if (!med) {
         const { data: comps } = await supabaseAdmin
@@ -1985,6 +2019,7 @@ Units 60d+ on lot: ${stale}`
       if (marketcheckEnabled()) {
         try {
           const mc = await marketcheckCompetitorStats({ url: comp.autotrader_url, isUS: _compIsUS })
+          recordUsage(req.dealershipId, { marketcheck: 1 })  // metered (not vehicle-cacheable)
           if (mc) return mc
         } catch {}
       }

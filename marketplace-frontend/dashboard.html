@@ -837,6 +837,9 @@
             <div class="text-xs text-slate-400" id="ai-sync-progress-label"></div>
           </div>
 
+          <!-- Monthly live-market usage vs cap (cached lookups don't count) -->
+          <div id="inv-scan-usage" class="hidden text-[11px] text-slate-400"></div>
+
           <!-- Summary stat cards — click to filter the list below -->
           <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <button type="button" data-ai-filter="all" class="ai-stat-card text-left bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-4 transition hover:border-slate-300 dark:hover:border-slate-600 focus:outline-none">
@@ -2044,7 +2047,7 @@
     </div>
   </div>
 
-  <script src="dashboard.js?v=20260708i"></script>
+  <script src="dashboard.js?v=20260708j"></script>
   <script src="tour.js"></script>
   <script src="table-sort.js?v=20260706a"></script>
 </body>
