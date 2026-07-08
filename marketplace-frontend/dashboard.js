@@ -5822,7 +5822,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
       // Poll GET /ai/competitors until all entries have a fresh last_scanned_at
       const total = scanData.total || 1;
-      const scanStarted = Date.now();
+      // Backdate 15s: last_scanned_at is stamped with the SERVER clock, scanStarted
+      // is the CLIENT clock. If the phone runs ahead, freshly-scanned rows look
+      // "older" than start and never count as done — the button sticks on
+      // "Scanning 0/N…" for minutes even though the data already landed.
+      const scanStarted = Date.now() - 15000;
       let competitors = [];
       btn.textContent = `Scanning 0/${total}…`;
       for (let attempt = 0; attempt < 40; attempt++) {
