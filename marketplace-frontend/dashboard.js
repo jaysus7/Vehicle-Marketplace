@@ -4211,10 +4211,28 @@ function setupAIBoostListeners() {
 
       if (total === 0) { resetBtn(); return; }
 
-      // Record timestamp just before scan results start arriving.
-      // Filter by created_at so progress is immune to pre-existing activity records
-      // and the endpoint's return limit.
-      const scanStartedAt = new Date();
+      // Start the counting window slightly in the past. The rows are stamped with
+      // the SERVER clock; scanStartedAt is the CLIENT clock. If the phone runs even
+      // a second ahead, the first vehicle's row lands just before the window and is
+      // never counted — so the bar caps one short (e.g. "161 of 162") and never
+      // finishes. A 15s buffer absorbs normal clock skew.
+      const scanStartedAt = new Date(Date.now() - 15000);
+
+      // Finish either when every vehicle reported in, OR when the count stops
+      // advancing for a while (backend loop is done but a row or two fell outside
+      // the window) — never hang forever at 99%.
+      let lastProcessed = -1;
+      let lastAdvanceAt = Date.now();
+      const STALL_MS = 45000;
+
+      const finishScan = (label) => {
+        clearInterval(pollInterval);
+        if (statusText) statusText.textContent = label;
+        if (progressBar) progressBar.style.width = '100%';
+        if (progressLabel) progressLabel.textContent = `${total} of ${total} checked (100%)`;
+        loadAIActivity();
+        setTimeout(resetBtn, 3000);
+      };
 
       // Poll every 3 seconds — count only activity items newer than scan start
       const pollInterval = setInterval(async () => {
@@ -4222,17 +4240,16 @@ function setupAIBoostListeners() {
           const r = await fetch(`${API}/ai/activity?limit=500`, { headers: { 'Authorization': `Bearer ${token}` } });
           const d = r.ok ? await r.json() : {};
           const processed = (d.activity || []).filter(a => new Date(a.created_at) >= scanStartedAt).length;
+          if (processed > lastProcessed) { lastProcessed = processed; lastAdvanceAt = Date.now(); }
           const pct = Math.min(100, Math.round((processed / total) * 100));
           if (progressBar) progressBar.style.width = pct + '%';
-          if (progressLabel) progressLabel.textContent = `${processed} of ${total} checked (${pct}%)`;
+          if (progressLabel) progressLabel.textContent = `${Math.min(processed, total)} of ${total} checked (${pct}%)`;
           if (statusText) statusText.textContent = `Scanning ${total} vehicles…`;
           loadAIActivity();
           if (processed >= total) {
-            clearInterval(pollInterval);
-            if (statusText) statusText.textContent = `Done — ${total} vehicles scanned`;
-            if (progressBar) progressBar.style.width = '100%';
-            if (progressLabel) progressLabel.textContent = `${total} of ${total} checked (100%)`;
-            setTimeout(resetBtn, 3000);
+            finishScan(`Done — ${total} vehicles scanned`);
+          } else if (processed > 0 && (Date.now() - lastAdvanceAt) > STALL_MS) {
+            finishScan(`Done — ${processed} of ${total} scanned`);
           }
         } catch {}
       }, 3000);
