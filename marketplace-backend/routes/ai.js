@@ -1,5 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk'
-import { supabaseAdmin, resend, EMAIL_FROM, browserFetch } from '../shared.js'
+import { supabaseAdmin, resend, EMAIL_FROM, FRONTEND_URL, browserFetch } from '../shared.js'
 import { requireAuth } from '../middleware.js'
 import { marketcheckMarket, marketcheckListings, marketcheckEnabled, marketcheckCompetitorStats, marketcheckPing } from '../marketcheck.js'
 import { getMarketData, recordUsage, aiAllowed, getUsage } from '../usage.js'
@@ -88,6 +88,63 @@ function median(sorted) {
   return sorted.length % 2 !== 0
     ? sorted[mid]
     : (sorted[mid - 1] + sorted[mid]) / 2
+}
+
+// Compute the "today's briefing" digest for a dealership — the action items on
+// the lot plus a one-line summary. Shared by the GET endpoint (in-dashboard card)
+// and the daily-email cron. isOwner exempts the AI summary from the soft cap.
+async function computeDailyDigest(dealershipId, isOwner = false) {
+  const now = Date.now()
+  const { data: inv } = await supabaseAdmin.from('inventory')
+    .select('id, price, image_urls, photo_score, created_at')
+    .eq('dealership_id', dealershipId).eq('status', 'available')
+  const list = inv || []
+  const total = list.length
+  const photoCount = v => Array.isArray(v.image_urls) ? v.image_urls.filter(Boolean).length : 0
+  const aging = list.filter(v => v.created_at && (now - new Date(v.created_at)) > 60 * 86400000).length
+  const lowPhotos = list.filter(v => photoCount(v) < 4 || (v.photo_score != null && v.photo_score < 50)).length
+  const noPrice = list.filter(v => !v.price || Number(v.price) === 0).length
+
+  const since = new Date(now - 7 * 86400000).toISOString()
+  const { data: leads } = await supabaseAdmin.from('leads')
+    .select('id, created_at, adf_sent_at').eq('dealership_id', dealershipId).gte('created_at', since)
+  const leadsWaiting = (leads || []).filter(l => !l.adf_sent_at).length
+  const leads7 = (leads || []).length
+
+  const { data: acts } = await supabaseAdmin.from('ai_activity')
+    .select('price_flagged, created_at').eq('dealership_id', dealershipId)
+    .order('created_at', { ascending: false }).limit(400)
+  const priceFlags = (acts || []).filter(a => a.price_flagged && (now - new Date(a.created_at)) < 2 * 86400000).length
+
+  const items = []
+  if (leadsWaiting) items.push({ icon: '📬', text: `${leadsWaiting} lead${leadsWaiting > 1 ? 's' : ''} waiting for follow-up`, page: 'pipeline' })
+  if (lowPhotos) items.push({ icon: '📸', text: `${lowPhotos} listing${lowPhotos > 1 ? 's' : ''} need better photos`, page: 'inv-intel' })
+  if (priceFlags) items.push({ icon: '💲', text: `${priceFlags} vehicle${priceFlags > 1 ? 's' : ''} priced off market`, page: 'inv-intel' })
+  if (noPrice) items.push({ icon: '⚠️', text: `${noPrice} listing${noPrice > 1 ? 's' : ''} missing a price`, page: 'inventory' })
+  if (aging) items.push({ icon: '🕒', text: `${aging} unit${aging > 1 ? 's' : ''} aging 60+ days`, page: 'inv-intel' })
+
+  let summary = null
+  if (!items.length) {
+    summary = 'Everything looks good today — no urgent items on the lot.'
+  } else {
+    const { data: dealer } = await supabaseAdmin.from('dealerships').select('ai_boost_active').eq('id', dealershipId).maybeSingle()
+    const aiBoost = isOwner || !!dealer?.ai_boost_active
+    if (aiBoost && process.env.ANTHROPIC_API_KEY && await aiAllowed(dealershipId, isOwner)) {
+      const facts = `Lot: ${total} available. ${leadsWaiting} leads waiting (${leads7} in 7 days). ${lowPhotos} weak photos. ${priceFlags} priced off market. ${noPrice} missing price. ${aging} aging 60+ days.`
+      try {
+        const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
+        const msg = await Promise.race([
+          anthropic.messages.create({ model: 'claude-haiku-4-5-20251001', max_tokens: 150, messages: [{ role: 'user', content: `You are a dealership GM's assistant writing a ONE-sentence morning briefing. Be direct and say what to tackle first. No markdown, no greeting, no lists. Data: ${facts}` }] }),
+          new Promise((_, rej) => setTimeout(() => rej(new Error('ai timeout')), 15000)),
+        ])
+        summary = (msg?.content?.[0]?.text || '').trim() || null
+        if (summary) recordUsage(dealershipId, { ai: 1 })
+      } catch { /* fall through to templated */ }
+    }
+    if (!summary) summary = `${items.length} thing${items.length > 1 ? 's' : ''} to look at today — start with ${items[0].text.toLowerCase()}.`
+  }
+
+  return { date: new Date().toISOString().slice(0, 10), items, summary, counts: { total, leadsWaiting, lowPhotos, priceFlags, noPrice, aging } }
 }
 
 export function registerAI(app) {
@@ -425,62 +482,7 @@ Write a compelling listing in under 280 words. Include the year/make/model/trim,
   app.get('/ai/daily-digest', requireAuth, async (req, res) => {
     if (!req.dealershipId) return res.json({ items: [], summary: null })
     const isOwner = (req.user.email || '').toLowerCase() === OWNER_EMAIL
-    const now = Date.now()
-
-    const { data: inv } = await supabaseAdmin.from('inventory')
-      .select('id, price, image_urls, photo_score, created_at')
-      .eq('dealership_id', req.dealershipId).eq('status', 'available')
-    const list = inv || []
-    const total = list.length
-    const photoCount = v => Array.isArray(v.image_urls) ? v.image_urls.filter(Boolean).length : 0
-    const aging = list.filter(v => v.created_at && (now - new Date(v.created_at)) > 60 * 86400000).length
-    const lowPhotos = list.filter(v => photoCount(v) < 4 || (v.photo_score != null && v.photo_score < 50)).length
-    const noPrice = list.filter(v => !v.price || Number(v.price) === 0).length
-
-    const since = new Date(now - 7 * 86400000).toISOString()
-    const { data: leads } = await supabaseAdmin.from('leads')
-      .select('id, created_at, adf_sent_at').eq('dealership_id', req.dealershipId).gte('created_at', since)
-    const leadsWaiting = (leads || []).filter(l => !l.adf_sent_at).length
-    const leads7 = (leads || []).length
-
-    const { data: acts } = await supabaseAdmin.from('ai_activity')
-      .select('price_flagged, created_at').eq('dealership_id', req.dealershipId)
-      .order('created_at', { ascending: false }).limit(400)
-    const priceFlags = (acts || []).filter(a => a.price_flagged && (now - new Date(a.created_at)) < 2 * 86400000).length
-
-    const items = []
-    if (leadsWaiting) items.push({ icon: '📬', text: `${leadsWaiting} lead${leadsWaiting > 1 ? 's' : ''} waiting for follow-up`, page: 'pipeline' })
-    if (lowPhotos) items.push({ icon: '📸', text: `${lowPhotos} listing${lowPhotos > 1 ? 's' : ''} need better photos`, page: 'inv-intel' })
-    if (priceFlags) items.push({ icon: '💲', text: `${priceFlags} vehicle${priceFlags > 1 ? 's' : ''} priced off market`, page: 'inv-intel' })
-    if (noPrice) items.push({ icon: '⚠️', text: `${noPrice} listing${noPrice > 1 ? 's' : ''} missing a price`, page: 'inventory' })
-    if (aging) items.push({ icon: '🕒', text: `${aging} unit${aging > 1 ? 's' : ''} aging 60+ days`, page: 'inv-intel' })
-
-    let summary = null
-    if (!items.length) {
-      summary = 'Everything looks good today — no urgent items on the lot.'
-    } else {
-      const { data: dealer } = await supabaseAdmin.from('dealerships').select('ai_boost_active').eq('id', req.dealershipId).maybeSingle()
-      const aiBoost = isOwner || !!dealer?.ai_boost_active
-      if (aiBoost && process.env.ANTHROPIC_API_KEY && await aiAllowed(req.dealershipId, isOwner)) {
-        const facts = `Lot: ${total} available. ${leadsWaiting} leads waiting (${leads7} in 7 days). ${lowPhotos} weak photos. ${priceFlags} priced off market. ${noPrice} missing price. ${aging} aging 60+ days.`
-        try {
-          const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
-          const msg = await Promise.race([
-            anthropic.messages.create({ model: 'claude-haiku-4-5-20251001', max_tokens: 150, messages: [{ role: 'user', content: `You are a dealership GM's assistant writing a ONE-sentence morning briefing. Be direct and say what to tackle first. No markdown, no greeting, no lists. Data: ${facts}` }] }),
-            new Promise((_, rej) => setTimeout(() => rej(new Error('ai timeout')), 15000)),
-          ])
-          summary = (msg?.content?.[0]?.text || '').trim() || null
-          if (summary) recordUsage(req.dealershipId, { ai: 1 })
-        } catch { /* fall through to templated */ }
-      }
-      if (!summary) summary = `${items.length} thing${items.length > 1 ? 's' : ''} to look at today — start with ${items[0].text.toLowerCase()}.`
-    }
-
-    res.json({
-      date: new Date().toISOString().slice(0, 10),
-      items, summary,
-      counts: { total, leadsWaiting, lowPhotos, priceFlags, noPrice, aging },
-    })
+    res.json(await computeDailyDigest(req.dealershipId, isOwner))
   })
 
   // POST /ai/lead-reply — draft a tone-matched reply to a Marketplace lead (AI Boost).
@@ -3101,6 +3103,56 @@ Units 60d+ on lot: ${stale}`
       }
     }
 
+    res.json({ sent, failed, total: (dealers || []).length })
+  })
+
+  // ── Daily digest email ────────────────────────────────────────────────
+  // Sends each dealer a "Today's Briefing" of action items on their lot. Only
+  // emails when there's something to act on (never a daily empty digest).
+  // Protected by CRON_SECRET. Set up as a Render Cron Job (e.g. 7am weekdays):
+  //   Schedule: 0 12 * * 1-5   (12:00 UTC ≈ 7–8am ET)
+  //   Command:  curl -X POST https://<your-render-url>/cron/daily-digest \
+  //               -H "x-cron-secret: $CRON_SECRET"
+  app.post('/cron/daily-digest', async (req, res) => {
+    if ((req.headers['x-cron-secret'] || '').trim() !== (process.env.CRON_SECRET || '').trim()) {
+      return res.status(401).json({ error: 'unauthorized' })
+    }
+    if (!resend) return res.json({ sent: 0, note: 'email not configured' })
+
+    const { data: dealers } = await supabaseAdmin.from('dealerships')
+      .select('id, name, ai_manager_email, inv_intel_active, ai_boost_active')
+      .not('ai_manager_email', 'is', null)
+
+    const esc = s => String(s ?? '').replace(/[<>&]/g, c => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c]))
+    let sent = 0, failed = 0
+    for (const d of (dealers || [])) {
+      try {
+        // The daily digest is an Inventory Intelligence / AI Boost value-add.
+        if (!d.inv_intel_active && !d.ai_boost_active) continue
+        const digest = await computeDailyDigest(d.id, false)
+        if (!digest.items.length) continue  // nothing actionable — don't send
+
+        const itemsHtml = digest.items
+          .map(i => `<li style="margin:6px 0;font-size:14px;color:#334155">${i.icon} ${esc(i.text)}</li>`).join('')
+        await resend.emails.send({
+          from: EMAIL_FROM,
+          to: d.ai_manager_email,
+          subject: `Today's briefing — ${digest.items.length} item${digest.items.length > 1 ? 's' : ''} on your lot`,
+          html: `<div style="font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;max-width:560px;margin:0 auto;padding:24px">
+            <h2 style="margin:0 0 6px;color:#0f172a">Today's Briefing</h2>
+            <div style="font-size:12px;color:#94a3b8;margin-bottom:14px">${esc(d.name || '')} · ${esc(digest.date)}</div>
+            <p style="font-size:15px;color:#0f172a;line-height:1.5;margin:0 0 14px">${esc(digest.summary || '')}</p>
+            <ul style="list-style:none;padding:0;margin:0 0 20px">${itemsHtml}</ul>
+            <a href="${FRONTEND_URL}/dashboard.html" style="display:inline-block;background:#4f46e5;color:#fff;font-weight:700;font-size:14px;text-decoration:none;padding:10px 18px;border-radius:8px">Open your dashboard →</a>
+            <p style="font-size:11px;color:#94a3b8;margin-top:22px">You're getting this because you're set as the alert email on MarketSync. It only sends on days there's something to act on.</p>
+          </div>`,
+        })
+        sent++
+      } catch (e) {
+        console.error(`Daily digest failed for dealer ${d.id}:`, e.message)
+        failed++
+      }
+    }
     res.json({ sent, failed, total: (dealers || []).length })
   })
 }
