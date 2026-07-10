@@ -537,8 +537,8 @@
             </div>
 
             <div>
-                <!-- Real extension popup screenshot: save your file at marketplace-frontend/extension-screenshot.png -->
-                <img src="extension-screenshot.png" alt="MarketSync Chrome extension popup showing today's vehicle queue" loading="lazy"
+                <!-- Real extension popup screenshot -->
+                <img src="img/extension-poster.png" width="373" height="840" alt="MarketSync Chrome extension popup showing the dealer's live vehicle queue with one-click Post buttons and safe-to-post guardrails" loading="lazy"
                      onerror="this.parentElement.querySelector('.fallback-extension-mock').classList.remove('hidden'); this.remove();"
                      class="w-full rounded-2xl shadow-2xl border border-slate-200 dark:border-gray-800">
                 <!-- Fallback ASCII mock — hidden when the screenshot loads -->
@@ -646,11 +646,54 @@
         </div>
     </section>
 
+    <section id="ai-assistant" class="max-w-6xl mx-auto px-6 py-20">
+        <div class="text-center mb-12">
+            <span class="inline-block text-xs font-bold uppercase tracking-wider text-indigo-600 dark:text-indigo-400 mb-3">AI Assistant</span>
+            <h2 class="text-3xl sm:text-4xl font-black tracking-tight text-slate-900 dark:text-white mb-4">Ask MarketSync Anything About Your Lot</h2>
+            <p class="text-slate-500 dark:text-gray-400 max-w-2xl mx-auto">A built-in AI assistant that answers in plain English — grounded in your live inventory, pricing and leads. It can also decode a VIN, predict a fair price, and pull a market snapshot on demand.</p>
+        </div>
+
+        <div class="grid md:grid-cols-2 gap-10 items-start">
+            <!-- Chat mockup -->
+            <div class="bg-white dark:bg-gray-900/70 border border-slate-200 dark:border-gray-800 rounded-2xl p-5 shadow-xl">
+                <div class="flex items-center gap-2 mb-4 pb-3 border-b border-slate-100 dark:border-gray-800">
+                    <span class="w-7 h-7 rounded-lg bg-indigo-600 text-white flex items-center justify-center text-xs"><i class="fa-solid fa-robot"></i></span>
+                    <span class="font-bold text-slate-900 dark:text-white text-sm">Ask MarketSync</span>
+                    <span class="ml-auto text-[10px] text-emerald-500 bg-emerald-500/10 px-2 py-0.5 rounded-full font-semibold">Live data</span>
+                </div>
+                <div class="space-y-3 text-sm">
+                    <div class="flex justify-end"><div class="bg-indigo-600 text-white rounded-2xl rounded-br-sm px-3.5 py-2 max-w-[85%]">Which units are aging 60+ days?</div></div>
+                    <div class="flex justify-start"><div class="bg-slate-100 dark:bg-gray-800 text-slate-700 dark:text-gray-200 rounded-2xl rounded-bl-sm px-3.5 py-2 max-w-[90%]">5 units are past 60 days — 2021 Ford Escape, 2020 Equinox, 2019 Malibu and 2 more, tying up about $92k. Want me to flag them for a price drop?</div></div>
+                    <div class="flex justify-end"><div class="bg-indigo-600 text-white rounded-2xl rounded-br-sm px-3.5 py-2 max-w-[85%]">What's a fair price for VIN 1GNSKBKC5FR123456?</div></div>
+                    <div class="flex justify-start"><div class="bg-slate-100 dark:bg-gray-800 text-slate-700 dark:text-gray-200 rounded-2xl rounded-bl-sm px-3.5 py-2 max-w-[90%]">MarketCheck predicts <strong>$28,400</strong> (confidence band $26,900–$29,800), from 48 comparable listings with a median 22 days on market.</div></div>
+                </div>
+            </div>
+            <!-- What you can ask -->
+            <div>
+                <h3 class="text-xl font-bold text-slate-900 dark:text-white mb-4">What reps and managers ask it</h3>
+                <div class="grid sm:grid-cols-2 gap-2.5">
+                    <div class="bg-white dark:bg-gray-900/70 border border-slate-200 dark:border-gray-800 rounded-xl px-4 py-3 text-sm text-slate-700 dark:text-gray-300"><i class="fa-solid fa-box text-indigo-500 mr-2"></i>"What should I restock?"</div>
+                    <div class="bg-white dark:bg-gray-900/70 border border-slate-200 dark:border-gray-800 rounded-xl px-4 py-3 text-sm text-slate-700 dark:text-gray-300"><i class="fa-solid fa-tag text-indigo-500 mr-2"></i>"Anything priced off market?"</div>
+                    <div class="bg-white dark:bg-gray-900/70 border border-slate-200 dark:border-gray-800 rounded-xl px-4 py-3 text-sm text-slate-700 dark:text-gray-300"><i class="fa-solid fa-inbox text-indigo-500 mr-2"></i>"How many leads need follow-up?"</div>
+                    <div class="bg-white dark:bg-gray-900/70 border border-slate-200 dark:border-gray-800 rounded-xl px-4 py-3 text-sm text-slate-700 dark:text-gray-300"><i class="fa-solid fa-pen text-indigo-500 mr-2"></i>"Draft a reply to this lead"</div>
+                    <div class="bg-white dark:bg-gray-900/70 border border-slate-200 dark:border-gray-800 rounded-xl px-4 py-3 text-sm text-slate-700 dark:text-gray-300"><i class="fa-solid fa-chart-line text-indigo-500 mr-2"></i>"How's the Toyota RAV4 market?"</div>
+                    <div class="bg-white dark:bg-gray-900/70 border border-slate-200 dark:border-gray-800 rounded-xl px-4 py-3 text-sm text-slate-700 dark:text-gray-300"><i class="fa-solid fa-barcode text-indigo-500 mr-2"></i>"Decode this VIN"</div>
+                </div>
+                <p class="text-sm text-slate-500 dark:text-gray-400 mt-5 leading-relaxed">Answers come from <strong>your</strong> store — not the generic internet. Every question is metered and stays within your plan's AI budget. Included with AI Boost and Inventory Intelligence.</p>
+            </div>
+        </div>
+    </section>
+
     <section id="leaderboard" class="max-w-6xl mx-auto px-6 py-20">
         <div class="text-center mb-12">
             <span class="inline-block text-xs font-bold uppercase tracking-wider text-indigo-600 dark:text-indigo-400 mb-3">Gamification</span>
             <h2 class="text-3xl sm:text-4xl font-black tracking-tight text-slate-900 dark:text-white mb-4">Selling Cars, But Make It a Game</h2>
             <p class="text-slate-500 dark:text-gray-400 max-w-2xl mx-auto">Every sales rep earns points. Points grow into tiers. Tiers earn bragging rights. The harder you work, the higher you climb.</p>
+        </div>
+
+        <div class="mb-10">
+            <img src="img/leaderboard.png" width="1919" height="946" alt="MarketSync sales leaderboard with a top-3 podium, Bronze-to-Legend tiers, points, and each rep's listings, sold count and conversion rate" loading="lazy"
+                 class="w-full rounded-2xl shadow-2xl border border-slate-200 dark:border-gray-800">
         </div>
 
         <div class="grid md:grid-cols-2 gap-8 mb-10">
