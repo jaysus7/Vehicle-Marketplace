@@ -1,4 +1,7 @@
 const API = 'https://vehicle-marketplace-s0e4.onrender.com';
+// Carfax Canada report link by VIN. Swap to your dealer badge/report URL if you
+// wire the Carfax account (the VIN is appended, URL-encoded).
+const CARFAX_BASE = 'https://www.carfax.ca/vehicle-history-reports?vin=';
 
 // Global HTML escaper. Used throughout the pipeline board, leads table, and other
 // renderers. It was previously only defined locally inside one function, so those
@@ -536,6 +539,33 @@ function initAppraisal() {
   };
   lookupBtn?.addEventListener('click', runVinLookup);
   lookupInput?.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); runVinLookup(); } });
+
+  // OEM factory docs (no AI) — decode for the build, then pull the factory PDF.
+  const oemMsg = (t, err) => { const el = $('appr-oem-msg'); if (el) { el.textContent = t; el.className = 'text-xs ' + (err ? 'text-rose-500' : 'text-slate-400'); } };
+  async function apprFetchOem(kind) {
+    const vin = ((lookupInput?.value || $('appr-vin')?.value) || '').trim().toUpperCase();
+    if (vin.length !== 17) { oemMsg('Enter a 17-character VIN first', true); return; }
+    const btn = kind === 'sticker' ? $('appr-oem-sticker') : $('appr-oem-brochure');
+    const orig = btn.textContent; btn.disabled = true; btn.textContent = 'Fetching…';
+    oemMsg('Looking up the factory ' + (kind === 'sticker' ? 'window sticker' : 'brochure') + '…');
+    try {
+      let make = ($('appr-make')?.value || '').trim(), model = ($('appr-model')?.value || '').trim(), year = ($('appr-year')?.value || '').trim();
+      if (!make || (kind === 'brochure' && (!model || !year))) {
+        const dr = await fetch(`${API}/ai/vin-decode`, { method: 'POST', headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ vin }) });
+        const dd = await dr.json().catch(() => ({}));
+        if (dr.ok) { make = make || dd.make || ''; model = model || dd.model || ''; year = year || dd.year || ''; }
+      }
+      const path = kind === 'sticker' ? '/vin/oem-window-sticker' : '/vin/oem-brochure';
+      const r = await fetch(`${API}${path}`, { method: 'POST', headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ vin, make, model, year }) });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) { oemMsg(d.message || d.error || 'Not available', true); return; }
+      oemMsg('Opened in a new tab.');
+      window.open(d.url, '_blank');
+    } catch { oemMsg('Lookup failed — try again', true); }
+    finally { btn.disabled = false; btn.textContent = orig; }
+  }
+  $('appr-oem-sticker')?.addEventListener('click', () => apprFetchOem('sticker'));
+  $('appr-oem-brochure')?.addEventListener('click', () => apprFetchOem('brochure'));
 
   decodeBtn.addEventListener('click', async () => {
     const vin = ($('appr-vin').value || '').trim().toUpperCase();
@@ -1543,9 +1573,13 @@ async function loadDealerManagementMatrix() {
       const removeBtn = (!isSelf && !isAdmin)
         ? `<button class="rep-remove-btn text-red-400 hover:text-red-300 text-xs font-bold" data-rep-id="${m.id}" data-rep-name="${m.full_name || m.email || 'this rep'}">Remove</button>`
         : '';
+      // Per-rep appraisal visibility (reps only — managers/admins already see all).
+      const apprVisBtn = (m.role === 'SALES_REP')
+        ? `<label class="flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400 cursor-pointer whitespace-nowrap" title="Let this rep see every appraisal on the lot"><input type="checkbox" class="rep-appr-vis accent-indigo-600" data-rep-id="${m.id}" data-rep-name="${m.full_name || 'this rep'}" ${m.can_see_all_appraisals ? 'checked' : ''}> sees all appraisals</label>`
+        : '';
       const action = (isSelf || isAdmin)
-        ? `<span class="text-xs text-slate-600">—</span>`
-        : `<div class="flex items-center justify-end gap-3">${roleBtn}${removeBtn}</div>`;
+        ? (apprVisBtn ? `<div class="flex items-center justify-end">${apprVisBtn}</div>` : `<span class="text-xs text-slate-600">—</span>`)
+        : `<div class="flex items-center justify-end gap-3 flex-wrap">${apprVisBtn}${roleBtn}${removeBtn}</div>`;
       const youTag = isSelf ? ' <span class="text-xs text-slate-500 font-normal">(you)</span>' : '';
       const nameCell = `<button class="rep-detail-btn text-left font-bold text-slate-900 dark:text-white hover:text-indigo-400 transition" data-rep-id="${m.id}">${m.full_name || '(no name)'}${youTag}</button>`;
       return `
@@ -1570,6 +1604,19 @@ async function loadDealerManagementMatrix() {
     });
     document.querySelectorAll('.rep-detail-btn').forEach(btn => {
       btn.addEventListener('click', () => openRepDetail(btn.dataset.repId));
+    });
+    document.querySelectorAll('.rep-appr-vis').forEach(cb => {
+      cb.addEventListener('change', async () => {
+        const on = cb.checked;
+        try {
+          const r = await fetch(`${API}/ai/rep-appraisal-visibility`, {
+            method: 'PUT', headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ rep_id: cb.dataset.repId, can_see_all: on }),
+          });
+          if (!r.ok) throw new Error();
+          showToast(`${cb.dataset.repName} ${on ? 'can now see all appraisals' : 'now sees only their own'}`, 'success');
+        } catch { cb.checked = !on; showToast('Could not update setting', 'error'); }
+      });
     });
   } catch (e) {
     tableBody.innerHTML = `<tr><td colspan="8" class="p-4 text-red-400">${e.message}</td></tr>`;
@@ -3084,11 +3131,12 @@ function renderCatalog() {
           ${v.stocknumber ? `<span class="font-mono text-slate-400 dark:text-slate-500">#${v.stocknumber}</span>` : ''}
           <span class="text-slate-500">${mileage}</span>
         </div>
-        <div class="mt-1.5 flex" onclick="event.preventDefault();event.stopPropagation();">
+        <div class="mt-1.5 flex flex-wrap items-center gap-1.5" onclick="event.preventDefault();event.stopPropagation();">
           <button class="inv-aiwrite-btn text-[10px] font-bold px-2 py-1 rounded transition bg-violet-600 hover:bg-violet-500 text-white flex items-center gap-1" data-id="${v.id}">
             <svg viewBox="0 0 24 24" width="11" height="11" class="flex-shrink-0" aria-hidden="true"><path d="M12 2.5l2.4 6.6 6.6 2.4-6.6 2.4L12 20.5l-2.4-6.6L3 11.5l6.6-2.4z" fill="#ffffff" fill-opacity="0.35" stroke="#ffffff" stroke-width="1.4" stroke-linejoin="round"/></svg>
             Write with AI
           </button>
+          ${v.vin ? `<a href="${CARFAX_BASE}${encodeURIComponent(v.vin)}" target="_blank" rel="noopener" class="text-[10px] font-black px-2 py-1 rounded transition bg-[#0a1e3f] hover:bg-[#122a52] text-white flex items-center gap-1 tracking-tight" title="View the Carfax Canada report for this VIN">CARFAX<span class="text-red-500 leading-none">🍁</span></a>` : ''}
         </div>
         ${__vinStickerActive ? (() => {
           // Recall status + VIN/sticker/brochure actions live on the card for
@@ -7549,15 +7597,6 @@ function initApprList() {
   document.getElementById('appr-list-search')?.addEventListener('input', () => { clearTimeout(__apprListDebounce); __apprListDebounce = setTimeout(reload, 300); });
   document.getElementById('appr-list-salesperson')?.addEventListener('change', reload);
   document.getElementById('appr-list-disposition')?.addEventListener('change', reload);
-  document.getElementById('appr-visibility-toggle')?.addEventListener('change', async (e) => {
-    const on = e.target.checked;
-    try {
-      const r = await fetch(`${API}/ai/appraisals-visibility`, { method: 'PUT', headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ reps_see_all: on }) });
-      if (!r.ok) throw new Error();
-      showToast(on ? 'Reps can now see all appraisals' : 'Reps now see only their own', 'success');
-    } catch { e.target.checked = !on; showToast('Could not update setting', 'error'); return; }
-    loadApprList();
-  });
   document.getElementById('appr-list')?.addEventListener('click', (e) => {
     const btn = e.target.closest('[data-appr-id]');
     if (btn) loadAppraisalRecord(btn.getAttribute('data-appr-id'));
@@ -7580,11 +7619,10 @@ async function loadApprList() {
     const d = await r.json().catch(() => ({}));
     if (!r.ok) { box.innerHTML = `<div class="text-xs text-rose-500 py-4">${esc(d.error || 'Could not load appraisals.')}</div>`; return; }
     const meta = d.meta || {};
-    const vWrap = document.getElementById('appr-visibility-wrap');
-    const vToggle = document.getElementById('appr-visibility-toggle');
-    if (vWrap && vToggle) {
-      if (meta.is_management) { vWrap.classList.remove('hidden'); vWrap.classList.add('flex'); vToggle.checked = !!meta.reps_see_all; }
-      else { vWrap.classList.add('hidden'); vWrap.classList.remove('flex'); }
+    const scope = document.getElementById('appr-list-scope');
+    if (scope) {
+      scope.textContent = '· ' + (meta.restricted ? 'your appraisals only' : 'all salespeople');
+      scope.classList.remove('hidden');
     }
     const spSel = document.getElementById('appr-list-salesperson');
     if (spSel) {

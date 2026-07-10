@@ -833,9 +833,9 @@ Suggested trade offer: ${cur} $${suggestedOffer.toLocaleString()} — ${pctToMar
     if (!req.dealershipId) return res.json({ items: [], meta: emptyMeta })
     const role = req.profile?.role || 'SALES_REP'
     const isManagement = MANAGEMENT_ROLES.includes(role)
-    const { data: dealer } = await supabaseAdmin.from('dealerships')
-      .select('appraisals_reps_see_all').eq('id', req.dealershipId).maybeSingle()
-    const repsSeeAll = !!dealer?.appraisals_reps_see_all
+    // Per-rep visibility: management always sees all; a rep sees all only if their
+    // own profile flag is set (toggled per rep in Sales Team settings).
+    const repsSeeAll = !!req.profile?.can_see_all_appraisals
     const restrictToOwn = !isManagement && !repsSeeAll
 
     let query = supabaseAdmin.from('trade_appraisals')
@@ -870,15 +870,20 @@ Suggested trade offer: ${cur} $${suggestedOffer.toLocaleString()} — ${pctToMar
     res.json({ items, meta: { role, is_management: isManagement, reps_see_all: repsSeeAll, restricted: restrictToOwn, salespeople } })
   })
 
-  // Management toggle: let reps see all appraisals, or only their own.
-  app.put('/ai/appraisals-visibility', requireAuth, async (req, res) => {
+  // Management sets a SINGLE rep's appraisal visibility (see all vs. own only).
+  app.put('/ai/rep-appraisal-visibility', requireAuth, async (req, res) => {
     if (!req.dealershipId) return res.status(400).json({ error: 'No dealership associated' })
     if (!MANAGEMENT_ROLES.includes(req.profile?.role)) return res.status(403).json({ error: 'Only management can change this.' })
-    const reps_see_all = !!req.body?.reps_see_all
-    const { error } = await supabaseAdmin.from('dealerships')
-      .update({ appraisals_reps_see_all: reps_see_all }).eq('id', req.dealershipId)
+    const repId = req.body?.rep_id
+    if (!repId) return res.status(400).json({ error: 'rep_id required' })
+    const can = !!req.body?.can_see_all
+    // Scope to the same dealership so a manager can't flip a rep at another store.
+    const { data, error } = await supabaseAdmin.from('profiles')
+      .update({ can_see_all_appraisals: can }).eq('id', repId).eq('dealership_id', req.dealershipId)
+      .select('id').maybeSingle()
     if (error) return res.status(500).json({ error: error.message })
-    res.json({ ok: true, reps_see_all })
+    if (!data) return res.status(404).json({ error: 'Rep not found in your dealership' })
+    res.json({ ok: true, rep_id: repId, can_see_all: can })
   })
 
   app.get('/ai/appraisals/:id', requireAuth, async (req, res) => {

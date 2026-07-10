@@ -1698,6 +1698,11 @@
             <input id="appr-vin-lookup" maxlength="17" placeholder="Enter a VIN to decode" class="flex-1 uppercase tracking-wider bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm">
             <button id="appr-vin-lookup-btn" class="bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-bold px-4 py-2 rounded-lg transition whitespace-nowrap">Decode VIN</button>
           </div>
+          <div class="flex flex-wrap items-center gap-2 mt-2">
+            <button id="appr-oem-sticker" class="text-xs font-bold px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 transition">OEM Window Sticker</button>
+            <button id="appr-oem-brochure" class="text-xs font-bold px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 transition">OEM Brochure</button>
+            <span id="appr-oem-msg" class="text-xs text-slate-400"></span>
+          </div>
         </div>
 
         <!-- Card: the appraisal form -->
@@ -1810,15 +1815,10 @@
 
         <!-- ── Appraisals list (team-wide, filterable) ──────────────────────── -->
         <div class="space-y-3 pt-2">
-          <div class="flex items-center justify-between gap-3 flex-wrap">
-            <div class="flex items-center gap-2">
-              <span class="w-1.5 h-4 rounded-full bg-slate-400 flex-shrink-0"></span>
-              <h3 class="text-base font-bold text-slate-900 dark:text-white">Appraisals</h3>
-            </div>
-            <label id="appr-visibility-wrap" class="hidden items-center gap-2 text-xs font-medium text-slate-500 dark:text-slate-400 cursor-pointer select-none">
-              <input type="checkbox" id="appr-visibility-toggle" class="accent-indigo-600">
-              Let reps see all appraisals
-            </label>
+          <div class="flex items-center gap-2">
+            <span class="w-1.5 h-4 rounded-full bg-slate-400 flex-shrink-0"></span>
+            <h3 class="text-base font-bold text-slate-900 dark:text-white">Appraisals</h3>
+            <span id="appr-list-scope" class="hidden text-[11px] text-slate-400"></span>
           </div>
           <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4 space-y-3">
             <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
@@ -2314,7 +2314,7 @@
     </div>
   </div>
 
-  <script src="dashboard.js?v=20260710g"></script>
+  <script src="dashboard.js?v=20260710h"></script>
   <script src="tour.js"></script>
   <script src="table-sort.js?v=20260706a"></script>
 </body>

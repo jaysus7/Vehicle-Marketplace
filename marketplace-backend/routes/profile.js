@@ -102,7 +102,7 @@ export function registerRoutes(app) {
 
     const { data: members, error } = await supabaseAdmin
       .from('profiles')
-      .select('id, full_name, role, account_role, created_at')
+      .select('id, full_name, role, account_role, created_at, can_see_all_appraisals')
       .eq('dealership_id', req.dealershipId)
       .order('created_at', { ascending: true })
     if (error) return res.status(500).json({ error: error.message })
@@ -127,6 +127,7 @@ export function registerRoutes(app) {
         full_name: m.full_name,
         role: m.role,
         account_role: m.account_role,
+        can_see_all_appraisals: !!m.can_see_all_appraisals,
         email: authUser?.user?.email || null,
         listings_posted: listingsCount || 0,
         listings_sold: soldCount || 0,

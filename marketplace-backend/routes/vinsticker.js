@@ -1071,6 +1071,37 @@ export function registerRoutes(app) {
   })
 
   // ── Generate window sticker ───────────────────────────────────────────
+  // ── OEM docs by VIN (Appraisal page — no inventory vehicle needed) ────────
+  // Fetch the authentic factory window sticker / brochure for a decoded VIN.
+  // OEM only (no AI-generated variant). Inventory Intelligence add-on.
+  app.post('/vin/oem-window-sticker', requireAuth, async (req, res) => {
+    if (!req.dealershipId) return res.status(400).json({ error: 'No dealership' })
+    const dealer = await loadDealershipData(req.dealershipId)
+    if (!hasInvIntel(dealer, req.user.email)) return res.status(403).json({ error: 'Factory window stickers are part of Inventory Intelligence' })
+    const vin = String(req.body?.vin || '').trim().toUpperCase()
+    if (!/^[A-HJ-NPR-Z0-9]{17}$/.test(vin)) return res.status(400).json({ error: 'Enter a valid 17-character VIN' })
+    try {
+      const oem = await fetchOemWindowStickerPdf({ vin, make: req.body?.make || null }).catch(() => null)
+      if (!oem) return res.status(404).json({ error: 'no_oem', message: 'No factory (OEM) window sticker is available for this VIN.' })
+      const url = await uploadPdf(oem.buffer, `${req.dealershipId}/appraisal/${vin}-window-sticker-oem.pdf`)
+      res.json({ url })
+    } catch (e) { res.status(500).json({ error: e.message }) }
+  })
+
+  app.post('/vin/oem-brochure', requireAuth, async (req, res) => {
+    if (!req.dealershipId) return res.status(400).json({ error: 'No dealership' })
+    const dealer = await loadDealershipData(req.dealershipId)
+    if (!hasInvIntel(dealer, req.user.email)) return res.status(403).json({ error: 'Factory brochures are part of Inventory Intelligence' })
+    const vin = String(req.body?.vin || '').trim().toUpperCase()
+    if (!/^[A-HJ-NPR-Z0-9]{17}$/.test(vin)) return res.status(400).json({ error: 'Enter a valid 17-character VIN' })
+    try {
+      const oem = await fetchOemBrochurePdf({ vin, make: req.body?.make, model: req.body?.model, year: req.body?.year }).catch(() => null)
+      if (!oem) return res.status(404).json({ error: 'no_oem', message: 'No factory (OEM) brochure is available for this vehicle (on file up to 2023).' })
+      const url = await uploadPdf(oem.buffer, `${req.dealershipId}/appraisal/${vin}-brochure-oem.pdf`)
+      res.json({ url })
+    } catch (e) { res.status(500).json({ error: e.message }) }
+  })
+
   app.post('/pdf/window-sticker/:vehicleId', requireAuth, requireDealerAdmin, async (req, res) => {
     if (!req.dealershipId) return res.status(400).json({ error: 'No dealership' })
 
