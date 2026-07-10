@@ -622,7 +622,6 @@ function initAppraisal() {
       drivetrain: ($('appr-drivetrain')?.value || '').trim() || (__apprDecodedSpecs?.drivetrain || ''),
       engine: ($('appr-engine')?.value || '').trim() || (__apprDecodedSpecs?.engine || ''),
       radius: $('appr-radius')?.value ?? '',
-      trade_pct: num('appr-trade-pct'),
     };
     if (!body.year || !body.make || !body.model) { showToast('Year, make and model are required', 'error'); return; }
     const orig = runBtn.textContent;
