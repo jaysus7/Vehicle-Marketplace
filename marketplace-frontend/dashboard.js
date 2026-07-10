@@ -3763,6 +3763,29 @@ async function loadDailyDigest() {
   } catch {}
 }
 
+// Daily briefing email opt-in toggle (Reports & Alerts section).
+async function loadDigestToggle() {
+  const el = document.getElementById('daily-digest-toggle');
+  if (!el) return;
+  try {
+    const r = await fetch(`${API}/ai/config`, { headers: { 'Authorization': `Bearer ${token}` } });
+    if (r.ok) { const cfg = await r.json(); el.checked = cfg.daily_digest_enabled !== false; }
+  } catch {}
+  if (!el._wired) {
+    el._wired = true;
+    el.addEventListener('change', async () => {
+      try {
+        const r = await fetch(`${API}/ai/config`, {
+          method: 'PUT', headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ daily_digest_enabled: el.checked }),
+        });
+        if (!r.ok) throw new Error();
+        showToast(el.checked ? 'Daily briefing email on' : 'Daily briefing email off', 'success');
+      } catch { el.checked = !el.checked; showToast('Could not save that', 'error'); }
+    });
+  }
+}
+
 // Your Lot at a Glance — vehicle count + price range for competitor comparison.
 async function loadLotOverview() {
   const countEl = document.getElementById('lot-ov-count');
@@ -5379,6 +5402,7 @@ function loadInvIntelPage() {
     loadMarketcheckStatus();
     loadAIActivity();   // Inventory Scan now lives on this page
     loadLotOverview();  // Your Lot at a Glance
+    loadDigestToggle(); // Daily briefing email opt-in
   } else {
     upsell.classList.remove('hidden');
     active.classList.add('hidden');

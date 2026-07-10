@@ -1456,6 +1456,17 @@
               <svg class="w-4 h-4 text-slate-400 transition-transform ai-chevron" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg>
             </button>
             <div class="ai-accordion-body p-5 space-y-4">
+              <!-- Daily briefing email opt-in -->
+              <div class="flex items-center justify-between gap-3 pb-3 border-b border-slate-100 dark:border-slate-800">
+                <div>
+                  <div class="text-sm font-semibold text-slate-800 dark:text-slate-200">Daily briefing email</div>
+                  <div class="text-xs text-slate-500 dark:text-slate-400">A short “Today's Briefing” to your alert email — only on days there's something to act on.</div>
+                </div>
+                <label class="relative inline-flex items-center cursor-pointer flex-shrink-0">
+                  <input type="checkbox" id="daily-digest-toggle" class="sr-only peer">
+                  <div class="w-10 h-5 bg-slate-200 dark:bg-slate-700 rounded-full peer peer-checked:after:translate-x-5 after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-indigo-600"></div>
+                </label>
+              </div>
               <p class="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">Sends a full lot health email to your alert address: aging units (60+ days), price drift flags, slow movers, and missing-info alerts from the last 7 days.</p>
               <div class="flex items-center gap-3 flex-wrap">
                 <button id="weekly-report-btn" class="flex items-center gap-2 bg-violet-600 hover:bg-violet-500 text-white text-sm font-bold px-5 py-2 rounded-lg transition">
@@ -2150,7 +2161,7 @@
     </div>
   </div>
 
-  <script src="dashboard.js?v=20260708t"></script>
+  <script src="dashboard.js?v=20260708u"></script>
   <script src="tour.js"></script>
   <script src="table-sort.js?v=20260706a"></script>
 </body>

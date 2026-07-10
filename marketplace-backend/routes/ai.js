@@ -153,7 +153,7 @@ export function registerAI(app) {
     if (!req.dealershipId) return res.status(400).json({ error: 'No dealership associated' })
     const { data, error } = await supabaseAdmin
       .from('dealerships')
-      .select('ai_boost_active, ai_tone, ai_required_fields, ai_manager_email, vin_sticker_active, inv_intel_active, ai_vision_active, country, province, city, postal_code')
+      .select('ai_boost_active, ai_tone, ai_required_fields, ai_manager_email, vin_sticker_active, inv_intel_active, ai_vision_active, country, province, city, postal_code, daily_digest_enabled')
       .eq('id', req.dealershipId)
       .single()
     if (error) return res.status(500).json({ error: error.message })
@@ -178,12 +178,13 @@ export function registerAI(app) {
   // PUT /ai/config — update dealership AI config (DEALER_ADMIN only)
   app.put('/ai/config', requireAuth, requireDealerAdmin, async (req, res) => {
     if (!req.dealershipId) return res.status(400).json({ error: 'No dealership associated' })
-    const { ai_tone, ai_required_fields, ai_manager_email, ai_boost_active, country, province, city, postal_code } = req.body
+    const { ai_tone, ai_required_fields, ai_manager_email, ai_boost_active, country, province, city, postal_code, daily_digest_enabled } = req.body
     const update = {}
     if (ai_tone !== undefined) update.ai_tone = ai_tone
     if (ai_required_fields !== undefined) update.ai_required_fields = ai_required_fields
     if (ai_manager_email !== undefined) update.ai_manager_email = ai_manager_email
     if (ai_boost_active !== undefined) update.ai_boost_active = ai_boost_active
+    if (daily_digest_enabled !== undefined) update.daily_digest_enabled = !!daily_digest_enabled
     // Market/location — drives US-vs-Canada pricing and comp searches.
     if (country !== undefined) update.country = (country || '').trim() || null
     if (province !== undefined) update.province = (province || '').trim() || null
@@ -194,7 +195,7 @@ export function registerAI(app) {
       .from('dealerships')
       .update(update)
       .eq('id', req.dealershipId)
-      .select('ai_boost_active, ai_tone, ai_required_fields, ai_manager_email, country, province, city, postal_code')
+      .select('ai_boost_active, ai_tone, ai_required_fields, ai_manager_email, country, province, city, postal_code, daily_digest_enabled')
       .single()
     if (error) return res.status(500).json({ error: error.message })
     res.json(data)
@@ -3120,14 +3121,15 @@ Units 60d+ on lot: ${stale}`
     if (!resend) return res.json({ sent: 0, note: 'email not configured' })
 
     const { data: dealers } = await supabaseAdmin.from('dealerships')
-      .select('id, name, ai_manager_email, inv_intel_active, ai_boost_active')
+      .select('id, name, ai_manager_email, inv_intel_active, ai_boost_active, daily_digest_enabled')
       .not('ai_manager_email', 'is', null)
 
     const esc = s => String(s ?? '').replace(/[<>&]/g, c => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c]))
     let sent = 0, failed = 0
     for (const d of (dealers || [])) {
       try {
-        // The daily digest is an Inventory Intelligence / AI Boost value-add.
+        // Respect the dealer's opt-out, and only for add-on subscribers.
+        if (d.daily_digest_enabled === false) continue
         if (!d.inv_intel_active && !d.ai_boost_active) continue
         const digest = await computeDailyDigest(d.id, false)
         if (!digest.items.length) continue  // nothing actionable — don't send
