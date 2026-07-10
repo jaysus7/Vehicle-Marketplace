@@ -552,6 +552,7 @@ async function _runInventorySyncInner(dealershipId) {
   image_urls: imageUrls,
   source_url: sourceUrl,
   status: isSold ? 'sold' : (isPending ? 'pending' : 'available'),
+  archived_at: null,   // present in the feed → not archived (un-archives a relisted unit)
   last_synced_at: new Date().toISOString(),
   // Tag the originating feed when the column exists → ON DELETE CASCADE removes
   // these rows automatically when the feed is deleted (omitted pre-migration).
@@ -608,42 +609,46 @@ async function _runInventorySyncInner(dealershipId) {
         .from('inventory')
         .select('id, vin, status')
         .eq('dealership_id', dealershipId)
-        .eq('status', 'available')   // sold rows are now deleted, not flagged
+        .eq('status', 'available')   // only live units can drop off the feed
       if (fetchErr) {
         console.error('[sync] could not fetch current inventory for diff:', fetchErr.message)
       } else {
-        // Vehicle no longer in feed → it's gone from the dealer site, delete it.
-        // (Listings rows survive thanks to ON DELETE SET NULL on inventory_id.)
-        const toDelete = []
+        // Vehicle no longer in feed → it's gone from the dealer site (almost always a
+        // sale). ARCHIVE it rather than hard-delete: it leaves the live lot but the
+        // record is retained (status='archived' + archived_at) so sell-through, turn
+        // rate and "what sold" analytics have real history to learn from.
+        const toArchive = []
         for (const row of currentRows || []) {
           if (!row.vin) continue
-          if (!feedVinSet.has(row.vin)) toDelete.push(row.id)
+          if (!feedVinSet.has(row.vin)) toArchive.push(row.id)
         }
 
-        // Safety brake: if the diff says >50% of current inventory must be deleted,
-        // something's off (feed change, partial fetch) — skip rather than wipe data.
+        // Safety brake: if the diff says >50% of current inventory dropped off,
+        // something's off (feed change, partial fetch) — skip rather than mass-archive.
         const totalCount = (currentRows || []).length
-        if (totalCount > 0 && toDelete.length / totalCount > 0.5) {
-          console.warn(`[sync] would delete ${toDelete.length}/${totalCount} inventory rows — refusing (likely sync glitch)`)
-        } else if (toDelete.length) {
-          for (let i = 0; i < toDelete.length; i += 100) {
-            const slice = toDelete.slice(i, i + 100)
+        if (totalCount > 0 && toArchive.length / totalCount > 0.5) {
+          console.warn(`[sync] would archive ${toArchive.length}/${totalCount} inventory rows — refusing (likely sync glitch)`)
+        } else if (toArchive.length) {
+          const archivedAt = new Date().toISOString()
+          for (let i = 0; i < toArchive.length; i += 100) {
+            const slice = toArchive.slice(i, i + 100)
             // Dropped from the feed → if any were posted to Facebook, queue their
-            // listings for DELETION from Marketplace (the extension performs it). Do
-            // this BEFORE deleting inventory so inventory_id still matches. Wrapped so a
-            // pre-migration DB (no fb_sync_action column) never breaks the sync.
+            // listings for DELETION from Marketplace (the extension performs it).
+            // Wrapped so a pre-migration DB (no fb_sync_action column) never breaks sync.
             try {
               await supabaseAdmin
                 .from('listings')
-                .update({ status: 'deleted', deleted_at: new Date().toISOString(), fb_sync_action: 'delete', fb_synced_at: null })
+                .update({ status: 'deleted', deleted_at: archivedAt, fb_sync_action: 'delete', fb_synced_at: null })
                 .in('inventory_id', slice)
                 .eq('status', 'posted')
                 .not('fb_listing_url', 'is', null)
             } catch (e) { console.warn('[sync] delete→FB queue failed (non-fatal):', e.message) }
-            // Listings FK is ON DELETE SET NULL → their history survives.
-            await supabaseAdmin.from('inventory').delete().in('id', slice)
+            // Archive (retain history) instead of deleting the inventory row.
+            await supabaseAdmin.from('inventory')
+              .update({ status: 'archived', archived_at: archivedAt })
+              .in('id', slice)
           }
-          console.log(`[sync] auto-delete: ${toDelete.length} inventory rows removed (dropped from feed)`)
+          console.log(`[sync] auto-archive: ${toArchive.length} inventory rows archived (dropped from feed)`)
         }
       }
     }
