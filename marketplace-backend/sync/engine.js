@@ -706,12 +706,14 @@ async function _runInventorySyncInner(dealershipId) {
   }
 }
 
-// Nightly market-comp refresh. Warms the shared 7-day MarketCheck cache for a
-// dealer's used inventory so that daytime reads (price reports, appraisals, AI
-// listing copy, card badges) are served from cache for $0 — live MarketCheck then
-// only ever happens here (nightly) or on an explicit button click. Bounded by the
-// 7-day cache + the dealer's MarketCheck caps, so most nights it costs little or
-// nothing. Best-effort: never throws. Set NIGHTLY_MARKET_REFRESH=0 to disable.
+// Nightly market-comp refresh. For each of a dealer's used units it refreshes the
+// live market median (warming the shared 7-day MarketCheck cache) and writes an
+// ai_activity price flag — the same record the Inventory cards' "% to market" badge
+// and the Lot Report read from. So the cards update every night automatically, and
+// live MarketCheck only ever happens here (nightly) or on an explicit button click.
+// Bounded by the 7-day cache + the dealer's MarketCheck caps, so most nights it
+// costs little or nothing. Best-effort: never throws. Set NIGHTLY_MARKET_REFRESH=0
+// to disable.
 async function refreshDealerMarketComps(dealershipId) {
   try {
     if (!marketcheckEnabled()) return 0
@@ -727,20 +729,39 @@ async function refreshDealerMarketComps(dealershipId) {
       .from('inventory').select('id, year, make, model, trim, mileage, price, condition')
       .eq('dealership_id', dealershipId).eq('status', 'available')
 
-    let warmed = 0
+    let refreshed = 0
     for (const v of vehicles || []) {
       // Skip new / demo / current-year / no-price units — no used-market comp set.
       const cond = (v.condition || '').toLowerCase()
       if (!v.price || !v.make || !v.model || !v.year) continue
       if (cond === 'new' || cond === 'demo' || Number(v.year) >= yearNow) continue
-      const { cached } = await getMarketData({
+      const { data: mc, cached } = await getMarketData({
         dealershipId, isOwner: false, allowLive: true,
         params: { make: v.make, model: v.model, year: Number(v.year), trim: v.trim || '', mileage: v.mileage ? Number(v.mileage) : null, isUS },
       })
-      warmed++
+      if (mc?.median_price) {
+        // Same price-flag math as the Inventory Scan (buildPriceFlag), inlined so the
+        // sync engine doesn't depend on the routes layer. Guards against an absurd
+        // number from a mismatched comp set (>45% off, or <3 comps).
+        const price = Number(v.price), med = Number(mc.median_price), count = mc.count
+        const pct = ((price - med) / med) * 100
+        const reliable = (count == null || count >= 3) && Math.abs(pct) <= 45
+        supabaseAdmin.from('ai_activity').insert({
+          dealership_id: dealershipId,
+          inventory_id: v.id,
+          actor_id: null,                       // system-generated (nightly)
+          vehicle_label: [v.year, v.make, v.model, v.trim].filter(Boolean).join(' '),
+          warnings: null,
+          price_flagged: reliable && Math.abs(pct) > 15,
+          price_pct_diff: Math.round(pct * 10) / 10,
+          price_median: med,
+          copy_generated: false,
+        }).then(() => {}).catch(() => {})
+        refreshed++
+      }
       if (!cached) await sleep(150)   // pace only the live (paid) calls
     }
-    return warmed
+    return refreshed
   } catch (e) {
     console.warn(`[market-refresh] ${dealershipId} failed:`, e.message)
     return 0
@@ -769,8 +790,8 @@ export async function syncAllDealerships(triggerLabel = 'scheduled') {
       // Warm the MarketCheck cache for the freshly-synced lot so daytime reads are
       // free and live calls stay confined to this nightly pass + button actions.
       if (process.env.NIGHTLY_MARKET_REFRESH !== '0') {
-        const warmed = await refreshDealerMarketComps(d.id)
-        if (warmed) console.log(`[sync-all:${triggerLabel}] ${d.name}: warmed ${warmed} market comps`)
+        const refreshed = await refreshDealerMarketComps(d.id)
+        if (refreshed) console.log(`[sync-all:${triggerLabel}] ${d.name}: refreshed ${refreshed} market comps / card badges`)
       }
       results.push({ dealership_id: d.id, ...r })
     } catch (e) {
