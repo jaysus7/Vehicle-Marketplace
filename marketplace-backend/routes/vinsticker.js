@@ -712,9 +712,16 @@ function buildBrochureHtml(vehicle, dealer, branding, recalls, photosDataUris, l
 <html lang="en"><head><meta charset="UTF-8"><style>
   ${fontFaceCss()}
   *{margin:0;padding:0;box-sizing:border-box;overflow-wrap:break-word;word-break:break-word;}
+  @page{size:Letter;margin:0;}
   body{font-family:'Tinos','Georgia','Times New Roman',serif;width:816px;background:#fff;color:#1f2937;}
-  .page{width:816px;min-height:1056px;position:relative;page-break-after:always;display:flex;flex-direction:column;}
-  .page:last-child{page-break-after:auto;}
+  /* Each .page starts on a fresh sheet and takes only the height its content needs —
+     no forced 1056px that would spill a long block onto a second sheet. Full-bleed
+     colour pages (.full) fill the whole sheet. Every block is break-inside:avoid so a
+     section can never split across a page boundary. */
+  .page{width:816px;position:relative;page-break-after:always;break-after:page;padding-bottom:24px;}
+  .page:last-child{page-break-after:auto;break-after:auto;}
+  .page.full{height:1056px;padding-bottom:0;display:flex;flex-direction:column;overflow:hidden;}
+  .ihdr,.spec-row,.fe,.sp,.hl-para,.trimcard,.pkg,.cover-foot,.sect-lbl{break-inside:avoid;}
   .sans{font-family:'Arimo','Arial',Helvetica,sans-serif;}
   .eyebrow{font-family:'Arimo','Arial',sans-serif;font-size:13px;letter-spacing:5px;text-transform:uppercase;color:${secondary};font-weight:700;}
 
@@ -739,7 +746,7 @@ function buildBrochureHtml(vehicle, dealer, branding, recalls, photosDataUris, l
   .ihdr{background:${primary};padding:32px 56px;}
   .ihdr .eyebrow{color:${secondary};}
   .ihdr h2{font-family:'Arimo','Arial',sans-serif;color:#fff;font-size:32px;font-weight:900;margin-top:8px;letter-spacing:-.5px;}
-  .icontent{flex:1;padding:32px 56px 40px;}
+  .icontent{padding:32px 56px 20px;}
 
   /* PAGE 2 — the build */
   .spec-row{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:26px;}
@@ -802,7 +809,7 @@ function buildBrochureHtml(vehicle, dealer, branding, recalls, photosDataUris, l
 </style></head><body>
 
 <!-- PAGE 1 — COVER -->
-<div class="page">
+<div class="page full">
   <div class="cover-top">${logoImg(52)}<span class="eyebrow">Vehicle Brochure</span></div>
   <div class="cover-hero">${photo0 ? `<img src="${photo0}">` : `<div class="noimg"></div>`}</div>
   <div class="cover-body">
@@ -819,7 +826,7 @@ function buildBrochureHtml(vehicle, dealer, branding, recalls, photosDataUris, l
   </div>
 </div>
 
-<!-- PAGE 2 — THE BUILD (as configured) -->
+<!-- PAGE 2 — THE BUILD (as configured) + highlight -->
 <div class="page">
   <div class="ihdr"><span class="eyebrow">The Build</span><h2>Your ${esc(vehicleName)}${trim ? ' ' + esc(trim) : ''}</h2></div>
   <div class="icontent">
@@ -829,17 +836,15 @@ function buildBrochureHtml(vehicle, dealer, branding, recalls, photosDataUris, l
       ${specTile(vehicle.vin_data?.electrification ? 'Powertrain' : 'Drivetrain', vehicle.vin_data?.electrification || vehicle.drivetrain)}
     </div>
     ${feHtml}
-    <div class="sect-lbl">Full Specifications — As Decoded from the VIN</div>
-    <div class="specsheet">${specSheet}</div>
+    ${highlight.length ? `<div class="sect-lbl">About This Vehicle</div>${highlight.map(p => `<p class="hl-para">${esc(p)}</p>`).join('')}` : ''}
   </div>
 </div>
 
-<!-- PAGE 3 — THIS VEHICLE -->
+<!-- PAGE 3 — FULL SPECIFICATIONS -->
 <div class="page">
-  <div class="ihdr"><span class="eyebrow">Your Vehicle</span><h2>${esc(vehicleName)}${trim ? ' ' + esc(trim) : ''}</h2></div>
+  <div class="ihdr"><span class="eyebrow">Specifications</span><h2>Full Specs — As Decoded from the VIN</h2></div>
   <div class="icontent">
-    <div class="hl-photo">${photo1 ? `<img src="${photo1}">` : ''}</div>
-    ${highlight.map(p => `<p class="hl-para">${esc(p)}</p>`).join('')}
+    <div class="specsheet">${specSheet}</div>
   </div>
 </div>
 
@@ -863,8 +868,8 @@ ${pkgs.length ? `
   </div>
 </div>` : ''}
 
-<!-- PAGE 6 — DEALERSHIP -->
-<div class="page d-page">
+<!-- PAGE — DEALERSHIP -->
+<div class="page full d-page">
   <div class="d-hero">
     ${logoSrc ? `<div class="d-logo">${logoImg(70)}</div>` : ''}
     <div class="d-name">${esc(dealer.name || 'Your Dealership')}</div>
