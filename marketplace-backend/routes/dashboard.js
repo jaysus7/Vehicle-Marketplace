@@ -559,7 +559,7 @@ export function registerRoutes(app) {
     let inventorySynced = 0, inventoryAvailable = 0, listingsPosted = 0
     let soldThisMonth = 0, activeDaysThisWeek = 0, listingsByAdmin = 0, listingsByReps = 0
     let avgTimeToSellDays = null, postsPerDay = 0, sellThroughRate = 0
-    let inventoryAged60d = 0, linkClicks = 0
+    let inventoryAged60d = 0
     const warnings = {}
 
     // Helper: apply rangeStart filter to a supabase query builder
@@ -688,34 +688,6 @@ export function registerRoutes(app) {
       sellThroughRate = Math.round((soldThisMonth / listingsPosted) * 1000) / 10  // e.g. 23.4 (%)
     }
 
-    // Link clicks (FB Marketplace listing → MarketSync redirect → dealer site).
-    // Counts rows in listing_clicks scoped to this user/dealership, within the range.
-    try {
-      let clickIds = null
-      if (isAdmin && req.dealershipId) {
-        const { data: members } = await supabaseAdmin
-          .from('profiles').select('id').eq('dealership_id', req.dealershipId)
-        clickIds = (members || []).map(m => m.id)
-      } else {
-        clickIds = [req.user.id]
-      }
-      if (clickIds && clickIds.length) {
-        // Click attribution flows through listings.posted_by
-        const { data: listingRows } = await supabaseAdmin
-          .from('listings').select('id').in('posted_by', clickIds)
-        const listingIds = (listingRows || []).map(l => l.id)
-        if (listingIds.length) {
-          const { count } = await withRange(
-            supabaseAdmin.from('listing_clicks').select('id', { count: 'exact', head: true })
-              .in('listing_id', listingIds)
-          , 'clicked_at')
-          linkClicks = count || 0
-        }
-      }
-    } catch (e) {
-      // listing_clicks table may not exist yet — that's fine, just leave linkClicks at 0
-      if (!e.message?.includes('does not exist')) warnings.clicks = e.message
-    }
 
     try {
       const { data, error } = await supabaseAdmin
@@ -747,7 +719,6 @@ export function registerRoutes(app) {
       avg_time_to_sell_days: avgTimeToSellDays,
       posts_per_day: postsPerDay,
       sell_through_rate: sellThroughRate,
-      link_clicks: linkClicks,
       active_days_this_week: activeDaysThisWeek,
       scope: isAdmin ? 'dealership' : 'personal',
       warnings: Object.keys(warnings).length ? warnings : undefined
