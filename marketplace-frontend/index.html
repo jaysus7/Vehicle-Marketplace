@@ -693,9 +693,46 @@
             <p class="text-slate-500 dark:text-gray-400 max-w-2xl mx-auto">Every sales rep earns points. Points grow into tiers. Tiers earn bragging rights. The harder you work, the higher you climb.</p>
         </div>
 
-        <div class="mb-10">
-            <img src="img/leaderboard.png" width="1919" height="946" alt="MarketSync sales leaderboard with a top-3 podium, Bronze-to-Legend tiers, points, and each rep's listings, sold count and conversion rate" loading="lazy"
-                 class="w-full rounded-2xl shadow-2xl border border-slate-200 dark:border-gray-800">
+        <!-- Animated CSS leaderboard mockup (illustrative names) — no real customer data -->
+        <div class="mb-10 max-w-3xl mx-auto rounded-2xl shadow-2xl border border-slate-200 dark:border-gray-800 bg-white dark:bg-gray-950 overflow-hidden" role="img" aria-label="Illustration of the MarketSync sales leaderboard: a top-3 podium with tier badges and points, above Bronze-to-Legend tiers.">
+            <div class="flex items-center gap-2 px-5 py-3 border-b border-slate-100 dark:border-gray-800">
+                <span class="text-lg">🏆</span>
+                <span class="font-black text-slate-900 dark:text-white text-sm">Leaderboard</span>
+                <span class="ml-auto flex items-center gap-1.5 text-[11px] font-semibold text-emerald-500"><span class="ms-live-dot w-1.5 h-1.5 rounded-full bg-emerald-500"></span> LIVE</span>
+            </div>
+            <div class="px-6 pt-8 pb-6">
+                <!-- Podium -->
+                <div class="flex items-end justify-center gap-3 sm:gap-5 max-w-md mx-auto">
+                    <div class="flex-1 text-center">
+                        <div class="text-xs font-bold text-slate-700 dark:text-gray-200 truncate">Priya S.</div>
+                        <div class="inline-block text-[10px] font-black text-slate-500 bg-slate-100 dark:bg-slate-800 rounded-full px-2 py-0.5 my-1">Silver</div>
+                        <div class="text-[11px] font-black text-slate-400 mb-1">2,600</div>
+                        <div class="ms-podium-bar w-full rounded-t-lg bg-gradient-to-b from-slate-300 to-slate-400 dark:from-slate-600 dark:to-slate-500 flex items-start justify-center pt-1.5 text-white text-sm font-black" style="height:70px; animation-delay:.15s">2</div>
+                    </div>
+                    <div class="flex-1 text-center">
+                        <div class="text-lg -mb-0.5">👑</div>
+                        <div class="text-xs font-black text-slate-900 dark:text-white truncate">Marcus T.</div>
+                        <div class="inline-block text-[10px] font-black text-amber-700 dark:text-amber-400 bg-amber-100 dark:bg-amber-900/30 rounded-full px-2 py-0.5 my-1">Gold</div>
+                        <div class="text-[11px] font-black text-amber-600 dark:text-amber-400 mb-1">3,800</div>
+                        <div class="ms-podium-bar w-full rounded-t-lg bg-gradient-to-b from-amber-300 to-amber-500 flex items-start justify-center pt-1.5 text-white text-sm font-black" style="height:110px; animation-delay:0s">1</div>
+                    </div>
+                    <div class="flex-1 text-center">
+                        <div class="text-xs font-bold text-slate-700 dark:text-gray-200 truncate">Dana W.</div>
+                        <div class="inline-block text-[10px] font-black text-orange-700 dark:text-orange-400 bg-orange-100 dark:bg-orange-900/30 rounded-full px-2 py-0.5 my-1">Bronze</div>
+                        <div class="text-[11px] font-black text-slate-400 mb-1">1,900</div>
+                        <div class="ms-podium-bar w-full rounded-t-lg bg-gradient-to-b from-orange-300 to-orange-500 flex items-start justify-center pt-1.5 text-white text-sm font-black" style="height:54px; animation-delay:.3s">3</div>
+                    </div>
+                </div>
+                <!-- Tier legend -->
+                <div class="flex flex-wrap items-center justify-center gap-x-4 gap-y-2 mt-8 pt-5 border-t border-slate-100 dark:border-gray-800 text-[11px] font-semibold">
+                    <span class="flex items-center gap-1.5 text-slate-600 dark:text-gray-300"><span class="w-2 h-2 rounded-full bg-amber-700"></span>Bronze</span>
+                    <span class="flex items-center gap-1.5 text-slate-600 dark:text-gray-300"><span class="w-2 h-2 rounded-full bg-slate-400"></span>Silver</span>
+                    <span class="flex items-center gap-1.5 text-slate-600 dark:text-gray-300"><span class="w-2 h-2 rounded-full bg-yellow-500"></span>Gold</span>
+                    <span class="flex items-center gap-1.5 text-slate-600 dark:text-gray-300"><span class="w-2 h-2 rounded-full bg-cyan-400"></span>Platinum</span>
+                    <span class="flex items-center gap-1.5 text-slate-600 dark:text-gray-300"><span class="w-2 h-2 rounded-full bg-violet-400"></span>Diamond</span>
+                    <span class="flex items-center gap-1.5 text-slate-600 dark:text-gray-300"><span class="w-2 h-2 rounded-full bg-indigo-500"></span>Legend</span>
+                </div>
+            </div>
         </div>
 
         <div class="grid md:grid-cols-2 gap-8 mb-10">
