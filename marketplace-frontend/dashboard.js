@@ -686,7 +686,7 @@ function renderAppraisal(d) {
             PDF
           </button>
         </div>
-        <div class="text-xs text-indigo-100 mt-2">${hasTradeSpread ? 'Wholesale (ACV)' : 'Retail'} ${money(hasTradeSpread ? ap.trade_value : ap.retail_mid)} − recon ${money(ap.recon)} − gross ${money(ap.target_gross)} = your offer</div>
+        <div class="text-xs text-indigo-100 mt-2">${hasTradeSpread ? 'Wholesale ' + money(ap.trade_value) : 'Retail ' + money(ap.retail_mid)} − recon ${money(ap.recon)} − gross ${money(ap.target_gross)} = ACV / wholesale take-in</div>
       </div>
       ${ap.adjustments ? (() => {
         const adj = ap.adjustments;
@@ -729,7 +729,7 @@ function renderAppraisal(d) {
               <div class="font-black tabular-nums text-emerald-600 dark:text-emerald-400">${money(ap.suggested_offer)}</div>
             </div>
           </div>
-          <div class="text-[11px] text-slate-400 mt-2">Adjusts the market's asking prices for this vehicle's odometer and the ask→sell gap to get retail value, then applies the retail→wholesale spread so the wholesale (ACV) lines up with tools like AutoTrader. Your offer sits below ACV by recon + gross.</div>
+          <div class="text-[11px] text-slate-400 mt-2">Adjusts the market's asking prices for this vehicle's odometer and the ask→sell gap to get retail value. Your ACV / wholesale take-in comes off retail (− recon − gross) and lines up with trade-value tools like AutoTrader.</div>
         </div>`;
       })() : ''}
       ${d.prediction ? `<div class="bg-white dark:bg-slate-900 border border-emerald-200 dark:border-emerald-900 rounded-xl p-4">
@@ -898,8 +898,8 @@ function generateAppraisalPdf() {
     ${row('− Reconditioning', '−' + money(ap.recon))}
     ${row('− Target gross', '−' + money(ap.target_gross))}
     <tr><td colspan="2"><div style="border-top:1px solid #e2e8f0;margin:4px 0"></div></td></tr>
-    ${row('Suggested offer', money(ap.suggested_offer), true)}
-    ${ap.pct_to_market != null ? row('Offer as % of retail market', ap.pct_to_market + '%') : ''}
+    ${row('ACV / wholesale take-in', money(ap.suggested_offer), true)}
+    ${ap.pct_to_market != null ? row('Take-in as % of retail market', ap.pct_to_market + '%') : ''}
   </table></div>
 
   <div class="grid">
