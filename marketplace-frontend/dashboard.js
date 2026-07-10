@@ -4221,6 +4221,9 @@ function exportPriceReportPDF() {
 *{box-sizing:border-box;margin:0;padding:0}
 @page{size:letter portrait;margin:13mm 13mm 11mm}
 body{font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;color:#0f172a;font-size:10.5px;line-height:1.35;background:#fff}
+/* On-screen (the auto-opened tab): render as a centered letter-width page so the
+   preview matches the print and never stretches full browser width. Print uses @page. */
+@media screen{html{background:#e5e7eb}body{width:8.5in;max-width:100%;min-height:11in;margin:20px auto;padding:13mm;background:#fff;box-shadow:0 1px 6px rgba(0,0,0,.15)}}
 .header{display:flex;align-items:flex-start;justify-content:space-between;border-bottom:2.5px solid #6366f1;padding-bottom:7px;margin-bottom:8px}
 .header h1{font-size:14px;font-weight:900;letter-spacing:-.3px;margin-bottom:1px}
 .header .sub{font-size:9.5px;color:#64748b}

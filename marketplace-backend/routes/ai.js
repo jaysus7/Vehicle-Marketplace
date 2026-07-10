@@ -2577,8 +2577,7 @@ Units 60d+ on lot: ${stale}`
       { data: allVehicles },
       { data: recentActivity },
       { data: prevActivity },
-      { data: soldThisWeek },
-      { data: soldPrevWeek }
+      { data: soldRecent }
     ] = await Promise.all([
       supabaseAdmin.from('inventory')
         .select('id, year, make, model, trim, price, condition, stocknumber, image_urls, last_synced_at, created_at, status')
@@ -2596,17 +2595,13 @@ Units 60d+ on lot: ${stale}`
         .gte('created_at', ago14)
         .lt('created_at', ago7)
         .limit(500),
+      // Recently sold: units the feed flagged sold, plus units we archived when they
+      // dropped off the feed (a sale). "Sold date" = archived_at, else last_synced_at.
       supabaseAdmin.from('inventory')
-        .select('id')
+        .select('id, status, archived_at, last_synced_at')
         .eq('dealership_id', dealershipId)
-        .eq('status', 'sold')
-        .gte('last_synced_at', ago7),
-      supabaseAdmin.from('inventory')
-        .select('id')
-        .eq('dealership_id', dealershipId)
-        .eq('status', 'sold')
-        .gte('last_synced_at', ago14)
-        .lt('last_synced_at', ago7)
+        .in('status', ['sold', 'archived'])
+        .or(`archived_at.gte.${ago14},last_synced_at.gte.${ago14}`)
     ])
 
     const vehicles = allVehicles || []
@@ -2619,7 +2614,9 @@ Units 60d+ on lot: ${stale}`
 
     const withDays = vehicles.map(v => ({
       ...v,
-      daysOnLot: Math.floor((now - new Date(v.last_synced_at || v.created_at).getTime()) / 86400000)
+      // Days on lot = time since the unit first appeared (created_at). last_synced_at
+      // is rewritten to "now" on every feed sync, so it can never measure age.
+      daysOnLot: Math.floor((now - new Date(v.created_at || v.last_synced_at).getTime()) / 86400000)
     }))
     const aging = withDays.filter(v => v.daysOnLot > 60).sort((a, b) => b.daysOnLot - a.daysOnLot)
     const slowMovers30 = withDays.filter(v => v.daysOnLot > 30 && v.daysOnLot <= 60).sort((a, b) => b.daysOnLot - a.daysOnLot)
@@ -2665,8 +2662,9 @@ Units 60d+ on lot: ${stale}`
     // New arrivals (created_at based on currently available inventory)
     const newArrivalsThisWeek = vehicles.filter(v => v.created_at >= ago7).length
     const newArrivalsPrevWeek = vehicles.filter(v => v.created_at >= ago14 && v.created_at < ago7).length
-    const soldThisWeekCount = (soldThisWeek || []).length
-    const soldPrevWeekCount = (soldPrevWeek || []).length
+    const soldAt = (v) => v.archived_at || v.last_synced_at
+    const soldThisWeekCount = (soldRecent || []).filter(v => soldAt(v) >= ago7).length
+    const soldPrevWeekCount = (soldRecent || []).filter(v => soldAt(v) >= ago14 && soldAt(v) < ago7).length
 
     // Condition mix
     const conditionCount = { new: 0, used: 0, demo: 0 }
