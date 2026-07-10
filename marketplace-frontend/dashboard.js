@@ -628,6 +628,19 @@ function renderAppraisal(d) {
         </div>
         <div class="text-xs text-indigo-100 mt-2">Retail ${money(ap.retail_mid)} − recon ${money(ap.recon)} − gross ${money(ap.target_gross)}${ap.gross_pct != null ? ` (${ap.gross_pct}%)` : ''}</div>
       </div>
+      ${d.prediction ? `<div class="bg-white dark:bg-slate-900 border border-emerald-200 dark:border-emerald-900 rounded-xl p-4">
+        <div class="flex items-center justify-between gap-3 flex-wrap">
+          <div>
+            <div class="text-xs font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">MarketCheck predicted retail</div>
+            <div class="text-2xl font-black text-slate-900 dark:text-white mt-0.5">${money(d.prediction.predicted)} <span class="text-xs font-semibold text-slate-400">${cur}</span></div>
+          </div>
+          ${(d.prediction.low && d.prediction.high) ? `<div class="text-right">
+            <div class="text-[11px] text-slate-400 uppercase tracking-wider">Confidence band</div>
+            <div class="text-sm font-bold text-slate-700 dark:text-slate-200">${money(d.prediction.low)}–${money(d.prediction.high)}</div>
+          </div>` : ''}
+        </div>
+        <div class="text-[11px] text-slate-400 mt-2">Independent VIN-level model estimate — compare against the ${money(rt.median)} comp median above.</div>
+      </div>` : ''}
       ${ap.ai_summary ? `<div class="bg-violet-50 dark:bg-violet-950/30 border border-violet-200 dark:border-violet-900 rounded-xl p-4">
         <div class="flex items-center gap-1.5 mb-1">
           <svg viewBox="0 0 24 24" width="14" height="14" class="flex-shrink-0" aria-hidden="true"><path d="M12 2.5l2.4 6.6 6.6 2.4-6.6 2.4L12 20.5l-2.4-6.6L3 11.5l6.6-2.4z" fill="#c4b5fd" fill-opacity="0.5" stroke="#6d28d9" stroke-width="1.4" stroke-linejoin="round"/></svg>

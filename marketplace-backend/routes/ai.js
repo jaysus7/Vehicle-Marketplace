@@ -1,8 +1,8 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { supabaseAdmin, resend, EMAIL_FROM, FRONTEND_URL, browserFetch } from '../shared.js'
 import { requireAuth } from '../middleware.js'
-import { marketcheckMarket, marketcheckListings, marketcheckEnabled, marketcheckCompetitorStats, marketcheckPing } from '../marketcheck.js'
-import { getMarketData, recordUsage, aiAllowed, getUsage, assistantDailyAllowed, recordAssistantChat, ASSISTANT_DAILY_LIMIT } from '../usage.js'
+import { marketcheckMarket, marketcheckListings, marketcheckEnabled, marketcheckCompetitorStats, marketcheckPing, marketcheckDecodeVin, marketcheckPredictPrice, marketcheckMarketStats } from '../marketcheck.js'
+import { getMarketData, recordUsage, aiAllowed, getUsage, assistantDailyAllowed, recordAssistantChat, ASSISTANT_DAILY_LIMIT, marketcheckAllowed, recordMarketcheckCall } from '../usage.js'
 import { createNotification, createNotifications } from '../notifications.js'
 import { runPhotoVision, scoreVehiclePhotos } from '../sync/photoVision.js'
 
@@ -35,6 +35,55 @@ COMMON HOW-TOs
 - Appraise a trade: Appraisal page → enter VIN/details → Appraise.
 - Draft a lead reply: open the lead in Pipeline → AI reply.
 - See what's aging / priced off market / restock: Inv. Intelligence page.`
+
+// Live-data tools the assistant can call on demand. Each one is a paid MarketCheck
+// call, so it runs through the same allow/record gate (monthly quota + daily cap +
+// global budget) as every other lookup. Owner is exempt from the per-dealer caps.
+const ASSISTANT_TOOLS = [
+  {
+    name: 'decode_vin',
+    description: 'Decode a 17-character VIN into a full spec sheet (year, make, model, trim, engine, drivetrain, options, fuel economy, MSRP). Use when the user gives a VIN and wants specs.',
+    input_schema: { type: 'object', properties: { vin: { type: 'string', description: '17-character VIN' } }, required: ['vin'] },
+  },
+  {
+    name: 'predict_price',
+    description: 'Model-comparable predicted retail price and confidence band for a specific VIN. Use for "what is a fair price / what is this worth" when a VIN is available.',
+    input_schema: { type: 'object', properties: { vin: { type: 'string' }, miles: { type: 'number', description: 'Odometer reading, optional' } }, required: ['vin'] },
+  },
+  {
+    name: 'market_snapshot',
+    description: 'Live market stats — active listing count, median price, and average days-on-market — for a make/model (optionally a year/trim). Use for "how is X selling / days on market / demand / is it hot or stale".',
+    input_schema: { type: 'object', properties: { make: { type: 'string' }, model: { type: 'string' }, year: { type: 'number' }, trim: { type: 'string' } }, required: ['make', 'model'] },
+  },
+]
+
+async function runAssistantTool(name, input, { dealershipId, isOwner, isUS }) {
+  if (!marketcheckEnabled()) return 'Live market data (MarketCheck) is not configured on this account.'
+  if (!(await marketcheckAllowed(dealershipId, isOwner))) return 'The market-data lookup limit has been reached for now — try again later.'
+  try {
+    if (name === 'decode_vin') {
+      const specs = await marketcheckDecodeVin(input?.vin)
+      await recordMarketcheckCall(dealershipId)   // request billed even if empty
+      if (!specs) return 'No specs found for that VIN.'
+      const keep = ['year', 'make', 'model', 'trim', 'body_type', 'body_subtype', 'drivetrain', 'transmission', 'engine', 'doors', 'fuel_type', 'city_mpg', 'highway_mpg', 'msrp', 'vehicle_type']
+      const out = {}; for (const k of keep) if (specs[k] != null) out[k] = specs[k]
+      return JSON.stringify(Object.keys(out).length ? out : specs).slice(0, 1500)
+    }
+    if (name === 'predict_price') {
+      const p = await marketcheckPredictPrice({ vin: input?.vin, miles: input?.miles })
+      await recordMarketcheckCall(dealershipId)
+      return p ? JSON.stringify(p) : 'No price prediction available for that VIN.'
+    }
+    if (name === 'market_snapshot') {
+      const s = await marketcheckMarketStats({ make: input?.make, model: input?.model, year: input?.year, trim: input?.trim, isUS })
+      await recordMarketcheckCall(dealershipId)
+      return s ? JSON.stringify(s) : 'No market data found for that make/model.'
+    }
+  } catch {
+    return 'That lookup failed — the market-data service may be busy.'
+  }
+  return 'Unknown tool.'
+}
 
 // A vehicle we should NOT run market price comparisons on: brand-new / demo units,
 // and anything at or beyond the current model year (e.g. 2026 in 2026). There is no
@@ -637,6 +686,17 @@ Guidelines: under 90 words; answer their question if they asked one; confirm the
         message: 'Not enough comparable listings to value this reliably (needs at least 3). MarketCheck’s Canadian coverage can be thin for rare trims — try again without the trim, or appraise a more common model.' })
     }
 
+    // MarketCheck price prediction (recipe 04) — a model-comparable predicted
+    // retail with a confidence band, shown alongside our comp-based median so the
+    // dealer sees two independent reads. VIN-only; cached-free but metered + capped.
+    let prediction = null
+    if (vehicle.vin && marketcheckEnabled() && await marketcheckAllowed(req.dealershipId, isOwner)) {
+      try {
+        prediction = await marketcheckPredictPrice({ vin: vehicle.vin, miles: mileage })
+        await recordMarketcheckCall(req.dealershipId)
+      } catch { /* prediction is a bonus — never fail the appraisal for it */ }
+    }
+
     const retailMid = market.median_price
     const suggestedOffer = Math.max(0, retailMid - recon - targetGross)
     const grossPct = retailMid > 0 ? Math.round((targetGross / retailMid) * 1000) / 10 : null
@@ -695,6 +755,8 @@ Suggested trade offer: ${cur} $${suggestedOffer.toLocaleString()} — ${pctToMar
         pct_to_market: pctToMarket,
         ai_summary,
       },
+      // MarketCheck model-comparable predicted retail + confidence band (or null).
+      prediction,
       // Sample comps (price + mileage + location) for the PDF charts.
       comps: compList.slice(0, 50).map(l => ({ price: l.price, miles: l.miles, city: l.city, region: l.region })),
       locations,
@@ -3263,15 +3325,34 @@ Units 60d+ on lot: ${stale}`
       `Leads last 7 days: ${leads7}, of which ${leadsWaiting} still need follow-up.`,
     ].join('\n')
 
-    const system = `You are MarketSync's in-dashboard assistant for a car dealership admin/GM. You do two things: (1) answer questions about how MarketSync works, what's included, and pricing, using the PRODUCT GUIDE; and (2) answer questions about THIS store using the LIVE SNAPSHOT. Keep answers short and practical — a couple of sentences or a tight list, no headings, no fluff. If asked something neither section covers, say so briefly and point to the right page. Never invent numbers beyond the snapshot, and when quoting prices note they should confirm exact pricing on the upgrade/billing screen. Today: ${new Date().toISOString().slice(0, 10)}.\n\n${PRODUCT_KB}\n\nLIVE SNAPSHOT (this dealership, right now):\n${facts}`
+    const system = `You are MarketSync's in-dashboard assistant for a car dealership admin/GM. You do three things: (1) answer questions about how MarketSync works, what's included, and pricing, using the PRODUCT GUIDE; (2) answer questions about THIS store using the LIVE SNAPSHOT; and (3) pull live market data with your tools — decode a VIN, predict a fair price for a VIN, or get a market snapshot (listing count, median price, days-on-market) for a make/model. Use a tool only when it clearly helps answer the question, and never guess a VIN — ask for it. Keep answers short and practical — a couple of sentences or a tight list, no headings, no fluff. Never invent numbers beyond the snapshot or tool results, and when quoting product prices note they should confirm exact pricing on the upgrade/billing screen. Today: ${new Date().toISOString().slice(0, 10)}.\n\n${PRODUCT_KB}\n\nLIVE SNAPSHOT (this dealership, right now):\n${facts}`
+
+    const isUS = /^(us|usa|united states)$/i.test((dealer?.country || '').trim())
 
     try {
       const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
-      const msg = await Promise.race([
-        anthropic.messages.create({ model: 'claude-haiku-4-5-20251001', max_tokens: 500, system, messages }),
-        new Promise((_, rej) => setTimeout(() => rej(new Error('ai timeout')), 20000)),
+      const convo = messages.slice()
+      const call = () => Promise.race([
+        anthropic.messages.create({ model: 'claude-haiku-4-5-20251001', max_tokens: 700, system, tools: ASSISTANT_TOOLS, messages: convo }),
+        new Promise((_, rej) => setTimeout(() => rej(new Error('ai timeout')), 25000)),
       ])
-      const reply = (msg?.content?.[0]?.text || '').trim()
+      // Tool-use loop: run any tools the model asks for, feed the results back,
+      // and let it answer. Bounded so a loop can't run away (or run up cost).
+      let response = await call()
+      let guard = 0
+      while (response?.stop_reason === 'tool_use' && guard++ < 4) {
+        const toolResults = []
+        for (const block of response.content || []) {
+          if (block.type === 'tool_use') {
+            const result = await runAssistantTool(block.name, block.input || {}, { dealershipId: req.dealershipId, isOwner, isUS })
+            toolResults.push({ type: 'tool_result', tool_use_id: block.id, content: result })
+          }
+        }
+        convo.push({ role: 'assistant', content: response.content })
+        convo.push({ role: 'user', content: toolResults })
+        response = await call()
+      }
+      const reply = (response?.content || []).filter(b => b.type === 'text').map(b => b.text).join('\n').trim()
       if (!reply) return res.status(502).json({ error: 'No reply generated. Try rephrasing.' })
       recordUsage(req.dealershipId, { ai: 1 })       // monthly AI quota + global budget
       recordAssistantChat(req.dealershipId)          // today's per-dealer assistant cap

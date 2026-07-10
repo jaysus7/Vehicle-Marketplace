@@ -33,6 +33,10 @@ const GLOBAL_MC_BUDGET = Number(process.env.MARKETCHECK_MONTHLY_BUDGET || 0)
 // period row (distinct from the 'YYYY-MM' monthly rows), so no new table needed.
 const ASSISTANT_DAILY_CAP = Number(process.env.AI_ASSISTANT_DAILY_CAP || 40)
 
+// Per-dealership DAILY cap on live (paid) MarketCheck calls, on top of the monthly
+// soft quota — stops one dealer draining the shared budget in a single day.
+const MARKETCHECK_DAILY_CAP = Number(process.env.MARKETCHECK_DAILY_CAP || 200)
+
 const period = () => new Date().toISOString().slice(0, 7)  // 'YYYY-MM' (UTC)
 const dayPeriod = () => new Date().toISOString().slice(0, 10) // 'YYYY-MM-DD' (UTC)
 
@@ -91,7 +95,21 @@ export async function marketcheckAllowed(dealershipId, isOwner) {
   }
   if (isOwner) return true
   const u = await usageRow(dealershipId)
-  return u.marketcheck_calls < QUOTAS.marketcheck
+  if (u.marketcheck_calls >= QUOTAS.marketcheck) return false      // monthly soft quota
+  const d = await usageRow(dealershipId, dayPeriod())
+  return d.marketcheck_calls < MARKETCHECK_DAILY_CAP               // daily cap
+}
+
+// Count one live MarketCheck call against BOTH the monthly counters (per-dealer +
+// global budget) and today's per-dealer daily cap. Use this from any endpoint
+// that makes a raw MarketCheck call outside getMarketData.
+export async function recordMarketcheckCall(dealershipId) {
+  await recordUsage(dealershipId, { marketcheck: 1 })
+  if (dealershipId) {
+    try {
+      await supabaseAdmin.rpc('bump_usage', { p_dealership: dealershipId, p_period: dayPeriod(), p_mc: 1, p_ai: 0 })
+    } catch { /* not provisioned yet — ignore */ }
+  }
 }
 
 // Whether a dealer is under its monthly AI quota (soft). Owner exempt.
@@ -140,7 +158,7 @@ export async function getMarketData({ dealershipId, isOwner = false, params }) {
   }
   const data = await marketcheckMarket(params)
   // Count the call even when it returns no comps — the API request still cost money.
-  await recordUsage(dealershipId, { marketcheck: 1 })
+  await recordMarketcheckCall(dealershipId)
   if (data) await setCache(sig, data)
   return { data, cached: false, capped: false }
 }

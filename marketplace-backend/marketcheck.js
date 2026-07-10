@@ -205,3 +205,84 @@ export async function marketcheckListings({ make, model, year, trim, mileage, is
   }
   return null
 }
+
+/**
+ * Full spec sheet for a VIN via MarketCheck's neovin decode (recipe 01) — richer
+ * than the free NHTSA decode (trim, options, engine, fuel economy, MSRP). One
+ * metered call. Returns the raw specs object, or null on any failure so callers
+ * fall back to NHTSA.
+ */
+export async function marketcheckDecodeVin(vin) {
+  const key = process.env.MARKETCHECK_API_KEY
+  const v = String(vin || '').trim().toUpperCase()
+  if (!key || v.length !== 17) return null
+  try {
+    const r = await fetch(`${BASE}/decode/car/neovin/${encodeURIComponent(v)}/specs?api_key=${encodeURIComponent(key)}`, {
+      headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(12000),
+    })
+    if (!r.ok) return null
+    const j = await r.json()
+    return (j && typeof j === 'object' && Object.keys(j).length) ? j : null
+  } catch { return null }
+}
+
+/**
+ * Model-comparable predicted price + confidence band for a VIN (recipe 04). One
+ * metered call. Returns { predicted, low, high, confidence } or null.
+ */
+export async function marketcheckPredictPrice({ vin, miles } = {}) {
+  const key = process.env.MARKETCHECK_API_KEY
+  const v = String(vin || '').trim().toUpperCase()
+  if (!key || v.length !== 17) return null
+  try {
+    const p = new URLSearchParams({ api_key: key, vin: v, car_type: 'used' })
+    if (miles != null && Number(miles) > 0) p.set('miles', String(Math.round(Number(miles))))
+    const r = await fetch(`${BASE}/predict/car/price?${p.toString()}`, {
+      headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(12000),
+    })
+    if (!r.ok) return null
+    const j = await r.json()
+    // MarketCheck returns a predicted price and (on most plans) a confidence band.
+    const predicted = Number(j?.predicted_price ?? j?.price ?? j?.mean_price)
+    if (!Number.isFinite(predicted) || predicted <= 0) return null
+    const low = Number(j?.price_range?.low ?? j?.low_price ?? j?.min_price)
+    const high = Number(j?.price_range?.high ?? j?.high_price ?? j?.max_price)
+    return {
+      predicted: Math.round(predicted),
+      low: Number.isFinite(low) && low > 0 ? Math.round(low) : null,
+      high: Number.isFinite(high) && high > 0 ? Math.round(high) : null,
+      confidence: j?.confidence ?? j?.confidence_level ?? null,
+    }
+  } catch { return null }
+}
+
+/**
+ * Market snapshot for a make/model in a market (recipe 05): count, price and
+ * days-on-market aggregates. One metered call. Returns
+ * { count, price:{median,mean,min,max}, dom:{median,mean}, miles:{median} } or null.
+ */
+export async function marketcheckMarketStats({ make, model, year, trim, zip, radius, isUS = false } = {}) {
+  const key = process.env.MARKETCHECK_API_KEY
+  if (!key || !make || !model) return null
+  try {
+    const p = new URLSearchParams({
+      api_key: key, country: isUS ? 'us' : 'ca', car_type: 'used',
+      rows: '0', stats: 'price,dom,miles',
+      make: String(make), model: String(model),
+    })
+    if (year) p.set('year', String(year))
+    if (trim) p.set('trim', String(trim))
+    if (zip) { p.set('zip', String(zip)); p.set('radius', String(radius || 100)) }
+    const r = await fetch(`${BASE}/search/car/active?${p.toString()}`, {
+      headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(12000),
+    })
+    if (!r.ok) return null
+    const j = await r.json()
+    const s = j?.stats || {}
+    const pick = o => (o && typeof o === 'object')
+      ? { median: o.median ?? null, mean: o.mean ?? null, min: o.min ?? null, max: o.max ?? null } : null
+    const count = Number(j?.num_found ?? 0)
+    if (!count) return null
+    return { count, price: pick(s.price), dom: pick(s.dom), miles: pick(s.miles) }
+  } catch { return null }
+}
