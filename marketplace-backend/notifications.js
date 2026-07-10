@@ -16,7 +16,7 @@ import { supabaseAdmin } from './shared.js'
  * @param {string} [opts.linkFilter] — stock number or filter string to pre-fill
  * @param {string} [opts.linkUrl]   — external URL to open in a new tab (e.g. a PDF)
  */
-export async function createNotification({ dealershipId, type, title, body, linkPage, linkFilter, linkUrl }) {
+export async function createNotification({ dealershipId, type, title, body, linkPage, linkFilter, linkUrl, targetUserId }) {
   if (!dealershipId) return
   try {
     await supabaseAdmin.from('notifications').insert({
@@ -27,6 +27,7 @@ export async function createNotification({ dealershipId, type, title, body, link
       link_page: linkPage || null,
       link_filter: linkFilter || null,
       link_url: linkUrl || null,
+      target_user_id: targetUserId || null,
     })
   } catch (err) {
     console.error('[notifications] Failed to create notification:', err.message)

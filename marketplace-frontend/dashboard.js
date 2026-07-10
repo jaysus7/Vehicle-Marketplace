@@ -7327,11 +7327,24 @@ function initApprDeal() {
       </div>`).join('');
   }
 
+  loadApprAppraisers();
+
   if (__apprDealWired) return;
   __apprDealWired = true;
   document.getElementById('appr-save-deal')?.addEventListener('click', apprSaveDeal);
   document.getElementById('appr-pdf-summary')?.addEventListener('click', apprCustomerSummaryPdf);
   document.getElementById('appr-pdf-disclosure')?.addEventListener('click', apprDisclosurePdf);
+}
+
+async function loadApprAppraisers() {
+  const box = document.getElementById('appr-notify-list');
+  if (!box) return;
+  try {
+    const r = await fetch(`${API}/ai/appraisers`, { headers: { 'Authorization': `Bearer ${token}` } });
+    const list = await r.json().catch(() => []);
+    if (!Array.isArray(list) || !list.length) { box.innerHTML = '<div class="text-xs text-slate-400 italic col-span-full">No managers to notify.</div>'; return; }
+    box.innerHTML = list.map(m => `<label class="flex items-center gap-2 cursor-pointer"><input type="checkbox" class="appr-notify accent-indigo-600" value="${esc(m.id)}"> <span>${esc(m.name)}</span></label>`).join('');
+  } catch { box.innerHTML = '<div class="text-xs text-rose-500 col-span-full">Could not load managers.</div>'; }
 }
 
 function apprDealMsg(msg, kind) {
@@ -7378,12 +7391,14 @@ function apprVehicleForSave() {
 async function apprSaveDeal() {
   const btn = document.getElementById('appr-save-deal');
   const deal = apprCollectDeal();
+  const notify = [...document.querySelectorAll('#appr-notify-list input:checked')].map(c => c.value);
   const payload = {
     id: __apprDealId || undefined,
     vehicle: apprVehicleForSave(),
     appraisal: __apprData?.appraisal ? { ...__apprData.appraisal } : null,
     currency: __apprData?.currency || null,
     disposition: deal.disposition, customer: deal.customer, disclosure: deal.disclosure,
+    notify,
   };
   if (!payload.vehicle.make || !payload.vehicle.model) { apprDealMsg('Add at least the vehicle make and model (or run an appraisal) before saving.', 'error'); return; }
   btn.disabled = true; const t = btn.textContent; btn.textContent = 'Saving…';
@@ -7392,7 +7407,7 @@ async function apprSaveDeal() {
     const j = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(j.error || 'Save failed');
     __apprDealId = j.id;
-    apprDealMsg('Saved and attached to ' + ((profileContext?.full_name) || 'you') + '.', 'success');
+    apprDealMsg('Saved and attached to ' + ((profileContext?.full_name) || 'you') + '.' + (j.notified ? ` Notified ${j.notified} appraiser${j.notified > 1 ? 's' : ''}.` : ''), 'success');
   } catch (e) { apprDealMsg(e.message, 'error'); }
   finally { btn.disabled = false; btn.textContent = t; }
 }

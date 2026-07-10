@@ -11,6 +11,7 @@ export function registerNotifications(app) {
       .from('notifications')
       .select('id, type, title, body, link_page, link_filter, link_url, read, created_at')
       .eq('dealership_id', req.dealershipId)
+      .or(`target_user_id.is.null,target_user_id.eq.${req.user.id}`)
       .order('created_at', { ascending: false })
       .limit(50)
 
@@ -26,6 +27,7 @@ export function registerNotifications(app) {
       .from('notifications')
       .select('id', { count: 'exact', head: true })
       .eq('dealership_id', req.dealershipId)
+      .or(`target_user_id.is.null,target_user_id.eq.${req.user.id}`)
       .eq('read', false)
 
     if (error) return res.json({ count: 0 })
@@ -54,6 +56,7 @@ export function registerNotifications(app) {
       .from('notifications')
       .update({ read: true })
       .eq('dealership_id', req.dealershipId)
+      .or(`target_user_id.is.null,target_user_id.eq.${req.user.id}`)
       .eq('read', false)
 
     if (error) return res.status(500).json({ error: error.message })

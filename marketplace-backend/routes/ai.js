@@ -811,6 +811,7 @@ Suggested trade offer: ${cur} $${suggestedOffer.toLocaleString()} — ${pctToMar
       customer: (b.customer && typeof b.customer === 'object') ? b.customer : null,
       disclosure: (b.disclosure && typeof b.disclosure === 'object') ? b.disclosure : null,
     }
+    let savedId
     if (b.id) {
       // On update, preserve the original salesperson/creator — a manager editing a
       // rep's appraisal must not reattribute it to themselves.
@@ -818,11 +819,29 @@ Suggested trade offer: ${cur} $${suggestedOffer.toLocaleString()} — ${pctToMar
       const { data, error } = await supabaseAdmin.from('trade_appraisals')
         .update(rowUpdate).eq('id', b.id).eq('dealership_id', req.dealershipId).select('id').maybeSingle()
       if (error) return res.status(500).json({ error: error.message })
-      return res.json({ ok: true, id: data?.id || b.id })
+      savedId = data?.id || b.id
+    } else {
+      const { data, error } = await supabaseAdmin.from('trade_appraisals').insert(row).select('id').single()
+      if (error) return res.status(500).json({ error: error.message })
+      savedId = data.id
     }
-    const { data, error } = await supabaseAdmin.from('trade_appraisals').insert(row).select('id').single()
-    if (error) return res.status(500).json({ error: error.message })
-    res.json({ ok: true, id: data.id })
+
+    // Notify selected appraisers (managers) — one targeted notification each.
+    const notifyIds = Array.isArray(b.notify) ? [...new Set(b.notify.filter(Boolean))] : []
+    if (notifyIds.length) {
+      const vlabel = [row.year, row.make, row.model, row.trim].filter(Boolean).join(' ') || 'a vehicle'
+      const who = row.salesperson_name || 'A salesperson'
+      const cName = [row.customer?.first_name, row.customer?.last_name].filter(Boolean).join(' ')
+      createNotifications(notifyIds.map(uid => ({
+        dealership_id: req.dealershipId,
+        type: 'appraisal',
+        title: 'Appraisal to review',
+        body: `${who} requests your appraisal on ${vlabel}${cName ? ` for ${cName}` : ''}.`,
+        link_page: 'appraisal',
+        target_user_id: uid,
+      }))).catch(() => {})
+    }
+    res.json({ ok: true, id: savedId, notified: notifyIds.length })
   })
 
   // Management (owner/admin/manager) always sees the whole lot's appraisals. Reps
@@ -893,6 +912,18 @@ Suggested trade offer: ${cur} $${suggestedOffer.toLocaleString()} — ${pctToMar
     if (error) return res.status(500).json({ error: error.message })
     if (!data) return res.status(404).json({ error: 'Not found' })
     res.json(data)
+  })
+
+  // Managers/appraisers for the "Notify appraiser" checklist (any dealership user).
+  app.get('/ai/appraisers', requireAuth, async (req, res) => {
+    if (!req.dealershipId) return res.json([])
+    const { data, error } = await supabaseAdmin.from('profiles')
+      .select('id, full_name, role')
+      .eq('dealership_id', req.dealershipId)
+      .in('role', MANAGEMENT_ROLES)
+      .order('full_name', { ascending: true })
+    if (error) return res.status(500).json({ error: error.message })
+    res.json((data || []).map(m => ({ id: m.id, name: m.full_name || '(no name)', role: m.role })))
   })
 
   // GET /ai/market-positions — latest market median per inventory_id (from the most

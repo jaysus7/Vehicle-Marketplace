@@ -1781,6 +1781,17 @@
             </div>
           </div>
 
+          <!-- Notify Appraiser -->
+          <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-5">
+            <div class="flex items-center gap-2 mb-2">
+              <h4 class="text-sm font-bold text-slate-900 dark:text-white">Notify Appraiser</h4>
+              <span class="text-xs text-slate-400">— alerts the selected managers when you save</span>
+            </div>
+            <div id="appr-notify-list" class="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-2 text-sm text-slate-700 dark:text-slate-200">
+              <div class="text-xs text-slate-400 italic col-span-full">Loading managers…</div>
+            </div>
+          </div>
+
           <!-- Disclosure (collapsible) -->
           <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden ai-accordion-open">
             <button type="button" onclick="this.closest('.rounded-xl').classList.toggle('ai-accordion-open')" class="w-full px-5 py-3.5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between gap-2 text-left hover:bg-slate-50 dark:hover:bg-slate-800/40 transition">
@@ -2314,7 +2325,7 @@
     </div>
   </div>
 
-  <script src="dashboard.js?v=20260710h"></script>
+  <script src="dashboard.js?v=20260710i"></script>
   <script src="tour.js"></script>
   <script src="table-sort.js?v=20260706a"></script>
 </body>
