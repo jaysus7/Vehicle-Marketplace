@@ -4262,7 +4262,13 @@ body{font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;color:#0f172a;font-
 .footer{border-top:1px solid #e2e8f0;padding-top:5px;margin-top:5px;font-size:7.5px;color:#94a3b8;line-height:1.55;display:flex;justify-content:space-between;gap:10px}
 .footer .fl{flex:1}
 .footer .fr{text-align:right;white-space:nowrap}
+.printbar{margin-bottom:12px;text-align:right}
+.printbar button{background:#6366f1;color:#fff;border:none;font-size:12px;font-weight:700;padding:8px 16px;border-radius:6px;cursor:pointer}
+.printbar button:hover{background:#4f46e5}
+@media print{.printbar{display:none!important}}
 </style></head><body>
+
+<div class="printbar"><button onclick="window.print()">🖨 Print / Save as PDF</button></div>
 
 <div class="header">
   <div>
@@ -4366,7 +4372,7 @@ ${estimate?.note ? `
   win.document.write(html);
   win.document.close();
   win.focus();
-  setTimeout(() => { win.print(); win.close(); }, 600);
+  // No auto-print — let the user review, then click Print / Save as PDF when ready.
 }
 
 async function openPriceReport(inventoryId, forceRefresh = false) {
