@@ -8,6 +8,18 @@ import { runPhotoVision, scoreVehiclePhotos } from '../sync/photoVision.js'
 
 const OWNER_EMAIL = (process.env.OWNER_EMAIL || 'massiejay@gmail.com').toLowerCase()
 
+// Google-Translate language codes → names, so AI-written listing copy can be
+// requested in the rep's chosen language. Unknown codes pass through as-is.
+const LANG_NAME = {
+  en: 'English', fr: 'French', es: 'Spanish', de: 'German', it: 'Italian',
+  pt: 'Portuguese', nl: 'Dutch', pl: 'Polish', ru: 'Russian', uk: 'Ukrainian',
+  ar: 'Arabic', hi: 'Hindi', pa: 'Punjabi', ur: 'Urdu', fa: 'Persian',
+  zh: 'Chinese', 'zh-cn': 'Chinese (Simplified)', 'zh-tw': 'Chinese (Traditional)',
+  ja: 'Japanese', ko: 'Korean', vi: 'Vietnamese', tl: 'Tagalog', th: 'Thai',
+  tr: 'Turkish', el: 'Greek', he: 'Hebrew', ro: 'Romanian', so: 'Somali',
+}
+const langName = code => LANG_NAME[String(code || '').toLowerCase()] || code || ''
+
 // Product knowledge the in-dashboard assistant answers "how does MarketSync
 // work / what do I get / how much" questions from. Kept here (not a DB) so it's
 // easy to edit in one place — update it whenever features or pricing change.
@@ -284,9 +296,9 @@ export function registerAI(app) {
 
     const { inventory_id } = req.body
     if (!inventory_id) return res.status(400).json({ error: 'inventory_id required' })
-    // Optional target language for the Facebook listing copy (e.g. "French",
-    // "Spanish"). Defaults to English when empty/unrecognised.
-    const language = String(req.body?.language || '').trim().slice(0, 40)
+    // Target language for the Facebook listing copy: an explicit body value, else
+    // the posting rep's own preference (set via the Google Translate widget).
+    let language = String(req.body?.language || '').trim().slice(0, 40)
 
     // Fetch inventory item
     const { data: vehicle, error: invErr } = await supabaseAdmin
@@ -309,6 +321,13 @@ export function registerAI(app) {
     if (!isOwner && !dealer.ai_boost_active) {
       return res.status(403).json({ error: 'AI Boost subscription is not active for this dealership' })
     }
+    // Resolve the copy language: explicit request → this rep's saved preference.
+    if (!language) {
+      const { data: me } = await supabaseAdmin.from('profiles')
+        .select('preferred_language').eq('id', req.user.id).maybeSingle()
+      language = me?.preferred_language || ''
+    }
+    language = langName(language)
     // Meter the AI listing-copy generation against the soft AI cap.
     recordUsage(req.dealershipId, { ai: 1 })
 
@@ -927,6 +946,16 @@ Suggested trade offer: ${cur} $${suggestedOffer.toLocaleString()} — ${pctToMar
       .order('full_name', { ascending: true })
     if (error) return res.status(500).json({ error: error.message })
     res.json((data || []).map(m => ({ id: m.id, name: m.full_name || '(no name)', role: m.role })))
+  })
+
+  // Save this rep's language preference (chosen in the Google Translate widget).
+  // Per-user; also becomes the default language for their AI Facebook copy.
+  app.put('/ai/my-language', requireAuth, async (req, res) => {
+    const code = String(req.body?.language || '').trim().toLowerCase().slice(0, 12) || null
+    const { error } = await supabaseAdmin.from('profiles')
+      .update({ preferred_language: code }).eq('id', req.user.id)
+    if (error) return res.status(500).json({ error: error.message })
+    res.json({ ok: true, language: code })
   })
 
   // GET /ai/market-positions — latest market median per inventory_id (from the most

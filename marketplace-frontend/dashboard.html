@@ -44,6 +44,14 @@
   </style>
   <style id="ms-font-bump">html{font-size:17px}@media (max-width:640px){html{font-size:16px}}</style>
   <style>.chip{display:inline-flex;align-items:center;font-size:0.7rem;padding:1px 7px;border-radius:999px;background:rgb(241 245 249);color:rgb(71 85 105);border:1px solid rgb(226 232 240);white-space:nowrap}.dark .chip{background:rgb(30 41 59);color:rgb(148 163 184);border-color:rgb(51 65 85)}.scrollbar-none{-ms-overflow-style:none;scrollbar-width:none}.scrollbar-none::-webkit-scrollbar{display:none}</style>
+  <!-- Google Translate widget: hide its injected top banner so it can't shove the fixed shell down -->
+  <style>
+    .goog-te-banner-frame, .skiptranslate > iframe { display: none !important; }
+    body { top: 0 !important; position: static !important; }
+    #goog-gt-tt, .goog-tooltip, .goog-tooltip * { display: none !important; }
+    .goog-te-gadget .goog-te-combo { font-size: 13px; padding: 5px 8px; border-radius: 8px; margin-top: 6px; background: #f8fafc; border: 1px solid #cbd5e1; color: #334155; }
+    .dark .goog-te-gadget .goog-te-combo { background: #020617; border-color: #334155; color: #e2e8f0; }
+  </style>
   <style>
     /* Accordion feature panels — collapsed by default, open when .ai-accordion-open */
     .ai-accordion-body { display: none; }
@@ -559,7 +567,14 @@
 
       <!-- ───────── PROFILE & SETTINGS PAGE ───────── -->
       <!-- #profile-card is authored in the sidebar then relocated here by dashboard.js. -->
-      <div data-page-content="profile" class="page-content hidden space-y-8"></div>
+      <div data-page-content="profile" class="page-content hidden space-y-8">
+        <!-- Language: per-rep dashboard translation (Google Translate) + AI listing-copy language -->
+        <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-5 notranslate">
+          <h2 class="text-lg font-bold text-slate-900 dark:text-white">Language</h2>
+          <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5 mb-3">Translate your dashboard into any language — it's saved to your browser, just for you. Your choice also becomes the language for your AI-written Facebook listings.</p>
+          <div id="google_translate_element"></div>
+        </div>
+      </div>
 
       <!-- ───────── INSIGHTS PAGE ───────── -->
       <div data-page-content="insights" class="page-content space-y-8">
@@ -2328,7 +2343,14 @@
     </div>
   </div>
 
-  <script src="dashboard.js?v=20260710l"></script>
+  <script src="dashboard.js?v=20260710m"></script>
+  <!-- Google Translate widget (per-rep dashboard translation) -->
+  <script>
+    window.googleTranslateElementInit = function () {
+      new google.translate.TranslateElement({ pageLanguage: 'en', autoDisplay: false }, 'google_translate_element');
+    };
+  </script>
+  <script src="https://translate.google.com/translate_a/element.js?cb=googleTranslateElementInit" async></script>
   <script src="tour.js"></script>
   <script src="table-sort.js?v=20260706a"></script>
 </body>

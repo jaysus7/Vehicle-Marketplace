@@ -7731,3 +7731,18 @@ async function loadAppraisalRecord(id) {
     document.getElementById('appr-result')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
   } catch { showToast('Could not load appraisal', 'error'); }
 }
+
+// Google Translate widget: when the rep picks a language, persist it so their
+// AI-written Facebook listing copy comes out in that language too.
+document.addEventListener('change', (e) => {
+  const el = e.target;
+  if (el && el.classList && el.classList.contains('goog-te-combo')) {
+    try {
+      fetch(`${API}/ai/my-language`, {
+        method: 'PUT',
+        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ language: el.value || '' }),
+      }).catch(() => {});
+    } catch {}
+  }
+});
