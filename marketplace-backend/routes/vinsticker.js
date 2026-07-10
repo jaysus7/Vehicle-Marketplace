@@ -656,7 +656,7 @@ function buildBrochureHtml(vehicle, dealer, branding, recalls, photosDataUris, l
   addSpec('Mileage', vehicle.mileage ? `${Number(vehicle.mileage).toLocaleString()} ${distUnit}` : null)
   const vd = vehicle.vin_data || {}
   for (const [k, v] of Object.entries(vd)) { if (!SKIP.has(k)) addSpec(VIN_LABELS[k] || humanize(k), v) }
-  const specSheet = [...specMap.entries()].slice(0, 48)
+  const specSheet = [...specMap.entries()].slice(0, 44)
     .map(([l, v]) => `<div class="sp"><span class="sp-l">${esc(l)}</span><span class="sp-v">${esc(v)}</span></div>`).join('')
 
   // ── Fuel economy (dual units, ordered by market) ──
@@ -684,9 +684,9 @@ function buildBrochureHtml(vehicle, dealer, branding, recalls, photosDataUris, l
   })()
 
   // ── Trims (every trim, MSRP + features, this one highlighted) ──
-  const trimsHtml = specTrims.map(t => {
+  const trimsHtml = specTrims.slice(0, 6).map(t => {
     const mine = trimMatches(t)
-    const feats = Array.isArray(t.features) ? t.features.slice(0, 7) : []
+    const feats = Array.isArray(t.features) ? t.features.slice(0, 6) : []
     return `<div class="trimcard${mine ? ' mine' : ''}">
       <div class="trimcard-h"><h3>${esc(t.name || '')}</h3>${mine ? '<span class="trim-badge">YOUR TRIM</span>' : ''}${t.msrp ? `<span class="trim-msrp">${esc(t.msrp)}</span>` : ''}</div>
       ${t.summary ? `<p class="trim-sum">${esc(t.summary)}</p>` : ''}
@@ -696,7 +696,7 @@ function buildBrochureHtml(vehicle, dealer, branding, recalls, photosDataUris, l
 
   // ── Packages & options ──
   const pkgs = Array.isArray(specs?.packages) ? specs.packages : []
-  const pkgsHtml = pkgs.map(p => `<div class="pkg">
+  const pkgsHtml = pkgs.slice(0, 8).map(p => `<div class="pkg">
     <div class="pkg-h"><h4>${esc(p.name || '')}</h4>${p.availability ? `<span class="pkg-av">${esc(p.availability)}</span>` : ''}</div>
     ${p.detail ? `<p>${esc(p.detail)}</p>` : ''}</div>`).join('')
 
@@ -721,6 +721,11 @@ function buildBrochureHtml(vehicle, dealer, branding, recalls, photosDataUris, l
   .page{width:816px;position:relative;page-break-after:always;break-after:page;padding-bottom:24px;}
   .page:last-child{page-break-after:auto;break-after:auto;}
   .page.full{height:1056px;padding-bottom:0;display:flex;flex-direction:column;overflow:hidden;}
+  /* Content sheets are a FIXED single page: the header stays put and the body fills the
+     rest and clips its own overflow — so a section can never bleed onto a second sheet
+     or push the next section down. Every block is break-inside:avoid too. */
+  .page.full > .ihdr{flex-shrink:0;}
+  .page.full > .icontent{flex:1;min-height:0;overflow:hidden;}
   .ihdr,.spec-row,.fe,.sp,.hl-para,.trimcard,.pkg,.cover-foot,.sect-lbl{break-inside:avoid;}
   .sans{font-family:'Arimo','Arial',Helvetica,sans-serif;}
   .eyebrow{font-family:'Arimo','Arial',sans-serif;font-size:13px;letter-spacing:5px;text-transform:uppercase;color:${secondary};font-weight:700;}
@@ -835,7 +840,7 @@ function buildBrochureHtml(vehicle, dealer, branding, recalls, photosDataUris, l
 </div>
 
 <!-- PAGE 2 — THE BUILD (as configured) + highlight -->
-<div class="page">
+<div class="page full">
   <div class="ihdr"><span class="eyebrow">The Build</span><h2>Your ${esc(vehicleName)}${trim ? ' ' + esc(trim) : ''}</h2></div>
   <div class="icontent">
     <div class="spec-row">
@@ -859,7 +864,7 @@ function buildBrochureHtml(vehicle, dealer, branding, recalls, photosDataUris, l
 </div>
 
 <!-- PAGE 3 — FULL SPECIFICATIONS -->
-<div class="page">
+<div class="page full">
   <div class="ihdr"><span class="eyebrow">Specifications</span><h2>Full Specs — As Decoded from the VIN</h2></div>
   <div class="icontent">
     <div class="specsheet">${specSheet}</div>
@@ -868,7 +873,7 @@ function buildBrochureHtml(vehicle, dealer, branding, recalls, photosDataUris, l
 
 ${specTrims.length ? `
 <!-- PAGE 4 — MODELS & TRIMS -->
-<div class="page">
+<div class="page full">
   <div class="ihdr"><span class="eyebrow">The Lineup</span><h2>${esc([vehicle.make, vehicle.model].filter(Boolean).join(' '))} — Models &amp; Trims</h2></div>
   <div class="icontent">
     ${specs?.model_intro ? `<p class="lineup-intro">${esc(specs.model_intro)}</p>` : ''}
@@ -879,7 +884,7 @@ ${specTrims.length ? `
 
 ${pkgs.length ? `
 <!-- PAGE 5 — PACKAGES & OPTIONS -->
-<div class="page">
+<div class="page full">
   <div class="ihdr"><span class="eyebrow">Packages &amp; Options</span><h2>Available on the ${esc([vehicle.make, vehicle.model].filter(Boolean).join(' '))}</h2></div>
   <div class="icontent">
     <div class="cards-2col">${pkgsHtml}</div>
