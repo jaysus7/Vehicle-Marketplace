@@ -792,7 +792,7 @@ async function postVehicle(inventoryId, token) {
     const g = await apiGet('/posting/guardrail', token)
     if (g && g.enabled && !g.allowed) {
       if (g.reason === 'daily_limit') {
-        alert(`Daily posting limit reached (${g.daily_cap}/day). This protects your Facebook account from posting-velocity flags. Try again tomorrow.`)
+        alert(`Daily posting limit reached (${g.daily_cap}/day). This protects your Facebook account from posting-rate flags. Try again tomorrow.`)
       } else if (g.reason === 'cooldown') {
         const mins = Math.max(1, Math.ceil((g.cooldown_seconds || 0) / 60))
         alert(`You've posted ${g.burst_size || 5} in a row — take a quick ~${mins} min break, then you can post another batch. Short rests keep your Facebook account safe.`)
