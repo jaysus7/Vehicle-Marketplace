@@ -668,6 +668,8 @@ function renderAppraisal(d) {
     </div>`;
   }
   const rt = d.retail, ap = d.appraisal;
+  // Only surface the retail→trade step when there's an actual discount (ratio < 100%).
+  const hasTradeSpread = ap.trade_value != null && ap.retail_mid != null && ap.trade_value < ap.retail_mid - 1;
   return `
     <div class="space-y-4">
       <div class="bg-indigo-600 text-white rounded-xl p-5">
@@ -676,7 +678,7 @@ function renderAppraisal(d) {
             <div class="text-xs font-bold uppercase tracking-wider text-indigo-200">Suggested trade / cash offer</div>
             <div class="flex items-center gap-2 mt-1 flex-wrap">
               <div class="text-3xl font-black">${money(ap.suggested_offer)} <span class="text-base font-semibold text-indigo-200">${cur}</span></div>
-              ${ap.trade_value != null ? `<span class="text-[11px] font-bold bg-white/15 rounded-full px-2 py-0.5">Trade value ${money(ap.trade_value)}</span>` : ''}
+              ${hasTradeSpread ? `<span class="text-[11px] font-bold bg-white/15 rounded-full px-2 py-0.5">Trade value ${money(ap.trade_value)}</span>` : ''}
             </div>
           </div>
           <button onclick="generateAppraisalPdf()" class="flex-shrink-0 flex items-center gap-1.5 bg-white/15 hover:bg-white/25 text-white text-xs font-bold px-3 py-2 rounded-lg transition">
@@ -684,7 +686,7 @@ function renderAppraisal(d) {
             PDF
           </button>
         </div>
-        <div class="text-xs text-indigo-100 mt-2">Trade value ${money(ap.trade_value)} − recon ${money(ap.recon)} − gross ${money(ap.target_gross)} = your offer${ap.pct_to_market != null ? ` · ${ap.pct_to_market}% of retail` : ''}</div>
+        <div class="text-xs text-indigo-100 mt-2">${hasTradeSpread ? 'Trade value' : 'Retail'} ${money(hasTradeSpread ? ap.trade_value : ap.retail_mid)} − recon ${money(ap.recon)} − gross ${money(ap.target_gross)} = your offer${ap.pct_to_market != null ? ` · ${ap.pct_to_market}% of retail` : ''}</div>
       </div>
       ${ap.adjustments ? (() => {
         const adj = ap.adjustments;
@@ -712,7 +714,7 @@ function renderAppraisal(d) {
               <div class="font-bold text-slate-900 dark:text-white">Adjusted retail value</div>
               <div class="font-black tabular-nums text-slate-900 dark:text-white">${money(adj.retail_value)}</div>
             </div>
-            ${adj.trade_value != null ? `<div class="flex items-center justify-between gap-3 text-sm">
+            ${hasTradeSpread ? `<div class="flex items-center justify-between gap-3 text-sm">
               <div class="min-w-0"><span class="text-slate-700 dark:text-slate-200">Retail → trade${adj.trade_ratio_pct != null ? ` (${adj.trade_ratio_pct}% of retail)` : ''}</span><span class="text-[11px] text-slate-400 ml-1.5">wholesale spread</span></div>
               <div class="font-bold tabular-nums flex-shrink-0 text-rose-500">−${money(adj.retail_value - adj.trade_value)}</div>
             </div>
@@ -886,7 +888,7 @@ function generateAppraisalPdf() {
       if (adj.market_realism_amount) out += row('Ask → sold market adjustment (' + adj.market_realism_pct + '%)', signed(adj.market_realism_amount));
       out += '<tr><td colspan="2"><div style="border-top:1px solid #e2e8f0;margin:4px 0"></div></td></tr>';
       out += row('Adjusted retail value', money(ap.retail_mid), true);
-      if (adj.trade_value != null) {
+      if (adj.trade_value != null && adj.trade_value < adj.retail_value - 1) {
         out += row('− Retail → trade spread' + (adj.trade_ratio_pct != null ? ' (trade = ' + adj.trade_ratio_pct + '% of retail)' : ''), '−' + money(adj.retail_value - adj.trade_value));
         out += '<tr><td colspan="2"><div style="border-top:1px solid #e2e8f0;margin:4px 0"></div></td></tr>';
         out += row('Market trade value', money(adj.trade_value), true);

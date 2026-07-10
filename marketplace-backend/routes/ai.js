@@ -793,18 +793,17 @@ Guidelines: under 90 words; answer their question if they asked one; confirm the
     const realismCut = Math.round(mileageAdjusted * REALISM)
     const retailMid = Math.max(0, mileageAdjusted - realismCut)   // realistic retail value
 
-    // (3) Retail → trade. THIS is the big one. A used car's trade / wholesale value
-    // (its ACV) is a PROPORTION of retail, not retail minus a flat gross — the
-    // dealer's margin scales with the car. Anchoring the offer at retail − recon −
-    // $2.5k gross left it near 85% of retail; real trade values run ~60–75%. We now
-    // compute a market trade value (compare this to AutoTrader's "what's my car
-    // worth"), then the rep's offer sits below it by recon + their target gross.
-    // Ratio is tunable per-appraisal (trade_pct) and globally (APPRAISE_TRADE_RATIO).
+    // (3) Retail → trade ratio. Once mileage + tight comp-matching land the retail
+    // anchor correctly, retail − recon − gross already produces a realistic offer
+    // (validated against AutoTrader), so we DON'T discount again by default (ratio
+    // 1.0 = no extra haircut). An extra retail→trade haircut is available via env
+    // APPRAISE_TRADE_RATIO (e.g. 0.9) or per-appraisal trade_pct if a market ever
+    // needs it — but stacking it on a good anchor double-counts and reads too low.
     const tradeRatio = (() => {
       const p = Number(b.trade_pct)
       if (Number.isFinite(p) && p > 0) return Math.min(1, p > 1 ? p / 100 : p)
       const env = Number(process.env.APPRAISE_TRADE_RATIO)
-      return Number.isFinite(env) && env > 0 ? Math.min(1, env) : 0.72
+      return Number.isFinite(env) && env > 0 ? Math.min(1, env) : 1.0
     })()
     const tradeValue = Math.round(retailMid * tradeRatio)          // market ACV / trade value
     const suggestedOffer = Math.max(0, tradeValue - recon - targetGross)
@@ -833,8 +832,8 @@ Guidelines: under 90 words; answer their question if they asked one; confirm the
         const prompt = `Write a professional 2–3 sentence market summary for a vehicle trade-appraisal sheet a dealer hands to a customer. Explain the offer in plain English and justify it with the market data, including how the odometer moved the value. No markdown, no bullet points, no greeting.
 Vehicle: ${year} ${make} ${model}${trim ? ' ' + trim : ''}${mileage ? `, ${mileage.toLocaleString()} ${du}` : ''}.
 Retail market from ${market.count} comparable listings: asking median ${cur} $${compMedian.toLocaleString()}, range $${(market.low_price || compMedian).toLocaleString()}–$${(market.high_price || compMedian).toLocaleString()}. ${mileVsMarket}
-Adjusted retail value for this vehicle: ${cur} $${retailMid.toLocaleString()}.
-Market trade value (ACV): ${cur} $${tradeValue.toLocaleString()} — about ${Math.round(tradeRatio * 100)}% of retail, in line with trade-value tools.
+Adjusted retail value for this vehicle: ${cur} $${retailMid.toLocaleString()}.${tradeValue < retailMid - 1 ? `
+Market trade value (ACV): ${cur} $${tradeValue.toLocaleString()} — about ${Math.round(tradeRatio * 100)}% of retail, in line with trade-value tools.` : ''}
 Suggested trade offer: ${cur} $${suggestedOffer.toLocaleString()} — after ${cur} $${recon.toLocaleString()} reconditioning and a ${cur} $${targetGross.toLocaleString()} target gross.`
         const msg = await Promise.race([
           anthropic.messages.create({ model: 'claude-haiku-4-5-20251001', max_tokens: 220, messages: [{ role: 'user', content: prompt }] }),
