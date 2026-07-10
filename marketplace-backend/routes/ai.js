@@ -1397,12 +1397,12 @@ Respond with ONLY valid JSON (no markdown, no explanation, no trailing commas):
 
     const { data: dealer } = await supabaseAdmin
       .from('dealerships')
-      .select('ai_boost_active, repricing_rules, country, province, postal_code')
+      .select('inv_intel_active, repricing_rules, country, province, postal_code')
       .eq('id', req.dealershipId)
       .single()
 
     const isOwner = (req.user.email || '').toLowerCase() === OWNER_EMAIL
-    if (!isOwner && !dealer?.ai_boost_active) return res.status(403).json({ error: 'AI Boost not active' })
+    if (!isOwner && !dealer?.inv_intel_active) return res.status(403).json({ error: 'Inventory Intelligence not active' })
 
     const rules = dealer.repricing_rules || { enabled: false, days_on_lot_threshold: 45, price_drop_pct: 5, overprice_threshold_pct: 20 }
     const { days_on_lot_threshold, price_drop_pct, overprice_threshold_pct } = rules
@@ -1422,7 +1422,10 @@ Respond with ONLY valid JSON (no markdown, no explanation, no trailing commas):
     const suggestions = []
 
     for (const vehicle of vehicles || []) {
-      const refDate = vehicle.last_synced_at || vehicle.created_at
+      // Days on lot = time since the unit first appeared (created_at). last_synced_at
+      // is rewritten to "now" on every feed sync, so it can NEVER be used for aging —
+      // it would keep the count near 0 and nothing would ever flag.
+      const refDate = vehicle.created_at || vehicle.last_synced_at
       const daysOnLot = refDate ? Math.floor((now - new Date(refDate).getTime()) / 86400000) : 0
       if (daysOnLot < days_on_lot_threshold) continue
       if (!vehicle.price || !vehicle.make || !vehicle.model) continue
@@ -1484,14 +1487,21 @@ Respond with ONLY valid JSON (no markdown, no explanation, no trailing commas):
 
     const { data: dealer } = await supabaseAdmin
       .from('dealerships')
-      .select('ai_boost_active')
+      .select('inv_intel_active, stocking_recs, stocking_recs_at')
       .eq('id', req.dealershipId)
       .single()
 
     const isOwner = (req.user.email || '').toLowerCase() === OWNER_EMAIL
-    if (!isOwner && !dealer?.ai_boost_active) return res.status(403).json({ error: 'AI Boost not active' })
+    if (!isOwner && !dealer?.inv_intel_active) return res.status(403).json({ error: 'Inventory Intelligence not active' })
 
-    if (!process.env.ANTHROPIC_API_KEY) return res.status(503).json({ error: 'AI features not configured' })
+    // Serve the cached set for 24h unless a refresh is explicitly requested. Keeps the
+    // panel instant and always populated, and caps Claude spend to ~once/day/dealer.
+    const refresh = req.query.refresh === '1'
+    const CACHE_MS = 24 * 60 * 60 * 1000
+    if (!refresh && dealer?.stocking_recs_at && Array.isArray(dealer.stocking_recs) && dealer.stocking_recs.length &&
+        (Date.now() - new Date(dealer.stocking_recs_at).getTime()) < CACHE_MS) {
+      return res.json({ recommendations: dealer.stocking_recs, generated_at: dealer.stocking_recs_at, cached: true })
+    }
 
     const since30 = new Date(Date.now() - 30 * 86400000).toISOString()
 
@@ -1544,9 +1554,60 @@ Respond with ONLY valid JSON (no markdown, no explanation, no trailing commas):
         return `- ${c.name}: ${total} units on lot${topModels ? '; top models: ' + topModels : ''}`
       }).join('\n')
 
+    // Deterministic fallback so the panel ALWAYS shows recommendations even when the
+    // AI call fails, the key is missing, or the daily AI budget is spent.
+    const buildFallback = () => {
+      const out = []
+      const seen = new Set()
+      // 1) Proven movers from the last 30 days' sell-through.
+      for (const s of sell_through) {
+        const k = `${s.make}|${s.model}`
+        if (seen.has(k)) continue
+        seen.add(k)
+        const inStock = stockMap[k]
+        out.push({
+          make: s.make, model: s.model, year_range: 'recent',
+          reason: inStock
+            ? `Strong seller — ${s.sold} sold in the last 30 days with only ${inStock.count} now in stock. Restock to keep up with demand.`
+            : `Sold ${s.sold} in the last 30 days but none currently in stock — a proven mover worth re-acquiring.`,
+          priority: s.sold >= 3 ? 'high' : (s.sold >= 2 ? 'medium' : 'low'),
+          existing_units: inStock ? inStock.units.slice(0, 3).map(u => ({ id: u.id, stocknumber: u.stocknumber })) : []
+        })
+        if (out.length >= 5) return out
+      }
+      // 2) Top up from current stock composition (core models that fit this lot).
+      const byCount = Object.entries(stockMap).sort((a, b) => b[1].count - a[1].count)
+      for (const [k, d] of byCount) {
+        if (seen.has(k)) continue
+        seen.add(k)
+        const [make, model] = k.split('|')
+        out.push({
+          make, model, year_range: 'recent',
+          reason: `A core model on your lot (${d.count} in stock). Keep it stocked — it's a consistent fit for your buyers.`,
+          priority: 'low',
+          existing_units: d.units.slice(0, 3).map(u => ({ id: u.id, stocknumber: u.stocknumber }))
+        })
+        if (out.length >= 5) return out
+      }
+      // 3) Generic starter set (brand-new lot with no data yet).
+      const starters = [
+        { make: 'Chevrolet', model: 'Silverado 1500', reason: 'Full-size pickups are the highest-demand segment in Ontario — a reliable, fast-turning acquisition.' },
+        { make: 'GMC', model: 'Sierra 1500', reason: 'Strong truck demand and healthy margins; pairs well with Silverado stock.' },
+        { make: 'Chevrolet', model: 'Equinox', reason: 'Compact SUVs are the volume segment for Canadian families — quick turn, broad appeal.' },
+        { make: 'GMC', model: 'Terrain', reason: 'Popular compact SUV with steady used demand across Ontario.' },
+        { make: 'Chevrolet', model: 'Trax', reason: 'Affordable entry SUV — strong for first-time and budget buyers.' }
+      ]
+      for (const s of starters) {
+        if (out.length >= 5) break
+        out.push({ ...s, year_range: 'recent', priority: 'medium', existing_units: [] })
+      }
+      return out.slice(0, 5)
+    }
+
     const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
     let recommendations = []
     try {
+      if (!process.env.ANTHROPIC_API_KEY || !(await aiAllowed(req.dealershipId, isOwner))) throw new Error('ai_unavailable')
       const message = await anthropic.messages.create({
         model: 'claude-sonnet-5',
         max_tokens: 1200,
@@ -1573,7 +1634,20 @@ Return ONLY valid JSON array (no markdown):
       recommendations = []
     }
 
-    res.json({ recommendations, sell_through, generated_at: new Date().toISOString() })
+    // Guarantee a populated list — fall back to the deterministic set when the AI
+    // returned nothing usable.
+    if (!Array.isArray(recommendations) || !recommendations.length) {
+      recommendations = buildFallback()
+    }
+
+    const generated_at = new Date().toISOString()
+    // Persist for the 24h cache (best-effort — never block the response).
+    supabaseAdmin.from('dealerships')
+      .update({ stocking_recs: recommendations, stocking_recs_at: generated_at })
+      .eq('id', req.dealershipId)
+      .then(() => {}).catch(() => {})
+
+    res.json({ recommendations, sell_through, generated_at })
   })
 
   // ── Inventory Intelligence ────────────────────────────────────────────────

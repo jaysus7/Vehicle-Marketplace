@@ -6230,7 +6230,7 @@ document.addEventListener('DOMContentLoaded', () => {
 // ── Stocking Recommendations ─────────────────────────────────────────────────
 
 const STOCKING_CACHE_KEY = 'ms_stocking_recs';
-const STOCKING_CACHE_TTL = 6 * 60 * 60 * 1000; // 6 hours
+const STOCKING_CACHE_TTL = 24 * 60 * 60 * 1000; // 24 hours (matches the server-side cache)
 
 async function loadStockingRecommendations(force = false) {
   const btn = document.getElementById('stocking-generate-btn');
@@ -6251,7 +6251,7 @@ async function loadStockingRecommendations(force = false) {
   btn.disabled = true;
   btn.textContent = 'Generating…';
   try {
-    const res = await fetch(`${API}/ai/stocking-recommendations`, {
+    const res = await fetch(`${API}/ai/stocking-recommendations${force ? '?refresh=1' : ''}`, {
       headers: { 'Authorization': `Bearer ${token}` }
     });
     const data = await res.json();
@@ -6297,6 +6297,21 @@ function renderStockingResults(recs, results) {
 
 document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('stocking-generate-btn')?.addEventListener('click', () => loadStockingRecommendations(true));
+  // Auto-load (cache-first) the first time the section scrolls into view, so it's
+  // always populated without the user having to hit Refresh. Firing on visibility
+  // (rather than page load) avoids an API call for users who never open Inv Intel.
+  const stockingEl = document.getElementById('stocking-accordion');
+  if (stockingEl && 'IntersectionObserver' in window) {
+    let stockingLoaded = false;
+    const io = new IntersectionObserver((entries) => {
+      if (!stockingLoaded && entries.some(e => e.isIntersecting)) {
+        stockingLoaded = true;
+        loadStockingRecommendations(false);
+        io.disconnect();
+      }
+    }, { threshold: 0.1 });
+    io.observe(stockingEl);
+  }
 });
 
 // ── Competitor Monitoring ─────────────────────────────────────────────────────
