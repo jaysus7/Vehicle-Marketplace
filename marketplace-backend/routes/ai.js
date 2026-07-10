@@ -793,19 +793,18 @@ Guidelines: under 90 words; answer their question if they asked one; confirm the
     const realismCut = Math.round(mileageAdjusted * REALISM)
     const retailMid = Math.max(0, mileageAdjusted - realismCut)   // realistic retail value
 
-    // (3) Retail → trade ratio. Once mileage + tight comp-matching land the retail
-    // anchor correctly, retail − recon − gross already produces a realistic offer
-    // (validated against AutoTrader), so we DON'T discount again by default (ratio
-    // 1.0 = no extra haircut). An extra retail→trade haircut is available via env
-    // APPRAISE_TRADE_RATIO (e.g. 0.9) or per-appraisal trade_pct if a market ever
-    // needs it — but stacking it on a good anchor double-counts and reads too low.
+    // (3) Retail → wholesale (ACV). MarketCheck comps are RETAIL asking prices; the
+    // wholesale / actual-cash value a dealer acquires a trade at sits below retail
+    // (auction/wholesale runs ~10–20% under clean retail). This ACV is the number
+    // that lines up with AutoTrader's valuation. Default 0.85 (≈15% retail↔wholesale
+    // spread); tune with APPRAISE_WHOLESALE_RATIO, or per-appraisal trade_pct.
     const tradeRatio = (() => {
       const p = Number(b.trade_pct)
       if (Number.isFinite(p) && p > 0) return Math.min(1, p > 1 ? p / 100 : p)
-      const env = Number(process.env.APPRAISE_TRADE_RATIO)
-      return Number.isFinite(env) && env > 0 ? Math.min(1, env) : 1.0
+      const env = Number(process.env.APPRAISE_WHOLESALE_RATIO || process.env.APPRAISE_TRADE_RATIO)
+      return Number.isFinite(env) && env > 0 ? Math.min(1, env) : 0.85
     })()
-    const tradeValue = Math.round(retailMid * tradeRatio)          // market ACV / trade value
+    const tradeValue = Math.round(retailMid * tradeRatio)          // wholesale / ACV value
     const suggestedOffer = Math.max(0, tradeValue - recon - targetGross)
     // Effective gross = the full spread between retail and what we pay.
     const grossPct = retailMid > 0 ? Math.round(((retailMid - suggestedOffer) / retailMid) * 1000) / 10 : null
@@ -833,8 +832,8 @@ Guidelines: under 90 words; answer their question if they asked one; confirm the
 Vehicle: ${year} ${make} ${model}${trim ? ' ' + trim : ''}${mileage ? `, ${mileage.toLocaleString()} ${du}` : ''}.
 Retail market from ${market.count} comparable listings: asking median ${cur} $${compMedian.toLocaleString()}, range $${(market.low_price || compMedian).toLocaleString()}–$${(market.high_price || compMedian).toLocaleString()}. ${mileVsMarket}
 Adjusted retail value for this vehicle: ${cur} $${retailMid.toLocaleString()}.${tradeValue < retailMid - 1 ? `
-Market trade value (ACV): ${cur} $${tradeValue.toLocaleString()} — about ${Math.round(tradeRatio * 100)}% of retail, in line with trade-value tools.` : ''}
-Suggested trade offer: ${cur} $${suggestedOffer.toLocaleString()} — after ${cur} $${recon.toLocaleString()} reconditioning and a ${cur} $${targetGross.toLocaleString()} target gross.`
+Wholesale value (ACV): ${cur} $${tradeValue.toLocaleString()} — about ${Math.round(tradeRatio * 100)}% of retail, in line with trade/wholesale valuation tools like AutoTrader.` : ''}
+Suggested trade offer: ${cur} $${suggestedOffer.toLocaleString()} — the wholesale value less ${cur} $${recon.toLocaleString()} reconditioning and a ${cur} $${targetGross.toLocaleString()} target gross.`
         const msg = await Promise.race([
           anthropic.messages.create({ model: 'claude-haiku-4-5-20251001', max_tokens: 220, messages: [{ role: 'user', content: prompt }] }),
           new Promise((_, rej) => setTimeout(() => rej(new Error('ai timeout')), 20000)),

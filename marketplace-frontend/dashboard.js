@@ -678,7 +678,7 @@ function renderAppraisal(d) {
             <div class="text-xs font-bold uppercase tracking-wider text-indigo-200">Suggested trade / cash offer</div>
             <div class="flex items-center gap-2 mt-1 flex-wrap">
               <div class="text-3xl font-black">${money(ap.suggested_offer)} <span class="text-base font-semibold text-indigo-200">${cur}</span></div>
-              ${hasTradeSpread ? `<span class="text-[11px] font-bold bg-white/15 rounded-full px-2 py-0.5">Trade value ${money(ap.trade_value)}</span>` : ''}
+              ${hasTradeSpread ? `<span class="text-[11px] font-bold bg-white/15 rounded-full px-2 py-0.5">Wholesale ${money(ap.trade_value)}</span>` : ''}
             </div>
           </div>
           <button onclick="generateAppraisalPdf()" class="flex-shrink-0 flex items-center gap-1.5 bg-white/15 hover:bg-white/25 text-white text-xs font-bold px-3 py-2 rounded-lg transition">
@@ -686,7 +686,7 @@ function renderAppraisal(d) {
             PDF
           </button>
         </div>
-        <div class="text-xs text-indigo-100 mt-2">${hasTradeSpread ? 'Trade value' : 'Retail'} ${money(hasTradeSpread ? ap.trade_value : ap.retail_mid)} − recon ${money(ap.recon)} − gross ${money(ap.target_gross)} = your offer${ap.pct_to_market != null ? ` · ${ap.pct_to_market}% of retail` : ''}</div>
+        <div class="text-xs text-indigo-100 mt-2">${hasTradeSpread ? 'Wholesale (ACV)' : 'Retail'} ${money(hasTradeSpread ? ap.trade_value : ap.retail_mid)} − recon ${money(ap.recon)} − gross ${money(ap.target_gross)} = your offer</div>
       </div>
       ${ap.adjustments ? (() => {
         const adj = ap.adjustments;
@@ -715,11 +715,11 @@ function renderAppraisal(d) {
               <div class="font-black tabular-nums text-slate-900 dark:text-white">${money(adj.retail_value)}</div>
             </div>
             ${hasTradeSpread ? `<div class="flex items-center justify-between gap-3 text-sm">
-              <div class="min-w-0"><span class="text-slate-700 dark:text-slate-200">Retail → trade${adj.trade_ratio_pct != null ? ` (${adj.trade_ratio_pct}% of retail)` : ''}</span><span class="text-[11px] text-slate-400 ml-1.5">wholesale spread</span></div>
+              <div class="min-w-0"><span class="text-slate-700 dark:text-slate-200">Retail → wholesale${adj.trade_ratio_pct != null ? ` (${adj.trade_ratio_pct}% of retail)` : ''}</span><span class="text-[11px] text-slate-400 ml-1.5">wholesale spread</span></div>
               <div class="font-bold tabular-nums flex-shrink-0 text-rose-500">−${money(adj.retail_value - adj.trade_value)}</div>
             </div>
             <div class="flex items-center justify-between gap-3 text-sm border-t border-slate-200 dark:border-slate-700 pt-1.5 mt-1.5">
-              <div class="font-bold text-slate-900 dark:text-white">Market trade value <span class="text-[11px] font-medium text-slate-400">(compare to AutoTrader)</span></div>
+              <div class="font-bold text-slate-900 dark:text-white">Wholesale value (ACV) <span class="text-[11px] font-medium text-slate-400">(compare to AutoTrader)</span></div>
               <div class="font-black tabular-nums text-indigo-600 dark:text-indigo-400">${money(adj.trade_value)}</div>
             </div>` : ''}
             ${adj.recon ? `<div class="flex items-center justify-between gap-3 text-sm"><div class="text-slate-700 dark:text-slate-200">Reconditioning</div><div class="font-bold tabular-nums text-rose-500">−${money(Math.abs(adj.recon))}</div></div>` : ''}
@@ -729,7 +729,7 @@ function renderAppraisal(d) {
               <div class="font-black tabular-nums text-emerald-600 dark:text-emerald-400">${money(ap.suggested_offer)}</div>
             </div>
           </div>
-          <div class="text-[11px] text-slate-400 mt-2">Adjusts the market's asking prices for this vehicle's odometer and the ask→sell gap to get retail value, then applies the retail→trade spread so the trade value lines up with tools like AutoTrader. Tune the trade % on the form.</div>
+          <div class="text-[11px] text-slate-400 mt-2">Adjusts the market's asking prices for this vehicle's odometer and the ask→sell gap to get retail value, then applies the retail→wholesale spread so the wholesale (ACV) lines up with tools like AutoTrader. Your offer sits below ACV by recon + gross.</div>
         </div>`;
       })() : ''}
       ${d.prediction ? `<div class="bg-white dark:bg-slate-900 border border-emerald-200 dark:border-emerald-900 rounded-xl p-4">
@@ -754,7 +754,7 @@ function renderAppraisal(d) {
       </div>` : ''}
       <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
         ${apprTile('Retail market', money(rt.median), `${rt.count ?? '—'} comps`)}
-        ${apprTile('Retail range', `${money(rt.low)}–${money(rt.high)}`, 'fair retail')}
+        ${hasTradeSpread ? apprTile('Wholesale (ACV)', money(ap.trade_value), `${ap.trade_ratio}% of retail`) : apprTile('Retail range', `${money(rt.low)}–${money(rt.high)}`, 'fair retail')}
         ${apprTile('Avg days to sell', rt.avg_days_online != null ? rt.avg_days_online + ' days' : '—', 'on market')}
         ${apprTile('Target gross', money(ap.target_gross), ap.gross_pct != null ? ap.gross_pct + '% of retail' : 'your margin')}
       </div>
@@ -889,9 +889,9 @@ function generateAppraisalPdf() {
       out += '<tr><td colspan="2"><div style="border-top:1px solid #e2e8f0;margin:4px 0"></div></td></tr>';
       out += row('Adjusted retail value', money(ap.retail_mid), true);
       if (adj.trade_value != null && adj.trade_value < adj.retail_value - 1) {
-        out += row('− Retail → trade spread' + (adj.trade_ratio_pct != null ? ' (trade = ' + adj.trade_ratio_pct + '% of retail)' : ''), '−' + money(adj.retail_value - adj.trade_value));
+        out += row('− Retail → wholesale spread' + (adj.trade_ratio_pct != null ? ' (wholesale = ' + adj.trade_ratio_pct + '% of retail)' : ''), '−' + money(adj.retail_value - adj.trade_value));
         out += '<tr><td colspan="2"><div style="border-top:1px solid #e2e8f0;margin:4px 0"></div></td></tr>';
-        out += row('Market trade value', money(adj.trade_value), true);
+        out += row('Wholesale value (ACV)', money(adj.trade_value), true);
       }
       return out;
     })()}
