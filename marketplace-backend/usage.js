@@ -28,7 +28,13 @@ export const QUOTAS = {
 // Platform-wide monthly ceiling on live MarketCheck calls. 0 = disabled.
 const GLOBAL_MC_BUDGET = Number(process.env.MARKETCHECK_MONTHLY_BUDGET || 0)
 
-const period = () => new Date().toISOString().slice(0, 7) // 'YYYY-MM' (UTC)
+// Per-dealership DAILY cap on AI-assistant chats, so one chatty user can't burn
+// the month's AI budget in an afternoon. Tracked in api_usage under a day-keyed
+// period row (distinct from the 'YYYY-MM' monthly rows), so no new table needed.
+const ASSISTANT_DAILY_CAP = Number(process.env.AI_ASSISTANT_DAILY_CAP || 40)
+
+const period = () => new Date().toISOString().slice(0, 7)  // 'YYYY-MM' (UTC)
+const dayPeriod = () => new Date().toISOString().slice(0, 10) // 'YYYY-MM-DD' (UTC)
 
 // Stable key for a vehicle's market lookup — lowercased market|make|model|year|trim.
 export function marketSignature({ make, model, year, trim, isUS }) {
@@ -53,11 +59,11 @@ async function setCache(sig, data) {
   } catch { /* table may not exist yet — ignore */ }
 }
 
-async function usageRow(id) {
+async function usageRow(id, p = period()) {
   try {
     const { data, error } = await supabaseAdmin
       .from('api_usage').select('marketcheck_calls, ai_calls')
-      .eq('dealership_id', id).eq('period', period()).maybeSingle()
+      .eq('dealership_id', id).eq('period', p).maybeSingle()
     if (error || !data) return { marketcheck_calls: 0, ai_calls: 0 }
     return data
   } catch { return { marketcheck_calls: 0, ai_calls: 0 } }
@@ -94,6 +100,25 @@ export async function aiAllowed(dealershipId, isOwner) {
   const u = await usageRow(dealershipId)
   return u.ai_calls < QUOTAS.ai
 }
+
+// Whether a dealer is under its DAILY assistant-chat cap. Owner exempt. Reads a
+// day-keyed api_usage row that only the assistant writes to (via
+// recordAssistantChat), so it counts chats specifically, not other AI ops.
+export async function assistantDailyAllowed(dealershipId, isOwner) {
+  if (isOwner || !dealershipId) return true
+  const u = await usageRow(dealershipId, dayPeriod())
+  return u.ai_calls < ASSISTANT_DAILY_CAP
+}
+
+// Count one assistant chat against today's cap. Best-effort; fails open.
+export async function recordAssistantChat(dealershipId) {
+  if (!dealershipId) return
+  try {
+    await supabaseAdmin.rpc('bump_usage', { p_dealership: dealershipId, p_period: dayPeriod(), p_mc: 0, p_ai: 1 })
+  } catch { /* not provisioned yet — ignore */ }
+}
+
+export const ASSISTANT_DAILY_LIMIT = ASSISTANT_DAILY_CAP
 
 /**
  * Cached + metered market lookup — the single entry point every MarketCheck

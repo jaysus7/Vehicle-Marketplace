@@ -2,11 +2,39 @@ import Anthropic from '@anthropic-ai/sdk'
 import { supabaseAdmin, resend, EMAIL_FROM, FRONTEND_URL, browserFetch } from '../shared.js'
 import { requireAuth } from '../middleware.js'
 import { marketcheckMarket, marketcheckListings, marketcheckEnabled, marketcheckCompetitorStats, marketcheckPing } from '../marketcheck.js'
-import { getMarketData, recordUsage, aiAllowed, getUsage } from '../usage.js'
+import { getMarketData, recordUsage, aiAllowed, getUsage, assistantDailyAllowed, recordAssistantChat, ASSISTANT_DAILY_LIMIT } from '../usage.js'
 import { createNotification, createNotifications } from '../notifications.js'
 import { runPhotoVision, scoreVehiclePhotos } from '../sync/photoVision.js'
 
 const OWNER_EMAIL = (process.env.OWNER_EMAIL || 'massiejay@gmail.com').toLowerCase()
+
+// Product knowledge the in-dashboard assistant answers "how does MarketSync
+// work / what do I get / how much" questions from. Kept here (not a DB) so it's
+// easy to edit in one place — update it whenever features or pricing change.
+const PRODUCT_KB = `ABOUT MARKETSYNC
+MarketSync is a dealership tool that syncs your used-car inventory, posts and manages listings (incl. Facebook Marketplace), tracks leads and a sales pipeline, gamifies the sales team, and layers AI + live market data on top. There's a Chrome extension for posting/lead capture.
+
+CORE (included) FEATURES
+- Inventory: auto-sync from your website/feed; per-vehicle VIN decode, recall checks, window stickers & brochures (PDF).
+- Pipeline & Leads: capture Marketplace leads, sales pipeline stages (Posted → Appointment Set → Claimed Sale → Needs Relisting), appointments with a month calendar + reminders.
+- Insights: listing/sales trends and per-rep activity charts.
+- Leaderboard & Sales Team: rep points/tiers, per-rep insight modal.
+- Profile & Settings: account, team, billing, security.
+
+ADD-ONS (paid, per dealership / month)
+- AI Boost — about $129/mo: one-click AI listing copy, AI reply drafts for leads, AI Vision photo scoring + best-hero pick, AI-written blurbs on window stickers/brochures, AI lot-analysis summary, the daily "Today's Briefing", and this assistant.
+- Inventory Intelligence — about $299/mo: live market pricing & price flags (over/under market), competitor monitoring, lot analysis (turn rate, health scores, hot/cold movers, duplicate VINs, aged units), repricing rules, stocking recommendations, Trade Appraisal (live market value + suggested cash/trade offer), market reports, and this assistant.
+The account owner has every feature. Prices are approximate — tell users to check the upgrade screen (any locked feature opens it) or Profile & Settings › billing for exact, current pricing.
+
+WHERE THINGS LIVE (nav)
+Insights · Inventory · Pipeline · Appraisal (Inventory Intelligence) · Leaderboard · Sales Team · Inv. Intelligence (paid) · Profile & Settings. VIN decode, recalls, stickers & brochures are on each vehicle under Inventory.
+
+COMMON HOW-TOs
+- Sync inventory: Inventory page → Sync button.
+- Decode a VIN / see recalls: open a vehicle in Inventory (or use Decode VIN on the Appraisal page).
+- Appraise a trade: Appraisal page → enter VIN/details → Appraise.
+- Draft a lead reply: open the lead in Pipeline → AI reply.
+- See what's aging / priced off market / restock: Inv. Intelligence page.`
 
 // A vehicle we should NOT run market price comparisons on: brand-new / demo units,
 // and anything at or beyond the current model year (e.g. 2026 in 2026). There is no
@@ -3178,6 +3206,9 @@ Units 60d+ on lot: ${stale}`
     if (!(await aiAllowed(req.dealershipId, isOwner))) {
       return res.status(429).json({ error: 'AI usage limit reached for this month.' })
     }
+    if (!(await assistantDailyAllowed(req.dealershipId, isOwner))) {
+      return res.status(429).json({ error: `You've hit today's limit of ${ASSISTANT_DAILY_LIMIT} assistant questions. It resets tomorrow.` })
+    }
 
     // Sanitise the client-sent transcript: only user/assistant turns, trimmed,
     // capped to the last 10 so the context can't balloon.
@@ -3232,7 +3263,7 @@ Units 60d+ on lot: ${stale}`
       `Leads last 7 days: ${leads7}, of which ${leadsWaiting} still need follow-up.`,
     ].join('\n')
 
-    const system = `You are MarketSync's in-dashboard assistant for a car dealership admin/GM. Answer their question directly and practically using the live snapshot of THEIR store below. Keep it short — a couple of sentences or a tight list, no headings, no fluff. If the snapshot doesn't contain what they need, say so briefly and suggest which page (Inventory, Pipeline, Inventory Intelligence, Appraisal) has it. Don't invent numbers beyond the snapshot. Today: ${new Date().toISOString().slice(0, 10)}.\n\nLIVE SNAPSHOT:\n${facts}`
+    const system = `You are MarketSync's in-dashboard assistant for a car dealership admin/GM. You do two things: (1) answer questions about how MarketSync works, what's included, and pricing, using the PRODUCT GUIDE; and (2) answer questions about THIS store using the LIVE SNAPSHOT. Keep answers short and practical — a couple of sentences or a tight list, no headings, no fluff. If asked something neither section covers, say so briefly and point to the right page. Never invent numbers beyond the snapshot, and when quoting prices note they should confirm exact pricing on the upgrade/billing screen. Today: ${new Date().toISOString().slice(0, 10)}.\n\n${PRODUCT_KB}\n\nLIVE SNAPSHOT (this dealership, right now):\n${facts}`
 
     try {
       const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
@@ -3242,7 +3273,8 @@ Units 60d+ on lot: ${stale}`
       ])
       const reply = (msg?.content?.[0]?.text || '').trim()
       if (!reply) return res.status(502).json({ error: 'No reply generated. Try rephrasing.' })
-      recordUsage(req.dealershipId, { ai: 1 })
+      recordUsage(req.dealershipId, { ai: 1 })       // monthly AI quota + global budget
+      recordAssistantChat(req.dealershipId)          // today's per-dealer assistant cap
       res.json({ reply })
     } catch (e) {
       res.status(502).json({ error: aiErrorMessage(e) })
