@@ -438,102 +438,120 @@ function buildWindowStickerHtml(vehicle, dealer, branding, recalls, photoDataUri
 </body></html>`
 }
 
-// ── AI brochure copy (models · trims · vehicle highlight) ─────────────────────
-// Generates the written content for the 4-page brochure via Claude. Falls back to
-// templated copy if the AI add-on isn't configured or the call fails/times out, so
-// the brochure ALWAYS generates.
-async function generateBrochureCopy(vehicle, dealer) {
-  const name = [vehicle.year, vehicle.make, vehicle.model].filter(Boolean).join(' ')
-  const trim = vehicle.trim || ''
-  const price = vehicle.price ? `$${Number(vehicle.price).toLocaleString()}` : 'Call for price'
+// ── Model research (cached per model) ─────────────────────────────────────────
+// Full trim / package / MSRP / fuel-economy / lifestyle breakdown for a
+// year+make+model, researched once via Claude and cached in vehicle_model_specs.
+// Every future brochure for the SAME model reuses the cache → near-zero AI cost
+// after the first. Returns the parsed object, or null when unavailable.
+async function getModelSpecs(vehicle, dealer) {
+  const isUS = /^(US|USA|UNITED STATES)$/.test((dealer?.country || '').trim().toUpperCase())
+  const country = isUS ? 'US' : 'CA'
+  const cur = isUS ? 'USD' : 'CAD'
+  const sig = [vehicle.year, vehicle.make, vehicle.model, country]
+    .map(s => String(s ?? '').toLowerCase().trim()).join('|')
 
-  // Templated fallback — always valid, used when AI is unavailable.
-  const fallback = {
-    headline: `Discover the ${vehicle.make || ''} ${vehicle.model || ''}`.trim(),
-    cover_subhead: `The ${name}${trim ? ' ' + trim : ''} — engineered for the way you drive.`,
-    lineup_intro: `The ${[vehicle.make, vehicle.model].filter(Boolean).join(' ')} is offered across a range of trims, each building on a foundation of quality, comfort, and capability. Whether you prioritize value, technology, or premium features, there is a configuration designed to fit the way you live and drive.`,
-    trims: [
-      { name: 'Base / Standard', blurb: 'The essential trim delivers the core driving experience with dependable performance, key safety systems, and everyday comfort at an accessible price.' },
-      { name: 'Mid / Preferred', blurb: 'Adds popular convenience and technology upgrades — enhanced infotainment, comfort features, and styling touches that elevate everyday driving.' },
-      { name: 'Premium / Top', blurb: 'The fully-equipped trim brings premium materials, advanced driver-assistance features, and the most refined experience in the lineup.' },
-    ],
-    highlight: [
-      `This ${name}${trim ? ' ' + trim : ''} pairs standout style with the features today's drivers want most. Finished in ${vehicle.exterior_color || 'a striking exterior colour'}${vehicle.interior_color ? ` with a ${vehicle.interior_color} interior` : ''}, it's ready to make every drive feel special.`,
-      `Priced at ${price}${vehicle.stocknumber ? ` (Stock #${vehicle.stocknumber})` : ''}, it represents an exceptional opportunity${dealer?.name ? ` at ${dealer.name}` : ''}. Visit us to experience it in person and take it for a test drive.`,
-    ],
-  }
+  // Cache hit — model specs are static for a given model-year, so keep ~1 year.
+  try {
+    const { data: hit } = await supabaseAdmin
+      .from('vehicle_model_specs').select('data, generated_at').eq('signature', sig).maybeSingle()
+    if (hit && (Date.now() - new Date(hit.generated_at)) < 365 * 86400000) return hit.data
+  } catch { /* table not provisioned yet — fall through to live research */ }
 
-  if (!process.env.ANTHROPIC_API_KEY) return fallback
+  if (!process.env.ANTHROPIC_API_KEY) return null
 
   try {
     const Anthropic = (await import('@anthropic-ai/sdk')).default
     const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
-    const feats = (vehicle.description || '').slice(0, 600)
-    const prompt = `You are an automotive copywriter creating a printed sales brochure for a car dealership. Write brochure copy for this vehicle and return ONLY valid JSON (no markdown, no commentary) with EXACTLY this shape:
+    const prompt = `You are an automotive product specialist. Research the ${vehicle.year} ${vehicle.make} ${vehicle.model} for the ${isUS ? 'United States' : 'Canadian'} market and return ONLY valid JSON (no markdown) with this exact shape:
 {
-  "headline": "punchy cover headline, max 8 words",
-  "cover_subhead": "one benefit-focused sentence",
-  "lineup_intro": "one short paragraph (2-4 sentences) introducing the ${[vehicle.make, vehicle.model].filter(Boolean).join(' ')} model line and what sets it apart",
-  "trims": [{"name": "trim name", "blurb": "1-2 concise sentences (max ~40 words) on what this trim offers"}],
-  "highlight": ["one paragraph (max ~55 words) highlighting THIS specific vehicle and its ${trim || 'trim'}", "one paragraph (max ~55 words) on value and an invitation to visit the dealership"]
+  "model_intro": "2-4 sentences introducing this model line and what sets it apart",
+  "lifestyle": "1-2 sentences describing the ideal owner and how they'll use it",
+  "trims": [ { "name": "trim name", "msrp": "from $XX,XXX ${cur} (approx.)", "summary": "1 sentence", "features": ["3-6 headline features this trim adds"] } ],
+  "packages": [ { "name": "option/package name", "detail": "what it includes", "availability": "which trims it's offered on" } ],
+  "fuel_economy": {
+    "note": "one short line naming the powertrain these ratings are for",
+    "gas": { "city_l100": number|null, "hwy_l100": number|null, "combined_l100": number|null, "city_mpg": number|null, "hwy_mpg": number|null, "combined_mpg": number|null },
+    "electric": { "range_km": number|null, "range_mi": number|null, "kwh": number|null }
+  }
 }
-Provide 3 to 4 trims that are typical for this model/year. If you are unsure of exact trim names, describe the common trim tiers for this type of vehicle generally (do not invent specific option packages). Use warm, confident, benefit-focused Canadian English. Keep sentences readable for large print. Keep every blurb tight — this is a fixed-size printed page, so brevity matters.
-
-VEHICLE
-Year/Make/Model: ${name}
-Trim: ${trim || 'n/a'}
-Condition: ${vehicle.condition || 'n/a'}
-Price: ${price}
-Mileage: ${vehicle.mileage ? Number(vehicle.mileage).toLocaleString() + ' km' : 'n/a'}
-Engine: ${vehicle.engine || 'n/a'}
-Drivetrain: ${vehicle.drivetrain || 'n/a'}
-Fuel: ${vehicle.fuel_type || 'n/a'}
-Body style: ${vehicle.body_style || 'n/a'}
-Exterior/Interior: ${vehicle.exterior_color || 'n/a'} / ${vehicle.interior_color || 'n/a'}
-Notable feature text: ${feats || 'n/a'}
-Dealership: ${dealer?.name || 'n/a'}`
-
-    const call = anthropic.messages.create({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 1600,
-      messages: [{ role: 'user', content: prompt }],
-    })
-    // Hard timeout so a slow AI call can't blow the background render budget.
-    const message = await Promise.race([
-      call,
-      new Promise((_, rej) => setTimeout(() => rej(new Error('AI copy timeout')), 45000)),
-    ])
-    let text = (message?.content?.[0]?.text || '').trim()
-    text = text.replace(/^```json\s*/i, '').replace(/^```\s*/, '').replace(/```\s*$/, '').trim()
-    const start = text.indexOf('{'), end = text.lastIndexOf('}')
-    if (start >= 0 && end > start) text = text.slice(start, end + 1)
+Rules:
+- List EVERY trim offered for this model-year (e.g. WT, LT, Z71, Trail Boss…), ascending, each with approximate MSRP in ${cur}. Always mark pricing "(approx.)".
+- List the notable option PACKAGES buyers can add and which trims they're on.
+- Give official-style combined/city/highway fuel economy in BOTH L/100km AND US MPG (convert if only one is published). For an EV, fill "electric" (range in km and miles, battery kWh) and leave the gas figures null.
+- Be accurate; give the closest realistic manufacturer values and keep "(approx.)". NEVER invent trims that don't exist for this make/model. Keep every string tight for print.`
+    const call = anthropic.messages.create({ model: 'claude-sonnet-4-6', max_tokens: 2400, messages: [{ role: 'user', content: prompt }] })
+    const message = await Promise.race([call, new Promise((_, r) => setTimeout(() => r(new Error('specs timeout')), 55000))])
+    let text = (message?.content?.[0]?.text || '').trim().replace(/^```json\s*/i, '').replace(/^```\s*/, '').replace(/```\s*$/, '').trim()
+    const a = text.indexOf('{'), b = text.lastIndexOf('}')
+    if (a >= 0 && b > a) text = text.slice(a, b + 1)
     const parsed = JSON.parse(text)
-    // Validate shape; fall back on anything missing.
+    supabaseAdmin.from('vehicle_model_specs')
+      .upsert({ signature: sig, data: parsed, generated_at: new Date().toISOString() })
+      .then(() => {}).catch(() => {})
+    return parsed
+  } catch (e) {
+    console.warn('[brochure] model specs failed:', e.message)
+    return null
+  }
+}
+
+// ── Per-vehicle cover copy (cheap, per unit) ──────────────────────────────────
+// Cover headline/subhead + two highlight paragraphs about THIS specific unit.
+// Always returns something (templated fallback) so the brochure never blocks.
+async function generateVehicleHighlight(vehicle, dealer) {
+  const name = [vehicle.year, vehicle.make, vehicle.model].filter(Boolean).join(' ')
+  const trim = vehicle.trim || ''
+  const isUS = /^(US|USA|UNITED STATES)$/.test((dealer?.country || '').trim().toUpperCase())
+  const distUnit = isUS ? 'mi' : 'km'
+  const price = vehicle.price ? `$${Number(vehicle.price).toLocaleString()}` : 'Call for price'
+  const fallback = {
+    headline: (`The ${[vehicle.make, vehicle.model].filter(Boolean).join(' ')}`.trim()) || name,
+    cover_subhead: `The ${name}${trim ? ' ' + trim : ''} — engineered for the way you drive.`,
+    highlight: [
+      `This ${name}${trim ? ' ' + trim : ''}${vehicle.exterior_color ? `, finished in ${vehicle.exterior_color}` : ''}${vehicle.interior_color ? ` with a ${vehicle.interior_color} interior` : ''}, is ready to make every drive feel special.`,
+      `Priced at ${price}${vehicle.stocknumber ? ` (Stock #${vehicle.stocknumber})` : ''}, it's an exceptional opportunity${dealer?.name ? ` at ${dealer.name}` : ''}. Visit us and take it for a test drive.`,
+    ],
+  }
+  if (!process.env.ANTHROPIC_API_KEY) return fallback
+  try {
+    const Anthropic = (await import('@anthropic-ai/sdk')).default
+    const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
+    const prompt = `Write printed-brochure cover copy for this specific vehicle. Return ONLY JSON: {"headline":"max 8 words","cover_subhead":"one benefit sentence","highlight":["~50 words on THIS vehicle & its ${trim || 'trim'}, colour and standout features","~45 words on value + an invitation to visit ${dealer?.name || 'the dealership'}"]}. Warm, confident ${isUS ? 'American' : 'Canadian'} English.
+VEHICLE: ${name} ${trim} · ${price} · ${vehicle.mileage ? Number(vehicle.mileage).toLocaleString() + ' ' + distUnit : 'brand new'} · ${vehicle.engine || ''} · ${vehicle.drivetrain || ''} · ${vehicle.exterior_color || ''}/${vehicle.interior_color || ''}
+Notes: ${(vehicle.description || '').slice(0, 400)}`
+    const call = anthropic.messages.create({ model: 'claude-haiku-4-5-20251001', max_tokens: 550, messages: [{ role: 'user', content: prompt }] })
+    const message = await Promise.race([call, new Promise((_, r) => setTimeout(() => r(new Error('hl timeout')), 30000))])
+    let text = (message?.content?.[0]?.text || '').trim().replace(/^```json\s*/i, '').replace(/^```\s*/, '').replace(/```\s*$/, '').trim()
+    const a = text.indexOf('{'), b = text.lastIndexOf('}')
+    if (a >= 0 && b > a) text = text.slice(a, b + 1)
+    const p = JSON.parse(text)
     return {
-      headline: parsed.headline || fallback.headline,
-      cover_subhead: parsed.cover_subhead || fallback.cover_subhead,
-      lineup_intro: parsed.lineup_intro || fallback.lineup_intro,
-      trims: Array.isArray(parsed.trims) && parsed.trims.length ? parsed.trims.slice(0, 4) : fallback.trims,
-      highlight: Array.isArray(parsed.highlight) && parsed.highlight.length ? parsed.highlight.slice(0, 2) : fallback.highlight,
+      headline: p.headline || fallback.headline,
+      cover_subhead: p.cover_subhead || fallback.cover_subhead,
+      highlight: Array.isArray(p.highlight) && p.highlight.length ? p.highlight.slice(0, 2) : fallback.highlight,
     }
   } catch (e) {
-    console.warn('[brochure] AI copy failed, using fallback:', e.message)
+    console.warn('[brochure] highlight failed:', e.message)
     return fallback
   }
 }
 
-// ── 4-page large-text brochure ────────────────────────────────────────────────
-// Page 1 cover · Page 2 model line + trims · Page 3 this vehicle highlighted ·
-// Page 4 dealership information. `copy` comes from generateBrochureCopy().
+// ── Full spec brochure ────────────────────────────────────────────────────────
+// Page 1 cover · Page 2 the build (as-configured spec sheet + full decoded VIN +
+// fuel economy) · Page 3 this-vehicle highlight · Page 4 every trim w/ MSRP +
+// features (this one highlighted) · Page 5 packages & options · Page 6 dealership.
+// `copy` = { headline, cover_subhead, highlight, specs } (specs may be null).
 function buildBrochureHtml(vehicle, dealer, branding, recalls, photosDataUris, logoDataUri, copy) {
   const primary   = branding.primary_color   || '#1a2e4a'
   const secondary = branding.secondary_color || '#c8a84b'
   const esc = s => String(s == null ? '' : s).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]))
 
+  const isUS = /^(US|USA|UNITED STATES)$/.test((dealer?.country || '').trim().toUpperCase())
+  const distUnit = isUS ? 'mi' : 'km'
   const vehicleName = [vehicle.year, vehicle.make, vehicle.model].filter(Boolean).join(' ')
   const trim   = vehicle.trim || ''
   const price  = vehicle.price ? `$${Number(vehicle.price).toLocaleString()}` : 'Call for Price'
-  const mileage = vehicle.mileage ? `${Number(vehicle.mileage).toLocaleString()} km`
+  const mileage = vehicle.mileage ? `${Number(vehicle.mileage).toLocaleString()} ${distUnit}`
     : (vehicle.condition === 'new' ? 'Brand New' : '—')
   const photo0 = photosDataUris?.[0] || null
   const photo1 = photosDataUris?.[1] || photosDataUris?.[0] || null
@@ -544,13 +562,99 @@ function buildBrochureHtml(vehicle, dealer, branding, recalls, photosDataUris, l
     : `<span style="font-size:${Math.round(h * 0.42)}px;font-weight:900;color:${primary};">${esc(dealer.name || 'Your Dealership')}</span>`
 
   const c = copy || {}
-  // Hard caps so a fixed-size printed page never overflows (belt-and-suspenders on
-  // top of the min-height/no-clip CSS): at most 4 trims and 2 highlight paragraphs.
-  const trims = (Array.isArray(c.trims) ? c.trims : []).slice(0, 4)
+  const specs = c.specs || null
   const highlight = (Array.isArray(c.highlight) ? c.highlight : []).slice(0, 2)
 
   const specTile = (label, val) => val ? `
     <div class="spec-tile"><div class="st-label">${esc(label)}</div><div class="st-val">${esc(val)}</div></div>` : ''
+
+  // ── Which listed trim IS this vehicle, and its MSRP ──
+  const norm = s => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '')
+  const myNorm = norm(trim)
+  const specTrims = Array.isArray(specs?.trims) ? specs.trims : []
+  const trimMatches = (t) => { const n = norm(t.name); return myNorm && n && (n.includes(myNorm) || myNorm.includes(n)) }
+  const myTrimObj = specTrims.find(trimMatches) || null
+  const msrp = myTrimObj?.msrp || null
+
+  // ── Decoded VIN spec sheet (core fields + every populated NHTSA field) ──
+  const VIN_LABELS = {
+    abs: 'ABS', esc: 'Stability Control', gvwr: 'GVWR', tpms: 'Tire Pressure Monitor',
+    series: 'Series', turbo: 'Turbocharged', axles: 'Axles', seats: 'Seats', wheels: 'Wheels',
+    windows: 'Windows', cylinders: 'Cylinders', lane_keep: 'Lane Keep Assist', seat_rows: 'Seat Rows',
+    auto_brake: 'Automatic Emergency Braking', brake_desc: 'Brakes', horsepower: 'Horsepower',
+    plant_city: 'Assembly City', wheel_base: 'Wheelbase', airbag_knee: 'Knee Airbags',
+    airbag_side: 'Side Airbags', plant_state: 'Assembly State/Prov.', valve_train: 'Valve Train',
+    airbag_front: 'Front Airbags', brake_system: 'Brake System', engine_model: 'Engine Model',
+    manufacturer: 'Manufacturer', vehicle_type: 'Vehicle Type', adaptive_beam: 'Adaptive Driving Beam',
+    engine_config: 'Engine Configuration', airbag_curtain: 'Curtain Airbags', blind_spot_mon: 'Blind Spot Monitor',
+    curb_weight_lb: 'Curb Weight (lb)', displacement_l: 'Displacement (L)', fuel_injection: 'Fuel Injection',
+    lane_departure: 'Lane Departure Warning', sae_automation: 'Driving Automation', adaptive_cruise: 'Adaptive Cruise',
+    displacement_cc: 'Displacement (cc)', electrification: 'Electrification', wheel_size_rear: 'Rear Wheel Size',
+    keyless_ignition: 'Keyless Ignition', wheel_size_front: 'Front Wheel Size', blind_spot_interv: 'Blind Spot Intervention',
+    forward_collision: 'Forward Collision Warning', steering_location: 'Steering', adaptive_headlights: 'Adaptive Headlights',
+    engine_manufacturer: 'Engine Manufacturer', fuel_type_secondary: 'Secondary Fuel', transmission_speeds: 'Transmission Speeds',
+    plant_country: 'Assembly Country',
+  }
+  const SKIP = new Set(['decoded_at', 'decode_error', 'plant_company'])
+  const humanize = k => k.replace(/_/g, ' ').replace(/\b\w/g, ch => ch.toUpperCase())
+  const specMap = new Map()
+  const addSpec = (label, val) => {
+    if (val == null) return
+    const s = String(val).trim()
+    if (!s || /^(not applicable|n\/?a|null|none)$/i.test(s)) return
+    if (!specMap.has(label)) specMap.set(label, s)
+  }
+  addSpec('Year', vehicle.year); addSpec('Make', vehicle.make); addSpec('Model', vehicle.model)
+  addSpec('Trim', trim); addSpec('Body Style', vehicle.body_style); addSpec('Drivetrain', vehicle.drivetrain)
+  addSpec('Transmission', vehicle.transmission); addSpec('Engine', vehicle.engine)
+  addSpec('Fuel Type', vehicle.fuel_type); addSpec('Doors', vehicle.doors)
+  addSpec('Exterior Colour', vehicle.exterior_color); addSpec('Interior Colour', vehicle.interior_color)
+  addSpec('Mileage', vehicle.mileage ? `${Number(vehicle.mileage).toLocaleString()} ${distUnit}` : null)
+  const vd = vehicle.vin_data || {}
+  for (const [k, v] of Object.entries(vd)) { if (!SKIP.has(k)) addSpec(VIN_LABELS[k] || humanize(k), v) }
+  const specSheet = [...specMap.entries()]
+    .map(([l, v]) => `<div class="sp"><span class="sp-l">${esc(l)}</span><span class="sp-v">${esc(v)}</span></div>`).join('')
+
+  // ── Fuel economy (dual units, ordered by market) ──
+  const feHtml = (() => {
+    const fe = specs?.fuel_economy; if (!fe) return ''
+    const g = fe.gas || {}, e = fe.electric || {}
+    const dual = (l100, mpg) => {
+      const met = l100 != null ? `${l100} L/100km` : '—', imp = mpg != null ? `${mpg} MPG` : '—'
+      return { big: isUS ? imp : met, small: isUS ? met : imp }
+    }
+    const cell = (label, big, small) => `<div class="fe-cell"><div class="fe-lbl">${esc(label)}</div><div class="fe-big">${esc(big)}</div><div class="fe-sm">${esc(small)}</div></div>`
+    let cells = ''
+    if (e && (e.range_km != null || e.range_mi != null)) {
+      const km = e.range_km != null ? `${e.range_km} km` : '—', mi = e.range_mi != null ? `${e.range_mi} mi` : '—'
+      cells += cell('Electric Range', isUS ? mi : km, isUS ? km : mi)
+      if (e.kwh != null) cells += cell('Battery', `${e.kwh} kWh`, ' ')
+    } else {
+      for (const [lab, l100, mpg] of [['City', g.city_l100, g.city_mpg], ['Highway', g.hwy_l100, g.hwy_mpg], ['Combined', g.combined_l100, g.combined_mpg]]) {
+        if (l100 == null && mpg == null) continue
+        const d = dual(l100, mpg); cells += cell(lab, d.big, d.small)
+      }
+    }
+    if (!cells) return ''
+    return `<div class="fe"><div class="fe-title">Fuel Economy${fe.note ? ` <span class="fe-note">— ${esc(fe.note)}</span>` : ''}</div><div class="fe-grid">${cells}</div><div class="fe-foot">Shown in ${isUS ? 'MPG · L/100km' : 'L/100km · MPG'}. Manufacturer estimates — actual mileage varies.</div></div>`
+  })()
+
+  // ── Trims (every trim, MSRP + features, this one highlighted) ──
+  const trimsHtml = specTrims.map(t => {
+    const mine = trimMatches(t)
+    const feats = Array.isArray(t.features) ? t.features.slice(0, 7) : []
+    return `<div class="trimcard${mine ? ' mine' : ''}">
+      <div class="trimcard-h"><h3>${esc(t.name || '')}</h3>${mine ? '<span class="trim-badge">YOUR TRIM</span>' : ''}${t.msrp ? `<span class="trim-msrp">${esc(t.msrp)}</span>` : ''}</div>
+      ${t.summary ? `<p class="trim-sum">${esc(t.summary)}</p>` : ''}
+      ${feats.length ? `<ul class="trim-feats">${feats.map(f => `<li>${esc(f)}</li>`).join('')}</ul>` : ''}
+    </div>`
+  }).join('')
+
+  // ── Packages & options ──
+  const pkgs = Array.isArray(specs?.packages) ? specs.packages : []
+  const pkgsHtml = pkgs.map(p => `<div class="pkg">
+    <div class="pkg-h"><h4>${esc(p.name || '')}</h4>${p.availability ? `<span class="pkg-av">${esc(p.availability)}</span>` : ''}</div>
+    ${p.detail ? `<p>${esc(p.detail)}</p>` : ''}</div>`).join('')
 
   // Dealership contact lines (guard every optional branding field).
   const contactLines = [
@@ -565,8 +669,6 @@ function buildBrochureHtml(vehicle, dealer, branding, recalls, photosDataUris, l
   ${fontFaceCss()}
   *{margin:0;padding:0;box-sizing:border-box;overflow-wrap:break-word;word-break:break-word;}
   body{font-family:'Tinos','Georgia','Times New Roman',serif;width:816px;background:#fff;color:#1f2937;}
-  /* min-height (not fixed height) + no overflow:hidden → copy can never be clipped;
-     a long page simply grows onto a second sheet instead of cutting words off. */
   .page{width:816px;min-height:1056px;position:relative;page-break-after:always;display:flex;flex-direction:column;}
   .page:last-child{page-break-after:auto;}
   .sans{font-family:'Arimo','Arial',Helvetica,sans-serif;}
@@ -574,42 +676,75 @@ function buildBrochureHtml(vehicle, dealer, branding, recalls, photosDataUris, l
 
   /* PAGE 1 — COVER */
   .cover-top{padding:40px 56px 0;display:flex;align-items:center;justify-content:space-between;}
-  .cover-hero{margin:26px 0 0;height:470px;background:${primary};}
+  .cover-hero{margin:26px 0 0;height:440px;background:${primary};}
   .cover-hero img{width:100%;height:100%;object-fit:cover;}
   .cover-hero .noimg{width:100%;height:100%;background:linear-gradient(135deg,${primary},${secondary});}
-  .cover-body{flex:1;padding:38px 56px 0;}
-  .cover-headline{font-size:46px;line-height:1.08;font-weight:900;color:${primary};letter-spacing:-1px;margin:14px 0 16px;}
-  .cover-sub{font-size:21px;line-height:1.5;color:#4b5563;font-style:italic;}
-  .cover-foot{margin-top:auto;background:${primary};padding:26px 56px;display:flex;align-items:center;justify-content:space-between;}
-  .cover-name{color:#fff;font-size:26px;font-weight:900;font-family:'Arimo','Arial',sans-serif;}
-  .cover-trim{color:rgba(255,255,255,.75);font-size:16px;font-family:'Arimo','Arial',sans-serif;margin-top:3px;}
-  .cover-price{background:${secondary};color:#fff;border-radius:8px;padding:14px 26px;text-align:center;}
-  .cover-price .lbl{font-family:'Arimo','Arial',sans-serif;font-size:11px;letter-spacing:2px;text-transform:uppercase;opacity:.85;}
-  .cover-price .val{font-size:30px;font-weight:900;line-height:1.1;}
+  .cover-body{flex:1;padding:34px 56px 0;}
+  .cover-headline{font-size:44px;line-height:1.08;font-weight:900;color:${primary};letter-spacing:-1px;margin:12px 0 14px;}
+  .cover-sub{font-size:20px;line-height:1.5;color:#4b5563;font-style:italic;}
+  .cover-foot{margin-top:auto;background:${primary};padding:24px 56px;display:flex;align-items:center;justify-content:space-between;}
+  .cover-name{color:#fff;font-size:25px;font-weight:900;font-family:'Arimo','Arial',sans-serif;}
+  .cover-trim{color:rgba(255,255,255,.75);font-size:15px;font-family:'Arimo','Arial',sans-serif;margin-top:3px;}
+  .cover-prices{display:flex;gap:10px;}
+  .cover-price{background:${secondary};color:#fff;border-radius:8px;padding:12px 22px;text-align:center;}
+  .cover-price.msrp{background:rgba(255,255,255,.14);}
+  .cover-price .lbl{font-family:'Arimo','Arial',sans-serif;font-size:10px;letter-spacing:2px;text-transform:uppercase;opacity:.85;}
+  .cover-price .val{font-size:26px;font-weight:900;line-height:1.15;}
 
   /* SHARED interior header */
-  .ihdr{background:${primary};padding:34px 56px;}
+  .ihdr{background:${primary};padding:32px 56px;}
   .ihdr .eyebrow{color:${secondary};}
-  .ihdr h2{font-family:'Arimo','Arial',sans-serif;color:#fff;font-size:34px;font-weight:900;margin-top:8px;letter-spacing:-.5px;}
-  .icontent{flex:1;padding:36px 56px 44px;}
+  .ihdr h2{font-family:'Arimo','Arial',sans-serif;color:#fff;font-size:32px;font-weight:900;margin-top:8px;letter-spacing:-.5px;}
+  .icontent{flex:1;padding:32px 56px 40px;}
 
-  /* PAGE 2 — lineup + trims */
-  .lineup-intro{font-size:18px;line-height:1.7;color:#374151;margin-bottom:26px;}
-  .trim{padding:16px 0;border-top:2px solid #eee;}
-  .trim:first-child{border-top:3px solid ${secondary};}
-  .trim h3{font-family:'Arimo','Arial',sans-serif;font-size:21px;font-weight:800;color:${primary};margin-bottom:6px;}
-  .trim p{font-size:16px;line-height:1.65;color:#4b5563;}
+  /* PAGE 2 — the build */
+  .spec-row{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:26px;}
+  .spec-tile{background:#f8fafc;border:1px solid #e5e7eb;border-top:4px solid ${secondary};border-radius:6px;padding:14px 12px;text-align:center;}
+  .st-label{font-family:'Arimo','Arial',sans-serif;font-size:10px;letter-spacing:1px;text-transform:uppercase;color:#94a3b8;}
+  .st-val{font-family:'Arimo','Arial',sans-serif;font-size:17px;font-weight:800;color:${primary};margin-top:5px;line-height:1.2;}
+  .sect-lbl{font-family:'Arimo','Arial',sans-serif;font-size:12px;font-weight:800;letter-spacing:2px;text-transform:uppercase;color:${secondary};margin:22px 0 12px;}
+  .fe{background:${primary};border-radius:8px;padding:18px 22px;margin-bottom:8px;}
+  .fe-title{font-family:'Arimo','Arial',sans-serif;color:#fff;font-size:16px;font-weight:800;margin-bottom:12px;}
+  .fe-note{color:${secondary};font-weight:600;font-size:13px;}
+  .fe-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;}
+  .fe-cell{background:rgba(255,255,255,.08);border-radius:6px;padding:12px;text-align:center;}
+  .fe-lbl{font-family:'Arimo','Arial',sans-serif;font-size:10px;letter-spacing:1px;text-transform:uppercase;color:rgba(255,255,255,.65);}
+  .fe-big{font-family:'Arimo','Arial',sans-serif;font-size:20px;font-weight:900;color:#fff;margin-top:4px;}
+  .fe-sm{font-family:'Arimo','Arial',sans-serif;font-size:12px;color:${secondary};margin-top:2px;}
+  .fe-foot{font-family:'Arimo','Arial',sans-serif;font-size:10px;color:rgba(255,255,255,.6);margin-top:10px;}
+  .specsheet{columns:2;column-gap:36px;}
+  .sp{display:flex;justify-content:space-between;gap:12px;padding:6px 0;border-bottom:1px solid #eef1f5;break-inside:avoid;}
+  .sp-l{font-family:'Arimo','Arial',sans-serif;font-size:12.5px;color:#64748b;}
+  .sp-v{font-family:'Arimo','Arial',sans-serif;font-size:12.5px;font-weight:700;color:${primary};text-align:right;}
 
   /* PAGE 3 — this vehicle */
-  .hl-photo{height:300px;background:${primary};margin-bottom:30px;border-radius:8px;overflow:hidden;}
+  .hl-photo{height:300px;background:${primary};margin-bottom:28px;border-radius:8px;overflow:hidden;}
   .hl-photo img{width:100%;height:100%;object-fit:cover;}
-  .hl-para{font-size:19px;line-height:1.8;color:#374151;margin-bottom:22px;}
-  .spec-row{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-top:26px;}
-  .spec-tile{background:#f8fafc;border:1px solid #e5e7eb;border-top:4px solid ${secondary};border-radius:6px;padding:16px 14px;text-align:center;}
-  .st-label{font-family:'Arimo','Arial',sans-serif;font-size:11px;letter-spacing:1px;text-transform:uppercase;color:#94a3b8;}
-  .st-val{font-family:'Arimo','Arial',sans-serif;font-size:19px;font-weight:800;color:${primary};margin-top:5px;}
+  .hl-para{font-size:19px;line-height:1.8;color:#374151;margin-bottom:20px;}
 
-  /* PAGE 4 — dealership */
+  /* PAGE 4 — trims */
+  .lineup-intro{font-size:17px;line-height:1.7;color:#374151;margin-bottom:8px;}
+  .lifestyle{font-size:15px;line-height:1.6;color:#6b7280;font-style:italic;margin-bottom:22px;}
+  .trimcard{border:1px solid #e5e7eb;border-left:4px solid #e5e7eb;border-radius:6px;padding:14px 18px;margin-bottom:14px;break-inside:avoid;}
+  .trimcard.mine{border-color:${secondary};border-left-color:${secondary};background:${secondary}0f;}
+  .trimcard-h{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:6px;}
+  .trimcard h3{font-family:'Arimo','Arial',sans-serif;font-size:20px;font-weight:800;color:${primary};}
+  .trim-msrp{font-family:'Arimo','Arial',sans-serif;font-size:14px;font-weight:800;color:${primary};margin-left:auto;}
+  .trim-badge{font-family:'Arimo','Arial',sans-serif;font-size:10px;font-weight:800;letter-spacing:1px;background:${secondary};color:#fff;padding:2px 8px;border-radius:99px;}
+  .trim-sum{font-size:15px;line-height:1.55;color:#4b5563;margin-bottom:6px;}
+  .trim-feats{list-style:none;display:grid;grid-template-columns:1fr 1fr;gap:2px 18px;}
+  .trim-feats li{font-family:'Arimo','Arial',sans-serif;font-size:12.5px;color:#374151;padding-left:14px;position:relative;line-height:1.5;}
+  .trim-feats li:before{content:'✓';position:absolute;left:0;color:${secondary};font-weight:900;}
+
+  /* PAGE 5 — packages */
+  .pkg{border-top:2px solid #eee;padding:13px 0;break-inside:avoid;}
+  .pkg:first-child{border-top:3px solid ${secondary};}
+  .pkg-h{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;}
+  .pkg h4{font-family:'Arimo','Arial',sans-serif;font-size:17px;font-weight:800;color:${primary};}
+  .pkg-av{font-family:'Arimo','Arial',sans-serif;font-size:11px;color:#94a3b8;margin-left:auto;}
+  .pkg p{font-size:14.5px;line-height:1.55;color:#4b5563;margin-top:4px;}
+
+  /* PAGE 6 — dealership */
   .d-page{align-items:stretch;}
   .d-hero{background:${primary};flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:60px;}
   .d-logo{background:#fff;border-radius:12px;padding:26px 34px;margin-bottom:34px;}
@@ -633,16 +768,25 @@ function buildBrochureHtml(vehicle, dealer, branding, recalls, photosDataUris, l
   </div>
   <div class="cover-foot">
     <div><div class="cover-name">${esc(vehicleName)}</div>${trim ? `<div class="cover-trim">${esc(trim)}</div>` : ''}</div>
-    <div class="cover-price"><div class="lbl">Our Price</div><div class="val">${esc(price)}</div></div>
+    <div class="cover-prices">
+      ${msrp ? `<div class="cover-price msrp"><div class="lbl">MSRP</div><div class="val">${esc(String(msrp).replace(/\s*\(approx\.?\)/i, ''))}</div></div>` : ''}
+      <div class="cover-price"><div class="lbl">Our Price</div><div class="val">${esc(price)}</div></div>
+    </div>
   </div>
 </div>
 
-<!-- PAGE 2 — LINEUP & TRIMS -->
+<!-- PAGE 2 — THE BUILD (as configured) -->
 <div class="page">
-  <div class="ihdr"><span class="eyebrow">The Lineup</span><h2>${esc([vehicle.make, vehicle.model].filter(Boolean).join(' '))} — Models &amp; Trims</h2></div>
+  <div class="ihdr"><span class="eyebrow">The Build</span><h2>Your ${esc(vehicleName)}${trim ? ' ' + esc(trim) : ''}</h2></div>
   <div class="icontent">
-    <p class="lineup-intro">${esc(c.lineup_intro || '')}</p>
-    ${trims.map(t => `<div class="trim"><h3>${esc(t.name || '')}</h3><p>${esc(t.blurb || '')}</p></div>`).join('')}
+    <div class="spec-row">
+      ${specTile('Our Price', price)}
+      ${msrp ? specTile('MSRP', String(msrp).replace(/\s*\(approx\.?\)/i, '')) : specTile('Mileage', mileage)}
+      ${specTile(vehicle.vin_data?.electrification ? 'Powertrain' : 'Drivetrain', vehicle.vin_data?.electrification || vehicle.drivetrain)}
+    </div>
+    ${feHtml}
+    <div class="sect-lbl">Full Specifications — As Decoded from the VIN</div>
+    <div class="specsheet">${specSheet}</div>
   </div>
 </div>
 
@@ -652,18 +796,30 @@ function buildBrochureHtml(vehicle, dealer, branding, recalls, photosDataUris, l
   <div class="icontent">
     <div class="hl-photo">${photo1 ? `<img src="${photo1}">` : ''}</div>
     ${highlight.map(p => `<p class="hl-para">${esc(p)}</p>`).join('')}
-    <div class="spec-row">
-      ${specTile('Price', price)}
-      ${specTile('Mileage', mileage)}
-      ${specTile('Drivetrain', vehicle.drivetrain)}
-      ${specTile('Engine', vehicle.engine)}
-      ${specTile('Fuel', vehicle.fuel_type)}
-      ${specTile('Exterior', vehicle.exterior_color)}
-    </div>
   </div>
 </div>
 
-<!-- PAGE 4 — DEALERSHIP -->
+${specTrims.length ? `
+<!-- PAGE 4 — MODELS & TRIMS -->
+<div class="page">
+  <div class="ihdr"><span class="eyebrow">The Lineup</span><h2>${esc([vehicle.make, vehicle.model].filter(Boolean).join(' '))} — Models &amp; Trims</h2></div>
+  <div class="icontent">
+    ${specs?.model_intro ? `<p class="lineup-intro">${esc(specs.model_intro)}</p>` : ''}
+    ${specs?.lifestyle ? `<p class="lifestyle">${esc(specs.lifestyle)}</p>` : ''}
+    ${trimsHtml}
+  </div>
+</div>` : ''}
+
+${pkgs.length ? `
+<!-- PAGE 5 — PACKAGES & OPTIONS -->
+<div class="page">
+  <div class="ihdr"><span class="eyebrow">Packages &amp; Options</span><h2>Available on the ${esc([vehicle.make, vehicle.model].filter(Boolean).join(' '))}</h2></div>
+  <div class="icontent">
+    ${pkgsHtml}
+  </div>
+</div>` : ''}
+
+<!-- PAGE 6 — DEALERSHIP -->
 <div class="page d-page">
   <div class="d-hero">
     ${logoSrc ? `<div class="d-logo">${logoImg(70)}</div>` : ''}
@@ -1263,9 +1419,15 @@ export function registerRoutes(app) {
           Promise.all(imageUrls.map(u => imgToDataUri(u))),
           branding.logo_url ? imgToDataUri(branding.logo_url) : Promise.resolve(null),
         ])
-        const copy = await generateBrochureCopy(vehicle, dealer)
-        recordUsage(req.dealershipId, { ai: 1 })   // AI-written copy (AI Boost)
-        const html = buildBrochureHtml(vehicle, dealer, branding, vehicle.recalls || [], photosDataUris.filter(Boolean), logoDataUri, copy)
+        // Model research (trims · MSRP · packages · fuel economy · lifestyle) is cached
+        // per model — so repeat brochures for the same model cost $0. The per-vehicle
+        // cover copy is a cheap separate call.
+        const [specs, highlight] = await Promise.all([
+          getModelSpecs(vehicle, dealer),
+          generateVehicleHighlight(vehicle, dealer),
+        ])
+        recordUsage(req.dealershipId, { ai: specs ? 2 : 1 })   // AI-written copy (AI Boost)
+        const html = buildBrochureHtml(vehicle, dealer, branding, vehicle.recalls || [], photosDataUris.filter(Boolean), logoDataUri, { ...highlight, specs })
         const pdf = await generatePdf(html, { landscape: false, viewportWidth: 860, viewportHeight: 1100, timeoutMs: 90000 })
         const url = await uploadPdf(pdf, path)
         await supabaseAdmin.from('inventory').update({ brochure_gen_url: url, brochure_url: url, brochure_source: 'generated' }).eq('id', vehicle.id)
@@ -1275,7 +1437,7 @@ export function registerRoutes(app) {
           dealershipId: req.dealershipId,
           type: 'brochure',
           title: 'Brochure ready',
-          body: `Your 4-page brochure for the ${vName} is ready to view or print.`,
+          body: `Your full-spec brochure for the ${vName} is ready to view or print.`,
           linkUrl: url,
         })
       } catch (e) {
