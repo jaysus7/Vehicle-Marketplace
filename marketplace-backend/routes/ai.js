@@ -1503,7 +1503,10 @@ Respond with ONLY valid JSON (no markdown, no explanation, no trailing commas):
       return res.json({ recommendations: dealer.stocking_recs, generated_at: dealer.stocking_recs_at, cached: true })
     }
 
-    const since30 = new Date(Date.now() - 30 * 86400000).toISOString()
+    // A unit's last_synced_at is the last time it appeared in the feed — i.e. roughly
+    // when it sold and dropped off. Feeds refresh in bursts, so a strict 30-day window
+    // often catches nothing; look back 90 days so there's real sell-through signal.
+    const soldSince = new Date(Date.now() - 90 * 86400000).toISOString()
 
     const [{ data: sold }, { data: current }, { data: competitors }] = await Promise.all([
       supabaseAdmin
@@ -1511,7 +1514,7 @@ Respond with ONLY valid JSON (no markdown, no explanation, no trailing commas):
         .select('make, model, year')
         .eq('dealership_id', req.dealershipId)
         .in('status', ['sold', 'archived'])
-        .gte('last_synced_at', since30)
+        .gte('last_synced_at', soldSince)
         .order('last_synced_at', { ascending: false })
         .limit(200),
       supabaseAdmin
@@ -1559,7 +1562,7 @@ Respond with ONLY valid JSON (no markdown, no explanation, no trailing commas):
     const buildFallback = () => {
       const out = []
       const seen = new Set()
-      // 1) Proven movers from the last 30 days' sell-through.
+      // 1) Proven movers from recent sell-through.
       for (const s of sell_through) {
         const k = `${s.make}|${s.model}`
         if (seen.has(k)) continue
@@ -1568,8 +1571,8 @@ Respond with ONLY valid JSON (no markdown, no explanation, no trailing commas):
         out.push({
           make: s.make, model: s.model, year_range: 'recent',
           reason: inStock
-            ? `Strong seller — ${s.sold} sold in the last 30 days with only ${inStock.count} now in stock. Restock to keep up with demand.`
-            : `Sold ${s.sold} in the last 30 days but none currently in stock — a proven mover worth re-acquiring.`,
+            ? `Strong seller — ${s.sold} sold recently with only ${inStock.count} now in stock. Restock to keep up with demand.`
+            : `Sold ${s.sold} recently but none currently in stock — a proven mover worth re-acquiring.`,
           priority: s.sold >= 3 ? 'high' : (s.sold >= 2 ? 'medium' : 'low'),
           existing_units: inStock ? inStock.units.slice(0, 3).map(u => ({ id: u.id, stocknumber: u.stocknumber })) : []
         })
@@ -1609,13 +1612,13 @@ Respond with ONLY valid JSON (no markdown, no explanation, no trailing commas):
     try {
       if (!process.env.ANTHROPIC_API_KEY || !(await aiAllowed(req.dealershipId, isOwner))) throw new Error('ai_unavailable')
       const message = await anthropic.messages.create({
-        model: 'claude-sonnet-5',
+        model: 'claude-haiku-4-5-20251001',
         max_tokens: 1200,
         messages: [{
           role: 'user',
-          content: `You are an automotive inventory strategist for a Canadian GM dealership in Ontario, Canada. Based on this dealership's 30-day sell-through data, current stock, and nearby competitor lots, recommend 5 specific vehicle acquisitions. Factor in Canadian market conditions (fuel prices, weather, rural vs urban mix), Ontario buyer preferences, seasonal demand, Canadian government incentives (iZEV program, Ontario rebates) — do NOT reference US programs. Also consider what competitors are stocking heavily (avoid oversupplied models) and where gaps exist.
+          content: `You are an automotive inventory strategist for a Canadian GM dealership in Ontario, Canada. Based on this dealership's recent sell-through data, current stock, and nearby competitor lots, recommend 5 specific vehicle acquisitions. Factor in Canadian market conditions (fuel prices, weather, rural vs urban mix), Ontario buyer preferences, seasonal demand, Canadian government incentives (iZEV program, Ontario rebates) — do NOT reference US programs. Also consider what competitors are stocking heavily (avoid oversupplied models) and where gaps exist.
 
-Sell-through (last 30 days):
+Recent sell-through:
 ${sell_through.map(s => `- ${s.make} ${s.model}: ${s.sold} sold`).join('\n') || 'No sold data available yet'}
 
 Current stock (available units):
