@@ -227,6 +227,20 @@
         btn.disabled = false; btn.innerHTML = original;
       }
     });
+
+    // Prefill the email when arriving from the extension's "Sign in with a passkey"
+    // button (which passes ?email=…), and nudge focus to the passkey button so the
+    // user can authenticate in one tap.
+    (function prefillFromQuery() {
+      try {
+        const qp = new URLSearchParams(location.search).get('email');
+        if (qp) {
+          const el = document.getElementById('email');
+          if (el && !el.value) el.value = qp;
+          document.getElementById('passkey-btn')?.focus();
+        }
+      } catch {}
+    })();
   </script>
 </body>
 </html>

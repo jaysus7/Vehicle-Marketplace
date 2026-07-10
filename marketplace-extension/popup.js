@@ -863,8 +863,18 @@ function initLoginScreen() {
         body: JSON.stringify({ email, password })
       })
       const data = await r.json()
-      if (data.error) {
-        $('login-error').textContent = data.error
+      // 202 = account needs a second step (2FA code, or passkey/security key) that the
+      // popup can't complete on the chrome-extension:// origin. Send them to the website,
+      // where WebAuthn works; the SSO bridge signs the extension in automatically after.
+      if (r.status === 202 || data.mfa_required) {
+        $('login-error').textContent = 'This account needs an extra sign-in step. Opening the website…'
+        openWebsiteLogin(email)
+        $('login-btn').disabled = false
+        $('login-btn').textContent = 'Sign In'
+        return
+      }
+      if (data.error || !data.access_token) {
+        $('login-error').textContent = data.error || 'Sign-in failed. Try again.'
         $('login-btn').disabled = false
         $('login-btn').textContent = 'Sign In'
         return
@@ -878,7 +888,23 @@ function initLoginScreen() {
       $('login-btn').textContent = 'Sign In'
     }
   })
+  // Passkeys are bound to marketsync.link and can't run on the chrome-extension:// origin,
+  // so we open the real website login (where Touch ID / Face ID / Windows Hello / security
+  // keys work). Once they authenticate there, dashboard-bridge.js mirrors the session into
+  // chrome.storage and the popup's storage listener flips this view to the inventory screen.
+  $('passkey-login-btn').addEventListener('click', () => {
+    const email = $('email').value.trim()
+    openWebsiteLogin(email)
+    $('login-error').textContent = 'Finish signing in on the website tab — this will update automatically.'
+  })
   $('go-to-register-btn').addEventListener('click', () => setScreen('register'))
+}
+
+// Open the marketsync.link login page in a new tab, pre-filling the email when we have it.
+function openWebsiteLogin(email) {
+  const base = DASHBOARD_BASE.replace('dashboard.html', 'login.html')
+  const url = email ? `${base}?email=${encodeURIComponent(email)}` : base
+  chrome.tabs.create({ url })
 }
 
 function initRegisterScreen() {
