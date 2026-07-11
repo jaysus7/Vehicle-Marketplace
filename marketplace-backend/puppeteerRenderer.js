@@ -12,29 +12,10 @@ import { resolveLotDate } from './sync/genericFeed.js'
 // puppeteer-core + @sparticuz/chromium pair adds ~150-200MB just by being imported,
 // which is enough to push memory-tight syncs over the limit. With dynamic import,
 // the cost only lands when the user explicitly opts into headless features.
-// Stealth mode (default ON, STEALTH_BROWSER=0 to disable): wrap puppeteer-core with
-// puppeteer-extra + the stealth plugin so our headless Chrome is far less detectable
-// (patches navigator.webdriver, canvas/WebGL/UA fingerprints, chrome runtime, etc.).
-// This recovers the "borderline" Cloudflare/JS-challenge dealers that our stripped
-// @sparticuz/chromium fails on. It CANNOT solve Turnstile — that still needs the
-// extension or a residential-IP provider. Falls back to plain puppeteer-core if the
-// stealth packages aren't installed yet, so it can never break the sync.
 let _puppeteer = null
 async function getPuppeteer() {
   if (_puppeteer) return _puppeteer
-  const core = (await import('puppeteer-core')).default
-  if (process.env.STEALTH_BROWSER === '0') { _puppeteer = core; return _puppeteer }
-  try {
-    const { addExtra } = await import('puppeteer-extra')
-    const StealthPlugin = (await import('puppeteer-extra-plugin-stealth')).default
-    const pptr = addExtra(core)                 // wrap puppeteer-core (not the 'puppeteer' pkg)
-    pptr.use(StealthPlugin())
-    _puppeteer = pptr
-    console.log('[browser] stealth mode active')
-  } catch (e) {
-    console.warn('[browser] stealth unavailable — using plain puppeteer-core:', e.message)
-    _puppeteer = core
-  }
+  _puppeteer = (await import('puppeteer-core')).default
   return _puppeteer
 }
 
@@ -75,9 +56,6 @@ const SAFE_CHROMIUM_ARGS = [
   '--disable-setuid-sandbox',
   '--disable-extensions',
   '--single-process',
-  // Hide the automation signal Cloudflare/anti-bot scripts sniff for. The stealth
-  // plugin also patches navigator.webdriver, but dropping the switch is belt-and-braces.
-  '--disable-blink-features=AutomationControlled',
 ]
 
 async function getBrowser() {
