@@ -5,6 +5,38 @@ const DEALER_LEVEL = ['DEALER_ADMIN', 'OWNER', 'MANAGER']
 const isDealerLevel = (req) => DEALER_LEVEL.includes(req.profile?.role)
 const digits = (s) => String(s || '').replace(/\D/g, '')
 
+const CONTACT_STATUSES = ['uncontacted', 'contacted', 'appointment', 'sold', 'fni', 'turnover', 'followup', 'lost']
+
+// Map an incoming body to a writable contacts patch (shared by create + update).
+// Only assigns keys the caller actually sent, so PATCH-style updates don't wipe
+// fields. Trims/normalises identity + contact fields.
+function contactPatchFromBody(b) {
+  const p = {}
+  const txt = (k, src = k) => { if (b[src] !== undefined) p[k] = b[src] === '' ? null : String(b[src]).trim() }
+  txt('contact_type'); txt('full_name'); txt('first_name'); txt('middle_name'); txt('last_name'); txt('suffix')
+  txt('company_name'); txt('address'); txt('city'); txt('province'); txt('postal_code'); txt('country')
+  txt('phone_home'); txt('phone_mobile'); txt('phone_work'); txt('dl_number'); txt('source'); txt('notes')
+  if (b.email !== undefined) p.email = b.email ? String(b.email).trim().toLowerCase() : null
+  if (b.phone !== undefined) p.phone = b.phone ? String(b.phone).trim() : null
+  if (b.birthday !== undefined) p.birthday = b.birthday || null
+  if (b.dl_expiry !== undefined) p.dl_expiry = b.dl_expiry || null
+  if (b.status !== undefined) p.status = CONTACT_STATUSES.includes(b.status) ? b.status : 'uncontacted'
+  if (b.assigned_rep !== undefined) p.assigned_rep = b.assigned_rep || null
+  if (b.tags !== undefined) p.tags = Array.isArray(b.tags) ? b.tags : []
+  if (b.consent_email !== undefined) p.consent_email = !!b.consent_email
+  if (b.consent_sms !== undefined) p.consent_sms = !!b.consent_sms
+  if (b.dnc !== undefined) p.dnc = !!b.dnc
+  if (b.trade_vehicle !== undefined) p.trade_vehicle = (b.trade_vehicle && typeof b.trade_vehicle === 'object') ? b.trade_vehicle : null
+  if (b.interest_vehicle !== undefined) p.interest_vehicle = (b.interest_vehicle && typeof b.interest_vehicle === 'object') ? b.interest_vehicle : null
+  if (b.interest_inventory_id !== undefined) p.interest_inventory_id = b.interest_inventory_id || null
+  // Keep a sensible display name if only first/last were sent.
+  if (p.full_name === undefined && (p.first_name || p.last_name)) {
+    p.full_name = [p.first_name, p.middle_name, p.last_name].filter(Boolean).join(' ').trim() || null
+  }
+  if (p.contact_type === 'company' && !p.full_name && b.company_name) p.full_name = String(b.company_name).trim()
+  return p
+}
+
 // Find an existing contact by email (then phone) within the dealership, or create
 // one. Shared so leads + appraisals auto-populate the CRM — the whole point of
 // owning it: every touchpoint lands on one customer record, no double entry.
@@ -38,7 +70,7 @@ export async function findOrCreateContact({ dealershipId, name, email, phone, re
       full_name: String(name || '').trim() || 'Unknown',
       email: em, phone: String(phone || '').trim() || null,
       assigned_rep: repId || null, created_by: repId || null,
-      source: source || 'Lead', status: 'lead',
+      source: source || 'Lead', status: 'uncontacted',
       last_activity_at: new Date().toISOString(),
     }).select('id').single()
     return ins?.id || null
@@ -95,18 +127,19 @@ export function registerCrm(app) {
   app.post('/crm/contacts', requireAuth, async (req, res) => {
     if (!req.dealershipId) return res.status(400).json({ error: 'No dealership' })
     const b = req.body || {}
-    const full_name = String(b.full_name || '').trim()
-    if (!full_name && !b.email && !b.phone) return res.status(400).json({ error: 'Enter a name, phone, or email' })
+    const patch = contactPatchFromBody(b)
+    // Primary phone falls back to whichever line was provided so quick-actions work.
+    if (patch.phone == null) patch.phone = patch.phone_mobile || patch.phone_home || patch.phone_work || null
+    const hasName = patch.full_name || patch.company_name || b.company_name
+    if (!hasName && !patch.email && !patch.phone) return res.status(400).json({ error: 'Enter a name, phone, or email' })
     const { data, error } = await supabaseAdmin.from('contacts').insert({
       dealership_id: req.dealershipId,
-      full_name: full_name || 'Unknown',
-      first_name: b.first_name || null, last_name: b.last_name || null,
-      email: b.email ? String(b.email).trim().toLowerCase() : null,
-      phone: b.phone ? String(b.phone).trim() : null,
-      assigned_rep: b.assigned_rep || req.user.id,
-      source: b.source || 'Manual', status: b.status || 'lead',
-      tags: Array.isArray(b.tags) ? b.tags : [],
-      notes: b.notes || null, created_by: req.user.id,
+      ...patch,
+      full_name: patch.full_name || (b.company_name ? String(b.company_name).trim() : null) || 'Unknown',
+      assigned_rep: patch.assigned_rep || b.assigned_rep || req.user.id,
+      source: patch.source || 'Manual',
+      status: patch.status || 'uncontacted',
+      created_by: req.user.id,
       last_activity_at: new Date().toISOString(),
     }).select('*').single()
     if (error) return res.status(500).json({ error: error.message })
@@ -155,8 +188,19 @@ export function registerCrm(app) {
       appraisal_id: a.id, rep: reps[a.created_by] || null })
     timeline.sort((x, y) => new Date(y.at) - new Date(x.at))
 
+    // Resolve the "new car of interest" label from our stock, if pinned.
+    let interest_vehicle_label = null
+    if (contact.interest_inventory_id) {
+      const { data: iv } = await supabaseAdmin.from('inventory')
+        .select('year, make, model, trim, price, stocknumber').eq('id', contact.interest_inventory_id).maybeSingle()
+      if (iv) interest_vehicle_label = { label: [iv.year, iv.make, iv.model, iv.trim].filter(Boolean).join(' '), price: iv.price, stocknumber: iv.stocknumber }
+    } else if (contact.interest_vehicle) {
+      const v = contact.interest_vehicle
+      interest_vehicle_label = { label: [v.year, v.make, v.model, v.trim].filter(Boolean).join(' ') || null }
+    }
+
     res.json({
-      contact: { ...contact, rep_name: reps[contact.assigned_rep] || null },
+      contact: { ...contact, rep_name: reps[contact.assigned_rep] || null, interest_vehicle_label },
       timeline,
       tasks: (tasks || []).map(t => ({ ...t, assignee_name: reps[t.assigned_to] || null })),
       can_see_all: isDealerLevel(req),
@@ -166,21 +210,22 @@ export function registerCrm(app) {
   // ── Update a contact ──────────────────────────────────────────────────────
   app.put('/crm/contacts/:id', requireAuth, async (req, res) => {
     if (!req.dealershipId) return res.status(400).json({ error: 'No dealership' })
-    const b = req.body || {}
-    const patch = { updated_at: new Date().toISOString() }
-    const fields = ['full_name', 'first_name', 'last_name', 'source', 'status', 'notes', 'assigned_rep']
-    for (const f of fields) if (b[f] !== undefined) patch[f] = b[f] === '' ? null : b[f]
-    if (b.email !== undefined) patch.email = b.email ? String(b.email).trim().toLowerCase() : null
-    if (b.phone !== undefined) patch.phone = b.phone ? String(b.phone).trim() : null
-    if (b.tags !== undefined) patch.tags = Array.isArray(b.tags) ? b.tags : []
-    if (b.consent_email !== undefined) patch.consent_email = !!b.consent_email
-    if (b.consent_sms !== undefined) patch.consent_sms = !!b.consent_sms
-    if (b.dnc !== undefined) patch.dnc = !!b.dnc
+    const patch = { ...contactPatchFromBody(req.body || {}), updated_at: new Date().toISOString() }
     const { data, error } = await supabaseAdmin.from('contacts')
       .update(patch).eq('id', req.params.id).eq('dealership_id', req.dealershipId).select('*').maybeSingle()
     if (error) return res.status(500).json({ error: error.message })
     if (!data) return res.status(404).json({ error: 'Contact not found' })
     res.json({ ok: true, contact: data })
+  })
+
+  // ── Dealership rep roster (for the "assigned to" picker) ──────────────────
+  app.get('/crm/reps', requireAuth, async (req, res) => {
+    if (!req.dealershipId) return res.json({ reps: [] })
+    const { data } = await supabaseAdmin.from('profiles')
+      .select('id, full_name, display_name, role').eq('dealership_id', req.dealershipId)
+    const reps = (data || []).map(r => ({ id: r.id, name: r.full_name || r.display_name || '—', role: r.role }))
+      .sort((a, b) => a.name.localeCompare(b.name))
+    res.json({ reps })
   })
 
   // ── Log an activity (note / call / text / email logged manually) ──────────
@@ -262,7 +307,7 @@ export function registerCrm(app) {
       contact_id: b.contact_id || null,
       assigned_to: b.assigned_to || req.user.id,
       created_by: req.user.id,
-      title, type: ['call', 'text', 'email', 'followup', 'other'].includes(b.type) ? b.type : 'followup',
+      title, type: ['call', 'text', 'email', 'followup', 'appointment', 'other'].includes(b.type) ? b.type : 'followup',
       due_at: b.due_at || null,
     }).select('*').single()
     if (error) return res.status(500).json({ error: error.message })

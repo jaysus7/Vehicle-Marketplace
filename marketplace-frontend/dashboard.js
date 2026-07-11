@@ -1214,14 +1214,27 @@ const crmWhen = (s) => {
   if (diff < 7) return Math.floor(diff) + 'd ago';
   return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: diff > 300 ? 'numeric' : undefined });
 };
-const CRM_STATUS = { lead: 'Lead', prospect: 'Prospect', customer: 'Customer', sold: 'Sold', lost: 'Lost' };
+const CRM_STATUS = { uncontacted: 'Uncontacted', contacted: 'Contacted', appointment: 'Appointment', sold: 'Sold', fni: 'F&I', turnover: 'Turn over', followup: 'Follow up', lost: 'Lost' };
 const crmStatusColor = (s) => ({
-  lead: 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300',
-  prospect: 'bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300',
-  customer: 'bg-blue-100 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300',
+  uncontacted: 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300',
+  contacted: 'bg-sky-100 text-sky-700 dark:bg-sky-950/40 dark:text-sky-300',
+  appointment: 'bg-violet-100 text-violet-700 dark:bg-violet-950/40 dark:text-violet-300',
   sold: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300',
+  fni: 'bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300',
+  turnover: 'bg-orange-100 text-orange-700 dark:bg-orange-950/40 dark:text-orange-300',
+  followup: 'bg-blue-100 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300',
   lost: 'bg-rose-100 text-rose-600 dark:bg-rose-950/40 dark:text-rose-300',
 }[s] || 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300');
+
+// Lookup caches for the intake form (reps + our inventory for the "new car" picker).
+let __crmReps = null, __crmInventory = null;
+async function crmEnsureLookups() {
+  if (!__crmReps) { try { __crmReps = (await apiGetJson('/crm/reps')).reps || []; } catch { __crmReps = []; } }
+  if (!__crmInventory) {
+    try { __crmInventory = (await apiGetJson('/inventory/all', { retries: 1 })).filter(v => String(v.status || 'available').toLowerCase() === 'available'); }
+    catch { __crmInventory = []; }
+  }
+}
 
 async function loadCrmPage() {
   const root = document.getElementById('crm-root');
@@ -1326,9 +1339,11 @@ function crmDetailHtml(d) {
       ${c.phone ? `<a href="sms:${esc(c.phone)}" onclick="crmQuickLog('${c.id}','sms')" class="flex items-center gap-1.5 text-xs font-bold bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 px-3 py-1.5 rounded-lg"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M8 12h8M8 8h8m-8 8h4m5-13H3v14l4-3h14V3z"/></svg>Text</a>` : ''}
       <button onclick="crmLogForm('${c.id}')" class="flex items-center gap-1.5 text-xs font-bold bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 px-3 py-1.5 rounded-lg">Log activity</button>
       <button onclick="crmTaskForm('${c.id}')" class="flex items-center gap-1.5 text-xs font-bold bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 px-3 py-1.5 rounded-lg">Add task</button>
-      <button onclick="crmEditForm('${c.id}')" class="flex items-center gap-1.5 text-xs font-bold bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 px-3 py-1.5 rounded-lg">Edit</button>
+      <button onclick="crmOpenForm('${c.id}')" class="flex items-center gap-1.5 text-xs font-bold bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 px-3 py-1.5 rounded-lg">Edit</button>
+      <button onclick="crmApptForm('${c.id}')" class="flex items-center gap-1.5 text-xs font-bold bg-violet-100 dark:bg-violet-950/40 text-violet-700 dark:text-violet-300 hover:bg-violet-200 px-3 py-1.5 rounded-lg"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M8 7V3m8 4V3M4 11h16M5 5h14a1 1 0 011 1v13a1 1 0 01-1 1H5a1 1 0 01-1-1V6a1 1 0 011-1z"/></svg>Book appointment</button>
     </div>
     ${c.notes ? `<div class="text-xs bg-amber-50 dark:bg-amber-950/20 border border-amber-100 dark:border-amber-950/40 rounded-lg p-3 text-slate-700 dark:text-slate-300">${esc(c.notes)}</div>` : ''}
+    ${crmDetailFacts(c, d)}
     ${openTasks.length ? `<div>
       <div class="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">Open tasks</div>
       <div class="space-y-1.5">${openTasks.map(t => crmTaskRow(t, c.id)).join('')}</div>
@@ -1340,6 +1355,26 @@ function crmDetailHtml(d) {
         : '<div class="text-sm text-slate-400 italic py-4">No activity yet.</div>'}
     </div>
   </div>`;
+}
+// Compact facts grid on the contact detail (address, DL, birthday, extra phones,
+// source/salesperson, trade + new-car-of-interest vehicles).
+function crmDetailFacts(c, d) {
+  const rows = [];
+  const fact = (k, v) => { if (v) rows.push(`<div><dt class="text-[10px] font-bold uppercase tracking-wider text-slate-400">${esc(k)}</dt><dd class="text-sm text-slate-800 dark:text-slate-100">${esc(v)}</dd></div>`); };
+  if (c.contact_type === 'company') fact('Company', c.company_name);
+  const addr = [c.address, [c.city, c.province, c.postal_code].filter(Boolean).join(', ')].filter(Boolean).join(' · ');
+  fact('Address', addr);
+  if (c.phone_home) fact('Home #', c.phone_home);
+  if (c.phone_work) fact('Work #', c.phone_work);
+  if (c.birthday) fact('Birthday', new Date(c.birthday).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }));
+  if (c.dl_number) fact("Driver's licence", c.dl_number + (c.dl_expiry ? ` (exp ${new Date(c.dl_expiry).toLocaleDateString(undefined, { month: 'short', year: 'numeric' })})` : ''));
+  fact('Source', c.source);
+  fact('Salesperson', c.rep_name);
+  const tv = c.trade_vehicle;
+  if (tv && (tv.make || tv.vin)) fact('Trade vehicle', [tv.year, tv.make, tv.model, tv.trim].filter(Boolean).join(' ') + (tv.mileage ? ` · ${Number(tv.mileage).toLocaleString()} km` : '') + (tv.vin ? ` · VIN ${tv.vin}` : ''));
+  if (d.interest_vehicle_label?.label) fact('New car of interest', d.interest_vehicle_label.label + (d.interest_vehicle_label.price ? ` · $${Number(d.interest_vehicle_label.price).toLocaleString()}` : ''));
+  if (!rows.length) return '';
+  return `<dl class="grid grid-cols-2 gap-3 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg p-3">${rows.join('')}</dl>`;
 }
 function crmTaskRow(t, contactId) {
   const overdue = t.due_at && new Date(t.due_at) < Date.now();
@@ -1437,67 +1472,174 @@ async function crmToggleTask(taskId, done, contactId) {
   try { await apiSendJson(`/crm/tasks/${taskId}`, 'PUT', { done }); if (contactId) openCrmContact(contactId); else crmLoadTasks(); }
   catch (e) { showToast(e.message, 'error'); }
 }
-function crmEditForm(id) {
-  // Pull current values from the open modal header where possible; simplest is a fresh fetch.
-  apiGetJson(`/crm/contacts/${id}`).then(d => {
-    const c = d.contact;
-    const opt = (v) => Object.entries(CRM_STATUS).map(([k, l]) => `<option value="${k}" ${c.status === k ? 'selected' : ''}>${l}</option>`).join('');
-    crmDetailFormSlot(`<div class="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg p-3 space-y-2">
-      <div class="text-[11px] font-bold uppercase tracking-wider text-slate-400">Edit contact</div>
-      <input id="crm-edit-name" value="${esc(c.full_name || '')}" placeholder="Full name" class="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-1.5 text-sm">
-      <div class="flex gap-2">
-        <input id="crm-edit-email" value="${esc(c.email || '')}" placeholder="Email" class="flex-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-1.5 text-sm">
-        <input id="crm-edit-phone" value="${esc(c.phone || '')}" placeholder="Phone" class="flex-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-1.5 text-sm">
-      </div>
-      <div class="flex gap-2 items-center">
-        <select id="crm-edit-status" class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1.5 text-sm">${opt()}</select>
-        <label class="flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-300"><input id="crm-edit-dnc" type="checkbox" ${c.dnc ? 'checked' : ''} class="accent-rose-600">Do not contact</label>
-      </div>
-      <textarea id="crm-edit-notes" rows="2" placeholder="Notes" class="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm">${esc(c.notes || '')}</textarea>
-      <div class="flex gap-2 justify-end"><button onclick="crmDetailFormSlot('')" class="text-xs font-bold text-slate-500 px-3 py-1.5">Cancel</button>
-        <button onclick="crmSaveEdit('${id}')" class="text-xs font-bold bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-1.5 rounded-lg">Save</button></div>
-    </div>`);
-  });
+// ── Appointment booking (with Gmail + Outlook calendar links) ────────────────
+function crmApptForm(id) {
+  const now = new Date(Date.now() + 3600000);
+  const defDate = now.toISOString().slice(0, 10), defTime = now.toTimeString().slice(0, 5);
+  crmDetailFormSlot(`<div class="bg-violet-50 dark:bg-violet-950/20 border border-violet-200 dark:border-violet-900 rounded-lg p-3 space-y-2">
+    <div class="text-[11px] font-bold uppercase tracking-wider text-violet-500">Book appointment</div>
+    <input id="crm-appt-title" value="Appointment" placeholder="Title" class="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-1.5 text-sm">
+    <div class="flex gap-2">
+      <input id="crm-appt-date" type="date" value="${defDate}" class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1.5 text-sm">
+      <input id="crm-appt-time" type="time" value="${defTime}" class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1.5 text-sm">
+      <select id="crm-appt-dur" class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1.5 text-sm"><option value="30">30 min</option><option value="60" selected>1 hr</option><option value="90">1.5 hr</option></select>
+    </div>
+    <div class="flex gap-2 justify-end"><button onclick="crmDetailFormSlot('')" class="text-xs font-bold text-slate-500 px-3 py-1.5">Cancel</button>
+      <button onclick="crmSaveAppt('${id}')" class="text-xs font-bold bg-violet-600 hover:bg-violet-500 text-white px-3 py-1.5 rounded-lg">Book + get calendar links</button></div>
+  </div>`);
 }
-async function crmSaveEdit(id) {
-  const patch = {
-    full_name: document.getElementById('crm-edit-name')?.value || '',
-    email: document.getElementById('crm-edit-email')?.value || '',
-    phone: document.getElementById('crm-edit-phone')?.value || '',
-    status: document.getElementById('crm-edit-status')?.value || 'lead',
-    dnc: document.getElementById('crm-edit-dnc')?.checked || false,
-    notes: document.getElementById('crm-edit-notes')?.value || '',
-  };
-  try { await apiSendJson(`/crm/contacts/${id}`, 'PUT', patch); showToast('Saved', 'success'); openCrmContact(id); }
-  catch (e) { showToast(e.message, 'error'); }
+function crmCalLinks(title, startIso, mins, details) {
+  const start = new Date(startIso), end = new Date(start.getTime() + mins * 60000);
+  const z = (d) => d.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');   // 20260711T150000Z
+  const g = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(title)}&dates=${z(start)}/${z(end)}&details=${encodeURIComponent(details || '')}`;
+  const o = `https://outlook.office.com/calendar/0/deeplink/compose?subject=${encodeURIComponent(title)}&startdt=${start.toISOString()}&enddt=${end.toISOString()}&body=${encodeURIComponent(details || '')}`;
+  const ics = 'data:text/calendar;charset=utf8,' + encodeURIComponent(`BEGIN:VCALENDAR\nVERSION:2.0\nBEGIN:VEVENT\nDTSTART:${z(start)}\nDTEND:${z(end)}\nSUMMARY:${title}\nDESCRIPTION:${details || ''}\nEND:VEVENT\nEND:VCALENDAR`);
+  return { g, o, ics };
+}
+async function crmSaveAppt(id) {
+  const title = document.getElementById('crm-appt-title')?.value || 'Appointment';
+  const date = document.getElementById('crm-appt-date')?.value;
+  const time = document.getElementById('crm-appt-time')?.value || '09:00';
+  const dur = Number(document.getElementById('crm-appt-dur')?.value || 60);
+  if (!date) { showToast('Pick a date', 'error'); return; }
+  const startIso = new Date(`${date}T${time}`).toISOString();
+  try {
+    await apiSendJson('/crm/tasks', 'POST', { contact_id: id, title, type: 'appointment', due_at: startIso });
+    await apiSendJson(`/crm/contacts/${id}/log`, 'POST', { channel: 'note', direction: 'internal', subject: 'Appointment booked', body: `${title} — ${new Date(startIso).toLocaleString()}` });
+    await apiSendJson(`/crm/contacts/${id}`, 'PUT', { status: 'appointment' });
+    const { g, o, ics } = crmCalLinks(title, startIso, dur, 'Booked via MarketSync CRM');
+    crmDetailFormSlot(`<div class="bg-violet-50 dark:bg-violet-950/20 border border-violet-200 dark:border-violet-900 rounded-lg p-3 space-y-2">
+      <div class="text-sm font-bold text-slate-800 dark:text-slate-100">Appointment booked for ${esc(new Date(startIso).toLocaleString())}</div>
+      <div class="text-xs text-slate-500">Add it to your calendar:</div>
+      <div class="flex flex-wrap gap-2">
+        <a href="${g}" target="_blank" class="text-xs font-bold bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 px-3 py-1.5 rounded-lg">📅 Google Calendar</a>
+        <a href="${o}" target="_blank" class="text-xs font-bold bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 px-3 py-1.5 rounded-lg">📅 Outlook</a>
+        <a href="${ics}" download="appointment.ics" class="text-xs font-bold bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 px-3 py-1.5 rounded-lg">⬇ .ics file</a>
+      </div>
+      <button onclick="openCrmContact('${id}')" class="text-xs font-bold text-indigo-500">Done</button>
+    </div>`);
+    showToast('Appointment booked', 'success');
+  } catch (e) { showToast(e.message, 'error'); }
 }
 
-// ── New contact ──────────────────────────────────────────────────────────────
-function openCrmContactModal() {
-  const ov = crmOverlay(`<div class="p-5 space-y-3">
-    <div class="text-lg font-black text-slate-900 dark:text-white">New contact</div>
-    <input id="crm-new-name" placeholder="Full name" class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm">
-    <div class="flex gap-2">
-      <input id="crm-new-email" placeholder="Email" class="flex-1 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm">
-      <input id="crm-new-phone" placeholder="Phone" class="flex-1 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm">
+// ── Full add/edit contact form (the dealership intake workflow) ─────────────
+function openCrmContactModal() { crmOpenForm(null); }
+let __crmTradeDecoded = null;   // decoded trade vehicle held while the form is open
+async function crmOpenForm(id) {
+  await crmEnsureLookups();
+  let c = {};
+  if (id) { try { c = (await apiGetJson(`/crm/contacts/${id}`)).contact || {}; } catch (e) { showToast(e.message, 'error'); return; } }
+  __crmTradeDecoded = c.trade_vehicle || null;
+  const inp = (id2, val, ph, cls = '') => `<input id="${id2}" value="${esc(val ?? '')}" placeholder="${esc(ph)}" class="${cls} bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm">`;
+  const lbl = (t) => `<label class="block text-[11px] font-semibold text-slate-500 dark:text-slate-400 mb-1">${t}</label>`;
+  const repOpts = ['<option value="">— Unassigned —</option>'].concat((__crmReps || []).map(r => `<option value="${r.id}" ${c.assigned_rep === r.id ? 'selected' : ''}>${esc(r.name)}</option>`)).join('');
+  const statusOpts = Object.entries(CRM_STATUS).map(([k, l]) => `<option value="${k}" ${(c.status || 'uncontacted') === k ? 'selected' : ''}>${l}</option>`).join('');
+  const invOpts = ['<option value="">— None —</option>'].concat((__crmInventory || []).map(v => `<option value="${v.id}" ${c.interest_inventory_id === v.id ? 'selected' : ''}>${esc([v.year, v.make, v.model, v.trim].filter(Boolean).join(' '))}${v.stocknumber ? ' · #' + esc(v.stocknumber) : ''}</option>`)).join('');
+  const isCo = c.contact_type === 'company';
+  const sect = (t) => `<div class="text-[11px] font-black uppercase tracking-wider text-indigo-500 pt-1">${t}</div>`;
+  crmOverlay(`<div class="p-5 space-y-3">
+    <div class="flex items-center justify-between">
+      <div class="text-lg font-black text-slate-900 dark:text-white">${id ? 'Edit contact' : 'New contact'}</div>
+      <button onclick="this.closest('.fixed').remove()" class="text-slate-400 hover:text-slate-600"><svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" d="M6 6l12 12M18 6L6 18"/></svg></button>
     </div>
-    <textarea id="crm-new-notes" rows="2" placeholder="Notes (optional)" class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm"></textarea>
-    <div class="flex gap-2 justify-end"><button onclick="this.closest('.fixed').remove()" class="text-sm font-bold text-slate-500 px-4 py-2">Cancel</button>
-      <button onclick="crmSaveNew(this)" class="text-sm font-bold bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg">Create</button></div>
-  </div>`, 'max-w-md');
+    <div class="flex gap-2">
+      <label class="flex-1"><input type="radio" name="crm-ctype" value="individual" ${!isCo ? 'checked' : ''} class="peer hidden" onchange="crmToggleCompany(false)"><span class="block text-center text-sm font-bold py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 peer-checked:bg-indigo-600 peer-checked:text-white peer-checked:border-indigo-600 cursor-pointer">Individual</span></label>
+      <label class="flex-1"><input type="radio" name="crm-ctype" value="company" ${isCo ? 'checked' : ''} class="peer hidden" onchange="crmToggleCompany(true)"><span class="block text-center text-sm font-bold py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 peer-checked:bg-indigo-600 peer-checked:text-white peer-checked:border-indigo-600 cursor-pointer">Company</span></label>
+    </div>
+    <div id="crm-company-row" class="${isCo ? '' : 'hidden'}">${lbl('Company name')}${inp('crm-f-company', c.company_name, 'Company name', 'w-full')}</div>
+    ${sect('Name')}
+    <div class="grid grid-cols-2 gap-2">
+      <div>${lbl('First name')}${inp('crm-f-first', c.first_name, 'First', 'w-full')}</div>
+      <div>${lbl('Last name')}${inp('crm-f-last', c.last_name, 'Last', 'w-full')}</div>
+      <div>${lbl('Middle name')}${inp('crm-f-middle', c.middle_name, 'Middle', 'w-full')}</div>
+      <div>${lbl('Suffix')}${inp('crm-f-suffix', c.suffix, 'Jr, Sr, III', 'w-full')}</div>
+    </div>
+    ${sect('Contact')}
+    <div>${lbl('Email')}${inp('crm-f-email', c.email, 'name@email.com', 'w-full')}</div>
+    <div class="grid grid-cols-3 gap-2">
+      <div>${lbl('Mobile #')}${inp('crm-f-mobile', c.phone_mobile || c.phone, 'Mobile', 'w-full')}</div>
+      <div>${lbl('Home #')}${inp('crm-f-home', c.phone_home, 'Home', 'w-full')}</div>
+      <div>${lbl('Work #')}${inp('crm-f-work', c.phone_work, 'Work', 'w-full')}</div>
+    </div>
+    ${sect('Address')}
+    <div>${lbl('Street address')}${inp('crm-f-address', c.address, 'Street address', 'w-full')}</div>
+    <div class="grid grid-cols-3 gap-2">
+      <div>${lbl('City')}${inp('crm-f-city', c.city, 'City', 'w-full')}</div>
+      <div>${lbl('Province / State')}${inp('crm-f-province', c.province, 'ON', 'w-full')}</div>
+      <div>${lbl('Postal / ZIP')}${inp('crm-f-postal', c.postal_code, 'A1A 1A1', 'w-full')}</div>
+    </div>
+    ${sect('Identification')}
+    <div class="grid grid-cols-3 gap-2">
+      <div>${lbl('Birthday')}<input id="crm-f-birthday" type="date" value="${esc(c.birthday || '')}" class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm"></div>
+      <div>${lbl("Driver's licence #")}${inp('crm-f-dl', c.dl_number, 'DL number', 'w-full')}</div>
+      <div>${lbl('DL expiry')}<input id="crm-f-dlexp" type="date" value="${esc(c.dl_expiry || '')}" class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm"></div>
+    </div>
+    ${sect('Source & assignment')}
+    <div class="grid grid-cols-3 gap-2">
+      <div>${lbl('Source')}${inp('crm-f-source', c.source, 'e.g. Walk-in, Web', 'w-full')}</div>
+      <div>${lbl('Salesperson')}<select id="crm-f-rep" class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm">${repOpts}</select></div>
+      <div>${lbl('Status')}<select id="crm-f-status" class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm">${statusOpts}</select></div>
+    </div>
+    ${sect('Trade vehicle (decode from VIN)')}
+    <div class="flex gap-2">
+      ${inp('crm-f-tradevin', __crmTradeDecoded?.vin, '17-char VIN', 'flex-1 uppercase')}
+      <button type="button" onclick="crmDecodeTrade()" class="text-xs font-bold bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 px-3 rounded-lg">Decode</button>
+    </div>
+    <div class="grid grid-cols-4 gap-2">
+      ${inp('crm-f-tradeyear', __crmTradeDecoded?.year, 'Year')}${inp('crm-f-trademake', __crmTradeDecoded?.make, 'Make')}${inp('crm-f-trademodel', __crmTradeDecoded?.model, 'Model')}${inp('crm-f-tradetrim', __crmTradeDecoded?.trim, 'Trim')}
+    </div>
+    <div>${lbl('Trade mileage')}${inp('crm-f-trademiles', __crmTradeDecoded?.mileage, 'e.g. 85000', 'w-full')}</div>
+    ${sect('New car of interest')}
+    <select id="crm-f-interest" class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm">${invOpts}</select>
+    ${sect('Notes')}
+    <textarea id="crm-f-notes" rows="2" placeholder="Notes" class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm">${esc(c.notes || '')}</textarea>
+    <div class="flex gap-2 justify-end pt-1"><button onclick="this.closest('.fixed').remove()" class="text-sm font-bold text-slate-500 px-4 py-2">Cancel</button>
+      <button onclick="crmSaveContact(this, ${id ? `'${id}'` : 'null'})" class="text-sm font-bold bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg">${id ? 'Save' : 'Create'}</button></div>
+  </div>`, 'max-w-2xl');
 }
-async function crmSaveNew(btn) {
-  const full_name = document.getElementById('crm-new-name')?.value || '';
-  const email = document.getElementById('crm-new-email')?.value || '';
-  const phone = document.getElementById('crm-new-phone')?.value || '';
-  const notes = document.getElementById('crm-new-notes')?.value || '';
-  if (!full_name.trim() && !email.trim() && !phone.trim()) { showToast('Enter a name, phone, or email', 'error'); return; }
+function crmToggleCompany(isCo) { const r = document.getElementById('crm-company-row'); if (r) r.classList.toggle('hidden', !isCo); }
+async function crmDecodeTrade() {
+  const vin = (document.getElementById('crm-f-tradevin')?.value || '').trim().toUpperCase();
+  if (vin.length !== 17) { showToast('Enter a 17-character VIN', 'error'); return; }
   try {
-    const d = await apiSendJson('/crm/contacts', 'POST', { full_name, email, phone, notes });
+    const r = await fetch(`${API}/ai/vin-decode`, { method: 'POST', headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ vin }) });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || 'Decode failed');
+    const set = (id, v) => { const el = document.getElementById(id); if (el && v != null) el.value = v; };
+    set('crm-f-tradeyear', d.year); set('crm-f-trademake', d.make); set('crm-f-trademodel', d.model); set('crm-f-tradetrim', d.trim);
+    __crmTradeDecoded = { vin, ...d };
+    showToast('VIN decoded', 'success');
+  } catch (e) { showToast(e.message, 'error'); }
+}
+async function crmSaveContact(btn, id) {
+  const val = (i) => (document.getElementById(i)?.value || '').trim();
+  const ctype = document.querySelector('input[name="crm-ctype"]:checked')?.value || 'individual';
+  const tradeVin = val('crm-f-tradevin');
+  const trade = (tradeVin || val('crm-f-trademake')) ? {
+    vin: tradeVin || null, year: val('crm-f-tradeyear') || null, make: val('crm-f-trademake') || null,
+    model: val('crm-f-trademodel') || null, trim: val('crm-f-tradetrim') || null, mileage: val('crm-f-trademiles') || null,
+  } : null;
+  const body = {
+    contact_type: ctype,
+    company_name: val('crm-f-company'),
+    first_name: val('crm-f-first'), last_name: val('crm-f-last'), middle_name: val('crm-f-middle'), suffix: val('crm-f-suffix'),
+    email: val('crm-f-email'), phone_mobile: val('crm-f-mobile'), phone_home: val('crm-f-home'), phone_work: val('crm-f-work'),
+    phone: val('crm-f-mobile'),
+    address: val('crm-f-address'), city: val('crm-f-city'), province: val('crm-f-province'), postal_code: val('crm-f-postal'),
+    birthday: val('crm-f-birthday') || null, dl_number: val('crm-f-dl'), dl_expiry: val('crm-f-dlexp') || null,
+    source: val('crm-f-source'), assigned_rep: val('crm-f-rep') || null, status: val('crm-f-status') || 'uncontacted',
+    trade_vehicle: trade, interest_inventory_id: val('crm-f-interest') || null,
+    notes: val('crm-f-notes'),
+  };
+  const nameGiven = body.first_name || body.last_name || body.company_name;
+  if (!nameGiven && !body.email && !body.phone) { showToast('Enter a name, phone, or email', 'error'); return; }
+  try {
+    const d = id ? await apiSendJson(`/crm/contacts/${id}`, 'PUT', body) : await apiSendJson('/crm/contacts', 'POST', body);
     btn.closest('.fixed').remove();
-    showToast('Contact created', 'success');
+    showToast(id ? 'Saved' : 'Contact created', 'success');
     if (__crmTab === 'contacts') crmLoadContacts();
-    if (d.contact?.id) openCrmContact(d.contact.id);
+    const cid = id || d.contact?.id;
+    if (cid) openCrmContact(cid);
   } catch (e) { showToast(e.message, 'error'); }
 }
 
