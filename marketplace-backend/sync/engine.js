@@ -5,6 +5,7 @@ import { PLATFORM_PROBES, fetchConvertusInventory, fetchDealerPageInventory,
          extractEDealerImageGroups, extractCarsFromJsonLd } from './platforms.js'
 import { mapFuel, buildDescription, fetchVehiclePhotos } from '../utils/description.js'
 import { parseGenericFeed } from './genericFeed.js'
+import { antibotEnabled, fetchViaAntibot, inventoryFromAntibotBody } from './antibot.js'
 import { autoDecodeInventory, autoCheckRecalls } from './vinDecode.js'
 import { runPhotoVision } from './photoVision.js'
 import { brandDealershipPhotos } from '../utils/photoOverlay.js'
@@ -242,6 +243,23 @@ async function _runInventorySyncInner(dealershipId) {
             console.log(`[sync] SPA re-render: ${vehicles.length} vehicles from ${rendered.source_url}`)
           } else {
             console.warn(`[sync] SPA re-render also failed: ${rendered.error}`)
+          }
+        }
+
+        // Last resort: commercial anti-bot fetch (residential IP) for hard-Cloudflare
+        // sites that beat our own headless. Only runs when ANTIBOT_API_KEY is set, so
+        // it's free until enabled. We only trust a clean JSON payload (endpoint that's
+        // JSON but our datacenter IP was blocked); we don't scrape rendered HTML here.
+        if (vehicles.length === 0 && antibotEnabled()) {
+          const target = feed.feed_url || feed.source_dealer_url
+          console.log(`[sync] feed ${feed.id} — trying anti-bot residential fetch on ${target}`)
+          const ab = await fetchViaAntibot(target, { render: true })
+          const arr = ab.ok ? inventoryFromAntibotBody(ab.body, ab.contentType) : null
+          if (arr && arr.length) {
+            vehicles = arr.map(genericMapVehicle)
+            console.log(`[sync] anti-bot fallback captured ${vehicles.length} vehicles`)
+          } else {
+            console.log(`[sync] anti-bot fallback got nothing (status ${ab.status})`)
           }
         }
 
@@ -791,6 +809,79 @@ async function refreshDealerMarketComps(dealershipId) {
     console.warn(`[market-refresh] ${dealershipId} failed:`, e.message)
     return 0
   }
+}
+
+// ── Staleness sweep ────────────────────────────────────────────────────────────
+// Cloudflare feeds (needs_extension_capture) only refresh when a rep's Chrome is
+// open, so they can silently fall behind. After the nightly sync, flag any that
+// haven't refreshed past EXT_STALE_HOURS: drop an in-app notification AND email the
+// owner — deduped so we alert at most once per 72h per dealer (no nightly spam).
+export async function sweepStaleExtensionFeeds({ resend, emailFrom, frontendUrl } = {}) {
+  const staleHours = Number(process.env.EXT_STALE_HOURS || 36)
+  const now = Date.now()
+  const { data: feeds, error } = await supabaseAdmin
+    .from('inventory_feeds')
+    .select('id, dealership_id, last_extension_sync_at, source_dealer_url, dealerships(name)')
+    .eq('platform', 'needs_extension_capture')
+  if (error || !feeds?.length) return { alerted: 0 }
+
+  let alerted = 0
+  const dedupCutoff = new Date(now - 72 * 3600000).toISOString()
+  for (const f of feeds) {
+    const last = f.last_extension_sync_at ? new Date(f.last_extension_sync_at).getTime() : 0
+    const hours = (now - last) / 3600000
+    if (last && hours <= staleHours) continue                 // still fresh enough
+
+    // Dedup: skip if we already raised a sync_stale alert for this dealer in 72h.
+    const { data: recent } = await supabaseAdmin.from('notifications')
+      .select('id').eq('dealership_id', f.dealership_id).eq('type', 'sync_stale')
+      .gte('created_at', dedupCutoff).limit(1)
+    if (recent?.length) continue
+
+    const days = Math.floor(hours / 24)
+    const human = !last ? 'a while' : (days >= 1 ? `${days} day${days > 1 ? 's' : ''}` : `${Math.round(hours)} hours`)
+    const dealerName = f.dealerships?.name || 'Your dealership'
+
+    // 1) In-app notification (dealership-wide).
+    try {
+      await supabaseAdmin.from('notifications').insert({
+        dealership_id: f.dealership_id, type: 'sync_stale',
+        title: 'Inventory sync is behind',
+        body: `${dealerName}'s inventory hasn't refreshed in ${human}. Open MarketSync in Chrome to sync.`,
+        link_page: 'inventory',
+      })
+    } catch (e) { console.warn('[stale-sweep] notification insert failed:', e.message) }
+
+    // 2) Email the owner/admin.
+    if (resend && emailFrom) {
+      try {
+        const { data: owner } = await supabaseAdmin.from('profiles')
+          .select('id').eq('dealership_id', f.dealership_id)
+          .in('role', ['OWNER', 'DEALER_ADMIN']).limit(1).maybeSingle()
+        if (owner?.id) {
+          const { data: au } = await supabaseAdmin.auth.admin.getUserById(owner.id).catch(() => ({ data: null }))
+          const to = au?.user?.email
+          if (to) {
+            const link = frontendUrl || 'https://marketsync.link'
+            await resend.emails.send({
+              from: emailFrom, to,
+              subject: `⚠️ ${dealerName} inventory hasn't synced in ${human}`,
+              html: `<div style="font-family:-apple-system,Segoe UI,Arial,sans-serif;max-width:520px;margin:0 auto;color:#0f172a">
+                <h2 style="font-size:18px">Inventory sync is behind</h2>
+                <p style="font-size:14px;line-height:1.6;color:#334155">${dealerName}'s inventory hasn't refreshed in <strong>${human}</strong>. This dealer's site is Cloudflare-protected, so it syncs through the MarketSync Chrome extension — which only runs while your browser is open.</p>
+                <p style="font-size:14px;line-height:1.6;color:#334155"><strong>To fix:</strong> open Chrome with the MarketSync extension and the inventory will pull automatically within a few minutes.</p>
+                <p style="margin-top:20px"><a href="${link}" style="background:#4f46e5;color:#fff;text-decoration:none;padding:10px 18px;border-radius:8px;font-weight:700;font-size:14px">Open MarketSync</a></p>
+                <p style="font-size:11px;color:#94a3b8;margin-top:24px">You're getting this because inventory freshness affects your listings and reports. We send this at most once every 3 days.</p>
+              </div>`,
+            })
+          }
+        }
+      } catch (e) { console.warn('[stale-sweep] owner email failed:', e.message) }
+    }
+    alerted++
+  }
+  if (alerted) console.log(`[stale-sweep] alerted ${alerted} stale extension feed(s)`)
+  return { alerted }
 }
 
 export async function syncAllDealerships(triggerLabel = 'scheduled') {

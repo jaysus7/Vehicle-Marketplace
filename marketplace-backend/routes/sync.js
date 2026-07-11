@@ -1,5 +1,5 @@
 import { supabaseAdmin, resend, EMAIL_FROM, FRONTEND_URL, EXTENSION_URL, BACKEND_URL } from '../shared.js'
-import { runInventorySync, syncAllDealerships } from '../sync/engine.js'
+import { runInventorySync, syncAllDealerships, sweepStaleExtensionFeeds } from '../sync/engine.js'
 import { runDripCampaign, verifyUnsubToken } from '../drip.js'
 
 function runDrip(trigger) {
@@ -91,9 +91,9 @@ export function registerRoutes(app) {
     const secret = req.headers['x-cron-secret'] || req.query.secret
     if (secret !== process.env.SYNC_SECRET) return res.status(401).json({ error: 'Unauthorized' })
     res.json({ success: true, message: 'Full sync started' })
-    syncAllDealerships('manual').catch(e =>
-      console.error('[sync] background sync-all failed:', e.message)
-    )
+    syncAllDealerships('manual')
+      .then(() => sweepStaleExtensionFeeds({ resend, emailFrom: EMAIL_FROM, frontendUrl: FRONTEND_URL }))
+      .catch(e => console.error('[sync] background sync-all failed:', e.message))
   })
 
   app.post('/cron/drip', async (req, res) => {
@@ -157,6 +157,11 @@ export function registerRoutes(app) {
           console.log('🌙 Nightly inventory sync starting…')
           const r = await syncAllDealerships('nightly')
           console.log(`🌙 Nightly sync done: ${r.results?.length || 0} dealership(s)`)
+          // After syncing, nudge any Cloudflare/extension feeds that have gone stale.
+          try {
+            const s = await sweepStaleExtensionFeeds({ resend, emailFrom: EMAIL_FROM, frontendUrl: FRONTEND_URL })
+            if (s.alerted) console.log(`🌙 Staleness sweep: alerted ${s.alerted} dealer(s)`)
+          } catch (e) { console.error('[cron] staleness sweep failed:', e.message) }
         } catch (e) {
           console.error('[cron] nightly sync failed:', e.message)
         }
