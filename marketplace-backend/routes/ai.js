@@ -3,6 +3,7 @@ import { supabaseAdmin, resend, EMAIL_FROM, FRONTEND_URL, browserFetch } from '.
 import { requireAuth } from '../middleware.js'
 import { marketcheckMarket, marketcheckListings, marketcheckEnabled, marketcheckCompetitorStats, marketcheckPing, marketcheckDecodeVin, marketcheckPredictPrice, marketcheckMarketStats } from '../marketcheck.js'
 import { getMarketData, getSoldData, recordUsage, aiAllowed, getUsage, assistantDailyAllowed, recordAssistantChat, ASSISTANT_DAILY_LIMIT, marketcheckAllowed, recordMarketcheckCall } from '../usage.js'
+import { findOrCreateContact } from './crm.js'
 import { createNotification, createNotifications } from '../notifications.js'
 import { runPhotoVision, scoreVehiclePhotos } from '../sync/photoVision.js'
 
@@ -1123,6 +1124,19 @@ ACV / wholesale take-in (what the dealer buys it for): ${cur} $${suggestedOffer.
       if (error) return res.status(500).json({ error: error.message })
       savedId = data.id
     }
+
+    // Land the customer on a unified CRM contact so the trade shows in their timeline.
+    try {
+      const cust = row.customer || {}
+      const cname = [cust.first_name, cust.last_name].filter(Boolean).join(' ').trim() || cust.name || null
+      if (cname || cust.email || cust.phone) {
+        const contactId = await findOrCreateContact({
+          dealershipId: req.dealershipId, name: cname, email: cust.email, phone: cust.phone,
+          repId: req.user.id, source: 'Trade Appraisal',
+        })
+        if (contactId) await supabaseAdmin.from('trade_appraisals').update({ contact_id: contactId }).eq('id', savedId)
+      }
+    } catch (e) { console.warn('[appraisals] contact link failed:', e.message) }
 
     // Notify selected appraisers (managers) — one targeted notification each.
     const notifyIds = Array.isArray(b.notify) ? [...new Set(b.notify.filter(Boolean))] : []

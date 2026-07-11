@@ -59,6 +59,24 @@ async function apiGetJson(path, { retries = 4, timeoutMs = 15000, onRetry } = {}
   throw lastErr || new Error('Request failed');
 }
 
+// Generic JSON write helper (POST/PUT/PATCH/DELETE). Throws Error(body.error) on
+// non-2xx so callers can try/catch + toast. Used by the built-in CRM.
+async function apiSendJson(path, method = 'POST', body = null, { timeoutMs = 20000 } = {}) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    const r = await fetch(`${API}${path}`, {
+      method,
+      headers: { 'Authorization': `Bearer ${token || localStorage.getItem('token') || ''}`, 'Content-Type': 'application/json' },
+      body: body != null ? JSON.stringify(body) : undefined,
+      signal: ctrl.signal,
+    });
+    let data = null; try { data = await r.json(); } catch {}
+    if (!r.ok) throw new Error(data?.error || `HTTP ${r.status}`);
+    return data || {};
+  } finally { clearTimeout(timer); }
+}
+
 // Surface otherwise-invisible runtime errors so "stuck loading" symptoms become
 // diagnosable instead of silent. Deduped so a repeating error doesn't spam.
 ;(function installGlobalErrorSurfacer() {
@@ -511,6 +529,7 @@ function switchPage(pageId) {
   if (pageId === 'inv-intel' && typeof window._invIntelPageHook === 'function') window._invIntelPageHook();
   if (pageId === 'ai-vision') loadAiVisionPage();
   if (pageId === 'pipeline') loadPipelinePage();
+  if (pageId === 'crm') loadCrmPage();
   if (pageId === 'leads') loadLeadsPage();
   if (pageId === 'appraisal') { initAppraisal(); loadApprList(); apprEnsureBranding(); }
 }
@@ -1179,6 +1198,336 @@ document.addEventListener('DOMContentLoaded', () => {
   panel.addEventListener('click', (e) => { if (e.target === panel) closeModal(); });
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !panel.classList.contains('hidden')) closeModal(); });
 });
+
+// ══ Built-in CRM ═════════════════════════════════════════════════════════════
+// Unified customer records + activity timeline + follow-up tasks. Every lead,
+// appraisal and sale lands on one contact. One tool, one place.
+let __crmTab = 'contacts';
+let __crmSearchTimer = null;
+const crmMoney = (n, cur) => n != null ? (cur === 'USD' ? 'US$' : '$') + Number(n).toLocaleString() : '—';
+const crmWhen = (s) => {
+  if (!s) return '';
+  const d = new Date(s); if (isNaN(d.getTime())) return '';
+  const diff = (Date.now() - d.getTime()) / 86400000;
+  if (diff < 1 && d.getDate() === new Date().getDate()) return 'Today';
+  if (diff < 2) return 'Yesterday';
+  if (diff < 7) return Math.floor(diff) + 'd ago';
+  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: diff > 300 ? 'numeric' : undefined });
+};
+const CRM_STATUS = { lead: 'Lead', prospect: 'Prospect', customer: 'Customer', sold: 'Sold', lost: 'Lost' };
+const crmStatusColor = (s) => ({
+  lead: 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300',
+  prospect: 'bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300',
+  customer: 'bg-blue-100 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300',
+  sold: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300',
+  lost: 'bg-rose-100 text-rose-600 dark:bg-rose-950/40 dark:text-rose-300',
+}[s] || 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300');
+
+async function loadCrmPage() {
+  const root = document.getElementById('crm-root');
+  if (!root) return;
+  root.innerHTML = `
+    <div class="flex items-center gap-1 border-b border-slate-200 dark:border-slate-800 mb-4">
+      <button onclick="crmSetTab('contacts')" id="crm-tab-contacts" class="px-4 py-2 text-sm font-bold border-b-2 transition ${__crmTab === 'contacts' ? 'border-indigo-500 text-indigo-600 dark:text-indigo-400' : 'border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}">Contacts</button>
+      <button onclick="crmSetTab('tasks')" id="crm-tab-tasks" class="px-4 py-2 text-sm font-bold border-b-2 transition ${__crmTab === 'tasks' ? 'border-indigo-500 text-indigo-600 dark:text-indigo-400' : 'border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}">My Tasks</button>
+    </div>
+    <div id="crm-body"></div>`;
+  if (__crmTab === 'contacts') crmLoadContacts();
+  else crmLoadTasks();
+}
+function crmSetTab(t) { __crmTab = t; loadCrmPage(); }
+
+async function crmLoadContacts(q = '') {
+  const body = document.getElementById('crm-body');
+  if (!body) return;
+  body.innerHTML = `
+    <div class="flex items-center gap-2 mb-3">
+      <div class="relative flex-1 max-w-sm">
+        <svg class="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path stroke-linecap="round" d="M21 21l-4-4"/></svg>
+        <input id="crm-search" value="${esc(q)}" placeholder="Search name, email, phone…" class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg pl-9 pr-3 py-2 text-sm">
+      </div>
+    </div>
+    <div id="crm-list" class="py-10 text-center text-sm text-slate-400 italic">Loading contacts…</div>`;
+  const search = document.getElementById('crm-search');
+  if (search) search.oninput = (e) => { clearTimeout(__crmSearchTimer); const v = e.target.value; __crmSearchTimer = setTimeout(() => crmLoadContacts(v), 300); };
+  try {
+    const d = await apiGetJson(`/crm/contacts${q ? `?q=${encodeURIComponent(q)}` : ''}`);
+    const list = document.getElementById('crm-list');
+    const contacts = d.contacts || [];
+    if (!contacts.length) {
+      list.innerHTML = `<div class="py-16 text-center text-sm text-slate-400">${q ? 'No contacts match your search.' : 'No contacts yet — they appear automatically as you capture leads and save appraisals, or add one manually.'}</div>`;
+      return;
+    }
+    list.className = '';
+    list.innerHTML = `<div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden divide-y divide-slate-100 dark:divide-slate-800">
+      ${contacts.map(crmContactRow).join('')}</div>
+      <div class="text-[11px] text-slate-400 mt-2">${contacts.length} contact${contacts.length === 1 ? '' : 's'}${d.can_see_all ? ' · whole team' : ' · yours'}</div>`;
+  } catch (e) {
+    document.getElementById('crm-list').innerHTML = `<div class="py-16 text-center text-sm text-slate-500">Couldn't load contacts: ${esc(e.message)}<br><button onclick="crmLoadContacts()" class="mt-3 text-indigo-500 font-bold">Retry</button></div>`;
+  }
+}
+function crmContactRow(c) {
+  const initials = (c.full_name || '?').split(/\s+/).map(w => w[0]).filter(Boolean).slice(0, 2).join('').toUpperCase();
+  const sub = [c.email, c.phone].filter(Boolean).join(' · ');
+  return `<div onclick="openCrmContact('${c.id}')" class="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-indigo-50 dark:hover:bg-indigo-950/20 transition">
+    <div class="w-9 h-9 rounded-full bg-indigo-100 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-300 flex items-center justify-center text-xs font-black flex-shrink-0">${esc(initials || '?')}</div>
+    <div class="min-w-0 flex-1">
+      <div class="flex items-center gap-2"><span class="font-bold text-slate-900 dark:text-white truncate">${esc(c.full_name || 'Unknown')}</span>
+        <span class="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-full ${crmStatusColor(c.status)}">${esc(CRM_STATUS[c.status] || c.status)}</span>
+        ${c.dnc ? '<span class="text-[10px] font-bold text-rose-500">DNC</span>' : ''}
+      </div>
+      <div class="text-xs text-slate-500 dark:text-slate-400 truncate">${esc(sub || '—')}</div>
+    </div>
+    <div class="text-right flex-shrink-0">
+      ${c.rep_name ? `<div class="text-[11px] text-slate-500 dark:text-slate-400">${esc(c.rep_name)}</div>` : ''}
+      <div class="text-[11px] text-slate-400">${esc(crmWhen(c.last_activity_at || c.created_at))}</div>
+    </div>
+  </div>`;
+}
+
+// ── Contact detail modal ─────────────────────────────────────────────────────
+function crmOverlay(inner, maxW = 'max-w-2xl') {
+  const el = document.createElement('div');
+  el.className = 'fixed inset-0 z-[9998] bg-black/50 flex items-start md:items-center justify-center p-3 overflow-y-auto';
+  el.innerHTML = `<div class="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full ${maxW} my-4 max-h-[92vh] overflow-y-auto" onclick="event.stopPropagation()">${inner}</div>`;
+  el.addEventListener('click', () => el.remove());
+  document.addEventListener('keydown', function esc2(ev) { if (ev.key === 'Escape') { el.remove(); document.removeEventListener('keydown', esc2); } });
+  document.body.appendChild(el);
+  return el;
+}
+async function openCrmContact(id) {
+  const ov = crmOverlay(`<div class="p-10 text-center text-sm text-slate-400 italic">Loading…</div>`);
+  try {
+    const d = await apiGetJson(`/crm/contacts/${id}`);
+    ov.querySelector('div > div').innerHTML = crmDetailHtml(d);
+    ov.__contactId = id;
+  } catch (e) { ov.querySelector('div > div').innerHTML = `<div class="p-8 text-center text-sm text-slate-500">Couldn't load: ${esc(e.message)}</div>`; }
+}
+function crmDetailHtml(d) {
+  const c = d.contact;
+  const initials = (c.full_name || '?').split(/\s+/).map(w => w[0]).filter(Boolean).slice(0, 2).join('').toUpperCase();
+  const openTasks = (d.tasks || []).filter(t => !t.done);
+  return `
+  <div class="sticky top-0 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-5 py-4 flex items-start justify-between gap-3 z-10">
+    <div class="flex items-center gap-3 min-w-0">
+      <div class="w-11 h-11 rounded-full bg-indigo-100 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-300 flex items-center justify-center text-sm font-black flex-shrink-0">${esc(initials || '?')}</div>
+      <div class="min-w-0">
+        <div class="flex items-center gap-2"><span class="text-lg font-black text-slate-900 dark:text-white truncate">${esc(c.full_name || 'Unknown')}</span>
+          <span class="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-full ${crmStatusColor(c.status)}">${esc(CRM_STATUS[c.status] || c.status)}</span></div>
+        <div class="text-xs text-slate-500 dark:text-slate-400 truncate">${esc([c.email, c.phone].filter(Boolean).join(' · ') || 'No contact info')}</div>
+      </div>
+    </div>
+    <button onclick="this.closest('.fixed').remove()" class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 flex-shrink-0"><svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" d="M6 6l12 12M18 6L6 18"/></svg></button>
+  </div>
+  <div class="p-5 space-y-4">
+    <div class="flex flex-wrap gap-2">
+      ${c.email && !c.dnc && c.consent_email !== false ? `<button onclick="crmEmailForm('${c.id}')" class="flex items-center gap-1.5 text-xs font-bold bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-1.5 rounded-lg"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 8l9 6 9-6M4 6h16v12H4z"/></svg>Email</button>` : ''}
+      ${c.phone ? `<a href="tel:${esc(c.phone)}" onclick="crmQuickLog('${c.id}','call')" class="flex items-center gap-1.5 text-xs font-bold bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 px-3 py-1.5 rounded-lg"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M2.25 6.75c0 8.284 6.716 15 15 15h2.25a2.25 2.25 0 002.25-2.25v-1.372c0-.516-.351-.966-.852-1.091l-4.423-1.106c-.44-.11-.902.055-1.173.417l-.97 1.293c-.282.376-.769.542-1.21.38a12.035 12.035 0 01-7.143-7.143c-.162-.441.004-.928.38-1.21l1.293-.97c.363-.271.527-.734.417-1.173L6.963 3.102a1.125 1.125 0 00-1.091-.852H4.5A2.25 2.25 0 002.25 4.5v2.25z"/></svg>Call</a>` : ''}
+      ${c.phone ? `<a href="sms:${esc(c.phone)}" onclick="crmQuickLog('${c.id}','sms')" class="flex items-center gap-1.5 text-xs font-bold bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 px-3 py-1.5 rounded-lg"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M8 12h8M8 8h8m-8 8h4m5-13H3v14l4-3h14V3z"/></svg>Text</a>` : ''}
+      <button onclick="crmLogForm('${c.id}')" class="flex items-center gap-1.5 text-xs font-bold bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 px-3 py-1.5 rounded-lg">Log activity</button>
+      <button onclick="crmTaskForm('${c.id}')" class="flex items-center gap-1.5 text-xs font-bold bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 px-3 py-1.5 rounded-lg">Add task</button>
+      <button onclick="crmEditForm('${c.id}')" class="flex items-center gap-1.5 text-xs font-bold bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 px-3 py-1.5 rounded-lg">Edit</button>
+    </div>
+    ${c.notes ? `<div class="text-xs bg-amber-50 dark:bg-amber-950/20 border border-amber-100 dark:border-amber-950/40 rounded-lg p-3 text-slate-700 dark:text-slate-300">${esc(c.notes)}</div>` : ''}
+    ${openTasks.length ? `<div>
+      <div class="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">Open tasks</div>
+      <div class="space-y-1.5">${openTasks.map(t => crmTaskRow(t, c.id)).join('')}</div>
+    </div>` : ''}
+    <div id="crm-detail-form"></div>
+    <div>
+      <div class="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-2">Activity timeline</div>
+      ${(d.timeline || []).length ? `<div class="space-y-2.5">${d.timeline.map(crmTimelineItem).join('')}</div>`
+        : '<div class="text-sm text-slate-400 italic py-4">No activity yet.</div>'}
+    </div>
+  </div>`;
+}
+function crmTaskRow(t, contactId) {
+  const overdue = t.due_at && new Date(t.due_at) < Date.now();
+  return `<div class="flex items-center gap-2 text-sm">
+    <input type="checkbox" ${t.done ? 'checked' : ''} onchange="crmToggleTask('${t.id}', this.checked, '${contactId}')" class="w-4 h-4 rounded accent-indigo-600 flex-shrink-0">
+    <span class="flex-1 ${t.done ? 'line-through text-slate-400' : 'text-slate-700 dark:text-slate-200'}">${esc(t.title)}</span>
+    ${t.due_at ? `<span class="text-[11px] ${overdue && !t.done ? 'text-rose-500 font-bold' : 'text-slate-400'}">${esc(crmWhen(t.due_at))}</span>` : ''}
+  </div>`;
+}
+function crmTimelineItem(t) {
+  const icon = { comm: '💬', lead: '📥', appraisal: '🚗', sale: '✅' };
+  const chIcon = { call: '📞', sms: '💬', email: '✉️', note: '📝' };
+  let head = '', bodyTxt = t.body || '';
+  if (t.kind === 'comm') {
+    const label = { call: 'Call', sms: 'Text', email: 'Email', note: 'Note', system: 'System' }[t.channel] || 'Note';
+    const dir = t.direction === 'in' ? ' (inbound)' : t.direction === 'out' ? ' (outbound)' : '';
+    head = `${chIcon[t.channel] || '📝'} ${label}${dir}${t.subject ? ` — ${esc(t.subject)}` : ''}`;
+  } else if (t.kind === 'lead') {
+    head = `📥 Lead${t.source ? ` · ${esc(t.source)}` : ''}${t.vehicle ? ` — ${esc(t.vehicle)}` : ''}`;
+  } else if (t.kind === 'appraisal') {
+    head = `🚗 Appraisal — ${esc(t.vehicle || 'vehicle')}${t.offer != null ? ` · offer ${crmMoney(t.offer, t.currency)}` : ''}`;
+    bodyTxt = '';
+  }
+  return `<div class="flex gap-2.5">
+    <div class="w-7 flex-shrink-0 text-center text-sm pt-0.5">${(t.kind === 'comm' ? '' : icon[t.kind]) || ''}</div>
+    <div class="min-w-0 flex-1 border-l-2 border-slate-100 dark:border-slate-800 pl-3 pb-1">
+      <div class="text-sm font-semibold text-slate-800 dark:text-slate-100">${head}</div>
+      ${bodyTxt ? `<div class="text-sm text-slate-600 dark:text-slate-300 whitespace-pre-wrap mt-0.5">${esc(bodyTxt)}</div>` : ''}
+      <div class="text-[11px] text-slate-400 mt-0.5">${esc(crmWhen(t.at))}${t.rep ? ` · ${esc(t.rep)}` : ''}</div>
+    </div>
+  </div>`;
+}
+
+// ── Inline forms inside the detail modal ─────────────────────────────────────
+function crmDetailFormSlot(html) { const s = document.getElementById('crm-detail-form'); if (s) { s.innerHTML = html; s.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); } }
+function crmLogForm(id) {
+  crmDetailFormSlot(`<div class="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg p-3 space-y-2">
+    <div class="flex gap-2">
+      <select id="crm-log-channel" class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1.5 text-sm"><option value="note">Note</option><option value="call">Call</option><option value="sms">Text</option><option value="email">Email</option></select>
+      <input id="crm-log-subject" placeholder="Subject (optional)" class="flex-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-1.5 text-sm">
+    </div>
+    <textarea id="crm-log-body" rows="2" placeholder="What happened?" class="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm"></textarea>
+    <div class="flex gap-2 justify-end"><button onclick="crmDetailFormSlot('')" class="text-xs font-bold text-slate-500 px-3 py-1.5">Cancel</button>
+      <button onclick="crmSaveLog('${id}')" class="text-xs font-bold bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-1.5 rounded-lg">Log it</button></div>
+  </div>`);
+}
+async function crmSaveLog(id) {
+  const channel = document.getElementById('crm-log-channel')?.value || 'note';
+  const subject = document.getElementById('crm-log-subject')?.value || '';
+  const body = document.getElementById('crm-log-body')?.value || '';
+  if (!body.trim() && !subject.trim()) { showToast('Add a note', 'error'); return; }
+  try { await apiSendJson(`/crm/contacts/${id}/log`, 'POST', { channel, subject, body, direction: channel === 'note' ? 'internal' : 'out' }); showToast('Logged', 'success'); openCrmContact(id); }
+  catch (e) { showToast(e.message, 'error'); }
+}
+async function crmQuickLog(id, channel) {
+  // Fired when a rep taps Call/Text — auto-logs the touch so the timeline stays honest.
+  try { await apiSendJson(`/crm/contacts/${id}/log`, 'POST', { channel, direction: 'out', body: channel === 'call' ? 'Called (tap-to-dial)' : 'Texted (tap-to-message)' }); } catch {}
+}
+function crmEmailForm(id) {
+  crmDetailFormSlot(`<div class="bg-slate-50 dark:bg-slate-950 border border-indigo-200 dark:border-indigo-900 rounded-lg p-3 space-y-2">
+    <div class="text-[11px] font-bold uppercase tracking-wider text-indigo-500">Send email</div>
+    <input id="crm-email-subject" placeholder="Subject" class="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-1.5 text-sm">
+    <textarea id="crm-email-body" rows="4" placeholder="Message…" class="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm"></textarea>
+    <div class="flex gap-2 justify-end"><button onclick="crmDetailFormSlot('')" class="text-xs font-bold text-slate-500 px-3 py-1.5">Cancel</button>
+      <button onclick="crmSendEmail('${id}')" class="text-xs font-bold bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-1.5 rounded-lg">Send</button></div>
+  </div>`);
+}
+async function crmSendEmail(id) {
+  const subject = document.getElementById('crm-email-subject')?.value || '';
+  const body = document.getElementById('crm-email-body')?.value || '';
+  if (!subject.trim() || !body.trim()) { showToast('Subject and message required', 'error'); return; }
+  try { await apiSendJson(`/crm/contacts/${id}/email`, 'POST', { subject, body }); showToast('Email sent', 'success'); openCrmContact(id); }
+  catch (e) { showToast(e.message, 'error'); }
+}
+function crmTaskForm(id) {
+  crmDetailFormSlot(`<div class="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg p-3 space-y-2">
+    <div class="flex gap-2">
+      <select id="crm-task-type" class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1.5 text-sm"><option value="followup">Follow-up</option><option value="call">Call</option><option value="text">Text</option><option value="email">Email</option><option value="other">Other</option></select>
+      <input id="crm-task-due" type="date" class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1.5 text-sm">
+    </div>
+    <input id="crm-task-title" placeholder="Task (e.g. Follow up on financing)" class="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-1.5 text-sm">
+    <div class="flex gap-2 justify-end"><button onclick="crmDetailFormSlot('')" class="text-xs font-bold text-slate-500 px-3 py-1.5">Cancel</button>
+      <button onclick="crmSaveTask('${id}')" class="text-xs font-bold bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-1.5 rounded-lg">Add task</button></div>
+  </div>`);
+}
+async function crmSaveTask(id) {
+  const title = document.getElementById('crm-task-title')?.value || '';
+  const type = document.getElementById('crm-task-type')?.value || 'followup';
+  const due = document.getElementById('crm-task-due')?.value || '';
+  if (!title.trim()) { showToast('Enter a task', 'error'); return; }
+  try { await apiSendJson('/crm/tasks', 'POST', { contact_id: id, title, type, due_at: due ? new Date(due).toISOString() : null }); showToast('Task added', 'success'); openCrmContact(id); }
+  catch (e) { showToast(e.message, 'error'); }
+}
+async function crmToggleTask(taskId, done, contactId) {
+  try { await apiSendJson(`/crm/tasks/${taskId}`, 'PUT', { done }); if (contactId) openCrmContact(contactId); else crmLoadTasks(); }
+  catch (e) { showToast(e.message, 'error'); }
+}
+function crmEditForm(id) {
+  // Pull current values from the open modal header where possible; simplest is a fresh fetch.
+  apiGetJson(`/crm/contacts/${id}`).then(d => {
+    const c = d.contact;
+    const opt = (v) => Object.entries(CRM_STATUS).map(([k, l]) => `<option value="${k}" ${c.status === k ? 'selected' : ''}>${l}</option>`).join('');
+    crmDetailFormSlot(`<div class="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg p-3 space-y-2">
+      <div class="text-[11px] font-bold uppercase tracking-wider text-slate-400">Edit contact</div>
+      <input id="crm-edit-name" value="${esc(c.full_name || '')}" placeholder="Full name" class="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-1.5 text-sm">
+      <div class="flex gap-2">
+        <input id="crm-edit-email" value="${esc(c.email || '')}" placeholder="Email" class="flex-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-1.5 text-sm">
+        <input id="crm-edit-phone" value="${esc(c.phone || '')}" placeholder="Phone" class="flex-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-1.5 text-sm">
+      </div>
+      <div class="flex gap-2 items-center">
+        <select id="crm-edit-status" class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1.5 text-sm">${opt()}</select>
+        <label class="flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-300"><input id="crm-edit-dnc" type="checkbox" ${c.dnc ? 'checked' : ''} class="accent-rose-600">Do not contact</label>
+      </div>
+      <textarea id="crm-edit-notes" rows="2" placeholder="Notes" class="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm">${esc(c.notes || '')}</textarea>
+      <div class="flex gap-2 justify-end"><button onclick="crmDetailFormSlot('')" class="text-xs font-bold text-slate-500 px-3 py-1.5">Cancel</button>
+        <button onclick="crmSaveEdit('${id}')" class="text-xs font-bold bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-1.5 rounded-lg">Save</button></div>
+    </div>`);
+  });
+}
+async function crmSaveEdit(id) {
+  const patch = {
+    full_name: document.getElementById('crm-edit-name')?.value || '',
+    email: document.getElementById('crm-edit-email')?.value || '',
+    phone: document.getElementById('crm-edit-phone')?.value || '',
+    status: document.getElementById('crm-edit-status')?.value || 'lead',
+    dnc: document.getElementById('crm-edit-dnc')?.checked || false,
+    notes: document.getElementById('crm-edit-notes')?.value || '',
+  };
+  try { await apiSendJson(`/crm/contacts/${id}`, 'PUT', patch); showToast('Saved', 'success'); openCrmContact(id); }
+  catch (e) { showToast(e.message, 'error'); }
+}
+
+// ── New contact ──────────────────────────────────────────────────────────────
+function openCrmContactModal() {
+  const ov = crmOverlay(`<div class="p-5 space-y-3">
+    <div class="text-lg font-black text-slate-900 dark:text-white">New contact</div>
+    <input id="crm-new-name" placeholder="Full name" class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm">
+    <div class="flex gap-2">
+      <input id="crm-new-email" placeholder="Email" class="flex-1 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm">
+      <input id="crm-new-phone" placeholder="Phone" class="flex-1 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm">
+    </div>
+    <textarea id="crm-new-notes" rows="2" placeholder="Notes (optional)" class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm"></textarea>
+    <div class="flex gap-2 justify-end"><button onclick="this.closest('.fixed').remove()" class="text-sm font-bold text-slate-500 px-4 py-2">Cancel</button>
+      <button onclick="crmSaveNew(this)" class="text-sm font-bold bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg">Create</button></div>
+  </div>`, 'max-w-md');
+}
+async function crmSaveNew(btn) {
+  const full_name = document.getElementById('crm-new-name')?.value || '';
+  const email = document.getElementById('crm-new-email')?.value || '';
+  const phone = document.getElementById('crm-new-phone')?.value || '';
+  const notes = document.getElementById('crm-new-notes')?.value || '';
+  if (!full_name.trim() && !email.trim() && !phone.trim()) { showToast('Enter a name, phone, or email', 'error'); return; }
+  try {
+    const d = await apiSendJson('/crm/contacts', 'POST', { full_name, email, phone, notes });
+    btn.closest('.fixed').remove();
+    showToast('Contact created', 'success');
+    if (__crmTab === 'contacts') crmLoadContacts();
+    if (d.contact?.id) openCrmContact(d.contact.id);
+  } catch (e) { showToast(e.message, 'error'); }
+}
+
+// ── Tasks tab ────────────────────────────────────────────────────────────────
+async function crmLoadTasks() {
+  const body = document.getElementById('crm-body');
+  if (!body) return;
+  body.innerHTML = `<div id="crm-tasklist" class="py-10 text-center text-sm text-slate-400 italic">Loading tasks…</div>`;
+  try {
+    const d = await apiGetJson('/crm/tasks?scope=open');
+    const tasks = d.tasks || [];
+    const el = document.getElementById('crm-tasklist');
+    if (!tasks.length) { el.className = ''; el.innerHTML = '<div class="py-16 text-center text-sm text-slate-400">No open tasks. Add follow-ups from a contact.</div>'; return; }
+    el.className = '';
+    el.innerHTML = `<div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl divide-y divide-slate-100 dark:divide-slate-800">
+      ${tasks.map(t => {
+        const overdue = t.due_at && new Date(t.due_at) < Date.now();
+        return `<div class="flex items-center gap-3 px-4 py-3">
+          <input type="checkbox" onchange="crmToggleTask('${t.id}', this.checked)" class="w-4 h-4 rounded accent-indigo-600 flex-shrink-0">
+          <div class="min-w-0 flex-1">
+            <div class="font-semibold text-sm text-slate-800 dark:text-slate-100 truncate">${esc(t.title)}</div>
+            <div class="text-xs text-slate-400">${t.contact_name ? `<button onclick="openCrmContact('${t.contact_id}')" class="text-indigo-500 hover:underline">${esc(t.contact_name)}</button> · ` : ''}${esc((t.type || 'followup'))}</div>
+          </div>
+          ${t.due_at ? `<span class="text-[11px] flex-shrink-0 ${overdue ? 'text-rose-500 font-bold' : 'text-slate-400'}">${esc(crmWhen(t.due_at))}</span>` : ''}
+        </div>`;
+      }).join('')}</div>`;
+  } catch (e) {
+    document.getElementById('crm-tasklist').innerHTML = `<div class="py-16 text-center text-sm text-slate-500">Couldn't load tasks: ${esc(e.message)}</div>`;
+  }
+}
 
 // ── Leads (CRM ADF delivery) ─────────────────────────────────────────────────
 async function loadLeadsPage() {

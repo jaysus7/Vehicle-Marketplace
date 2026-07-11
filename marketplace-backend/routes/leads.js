@@ -1,5 +1,6 @@
 import { supabaseAdmin, resend, EMAIL_FROM } from '../shared.js'
 import { requireAuth } from '../middleware.js'
+import { findOrCreateContact } from './crm.js'
 
 const xmlEsc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;' }[c]))
 
@@ -109,6 +110,16 @@ export function registerLeads(app) {
       })
       .select().single()
     if (error) return res.status(500).json({ error: error.message })
+
+    // Land this lead on a unified CRM contact (dedupe by email/phone) so the
+    // built-in CRM stays populated automatically — no double entry.
+    try {
+      const contactId = await findOrCreateContact({
+        dealershipId: req.dealershipId, name: lead.name, email: lead.email,
+        phone: lead.phone, repId: req.user.id, source: lead.source,
+      })
+      if (contactId) await supabaseAdmin.from('leads').update({ contact_id: contactId }).eq('id', lead.id)
+    } catch (e) { console.warn('[leads] contact link failed:', e.message) }
 
     // Deliver to the CRM via ADF email when configured.
     const { data: dealer } = await supabaseAdmin

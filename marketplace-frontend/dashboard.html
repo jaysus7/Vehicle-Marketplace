@@ -498,6 +498,11 @@
           <svg class="w-5 h-5 md:w-4 md:h-4 flex-shrink-0 opacity-60" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 4.5v15m6-15v15M4.125 4.5h15.75c.621 0 1.125.504 1.125 1.125v12.75c0 .621-.504 1.125-1.125 1.125H4.125A1.125 1.125 0 013 18.375V5.625C3 5.004 3.504 4.5 4.125 4.5z"/></svg>
           <span class="hidden md:inline">Pipeline</span>
         </button>
+        <!-- CRM — unified customer records, activity timeline, tasks. Built-in, own it. -->
+        <button type="button" data-page="crm" title="CRM" class="nav-item flex-1 md:flex-none md:w-full flex items-center justify-center md:justify-start gap-2.5 px-2 md:px-3 py-2.5 md:py-2 rounded font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition">
+          <svg class="w-5 h-5 md:w-4 md:h-4 flex-shrink-0 opacity-60" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M18 18.72a9.094 9.094 0 003.741-.479 3 3 0 00-4.682-2.72m.94 3.198l.001.031c0 .225-.012.447-.037.666A11.944 11.944 0 0112 21c-2.17 0-4.207-.576-5.963-1.584A6.062 6.062 0 016 18.719m12 0a5.971 5.971 0 00-.941-3.197m0 0A5.995 5.995 0 0012 12.75a5.995 5.995 0 00-5.058 2.772m0 0a3 3 0 00-4.681 2.72 8.986 8.986 0 003.74.477m.94-3.197a5.971 5.971 0 00-.94 3.197M15 6.75a3 3 0 11-6 0 3 3 0 016 0zm6 3a2.25 2.25 0 11-4.5 0 2.25 2.25 0 014.5 0zm-13.5 0a2.25 2.25 0 11-4.5 0 2.25 2.25 0 014.5 0z"/></svg>
+          <span class="hidden md:inline">CRM</span>
+        </button>
         <!-- Trade Appraisal — Inventory Intelligence add-on; hidden until active. -->
         <button type="button" id="nav-appraisal" data-page="appraisal" title="Appraisal" class="nav-item hidden flex-1 md:flex-none md:w-full flex items-center justify-center md:justify-start gap-2.5 px-2 md:px-3 py-2.5 md:py-2 rounded font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition">
           <svg class="w-5 h-5 md:w-4 md:h-4 flex-shrink-0 opacity-60" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 3v18M8 21h8M5 7l7-2 7 2M5 7l-2 5a3 3 0 006 0L5 7zm14 0l-2 5a3 3 0 006 0l-2-5z"/></svg>
@@ -1718,6 +1723,21 @@
         </div>
       </div><!-- /ai-vision page -->
 
+      <!-- ── CRM Page (unified customer records + timeline + tasks) ────────── -->
+      <div data-page-content="crm" class="page-content hidden space-y-6">
+        <div class="flex items-start justify-between gap-3 flex-wrap">
+          <div>
+            <h2 class="text-xl font-bold text-slate-900 dark:text-white">CRM</h2>
+            <p class="text-sm text-slate-500 dark:text-slate-400 mt-1">Every lead, appraisal and sale on one customer record — with a full activity timeline, follow-up tasks, and one-click email. Built in.</p>
+          </div>
+          <button type="button" onclick="openCrmContactModal()" class="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-bold px-4 py-2 rounded-lg transition">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>
+            New contact
+          </button>
+        </div>
+        <div id="crm-root"></div>
+      </div>
+
       <!-- ── Trade Appraisal Page ─────────────────────────────────────────── -->
       <div data-page-content="appraisal" class="page-content hidden space-y-6">
         <div>
@@ -2403,7 +2423,7 @@
     </div>
   </div>
 
-  <script src="dashboard.js?v=20260711i"></script>
+  <script src="dashboard.js?v=20260711j"></script>
   <!-- Google Translate widget (per-rep dashboard translation) -->
   <script>
     window.googleTranslateElementInit = function () {
