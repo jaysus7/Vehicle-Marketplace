@@ -702,6 +702,39 @@ function apprCompsTable(comps, du, money, numFound) {
     </div>`;
 }
 
+// Recently-SOLD comps table — like apprCompsTable but with a days-on-market column
+// and a sold date. These are proven transactions, the strongest evidence on the sheet.
+function apprSoldTable(sold, du, money) {
+  const rows = (sold || []).filter(c => c.price > 0).sort((a, b) => a.price - b.price).slice(0, 40);
+  if (!rows.length) return '';
+  const fmtDate = (s) => { if (!s) return '—'; const dt = new Date(s); return isNaN(dt) ? '—' : dt.toLocaleDateString(undefined, { month: 'short', year: 'numeric' }); };
+  return `
+    <div class="mt-3 overflow-x-auto -mx-1">
+      <table class="w-full text-sm border-collapse min-w-[520px]">
+        <thead><tr class="text-[10px] uppercase tracking-wider text-slate-400 border-b border-slate-200 dark:border-slate-800">
+          <th class="text-left py-2 px-2">Sold price</th>
+          <th class="text-right py-2 px-2">${du === 'mi' ? 'Miles' : 'KM'}</th>
+          <th class="text-right py-2 px-2">Days on mkt</th>
+          <th class="text-left py-2 px-2">Location</th>
+          <th class="text-right py-2 px-2">Sold</th>
+        </tr></thead>
+        <tbody>
+          ${rows.map(c => {
+            const loc = [c.dealer, [c.city, c.region].filter(Boolean).join(', ')].filter(Boolean).join(' · ');
+            const clickable = !!c.url;
+            return `<tr class="border-b border-slate-100 dark:border-slate-800/60 ${clickable ? 'cursor-pointer hover:bg-emerald-50 dark:hover:bg-emerald-950/20' : ''}" ${clickable ? `onclick="window.open('${encodeURI(c.url)}','_blank','noopener')"` : ''}>
+              <td class="py-2 px-2 font-bold text-slate-900 dark:text-white tabular-nums">${money(c.price)}</td>
+              <td class="py-2 px-2 text-right tabular-nums text-slate-600 dark:text-slate-300">${c.miles ? Number(c.miles).toLocaleString() : '—'}</td>
+              <td class="py-2 px-2 text-right tabular-nums text-slate-600 dark:text-slate-300">${c.dom != null ? c.dom : '—'}</td>
+              <td class="py-2 px-2 text-slate-600 dark:text-slate-300 truncate max-w-[200px]">${esc(loc || '—')}</td>
+              <td class="py-2 px-2 text-right text-slate-500 dark:text-slate-400 whitespace-nowrap">${esc(fmtDate(c.sold_date))}</td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>
+    </div>`;
+}
+
 function renderAppraisal(d) {
   __apprData = d;
   __apprDealId = d.appraisal_id || null;  // the auto-logged trade record (for Deal Details save + updates)
@@ -752,7 +785,7 @@ function renderAppraisal(d) {
           rows.push([`Mileage adjustment (${more ? 'above' : 'below'} market)`, signed(adj.mileage_adjustment), detail, adj.mileage_adjustment < 0]);
         }
         if (adj.market_realism_amount) {
-          rows.push([`Ask → sold (${adj.market_realism_pct}%)`, signed(adj.market_realism_amount), 'real transaction gap', true]);
+          rows.push([`Ask → sold (${adj.market_realism_pct}%)`, signed(adj.market_realism_amount), adj.market_realism_proven ? 'from real sold comps' : 'est. transaction gap', true]);
         }
         return `<div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4">
           <div class="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-2">How we got to retail value</div>
@@ -783,19 +816,56 @@ function renderAppraisal(d) {
           <div class="text-[11px] text-slate-400 mt-2">Adjusts the market's asking prices for this vehicle's odometer and the ask→sell gap to get retail value. Your ACV / wholesale take-in comes off retail (− recon − gross) and lines up with trade-value tools like AutoTrader.</div>
         </div>`;
       })() : ''}
-      ${d.prediction ? `<div class="bg-white dark:bg-slate-900 border border-emerald-200 dark:border-emerald-900 rounded-xl p-4">
-        <div class="flex items-center justify-between gap-3 flex-wrap">
-          <div>
-            <div class="text-xs font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">MarketCheck predicted retail</div>
-            <div class="text-2xl font-black text-slate-900 dark:text-white mt-0.5">${money(d.prediction.predicted)} <span class="text-xs font-semibold text-slate-400">${cur}</span></div>
+      ${(() => {
+        // Retail cross-check: show every independent read (asking comps, real sold
+        // prices, MarketCheck's VIN model) as INPUTS that were reconciled into one
+        // retail — instead of two contradicting headline numbers. Only render when we
+        // actually have a second signal beyond the comps.
+        const sig = ap.retail_signals || {};
+        const cards = [];
+        cards.push({ lbl: 'Asking comps', val: sig.comps, sub: `${rt.count ?? '—'} live listings` });
+        if (sig.sold != null) cards.push({ lbl: 'Recently sold', val: sig.sold, sub: `${(d.sold && d.sold.count) || '—'} sold`, hot: true });
+        if (sig.model != null) cards.push({ lbl: 'VIN model', val: sig.model, sub: (d.prediction && d.prediction.low && d.prediction.high) ? `${money(d.prediction.low)}–${money(d.prediction.high)}` : 'MarketCheck' });
+        if (cards.length < 2) return '';
+        return `<div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4">
+          <div class="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-2">Retail cross-check — reconciled from ${cards.length} independent reads</div>
+          <div class="grid grid-cols-2 sm:grid-cols-${Math.min(4, cards.length + 1)} gap-2">
+            ${cards.map(c => `<div class="rounded-lg border ${c.hot ? 'border-emerald-200 dark:border-emerald-900 bg-emerald-50/50 dark:bg-emerald-950/20' : 'border-slate-200 dark:border-slate-700'} p-2.5">
+              <div class="text-[10px] font-bold uppercase tracking-wider ${c.hot ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-400'}">${esc(c.lbl)}</div>
+              <div class="text-lg font-black text-slate-900 dark:text-white tabular-nums">${money(c.val)}</div>
+              <div class="text-[10px] text-slate-400">${esc(c.sub)}</div>
+            </div>`).join('')}
+            <div class="rounded-lg border-2 border-indigo-300 dark:border-indigo-800 bg-indigo-50 dark:bg-indigo-950/30 p-2.5">
+              <div class="text-[10px] font-bold uppercase tracking-wider text-indigo-600 dark:text-indigo-400">Retail used</div>
+              <div class="text-lg font-black text-indigo-700 dark:text-indigo-300 tabular-nums">${money(sig.reconciled != null ? sig.reconciled : rt.median)}</div>
+              <div class="text-[10px] text-slate-400">weighted blend</div>
+            </div>
           </div>
-          ${(d.prediction.low && d.prediction.high) ? `<div class="text-right">
-            <div class="text-[11px] text-slate-400 uppercase tracking-wider">Confidence band</div>
-            <div class="text-sm font-bold text-slate-700 dark:text-slate-200">${money(d.prediction.low)}–${money(d.prediction.high)}</div>
-          </div>` : ''}
-        </div>
-        <div class="text-[11px] text-slate-400 mt-2">Independent VIN-level model estimate — compare against the ${money(rt.median)} comp median above.</div>
-      </div>` : ''}
+          <div class="text-[11px] text-slate-400 mt-2">We weight real sold prices highest, then the VIN model, then live asks (asking prices run above what cars sell for). One grounded retail — no guessing between numbers.</div>
+        </div>`;
+      })()}
+      ${d.sold ? (() => {
+        const s = d.sold;
+        const PROV = { ON:'Ontario', QC:'Quebec', BC:'B.C.', AB:'Alberta', MB:'Manitoba', SK:'Saskatchewan', NS:'Nova Scotia', NB:'New Brunswick', NL:'Newfoundland', PE:'P.E.I.' };
+        const scope = (s.matched_on && s.matched_on.geo)
+          ? (s.radius_used ? `within ${s.radius_used} ${du}` : (s.geo_scope && s.geo_scope !== 'radius' ? (PROV[s.geo_scope] || s.geo_scope) : 'local'))
+          : 'nationwide';
+        return `<div class="bg-white dark:bg-slate-900 border border-emerald-200 dark:border-emerald-900 rounded-xl p-4">
+          <div class="flex items-center gap-1.5 mb-2">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="#059669" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
+            <span class="text-xs font-bold text-emerald-700 dark:text-emerald-300 uppercase tracking-wider">Proven to market — recently sold</span>
+            <span class="text-[10px] font-medium text-slate-400">${s.count} sold · ${esc(scope)}</span>
+          </div>
+          <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            ${apprTile('Sold median', money(s.median_price), s.low && s.high ? `${money(s.low)}–${money(s.high)}` : 'actual sale prices')}
+            ${apprTile('Days on market', s.median_dom != null ? s.median_dom + ' days' : '—', 'before it sold')}
+            ${apprTile('Ask vs sold', s.ask_vs_sold_pct != null ? '−' + s.ask_vs_sold_pct + '%' : '—', 'asks run high')}
+            ${apprTile('Your offer vs sold', s.offer_vs_sold_pct != null ? s.offer_vs_sold_pct + '%' : '—', 'of sold price')}
+          </div>
+          <div class="text-[11px] text-slate-400 mt-2">These are comparable cars that actually left the market — the closest public proof of what this vehicle sells for, and how fast.</div>
+          ${(s.listings && s.listings.length) ? apprSoldTable(s.listings, du, money) : ''}
+        </div>`;
+      })() : ''}
       ${ap.ai_summary ? `<div class="bg-violet-50 dark:bg-violet-950/30 border border-violet-200 dark:border-violet-900 rounded-xl p-4">
         <div class="flex items-center gap-1.5 mb-1">
           <svg viewBox="0 0 24 24" width="14" height="14" class="flex-shrink-0" aria-hidden="true"><path d="M12 2.5l2.4 6.6 6.6 2.4-6.6 2.4L12 20.5l-2.4-6.6L3 11.5l6.6-2.4z" fill="#c4b5fd" fill-opacity="0.5" stroke="#6d28d9" stroke-width="1.4" stroke-linejoin="round"/></svg>
@@ -864,7 +934,7 @@ function apprMarketplaceLinks(d, v) {
 function apprHistogramSvg(prices, marks, money) {
   if (!prices.length) return '';
   const W = 680, H = 210, padL = 44, padR = 20, padT = 24, padB = 40;
-  const vals = prices.concat([marks.offer, marks.median].filter(x => x != null));
+  const vals = prices.concat([marks.offer, marks.median, marks.sold].filter(x => x != null));
   const lo = Math.floor(Math.min(...vals) / 1000) * 1000;
   const hi = Math.ceil(Math.max(...vals) / 1000) * 1000 || lo + 1000;
   const bins = 8, bw = (hi - lo) / bins || 1;
@@ -887,6 +957,7 @@ function apprHistogramSvg(prices, marks, money) {
     ${bars}
     <line x1="${padL}" y1="${padT + plotH}" x2="${W - padR}" y2="${padT + plotH}" stroke="#cbd5e1"/>
     ${mark(marks.median, '#4f46e5', 'We sell')}
+    ${mark(marks.sold, '#b45309', 'Sold')}
     ${mark(marks.offer, '#16a34a', 'We buy')}
     ${xlab}
   </svg>`;
@@ -913,7 +984,8 @@ function generateAppraisalPdf() {
   const cur = d.currency || 'CAD', du = d.distance_unit || 'km';
   const money = (n) => n != null ? '$' + Number(n).toLocaleString() : '—';
   const prices = (d.comps || []).map(c => c.price).filter(p => p > 0);
-  const hist = apprHistogramSvg(prices, { median: rt.median, offer: ap.suggested_offer }, money);
+  const sd = d.sold || null;
+  const hist = apprHistogramSvg(prices, { median: rt.median, offer: ap.suggested_offer, sold: sd?.median_price ?? null }, money);
   const locs = apprLocationSvg(d.locations || []);
   const today = new Date().toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' });
   const row = (l, val, strong) => `<tr><td style="padding:6px 0;color:#475569">${l}</td><td style="padding:6px 0;text-align:right;font-weight:${strong ? 800 : 600};color:${strong ? '#4f46e5' : '#0f172a'}">${val}</td></tr>`;
@@ -999,7 +1071,17 @@ function generateAppraisalPdf() {
     <div class="card stat"><div class="l">Comparable listings</div><div class="v">${rt.count ?? '—'}</div></div>
   </div>
 
-  ${hist ? `<h2>Market price distribution</h2><div class="card">${hist}<div class="cap">Live retail listings for this ${esc(label)}. Dashed lines mark what we sell it for (retail) and what we buy it at (offer).</div></div>` : ''}
+  ${sd ? `<h2>Proven to market — recently sold</h2>
+  <div class="card" style="border-color:#a7f3d0;background:#f0fdf4">
+    <div class="grid" style="margin-top:0">
+      <div class="stat"><div class="l">Sold median</div><div class="v" style="color:#047857">${money(sd.median_price)}</div></div>
+      <div class="stat"><div class="l">Days on market</div><div class="v">${sd.median_dom != null ? sd.median_dom + ' days' : '—'}</div></div>
+      <div class="stat"><div class="l">Your offer vs sold</div><div class="v">${sd.offer_vs_sold_pct != null ? sd.offer_vs_sold_pct + '%' : '—'}</div></div>
+    </div>
+    <div class="cap">${sd.count} comparable vehicle${sd.count === 1 ? '' : 's'} that actually sold${sd.ask_vs_sold_pct != null ? ` — real sale prices ran ${sd.ask_vs_sold_pct}% below the asking median` : ''}. The closest public proof of what this ${esc(label)} sells for, and how fast.</div>
+  </div>` : ''}
+
+  ${hist ? `<h2>Market price distribution</h2><div class="card">${hist}<div class="cap">Live retail listings for this ${esc(label)}. Dashed lines mark what we sell it for (retail)${sd ? ', the recent sold median' : ''} and what we buy it at (offer).</div></div>` : ''}
 
   ${locs ? `<h2>Where these comparables are</h2><div class="card">${locs}<div class="cap">Locations of the comparable listings (by region), from ${rt.count ?? (d.comps || []).length} active listings.</div></div>` : ''}
 
@@ -1021,6 +1103,27 @@ function generateAppraisalPdf() {
         </tr>`;
       }).join('')}
     </table><div class="cap">Live comparable listings. Click a link to open the actual ad and compare.</div></div>`;
+  })()}
+
+  ${(() => {
+    const rows = (sd?.listings || []).filter(c => c.price > 0).sort((a, b) => a.price - b.price).slice(0, 25);
+    if (!rows.length) return '';
+    const fmtDate = (s) => { if (!s) return '—'; const dt = new Date(s); return isNaN(dt) ? '—' : dt.toLocaleDateString(undefined, { month: 'short', year: 'numeric' }); };
+    return `<h2>Recently sold — proven transactions</h2><div class="card"><table>
+      <tr style="color:#94a3b8;font-size:10px;text-transform:uppercase;letter-spacing:.04em">
+        <td style="padding:4px 0">Sold price</td><td style="padding:4px 0;text-align:right">${du === 'mi' ? 'Miles' : 'KM'}</td>
+        <td style="padding:4px 0;text-align:right">Days on mkt</td><td style="padding:4px 0">Location</td><td style="padding:4px 0;text-align:right">Sold</td></tr>
+      ${rows.map(c => {
+        const loc = [c.dealer, [c.city, c.region].filter(Boolean).join(', ')].filter(Boolean).join(' · ');
+        return `<tr style="border-top:1px solid #f1f5f9">
+          <td style="padding:6px 0;font-weight:700;color:#047857">${money(c.price)}</td>
+          <td style="padding:6px 0;text-align:right;color:#475569">${c.miles ? Number(c.miles).toLocaleString() : '—'}</td>
+          <td style="padding:6px 0;text-align:right;color:#475569">${c.dom != null ? c.dom : '—'}</td>
+          <td style="padding:6px 0;color:#475569;font-size:12px">${esc(loc || '—')}</td>
+          <td style="padding:6px 0;text-align:right;color:#64748b">${esc(fmtDate(c.sold_date))}</td>
+        </tr>`;
+      }).join('')}
+    </table><div class="cap">Comparable vehicles that recently left the market — real sale prices and how long each took to sell.</div></div>`;
   })()}
 
   <div style="margin-top:22px;font-size:11px;color:#94a3b8;border-top:1px solid #e2e8f0;padding-top:10px">

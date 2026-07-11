@@ -14,7 +14,7 @@
 // exactly as before. Once the tables exist, the controls activate automatically.
 // ─────────────────────────────────────────────────────────────────────────
 import { supabaseAdmin } from './shared.js'
-import { marketcheckMarket, marketcheckEnabled } from './marketcheck.js'
+import { marketcheckMarket, marketcheckSoldListings, marketcheckEnabled } from './marketcheck.js'
 
 const GLOBAL_ID = '00000000-0000-0000-0000-000000000000'
 const CACHE_DAYS = Number(process.env.MARKET_CACHE_DAYS || 7)
@@ -180,6 +180,32 @@ export async function getMarketData({ dealershipId, isOwner = false, params, all
   await recordMarketcheckCall(dealershipId)
   if (data) await setCache(sig, data)
   return { data, cached: false, capped: false }
+}
+
+/**
+ * Cached + metered RECENTLY-SOLD lookup — same contract as getMarketData but hits
+ * MarketCheck's Past Inventory (sold) product. Kept as its own signature namespace
+ * ('||sold') so it never collides with the live-comp cache. Returns { data, cached,
+ * capped }; data is null when the plan isn't entitled to sold data (endpoint 403s),
+ * in which case the caller simply omits the sold panel. Sold data changes slowly,
+ * so it shares the same TTL as live comps.
+ */
+export async function getSoldData({ dealershipId, isOwner = false, params, allowLive = false }) {
+  if (!marketcheckEnabled()) return { data: null, cached: false, capped: false }
+
+  const sig = marketSignature(params) + '||sold'
+  const hit = await getCache(sig)
+  if (hit) return { data: hit._empty ? null : hit, cached: true, capped: false }
+  if (!allowLive) return { data: null, cached: false, capped: false }
+  if (!(await marketcheckAllowed(dealershipId, isOwner))) {
+    return { data: null, cached: false, capped: true }
+  }
+  const data = await marketcheckSoldListings(params)
+  await recordMarketcheckCall(dealershipId)
+  // Cache a negative result too (empty object) so a plan-without-sold or a thin
+  // sold market doesn't re-hit the paid endpoint on every appraisal for 7 days.
+  await setCache(sig, data || { _empty: true })
+  return { data: data && !data._empty ? data : null, cached: false, capped: false }
 }
 
 // For the usage endpoint / UI.

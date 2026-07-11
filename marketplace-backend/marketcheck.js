@@ -303,6 +303,150 @@ export async function marketcheckMarket({ make, model, year, trim, mileage, driv
 }
 
 /**
+ * RECENTLY SOLD / removed comparable listings — MarketCheck's Past Inventory
+ * ("recents") product. These are cars that actually left the market, so their
+ * last asking price is the closest public proxy for a real transaction price,
+ * and their `dom` is a proven days-on-market. This is what lets us show "proven
+ * to market" numbers instead of only live asks (which sit above what cars sell
+ * for — the whole reason a comp-asking appraisal reads high).
+ *
+ * Past Inventory Search is a SEPARATE MarketCheck plan product. If the key isn't
+ * entitled to it the endpoint 403/404s — we return null and the caller simply
+ * hides the sold panel (never fails the appraisal). Path is overridable via
+ * MARKETCHECK_SOLD_PATH in case the account is on a different recents route.
+ *
+ * Returns { count, num_found, median_price, avg_price, low_price, high_price,
+ * median_mileage, median_dom, geo_scope, radius_used,
+ * listings:[{price,miles,city,region,dealer,dom,sold_date,vdp_url,source}] } or null.
+ */
+export async function marketcheckSoldListings({ make, model, year, trim, drivetrain, engine, zip, radius, mileage, isUS = false } = {}) {
+  const key = process.env.MARKETCHECK_API_KEY
+  if (!key || !make || !model || !year) return null
+  if (process.env.MARKETCHECK_SOLD_DISABLED === '1') return null   // kill-switch if plan lacks it
+  const path = process.env.MARKETCHECK_SOLD_PATH || '/search/car/recents'
+  const MIN_SOLD = 3
+
+  const wantDrive = normalizeDrivetrain(drivetrain)
+  const wantLitres = engineLitres(engine)
+  const cleanZip = String(zip || '').replace(/\s+/g, '').toUpperCase() || null
+  const rad = Number(radius) > 0 ? Math.round(Number(radius)) : null
+
+  // Same geo resolution as the live comp search: US ZIP native, CA postal → lat/long
+  // (or province fallback) so "sold near me" isn't silently national.
+  let geo = null
+  if (cleanZip && rad) {
+    if (isUS) geo = { zip: cleanZip }
+    else {
+      const g = await geocodePostal(zip || cleanZip, false)
+      if (g) geo = { latitude: g.lat, longitude: g.lon }
+      else { const prov = provinceFromPostal(cleanZip); if (prov) geo = { state: prov } }
+    }
+  }
+
+  const fetchSold = async ({ withTrim, withDrive, withGeo }) => {
+    const p = new URLSearchParams({
+      api_key: key, country: isUS ? 'us' : 'ca', car_type: 'used',
+      make: String(make), model: String(model), year: String(year),
+      rows: '50', sold: 'true', sort_by: 'last_seen_at', sort_order: 'desc',
+    })
+    if (withTrim && trim) p.set('trim', String(trim))
+    if (withDrive && wantDrive) p.set('drivetrain', wantDrive)
+    if (withGeo && geo) {
+      if (geo.zip) { p.set('zip', geo.zip); p.set('radius', String(rad)) }
+      else if (geo.latitude != null) { p.set('latitude', String(geo.latitude)); p.set('longitude', String(geo.longitude)); p.set('radius', String(rad)) }
+      else if (geo.state) { p.set('state', geo.state) }
+    }
+    try {
+      const r = await fetch(`${BASE}${path}?${p.toString()}`, {
+        headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(12000),
+      })
+      if (!r.ok) {
+        // 403/404 → plan not entitled to Past Inventory Search. Log once and bail
+        // for the whole call (no point retrying the cascade against a dead route).
+        if (r.status === 403 || r.status === 404) { console.warn(`[marketcheck] sold search unavailable on this plan (HTTP ${r.status}) — hiding sold panel`); return 'unavailable' }
+        console.error(`[marketcheck] sold HTTP ${r.status} ${make} ${model} ${year}`); return null
+      }
+      const j = await r.json()
+      const raw = Array.isArray(j?.listings) ? j.listings : []
+      return {
+        num_found: Number(j?.num_found ?? raw.length),
+        listings: raw.map(l => ({
+          price: Number(l.price ?? 0), miles: Number(l.miles ?? 0),
+          city: l.dealer?.city || null, region: l.dealer?.state || null, dealer: l.dealer?.name || null,
+          dom: (l.dom != null ? Number(l.dom) : null),
+          sold_date: l.last_seen_at || l.sold_date || l.scraped_at || null,
+          vdp_url: l.vdp_url || l.href || null, source: l.source || null,
+          litres: (l.build?.engine_size != null ? Number(l.build.engine_size) : engineLitres(l.build?.engine)),
+        })),
+      }
+    } catch (e) { console.error('[marketcheck] sold request failed:', e.message); return null }
+  }
+
+  // Same geo-sticky relax cascade as live comps: keep it local, relax trim/drivetrain
+  // before going national. Sold pools are thinner, so we accept fewer and widen readily.
+  const priced = (list) => (list || []).filter(l => l.price >= 2500)
+  const attempts = [
+    { withTrim: true,  withDrive: true,  withGeo: true  },
+    { withTrim: true,  withDrive: false, withGeo: true  },
+    { withTrim: false, withDrive: false, withGeo: true  },
+    { withTrim: true,  withDrive: false, withGeo: false },
+    { withTrim: false, withDrive: false, withGeo: false },
+  ]
+  let best = null
+  const seen = new Set()
+  for (const a of attempts) {
+    const kkey = [a.withTrim && trim ? 't' : '', a.withDrive && wantDrive ? 'd' : '', a.withGeo && geo ? 'g' : ''].join('|')
+    if (seen.has(kkey)) continue
+    seen.add(kkey)
+    const cand = await fetchSold(a)
+    if (cand === 'unavailable') return null   // plan can't do sold at all
+    if (!cand) continue
+    const pc = priced(cand.listings).length
+    if (pc >= MIN_SOLD) { best = { ...cand, applied: a }; break }
+    if (!best || pc > (best._pc || 0)) best = { ...cand, applied: a, _pc: pc }
+  }
+  if (!best) return null
+
+  // Optional engine-displacement narrowing (same as live comps) when it keeps enough.
+  let list = best.listings
+  if (wantLitres) {
+    const sameEngine = list.filter(l => l.litres != null && Math.abs(l.litres - wantLitres) <= 0.3)
+    if (priced(sameEngine).length >= MIN_SOLD) list = sameEngine
+  }
+
+  const good = list.filter(l => l.price >= 2500)
+  if (good.length < MIN_SOLD) return null
+  const prices = good.map(l => l.price).sort((a, b) => a - b)
+  const med0 = prices[Math.floor(prices.length / 2)]
+  const inBand = (p) => p >= med0 * 0.5 && p <= med0 * 1.8
+  const kept = good.filter(l => inBand(l.price))
+  if (kept.length < MIN_SOLD) return null
+  const kp = kept.map(l => l.price).sort((a, b) => a - b)
+  const km = kept.map(l => l.miles).filter(m => m > 0).sort((a, b) => a - b)
+  const kd = kept.map(l => l.dom).filter(d => d != null && d >= 0).sort((a, b) => a - b)
+  const median = (arr) => arr.length ? arr[Math.floor(arr.length / 2)] : null
+  const applied = best.applied
+  return {
+    source: 'MarketCheck (sold)',
+    count: kept.length,
+    num_found: best.num_found,
+    median_price: median(kp),
+    avg_price: Math.round(kp.reduce((a, b) => a + b, 0) / kp.length),
+    low_price: kp[Math.max(0, Math.floor(kp.length * 0.1))],
+    high_price: kp[Math.min(kp.length - 1, Math.max(0, Math.ceil(kp.length * 0.9) - 1))],
+    median_mileage: median(km),
+    median_dom: median(kd),
+    matched_on: { trim: !!(applied?.withTrim && trim), drivetrain: !!(applied?.withDrive && wantDrive), geo: !!(applied?.withGeo && geo) },
+    radius_used: (applied?.withGeo && geo && !geo.state && rad) ? rad : null,
+    geo_scope: (applied?.withGeo && geo) ? (geo.state || 'radius') : null,
+    listings: kept.map(l => ({
+      price: l.price, miles: l.miles, city: l.city, region: l.region,
+      dealer: l.dealer, dom: l.dom, sold_date: l.sold_date, vdp_url: l.vdp_url, source: l.source,
+    })),
+  }
+}
+
+/**
  * Fetch actual comparable listings (not just stats) with price, mileage and
  * location — used to draw the appraisal PDF's price-distribution chart and the
  * "where these comps are" map/breakdown. Returns { count, listings:[{price,

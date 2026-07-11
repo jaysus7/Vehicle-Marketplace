@@ -2,7 +2,7 @@ import Anthropic from '@anthropic-ai/sdk'
 import { supabaseAdmin, resend, EMAIL_FROM, FRONTEND_URL, browserFetch } from '../shared.js'
 import { requireAuth } from '../middleware.js'
 import { marketcheckMarket, marketcheckListings, marketcheckEnabled, marketcheckCompetitorStats, marketcheckPing, marketcheckDecodeVin, marketcheckPredictPrice, marketcheckMarketStats } from '../marketcheck.js'
-import { getMarketData, recordUsage, aiAllowed, getUsage, assistantDailyAllowed, recordAssistantChat, ASSISTANT_DAILY_LIMIT, marketcheckAllowed, recordMarketcheckCall } from '../usage.js'
+import { getMarketData, getSoldData, recordUsage, aiAllowed, getUsage, assistantDailyAllowed, recordAssistantChat, ASSISTANT_DAILY_LIMIT, marketcheckAllowed, recordMarketcheckCall } from '../usage.js'
 import { createNotification, createNotifications } from '../notifications.js'
 import { runPhotoVision, scoreVehiclePhotos } from '../sync/photoVision.js'
 
@@ -759,6 +759,19 @@ Guidelines: under 90 words; answer their question if they asked one; confirm the
       } catch { /* prediction is a bonus — never fail the appraisal for it */ }
     }
 
+    // Recently SOLD comps (MarketCheck Past Inventory). These are cars that left the
+    // market, so their last price is a real transaction proxy and their `dom` is a
+    // proven days-on-market. Cached + metered; returns null if the plan isn't entitled
+    // to sold data (we just hide the panel). This is the "proven to market" signal.
+    let sold = null
+    try {
+      const { data: soldData } = await getSoldData({
+        dealershipId: req.dealershipId, isOwner, allowLive: true,
+        params: { make, model, year, trim, mileage, drivetrain, engine, zip, radius, isUS },
+      })
+      sold = soldData || null
+    } catch { /* sold data is a bonus — never fail the appraisal for it */ }
+
     // ── Value model ────────────────────────────────────────────────────────────
     // MarketCheck gives us the median ASKING price of comparable dealer listings.
     // Two systematic biases push that number well above a real appraisal — which is
@@ -787,11 +800,45 @@ Guidelines: under 90 words; answer their question if they asked one; confirm the
     const mileageAdjusted = compMedian + mileageAdj
 
     // (2) Ask → realistic retail. Dealer asks run above transaction prices; shave a
-    // small, tunable haircut so our retail anchor matches what the car actually sells
-    // for (and lines up with the trade books the customer is checking).
-    const REALISM = Number(process.env.APPRAISE_MARKET_REALISM || 0.04)
-    const realismCut = Math.round(mileageAdjusted * REALISM)
-    const retailMid = Math.max(0, mileageAdjusted - realismCut)   // realistic retail value
+    // haircut so our retail anchor matches what the car actually sells for. When we
+    // have SOLD comps we use the REAL market-proven ask→sold gap (asking median vs
+    // sold median); otherwise we fall back to a small tunable default. This is what
+    // stops old/cheap cars — where asks are wildly inflated — from reading high.
+    const REALISM_DEFAULT = Number(process.env.APPRAISE_MARKET_REALISM || 0.04)
+    let realism = REALISM_DEFAULT
+    let realismProven = false
+    if (sold && sold.median_price > 0 && compMedian > 0) {
+      const gap = (compMedian - sold.median_price) / compMedian
+      if (gap > 0) { realism = Math.min(0.25, gap); realismProven = true }   // cap at 25%
+    }
+    const realismCut = Math.round(mileageAdjusted * realism)
+    const retailFromComps = Math.max(0, mileageAdjusted - realismCut)   // asks → realistic retail
+
+    // Reconcile the independent retail reads into ONE grounded number so the sheet
+    // never shows two contradicting retails (the "$8,766 vs $6,705" problem). Weights:
+    // sold transactions weigh most (proven), the VIN model next, ask-derived retail
+    // least (asking prices run high, especially on older cars). Extra signals only
+    // pull the number when present — a comps-only appraisal is unchanged.
+    const retailSignals = [{ v: retailFromComps, w: 1.0, key: 'comps' }]
+    let soldRetail = null
+    if (sold && sold.median_price > 0) {
+      // Nudge the sold median to THIS car's odometer using the same $/dist rate, so a
+      // low-mileage trade isn't valued off higher-mileage sold cars (and vice-versa).
+      const soldMiles = sold.median_mileage || compMiles || 0
+      let sAdj = sold.median_price
+      if (mileage > 0 && soldMiles > 0) {
+        const sRate = (sold.median_price * MILEAGE_SENS) / REF_DIST
+        const sCap = Math.round(sold.median_price * 0.30)
+        sAdj += Math.max(-sCap, Math.min(sCap, Math.round((soldMiles - mileage) * sRate)))
+      }
+      soldRetail = Math.max(0, Math.round(sAdj))
+      retailSignals.push({ v: soldRetail, w: 1.4, key: 'sold' })
+    }
+    if (prediction && prediction.predicted > 0) {
+      retailSignals.push({ v: prediction.predicted, w: 0.9, key: 'model' })
+    }
+    const wSum = retailSignals.reduce((a, s) => a + s.w, 0)
+    const retailMid = Math.max(0, Math.round(retailSignals.reduce((a, s) => a + s.v * s.w, 0) / wSum))
 
     // (3) ACV / wholesale = what we take the trade in for, and it "comes off retail":
     // retail − recon − target gross. That IS the wholesale take-in (it lines up with
@@ -828,9 +875,13 @@ Guidelines: under 90 words; answer their question if they asked one; confirm the
         const mileVsMarket = (mileage > 0 && compMiles > 0)
           ? `This vehicle has ${mileage.toLocaleString()} ${du} vs a market median of ${Math.round(compMiles).toLocaleString()} ${du} (${mileageAdj >= 0 ? '+' : '−'}${cur} $${Math.abs(mileageAdj).toLocaleString()} mileage adjustment).`
           : ''
-        const prompt = `Write a professional 2–3 sentence market summary for a vehicle trade-appraisal sheet a dealer hands to a customer. Explain the offer in plain English and justify it with the market data, including how the odometer moved the value. No markdown, no bullet points, no greeting.
+        const soldLine = (sold && sold.median_price > 0)
+          ? `Proven to market: ${sold.count} recently SOLD comparable${sold.count === 1 ? '' : 's'} sold at a median of ${cur} $${sold.median_price.toLocaleString()}${sold.median_dom != null ? `, averaging ${sold.median_dom} days on market before selling` : ''}. Real sold prices run about ${Math.round(realism * 100)}% below the ${cur} $${compMedian.toLocaleString()} asking median, which is why the offer is grounded in what these cars actually sell for — not just what they're listed at.`
+          : ''
+        const prompt = `Write a professional 2–3 sentence market summary for a vehicle trade-appraisal sheet a dealer hands to a customer. Explain the offer in plain English and justify it with the market data, including how the odometer moved the value${soldLine ? ' and how recently-sold comps prove the number' : ''}. No markdown, no bullet points, no greeting.
 Vehicle: ${year} ${make} ${model}${trim ? ' ' + trim : ''}${mileage ? `, ${mileage.toLocaleString()} ${du}` : ''}.
 Retail market from ${market.count} comparable listings: asking median ${cur} $${compMedian.toLocaleString()}, range $${(market.low_price || compMedian).toLocaleString()}–$${(market.high_price || compMedian).toLocaleString()}. ${mileVsMarket}
+${soldLine}
 Adjusted retail value for this vehicle: ${cur} $${retailMid.toLocaleString()}.${tradeValue < retailMid - 1 ? `
 Wholesale value (ACV): ${cur} $${tradeValue.toLocaleString()} — about ${Math.round(tradeRatio * 100)}% of retail, in line with trade/wholesale valuation tools like AutoTrader.` : ''}
 ACV / wholesale take-in (what the dealer buys it for): ${cur} $${suggestedOffer.toLocaleString()} — the retail value less ${cur} $${recon.toLocaleString()} reconditioning and a ${cur} $${targetGross.toLocaleString()} target gross, in line with trade-value tools like AutoTrader.`
@@ -850,6 +901,9 @@ ACV / wholesale take-in (what the dealer buys it for): ${cur} $${suggestedOffer.
       suggested_offer: suggestedOffer, retail_mid: retailMid, trade_value: tradeValue,
       recon, target_gross: targetGross, gross_pct: grossPct, pct_to_market: pctToMarket,
       ai_summary,
+      sold_median: sold?.median_price ?? null,
+      sold_dom: sold?.median_dom ?? null,
+      sold_count: sold?.count ?? null,
     }
     let appraisal_id = null
     try {
@@ -918,15 +972,49 @@ ACV / wholesale take-in (what the dealer buys it for): ${cur} $${suggestedOffer.
           subject_mileage: mileage || null,
           market_mileage: compMiles,
           mileage_adjustment: mileageAdj,
-          market_realism_pct: Math.round(REALISM * 1000) / 10,
+          market_realism_pct: Math.round(realism * 1000) / 10,
           market_realism_amount: -realismCut,
-          retail_value: retailMid,
+          market_realism_proven: realismProven,   // true = gap derived from real sold comps
+          retail_from_comps: retailFromComps,       // ask-derived retail (one signal)
+          retail_value: retailMid,                  // reconciled retail (blend of signals)
           trade_ratio_pct: Math.round(tradeRatio * 1000) / 10,
           trade_value: tradeValue,
           recon: -recon,
           target_gross: -targetGross,
         },
+        // How the reconciled retail was assembled — so the sheet can show ONE retail
+        // built from all sources instead of two contradicting headline numbers.
+        retail_signals: {
+          comps: retailFromComps,
+          sold: soldRetail,                                    // mileage-adjusted sold median (or null)
+          model: prediction?.predicted ?? null,                // MarketCheck VIN model (or null)
+          reconciled: retailMid,
+        },
       },
+      // Recently-sold "proven to market" panel: real transaction prices + days-on-market.
+      sold: sold ? {
+        count: sold.count,
+        num_found: sold.num_found ?? null,
+        median_price: sold.median_price,
+        avg_price: sold.avg_price ?? null,
+        low: sold.low_price ?? null,
+        high: sold.high_price ?? null,
+        median_mileage: sold.median_mileage ?? null,
+        median_dom: sold.median_dom ?? null,                   // proven days on market
+        adjusted_retail: soldRetail,                           // sold median nudged to this odometer
+        ask_vs_sold_pct: (compMedian > 0 && sold.median_price > 0)
+          ? Math.round(((compMedian - sold.median_price) / compMedian) * 1000) / 10 : null,
+        offer_vs_sold_pct: (sold.median_price > 0)
+          ? Math.round((suggestedOffer / sold.median_price) * 100) : null,
+        matched_on: sold.matched_on || {},
+        geo_scope: sold.geo_scope ?? null,
+        radius_used: sold.radius_used ?? null,
+        listings: (sold.listings || []).slice(0, 40).map(l => ({
+          price: l.price, miles: l.miles, city: l.city, region: l.region,
+          dealer: l.dealer || null, dom: l.dom ?? null, sold_date: l.sold_date || null,
+          url: l.vdp_url || null, source: l.source || null,
+        })),
+      } : null,
       // MarketCheck model-comparable predicted retail + confidence band (or null).
       prediction,
       // Sample comps (price + mileage + location + clickable listing link) for the
