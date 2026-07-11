@@ -1266,6 +1266,7 @@ async function crmLoadContacts(q = '') {
   try {
     const d = await apiGetJson(`/crm/contacts${q ? `?q=${encodeURIComponent(q)}` : ''}`);
     const list = document.getElementById('crm-list');
+    if (!list) return;   // user navigated away mid-fetch
     const contacts = d.contacts || [];
     if (!contacts.length) {
       list.innerHTML = `<div class="py-16 text-center text-sm text-slate-400">${q ? 'No contacts match your search.' : 'No contacts yet — they appear automatically as you capture leads and save appraisals, or add one manually.'}</div>`;
@@ -1276,7 +1277,8 @@ async function crmLoadContacts(q = '') {
       ${contacts.map(crmContactRow).join('')}</div>
       <div class="text-[11px] text-slate-400 mt-2">${contacts.length} contact${contacts.length === 1 ? '' : 's'}${d.can_see_all ? ' · whole team' : ' · yours'}</div>`;
   } catch (e) {
-    document.getElementById('crm-list').innerHTML = `<div class="py-16 text-center text-sm text-slate-500">Couldn't load contacts: ${esc(e.message)}<br><button onclick="crmLoadContacts()" class="mt-3 text-indigo-500 font-bold">Retry</button></div>`;
+    const list = document.getElementById('crm-list');
+    if (list) list.innerHTML = `<div class="py-16 text-center text-sm text-slate-500">Couldn't load contacts: ${esc(e.message)}<br><button onclick="crmLoadContacts()" class="mt-3 text-indigo-500 font-bold">Retry</button></div>`;
   }
 }
 function crmContactRow(c) {
@@ -1652,6 +1654,7 @@ async function crmLoadTasks() {
     const d = await apiGetJson('/crm/tasks?scope=open');
     const tasks = d.tasks || [];
     const el = document.getElementById('crm-tasklist');
+    if (!el) return;   // user navigated away mid-fetch
     if (!tasks.length) { el.className = ''; el.innerHTML = '<div class="py-16 text-center text-sm text-slate-400">No open tasks. Add follow-ups from a contact.</div>'; return; }
     el.className = '';
     el.innerHTML = `<div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl divide-y divide-slate-100 dark:divide-slate-800">
@@ -1667,7 +1670,8 @@ async function crmLoadTasks() {
         </div>`;
       }).join('')}</div>`;
   } catch (e) {
-    document.getElementById('crm-tasklist').innerHTML = `<div class="py-16 text-center text-sm text-slate-500">Couldn't load tasks: ${esc(e.message)}</div>`;
+    const el = document.getElementById('crm-tasklist');
+    if (el) el.innerHTML = `<div class="py-16 text-center text-sm text-slate-500">Couldn't load tasks: ${esc(e.message)}<br><button onclick="crmLoadTasks()" class="mt-3 text-indigo-500 font-bold">Retry</button></div>`;
   }
 }
 
