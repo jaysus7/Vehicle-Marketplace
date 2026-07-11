@@ -142,6 +142,18 @@ async function geocodePostal(postal, isUS) {
   }
 }
 
+// The first letter of a Canadian postal code maps to a province/region — a reliable,
+// offline way to scope comps when geocoding is unavailable. Returns a 2-letter code.
+const CA_POSTAL_PROVINCE = {
+  A: 'NL', B: 'NS', C: 'PE', E: 'NB', G: 'QC', H: 'QC', J: 'QC',
+  K: 'ON', L: 'ON', M: 'ON', N: 'ON', P: 'ON', R: 'MB', S: 'SK',
+  T: 'AB', V: 'BC', X: 'NT', Y: 'YT',
+}
+function provinceFromPostal(postal) {
+  const c = String(postal || '').trim().toUpperCase()[0]
+  return CA_POSTAL_PROVINCE[c] || null
+}
+
 export async function marketcheckMarket({ make, model, year, trim, mileage, drivetrain, engine, zip, radius, isUS = false } = {}) {
   const key = process.env.MARKETCHECK_API_KEY
   if (!key || !make || !model || !year) return null
@@ -157,8 +169,11 @@ export async function marketcheckMarket({ make, model, year, trim, mileage, driv
   if (cleanZip && rad) {
     if (isUS) geo = { zip: cleanZip }
     else {
+      // Prefer a precise lat/long radius; if geocoding fails, fall back to the
+      // dealer's PROVINCE (derived from the postal) so CA comps are never national.
       const g = await geocodePostal(zip || cleanZip, false)
       if (g) geo = { latitude: g.lat, longitude: g.lon }
+      else { const prov = provinceFromPostal(cleanZip); if (prov) geo = { state: prov } }
     }
   }
 
@@ -173,9 +188,9 @@ export async function marketcheckMarket({ make, model, year, trim, mileage, driv
     if (withTrim && trim) p.set('trim', String(trim))
     if (withDrive && wantDrive) p.set('drivetrain', wantDrive)
     if (withGeo && geo) {
-      if (geo.zip) p.set('zip', geo.zip)
-      else { p.set('latitude', String(geo.latitude)); p.set('longitude', String(geo.longitude)) }
-      p.set('radius', String(rad))
+      if (geo.zip) { p.set('zip', geo.zip); p.set('radius', String(rad)) }
+      else if (geo.latitude != null) { p.set('latitude', String(geo.latitude)); p.set('longitude', String(geo.longitude)); p.set('radius', String(rad)) }
+      else if (geo.state) { p.set('state', geo.state) }   // province scope (no radius)
     }
     try {
       const r = await fetch(`${BASE}/search/car/active?${p.toString()}`, {
@@ -203,16 +218,20 @@ export async function marketcheckMarket({ make, model, year, trim, mileage, driv
     } catch (e) { console.error('[marketcheck] request failed:', e.message); return null }
   }
 
-  // Comp-selection cascade: start as tight as the data we were given (trim +
-  // drivetrain + local radius), then relax one constraint at a time only when the
-  // tighter query can't field enough clean comps. Accuracy where data is rich,
-  // coverage where it's thin — never mixing trims/drivetrains just to pad a result.
+  // Comp-selection cascade. GEO IS STICKY: staying local matters more to a dealer
+  // than an exact trim, so we relax drivetrain, then trim, WHILE KEEPING the local
+  // scope — and only drop geo (go national) if the local market can't field enough
+  // comps of the model at all. This is the fix for "clicked 250 but got national":
+  // a scarce local Sport-AWD used to drop geo first and jump straight to nationwide.
   const priced = (res) => (res?.listings || []).filter(l => l.price >= 2500)
+  const appliedOf = (a) => ({ trim: a.withTrim && !!trim, drivetrain: a.withDrive && !!wantDrive, geo: a.withGeo && !!geo })
   const attempts = [
-    { withTrim: true,  withDrive: true,  withGeo: true,  applied: { trim: !!trim, drivetrain: !!wantDrive, geo: !!geo } },
-    { withTrim: true,  withDrive: true,  withGeo: false, applied: { trim: !!trim, drivetrain: !!wantDrive, geo: false } },
-    { withTrim: true,  withDrive: false, withGeo: false, applied: { trim: !!trim, drivetrain: false, geo: false } },
-    { withTrim: false, withDrive: false, withGeo: false, applied: { trim: false, drivetrain: false, geo: false } },
+    { withTrim: true,  withDrive: true,  withGeo: true  },   // local · exact trim+drivetrain
+    { withTrim: true,  withDrive: false, withGeo: true  },   // local · trim (drop drivetrain)
+    { withTrim: false, withDrive: false, withGeo: true  },   // local · any trim of the model
+    { withTrim: true,  withDrive: true,  withGeo: false },   // national · exact (local was empty)
+    { withTrim: true,  withDrive: false, withGeo: false },   // national · trim
+    { withTrim: false, withDrive: false, withGeo: false },   // national · any trim
   ]
   let res = null, applied = null
   const seenKeys = new Set()
@@ -225,9 +244,9 @@ export async function marketcheckMarket({ make, model, year, trim, mileage, driv
     const cand = await fetchListings(a)
     if (!cand) continue
     const pc = priced(cand).length
-    if (pc >= MIN_COMPS) { res = cand; applied = a.applied; break }
+    if (pc >= MIN_COMPS) { res = cand; applied = appliedOf(a); break }
     // Keep the widest partial result as a floor in case nothing clears the bar.
-    if (!res || pc > (res._pc || 0)) { res = cand; res._pc = pc; applied = a.applied }
+    if (!res || pc > (res._pc || 0)) { res = cand; res._pc = pc; applied = appliedOf(a) }
   }
   if (!res) return null
 
@@ -274,7 +293,9 @@ export async function marketcheckMarket({ make, model, year, trim, mileage, driv
     median_mileage: miles.length ? miles[Math.floor(miles.length / 2)] : null,
     // Which of the requested filters actually shaped this comp set (for the UI).
     matched_on: applied || {},
-    radius_used: (applied?.geo && rad) ? rad : null,
+    // Radius only applies when geo was a lat/long or zip scope; province scope has no radius.
+    radius_used: (applied?.geo && !geo?.state && rad) ? rad : null,
+    geo_scope: applied?.geo ? (geo?.state || 'radius') : null,   // 'ON' / 'radius' / null
     median_distance: dists.length ? dists[Math.floor(dists.length / 2)] : null,
     max_distance: dists.length ? dists[dists.length - 1] : null,
     listings: cleanListings,

@@ -814,7 +814,10 @@ function renderAppraisal(d) {
         if (m.trim && v.trim) chips.push('Trim ' + v.trim);
         if (m.drivetrain && v.drivetrain) chips.push(String(v.drivetrain).toUpperCase());
         if (m.engine && v.engine) chips.push(String(v.engine));
+        const PROV = { ON:'Ontario', QC:'Quebec', BC:'B.C.', AB:'Alberta', MB:'Manitoba', SK:'Saskatchewan', NS:'Nova Scotia', NB:'New Brunswick', NL:'Newfoundland', PE:'P.E.I.' };
         if (m.geo && rt.radius_used) chips.push('Within ' + rt.radius_used + ' ' + du + (rt.median_distance != null ? ` · ~${Math.round(rt.median_distance)} ${du} avg` : ''));
+        else if (m.geo && rt.geo_scope && rt.geo_scope !== 'radius') chips.push((PROV[rt.geo_scope] || rt.geo_scope) + ' only');
+        else if (m.geo) chips.push('Local');
         else chips.push('Nationwide');
         return `<div class="flex flex-wrap items-center gap-1.5">
           <span class="text-[11px] font-semibold text-slate-400">Comps matched on:</span>

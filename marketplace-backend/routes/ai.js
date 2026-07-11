@@ -861,6 +861,7 @@ ACV / wholesale take-in (what the dealer buys it for): ${cur} $${suggestedOffer.
         market_mileage: compMiles,             // median mileage of the comp pool
         matched_on: market.matched_on || {},   // which filters shaped the comp set
         radius_used: market.radius_used ?? null,
+        geo_scope: market.geo_scope ?? null,   // province code (e.g. 'ON') or 'radius'
         median_distance: market.median_distance ?? null,
         source: market.source || 'MarketCheck',
       },
