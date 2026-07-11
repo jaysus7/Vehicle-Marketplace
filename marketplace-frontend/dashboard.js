@@ -1527,6 +1527,47 @@ async function crmSaveAppt(id) {
 // ── Full add/edit contact form (the dealership intake workflow) ─────────────
 function openCrmContactModal() { crmOpenForm(null); }
 let __crmTradeDecoded = null;   // decoded trade vehicle held while the form is open
+
+// Searchable "new car of interest" picker over our own inventory (stock # first).
+function crmInvLabel(v) {
+  return `${v.stocknumber ? '#' + v.stocknumber + ' — ' : ''}${[v.year, v.make, v.model, v.trim].filter(Boolean).join(' ')}${v.price ? ' · $' + Number(v.price).toLocaleString() : ''}`;
+}
+function crmInterestSearch() {
+  const box = document.getElementById('crm-interest-results');
+  const qi = document.getElementById('crm-f-interest-q');
+  const hid = document.getElementById('crm-f-interest');
+  if (!box || !qi) return;
+  const q = (qi.value || '').trim().toLowerCase();
+  if (!q && hid) hid.value = '';   // cleared → unpin
+  let items = (__crmInventory || []);
+  if (q) {
+    const match = (v) => {
+      const stock = String(v.stocknumber || '').toLowerCase();
+      const label = [v.year, v.make, v.model, v.trim].filter(Boolean).join(' ').toLowerCase();
+      return stock.includes(q) || label.includes(q) || String(v.vin || '').toLowerCase().includes(q);
+    };
+    // Stock-number hits first (this is how a desk looks a car up).
+    items = items.filter(match).sort((a, b) => {
+      const as = String(a.stocknumber || '').toLowerCase().includes(q) ? 0 : 1;
+      const bs = String(b.stocknumber || '').toLowerCase().includes(q) ? 0 : 1;
+      return as - bs;
+    });
+  }
+  items = items.slice(0, 30);
+  if (!items.length) { box.innerHTML = '<div class="px-3 py-2 text-xs text-slate-400">No matching stock</div>'; box.classList.remove('hidden'); return; }
+  box.innerHTML = items.map(v => `<button type="button" onmousedown="event.preventDefault()" onclick="crmPickInterest('${v.id}')" class="w-full text-left px-3 py-2 hover:bg-indigo-50 dark:hover:bg-indigo-950/30 text-sm flex justify-between gap-2 border-b border-slate-50 dark:border-slate-800 last:border-0">
+    <span class="truncate">${v.stocknumber ? `<span class="font-bold text-indigo-600 dark:text-indigo-400">#${esc(v.stocknumber)}</span> ` : ''}${esc([v.year, v.make, v.model, v.trim].filter(Boolean).join(' '))}</span>
+    ${v.price ? `<span class="text-slate-400 flex-shrink-0 tabular-nums">$${Number(v.price).toLocaleString()}</span>` : ''}
+  </button>`).join('');
+  box.classList.remove('hidden');
+}
+function crmPickInterest(id) {
+  const v = (__crmInventory || []).find(x => x.id === id);
+  if (!v) return;
+  const hid = document.getElementById('crm-f-interest'); if (hid) hid.value = id;
+  const qi = document.getElementById('crm-f-interest-q'); if (qi) qi.value = crmInvLabel(v);
+  document.getElementById('crm-interest-results')?.classList.add('hidden');
+}
 async function crmOpenForm(id) {
   await crmEnsureLookups();
   let c = {};
@@ -1536,7 +1577,7 @@ async function crmOpenForm(id) {
   const lbl = (t) => `<label class="block text-[11px] font-semibold text-slate-500 dark:text-slate-400 mb-1">${t}</label>`;
   const repOpts = ['<option value="">— Unassigned —</option>'].concat((__crmReps || []).map(r => `<option value="${r.id}" ${c.assigned_rep === r.id ? 'selected' : ''}>${esc(r.name)}</option>`)).join('');
   const statusOpts = Object.entries(CRM_STATUS).map(([k, l]) => `<option value="${k}" ${(c.status || 'uncontacted') === k ? 'selected' : ''}>${l}</option>`).join('');
-  const invOpts = ['<option value="">— None —</option>'].concat((__crmInventory || []).map(v => `<option value="${v.id}" ${c.interest_inventory_id === v.id ? 'selected' : ''}>${esc([v.year, v.make, v.model, v.trim].filter(Boolean).join(' '))}${v.stocknumber ? ' · #' + esc(v.stocknumber) : ''}</option>`)).join('');
+  const preInv = (__crmInventory || []).find(v => v.id === c.interest_inventory_id);
   const isCo = c.contact_type === 'company';
   const sect = (t) => `<div class="text-[11px] font-black uppercase tracking-wider text-indigo-500 pt-1">${t}</div>`;
   crmOverlay(`<div class="p-5 space-y-3">
@@ -1592,7 +1633,12 @@ async function crmOpenForm(id) {
     </div>
     <div>${lbl('Trade mileage')}${inp('crm-f-trademiles', __crmTradeDecoded?.mileage, 'e.g. 85000', 'w-full')}</div>
     ${sect('New car of interest')}
-    <select id="crm-f-interest" class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm">${invOpts}</select>
+    <div class="relative">
+      <input id="crm-f-interest-q" value="${esc(preInv ? crmInvLabel(preInv) : '')}" placeholder="Search your stock — stock #, year, make, model…" autocomplete="off" oninput="crmInterestSearch()" onfocus="crmInterestSearch()" onblur="setTimeout(()=>document.getElementById('crm-interest-results')?.classList.add('hidden'),200)" class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm">
+      <input type="hidden" id="crm-f-interest" value="${esc(c.interest_inventory_id || '')}">
+      <div id="crm-interest-results" class="hidden absolute z-20 mt-1 w-full max-h-60 overflow-y-auto bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg shadow-xl"></div>
+    </div>
+    <div class="text-[11px] text-slate-400">Clear the box to remove the pinned vehicle.</div>
     ${sect('Notes')}
     <textarea id="crm-f-notes" rows="2" placeholder="Notes" class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm">${esc(c.notes || '')}</textarea>
     <div class="flex gap-2 justify-end pt-1"><button onclick="this.closest('.fixed').remove()" class="text-sm font-bold text-slate-500 px-4 py-2">Cancel</button>
