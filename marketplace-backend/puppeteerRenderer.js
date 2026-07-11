@@ -59,6 +59,15 @@ const SAFE_CHROMIUM_ARGS = [
 ]
 
 async function getBrowser() {
+  // Kill-switch: on a memory-tight tier (512MB Render), launching Chromium while
+  // serving the app can saturate RAM/CPU and make the web server unresponsive or
+  // OOM-crash. Set DISABLE_HEADLESS=1 to stop ALL server-side Chromium — every
+  // headless caller catches this and degrades gracefully (Cloudflare/SPA dealers
+  // fall through to extension-capture; feed detection returns fast). Flip it off
+  // (or bump the Render tier) to restore server-side rendering.
+  if (process.env.DISABLE_HEADLESS === '1') {
+    throw new Error('headless rendering disabled (DISABLE_HEADLESS=1)')
+  }
   if (cachedBrowser && cachedBrowser.connected !== false) return cachedBrowser
   if (cachedLaunchPromise) return cachedLaunchPromise
   cachedLaunchPromise = (async () => {
@@ -96,6 +105,10 @@ let _headlessChain = Promise.resolve()
 const HEADLESS_HEAP_LIMIT_MB = parseInt(process.env.HEADLESS_HEAP_LIMIT_MB) || 350
 
 export async function withHeadlessGuard(fn, { label = 'headless', onSkip } = {}) {
+  // Kill-switch — skip instantly (no browser, no queue) when headless is disabled.
+  if (process.env.DISABLE_HEADLESS === '1') {
+    return typeof onSkip === 'function' ? onSkip() : { skipped: true }
+  }
   const run = async () => {
     const heapMB = process.memoryUsage().heapUsed / 1024 / 1024
     if (heapMB > HEADLESS_HEAP_LIMIT_MB) {
