@@ -5129,6 +5129,21 @@ async function startAddonCheckout(endpoint, btn, ctaText) {
   }
 }
 
+// Trial countdown badge on the ✦ Upgrades icon (days left in the 30-day trial).
+function updateTrialBadge(daysLeft) {
+  const b = document.getElementById('upg-days-badge');
+  if (!b) return;
+  if (daysLeft > 0) {
+    b.textContent = daysLeft + 'd';
+    b.classList.remove('hidden');
+    const btn = document.getElementById('open-upgrades');
+    if (btn) btn.title = `Free trial — ${daysLeft} day${daysLeft === 1 ? '' : 's'} left · Upgrades & add-ons`;
+  } else {
+    b.classList.add('hidden');
+  }
+}
+window.updateTrialBadge = updateTrialBadge;
+
 // ── Upgrades hub (header ✦ icon) ─────────────────────────────────────────────
 // One place to see every add-on, what you already have, pricing, and start a
 // 30-day free trial. Reads live entitlements from /ai/config.
@@ -5765,6 +5780,8 @@ async function loadAIBoostSection() {
     __vinStickerActive = !!cfg.vin_sticker_active;           // = Inventory Intelligence tier
     __aiDocsActive = !!cfg.ai_docs_active;                   // generated docs = AI Boost
     __invIntelActive = !!cfg.inv_intel_active;
+    // Trial countdown badge on the ✦ Upgrades icon during the 30-day full-access window.
+    updateTrialBadge(cfg.full_access ? (cfg.trial_days_left || 0) : 0);
     // Trade Appraisal is part of the Inventory Intelligence add-on — hide otherwise.
     document.getElementById('nav-appraisal')?.classList.toggle('hidden', !__invIntelActive);
     // Reveal the floating AI assistant dock for entitled dealers (owner exempt).

@@ -82,6 +82,7 @@
       <!-- Upgrades / add-ons hub -->
       <button id="open-upgrades" onclick="openUpgradesHub()" title="Upgrades & add-ons" aria-label="Upgrades and add-ons" class="relative p-1.5 rounded-lg text-violet-600 dark:text-violet-400 hover:bg-violet-50 dark:hover:bg-violet-950/40 transition">
         <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="1.9" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 3l1.9 5.8H20l-4.9 3.6 1.9 5.8L12 14.6 7 18.2l1.9-5.8L4 8.8h6.1L12 3z"/></svg>
+        <span id="upg-days-badge" class="hidden absolute -top-1 -right-1 min-w-[18px] h-4 bg-violet-600 text-white text-[9px] font-black rounded-full flex items-center justify-center px-1 leading-none border border-white dark:border-slate-900"></span>
       </button>
       <!-- Notification bell -->
       <button id="notif-bell" aria-label="Notifications" class="relative p-1.5 rounded-lg text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition">
@@ -2395,7 +2396,7 @@
     </div>
   </div>
 
-  <script src="dashboard.js?v=20260711r"></script>
+  <script src="dashboard.js?v=20260711s"></script>
   <!-- Google Translate widget (per-rep dashboard translation) -->
   <script>
     window.googleTranslateElementInit = function () {
