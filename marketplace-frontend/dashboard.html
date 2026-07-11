@@ -1735,9 +1735,15 @@
 
       <!-- ── Trade Appraisal Page ─────────────────────────────────────────── -->
       <div data-page-content="appraisal" class="page-content hidden space-y-6">
-        <div>
-          <h2 class="text-xl font-bold text-slate-900 dark:text-white">Trade Appraisal</h2>
-          <p class="text-sm text-slate-500 dark:text-slate-400 mt-1">Live retail market value + a suggested cash/trade offer, powered by MarketCheck. Enter a VIN to auto-fill, or type it in.</p>
+        <div class="flex items-start justify-between gap-3 flex-wrap">
+          <div>
+            <h2 class="text-xl font-bold text-slate-900 dark:text-white">Trade Appraisal</h2>
+            <p class="text-sm text-slate-500 dark:text-slate-400 mt-1">Live retail market value + a suggested cash/trade offer, powered by MarketCheck. Enter a VIN to auto-fill, or type it in.</p>
+          </div>
+          <button type="button" onclick="resetAppraisal()" class="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-bold px-4 py-2 rounded-lg transition flex-shrink-0">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>
+            New appraisal
+          </button>
         </div>
 
         <!-- Two-column layout: appraisal flow on the left, Appraisals list pinned right -->
@@ -2385,7 +2391,7 @@
     </div>
   </div>
 
-  <script src="dashboard.js?v=20260711n"></script>
+  <script src="dashboard.js?v=20260711o"></script>
   <!-- Google Translate widget (per-rep dashboard translation) -->
   <script>
     window.googleTranslateElementInit = function () {

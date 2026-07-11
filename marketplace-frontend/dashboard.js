@@ -677,6 +677,29 @@ function apprTile(label, value, sub) {
   </div>`;
 }
 
+// Wipe the appraisal + deal-details forms and all state so every trade starts
+// fresh. Resetting __apprDealId is what makes the next Appraise create a NEW
+// trade record instead of overwriting the last one.
+function resetAppraisal() {
+  const set = (id, v = '') => { const el = document.getElementById(id); if (el) el.value = v; };
+  ['appr-vin', 'appr-year', 'appr-make', 'appr-model', 'appr-trim', 'appr-mileage', 'appr-engine', 'appr-damage',
+   'cust-first', 'cust-last', 'cust-home-phone', 'cust-mobile-phone', 'cust-email', 'cust-postal', 'cust-address', 'disc-notes'
+  ].forEach(id => set(id));
+  set('appr-condition', 'good'); set('appr-drivetrain', ''); set('appr-radius', '250'); set('appr-accident', 'none');
+  set('appr-recon', '1200'); set('appr-gross', '2500');
+  document.getElementById('appr-vin-decoded')?.classList.add('hidden');
+  set('appr-vin-decoded-text');
+  const res = document.getElementById('appr-result'); if (res) res.innerHTML = '';
+  const dmsg = document.getElementById('appr-deal-msg'); if (dmsg) dmsg.textContent = '';
+  document.querySelectorAll('input[name="appr-disposition"]').forEach(r => { r.checked = r.value === 'retail'; });
+  document.querySelectorAll('#appr-disclosure-qa select').forEach(s => { s.selectedIndex = 0; });
+  document.querySelectorAll('#appr-features input[type=checkbox]').forEach(c => { c.checked = false; });
+  // Wipe state → next appraisal is a brand-new record, attributed to the logged-in rep.
+  __apprData = null; __apprDealId = null; __apprDecodedSpecs = null; __apprSalesperson = null;
+  document.getElementById('appr-vin')?.focus();
+  if (typeof showToast === 'function') showToast('Cleared — ready for a new appraisal', 'info');
+}
+
 // vAuto-style live comparable listings — click any row to open the actual listing
 // (dealer site / AutoTrader / CarGurus, wherever it's listed) and compare.
 function apprCompsTable(comps, du, money, numFound) {
