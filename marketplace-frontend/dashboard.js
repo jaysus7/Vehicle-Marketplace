@@ -1285,35 +1285,59 @@ async function loadCrmPage() {
 }
 function crmSetTab(t) { __crmTab = t; loadCrmPage(); }
 
-async function crmLoadContacts(q = '') {
+let __crmCanSeeAll = false;
+// Renders the persistent toolbar (search + manager "by rep" filter) ONCE, then
+// only refreshes the list on search/filter so the search box keeps focus.
+async function crmLoadContacts() {
   const body = document.getElementById('crm-body');
   if (!body) return;
+  await crmEnsureLookups();   // reps for the "by rep" filter
   body.innerHTML = `
-    <div class="flex items-center gap-2 mb-3">
-      <div class="relative flex-1 max-w-sm">
+    <div class="flex flex-wrap items-center gap-2 mb-3">
+      <div class="relative flex-1 min-w-[200px] max-w-sm">
         <svg class="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path stroke-linecap="round" d="M21 21l-4-4"/></svg>
-        <input id="crm-search" value="${esc(q)}" placeholder="Search name, email, phone…" class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg pl-9 pr-3 py-2 text-sm">
+        <input id="crm-search" placeholder="Search ALL contacts — name, email, phone…" oninput="crmSearchDebounced()" class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg pl-9 pr-3 py-2 text-sm">
       </div>
+      <span id="crm-repfilter"></span>
     </div>
     <div id="crm-list" class="py-10 text-center text-sm text-slate-400 italic">Loading contacts…</div>`;
-  const search = document.getElementById('crm-search');
-  if (search) search.oninput = (e) => { clearTimeout(__crmSearchTimer); const v = e.target.value; __crmSearchTimer = setTimeout(() => crmLoadContacts(v), 300); };
+  crmRefreshContacts();
+}
+function crmSearchDebounced() { clearTimeout(__crmSearchTimer); __crmSearchTimer = setTimeout(crmRefreshContacts, 300); }
+async function crmRefreshContacts() {
+  if (!document.getElementById('crm-list')) return;
+  const q = (document.getElementById('crm-search')?.value || '').trim();
+  const rep = document.getElementById('crm-rep')?.value || '';
+  const params = new URLSearchParams();
+  if (q) params.set('q', q);
+  if (rep) params.set('rep', rep);
   try {
-    const d = await apiGetJson(`/crm/contacts${q ? `?q=${encodeURIComponent(q)}` : ''}`);
+    const d = await apiGetJson(`/crm/contacts${params.toString() ? `?${params}` : ''}`);
     const list = document.getElementById('crm-list');
-    if (!list) return;   // user navigated away mid-fetch
+    if (!list) return;   // navigated away mid-fetch
+    __crmCanSeeAll = d.can_see_all;
+    // Render the "by rep" filter once managers are confirmed (kept across refreshes).
+    const rf = document.getElementById('crm-repfilter');
+    if (rf && d.can_see_all && !document.getElementById('crm-rep')) {
+      rf.innerHTML = `<select id="crm-rep" onchange="crmRefreshContacts()" class="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm">
+        <option value="">All reps</option>
+        ${(__crmReps || []).map(r => `<option value="${r.id}">${esc(r.name)}</option>`).join('')}
+      </select>`;
+    }
     const contacts = d.contacts || [];
     if (!contacts.length) {
-      list.innerHTML = `<div class="py-16 text-center text-sm text-slate-400">${q ? 'No contacts match your search.' : 'No contacts yet — they appear automatically as you capture leads and save appraisals, or add one manually.'}</div>`;
+      list.className = '';
+      list.innerHTML = `<div class="py-16 text-center text-sm text-slate-400">${q || rep ? 'No contacts match.' : 'No contacts yet — they appear automatically as you capture leads and save appraisals, or add one manually.'}</div>`;
       return;
     }
+    const scopeNote = q ? 'searching all' : (rep ? 'one rep' : (d.can_see_all ? 'whole team' : 'yours'));
     list.className = '';
     list.innerHTML = `<div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden divide-y divide-slate-100 dark:divide-slate-800">
       ${contacts.map(crmContactRow).join('')}</div>
-      <div class="text-[11px] text-slate-400 mt-2">${contacts.length} contact${contacts.length === 1 ? '' : 's'}${d.can_see_all ? ' · whole team' : ' · yours'}</div>`;
+      <div class="text-[11px] text-slate-400 mt-2">${contacts.length} contact${contacts.length === 1 ? '' : 's'} · ${scopeNote}</div>`;
   } catch (e) {
     const list = document.getElementById('crm-list');
-    if (list) list.innerHTML = `<div class="py-16 text-center text-sm text-slate-500">Couldn't load contacts: ${esc(e.message)}<br><button onclick="crmLoadContacts()" class="mt-3 text-indigo-500 font-bold">Retry</button></div>`;
+    if (list) list.innerHTML = `<div class="py-16 text-center text-sm text-slate-500">Couldn't load contacts: ${esc(e.message)}<br><button onclick="crmRefreshContacts()" class="mt-3 text-indigo-500 font-bold">Retry</button></div>`;
   }
 }
 function crmContactRow(c) {

@@ -96,20 +96,30 @@ async function logComm({ dealershipId, contactId, channel, direction, subject, b
 
 export function registerCrm(app) {
   // ── Contacts list / search ────────────────────────────────────────────────
-  // Reps see contacts they own or created; dealer-level sees the whole book.
+  // Browsing scope: reps see only contacts they own/created; managers see all and
+  // can filter "by rep". SEARCH is different — ANYONE searching spans the whole
+  // dealership (so a rep can find any customer by name/email/phone), because a
+  // customer may have been entered by another rep.
   app.get('/crm/contacts', requireAuth, async (req, res) => {
     if (!req.dealershipId) return res.json({ contacts: [], can_see_all: false })
-    const q = String(req.query.q || '').trim()
+    // Strip PostgREST-significant chars so a comma/paren in the query can't break the or() filter.
+    const q = String(req.query.q || '').trim().replace(/[(),]/g, ' ').trim()
     const status = String(req.query.status || '').trim()
+    const repFilter = String(req.query.rep || '').trim()
     const limit = Math.min(500, Math.max(1, parseInt(req.query.limit) || 200))
+    const dealer = isDealerLevel(req)
+    const searching = q.length > 0
     let query = supabaseAdmin.from('contacts')
-      .select('id, full_name, email, phone, assigned_rep, source, status, tags, dnc, last_activity_at, created_at')
+      .select('id, full_name, email, phone, phone_mobile, assigned_rep, source, status, tags, dnc, last_activity_at, created_at')
       .eq('dealership_id', req.dealershipId)
       .order('last_activity_at', { ascending: false, nullsFirst: false })
       .limit(limit)
-    if (!isDealerLevel(req)) query = query.or(`assigned_rep.eq.${req.user.id},created_by.eq.${req.user.id}`)
+    // Ownership scope applies only while BROWSING (no search). Search sees everyone.
+    if (!dealer && !searching) query = query.or(`assigned_rep.eq.${req.user.id},created_by.eq.${req.user.id}`)
+    // "By rep" filter — managers only (a rep can't browse another rep's whole book).
+    if (repFilter && dealer) query = query.eq('assigned_rep', repFilter)
     if (status) query = query.eq('status', status)
-    if (q) query = query.or(`full_name.ilike.%${q}%,email.ilike.%${q}%,phone.ilike.%${q}%`)
+    if (q) query = query.or(`full_name.ilike.%${q}%,email.ilike.%${q}%,phone.ilike.%${q}%,phone_mobile.ilike.%${q}%,company_name.ilike.%${q}%`)
     const { data, error } = await query
     if (error) return res.status(500).json({ error: error.message })
 
@@ -120,7 +130,7 @@ export function registerCrm(app) {
       reps = Object.fromEntries((rp || []).map(r => [r.id, r.full_name || r.display_name || '—']))
     }
     const contacts = (data || []).map(c => ({ ...c, rep_name: reps[c.assigned_rep] || null }))
-    res.json({ contacts, can_see_all: isDealerLevel(req) })
+    res.json({ contacts, can_see_all: dealer, searching })
   })
 
   // ── Create a contact manually ─────────────────────────────────────────────
