@@ -112,6 +112,36 @@ export function engineLitres(v) {
   return m ? parseFloat(m[1]) : null
 }
 
+// Geocode a postal/ZIP to lat/long. MarketCheck's `zip` filter only understands US
+// ZIP codes — Canadian postal codes are silently ignored, so a CA "radius" search
+// returns NATIONAL results. For CA we must pass latitude/longitude instead. Uses
+// OpenStreetMap Nominatim (free, no key), cached in-memory per process.
+const _geoCache = new Map()
+async function geocodePostal(postal, isUS) {
+  const clean = String(postal || '').trim().toUpperCase()
+  if (!clean) return null
+  if (_geoCache.has(clean)) return _geoCache.get(clean)
+  try {
+    const params = new URLSearchParams({
+      postalcode: clean.replace(/\s+/g, ' '), country: isUS ? 'us' : 'ca', format: 'json', limit: '1',
+    })
+    const r = await fetch(`https://nominatim.openstreetmap.org/search?${params.toString()}`, {
+      headers: { 'User-Agent': 'MarketSync/1.0 (vehicle appraisal comps)' },
+      signal: AbortSignal.timeout(8000),
+    })
+    if (!r.ok) { _geoCache.set(clean, null); return null }
+    const j = await r.json()
+    const hit = (Array.isArray(j) && j[0]?.lat && j[0]?.lon)
+      ? { lat: Number(j[0].lat), lon: Number(j[0].lon) } : null
+    _geoCache.set(clean, hit)
+    return hit
+  } catch (e) {
+    console.warn('[geocode] failed for', clean, e.message)
+    _geoCache.set(clean, null)
+    return null
+  }
+}
+
 export async function marketcheckMarket({ make, model, year, trim, mileage, drivetrain, engine, zip, radius, isUS = false } = {}) {
   const key = process.env.MARKETCHECK_API_KEY
   if (!key || !make || !model || !year) return null
@@ -120,6 +150,17 @@ export async function marketcheckMarket({ make, model, year, trim, mileage, driv
   const wantLitres = engineLitres(engine)
   const cleanZip = String(zip || '').replace(/\s+/g, '').toUpperCase() || null
   const rad = Number(radius) > 0 ? Math.round(Number(radius)) : null
+
+  // Resolve the geo filter once. US ZIP works natively; CA postal must be geocoded
+  // to lat/long or MarketCheck ignores it and returns national comps.
+  let geo = null
+  if (cleanZip && rad) {
+    if (isUS) geo = { zip: cleanZip }
+    else {
+      const g = await geocodePostal(zip || cleanZip, false)
+      if (g) geo = { latitude: g.lat, longitude: g.lon }
+    }
+  }
 
   // One fetch with a given set of filters. geo/drivetrain/trim can each be turned
   // off so the caller can relax them when a tighter query comes back too thin.
@@ -131,7 +172,11 @@ export async function marketcheckMarket({ make, model, year, trim, mileage, driv
     })
     if (withTrim && trim) p.set('trim', String(trim))
     if (withDrive && wantDrive) p.set('drivetrain', wantDrive)
-    if (withGeo && cleanZip && rad) { p.set('zip', cleanZip); p.set('radius', String(rad)) }
+    if (withGeo && geo) {
+      if (geo.zip) p.set('zip', geo.zip)
+      else { p.set('latitude', String(geo.latitude)); p.set('longitude', String(geo.longitude)) }
+      p.set('radius', String(rad))
+    }
     try {
       const r = await fetch(`${BASE}/search/car/active?${p.toString()}`, {
         headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(12000),
@@ -164,7 +209,7 @@ export async function marketcheckMarket({ make, model, year, trim, mileage, driv
   // coverage where it's thin — never mixing trims/drivetrains just to pad a result.
   const priced = (res) => (res?.listings || []).filter(l => l.price >= 2500)
   const attempts = [
-    { withTrim: true,  withDrive: true,  withGeo: true,  applied: { trim: !!trim, drivetrain: !!wantDrive, geo: !!(cleanZip && rad) } },
+    { withTrim: true,  withDrive: true,  withGeo: true,  applied: { trim: !!trim, drivetrain: !!wantDrive, geo: !!geo } },
     { withTrim: true,  withDrive: true,  withGeo: false, applied: { trim: !!trim, drivetrain: !!wantDrive, geo: false } },
     { withTrim: true,  withDrive: false, withGeo: false, applied: { trim: !!trim, drivetrain: false, geo: false } },
     { withTrim: false, withDrive: false, withGeo: false, applied: { trim: false, drivetrain: false, geo: false } },
@@ -174,7 +219,7 @@ export async function marketcheckMarket({ make, model, year, trim, mileage, driv
   for (const a of attempts) {
     // Effective query — skip attempts identical to one we already ran (e.g. there's
     // no drivetrain/geo to drop, so relaxing them changes nothing).
-    const key = [a.withTrim && trim ? 't' : '', a.withDrive && wantDrive ? 'd' : '', a.withGeo && cleanZip && rad ? 'g' : ''].join('|')
+    const key = [a.withTrim && trim ? 't' : '', a.withDrive && wantDrive ? 'd' : '', a.withGeo && geo ? 'g' : ''].join('|')
     if (seenKeys.has(key)) continue
     seenKeys.add(key)
     const cand = await fetchListings(a)
