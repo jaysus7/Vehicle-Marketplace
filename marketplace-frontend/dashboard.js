@@ -5136,11 +5136,21 @@ async function openUpgradesHub() {
   const isAdmin = ['DEALER_ADMIN', 'OWNER'].includes(profileContext?.role);
   let cfg = {};
   try { cfg = await (await fetch(`${API}/ai/config`, { headers: { 'Authorization': `Bearer ${token}` } })).json(); } catch {}
-  const active = { inv_intel: !!cfg.inv_intel_active, ai_boost: !!cfg.ai_boost_active };
+  const paid = { inv_intel: !!cfg.inv_intel_paid, ai_boost: !!cfg.ai_boost_paid };
+  const fullAccess = !!cfg.full_access;
+  const daysLeft = cfg.trial_days_left || 0;
   const order = ['inv_intel', 'ai_boost'];
   const check = '<svg class="w-3.5 h-3.5 text-violet-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5"/></svg>';
   const cards = order.map(key => {
-    const p = UPGRADE_PLANS[key]; const on = active[key];
+    const p = UPGRADE_PLANS[key];
+    const isPaid = paid[key];
+    const on = isPaid || fullAccess;   // usable right now?
+    let statusHtml;
+    if (isPaid) statusHtml = `<span class="inline-flex items-center gap-1.5 text-sm font-bold text-emerald-600 dark:text-emerald-400">${check.replace('w-3.5 h-3.5', 'w-4 h-4')}You have this</span>`;
+    else if (fullAccess) statusHtml = `<div class="flex items-center justify-between gap-2"><span class="inline-flex items-center gap-1.5 text-sm font-bold text-violet-600 dark:text-violet-400">${check.replace('w-3.5 h-3.5 text-violet-500', 'w-4 h-4 text-violet-500')}Included in your trial</span>${isAdmin ? `<button data-endpoint="${p.endpoint}" class="upg-hub-buy text-xs font-bold text-violet-600 dark:text-violet-400 underline hover:no-underline">Keep it →</button>` : ''}</div>`;
+    else statusHtml = isAdmin
+      ? `<button data-endpoint="${p.endpoint}" class="upg-hub-buy w-full bg-violet-600 hover:bg-violet-500 text-white font-bold px-4 py-2.5 rounded-lg text-sm transition">Start 30-day free trial</button>`
+      : '<span class="text-xs text-slate-400">Ask your admin to start a trial.</span>';
     return `<div class="border ${on ? 'border-emerald-300 dark:border-emerald-800 bg-emerald-50/40 dark:bg-emerald-950/10' : 'border-slate-200 dark:border-slate-700'} rounded-xl p-4 flex flex-col">
       <div class="flex items-start justify-between gap-2">
         <div><div class="text-[10px] font-bold uppercase tracking-wider text-violet-500">${esc(p.eyebrow)}</div>
@@ -5149,21 +5159,21 @@ async function openUpgradesHub() {
       </div>
       <p class="text-sm text-slate-600 dark:text-slate-300 mt-1">${esc(p.tagline)}</p>
       <ul class="mt-2 space-y-1 flex-1">${p.features.slice(0, 6).map(f => `<li class="flex items-start gap-2 text-xs text-slate-600 dark:text-slate-300">${check}<span>${esc(f)}</span></li>`).join('')}</ul>
-      <div class="mt-3">
-        ${on
-          ? `<span class="inline-flex items-center gap-1.5 text-sm font-bold text-emerald-600 dark:text-emerald-400">${check.replace('w-3.5 h-3.5', 'w-4 h-4')}You have this</span>`
-          : (isAdmin
-              ? `<button data-endpoint="${p.endpoint}" class="upg-hub-buy w-full bg-violet-600 hover:bg-violet-500 text-white font-bold px-4 py-2.5 rounded-lg text-sm transition">Start 30-day free trial</button>`
-              : '<span class="text-xs text-slate-400">Ask your admin to start a trial.</span>')}
-      </div>
+      <div class="mt-3">${statusHtml}</div>
     </div>`;
   }).join('');
+  const banner = fullAccess
+    ? `<div class="mb-4 rounded-xl bg-violet-600 text-white px-4 py-3">
+        <div class="font-black text-sm">🎉 You're on your 30-day free trial — every feature is unlocked.</div>
+        <div class="text-xs text-violet-100 mt-0.5">${daysLeft} day${daysLeft === 1 ? '' : 's'} left. After that, you keep only the add-ons you subscribe to.</div>
+      </div>`
+    : `<p class="text-sm text-slate-500 dark:text-slate-400 mb-4">Every add-on includes a <span class="font-bold text-slate-700 dark:text-slate-200">30-day free trial</span> — no credit card required, cancel anytime.</p>`;
   const ov = crmOverlay(`<div class="p-5">
-    <div class="flex items-center justify-between mb-1">
+    <div class="flex items-center justify-between mb-2">
       <div class="text-lg font-black text-slate-900 dark:text-white">Upgrades &amp; add-ons</div>
       <button onclick="this.closest('.fixed').remove()" class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"><svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" d="M6 6l12 12M18 6L6 18"/></svg></button>
     </div>
-    <p class="text-sm text-slate-500 dark:text-slate-400 mb-4">Every add-on includes a <span class="font-bold text-slate-700 dark:text-slate-200">30-day free trial</span> — no credit card required, cancel anytime.</p>
+    ${banner}
     <div class="grid sm:grid-cols-2 gap-3">${cards}</div>
   </div>`, 'max-w-3xl');
   ov.querySelectorAll('.upg-hub-buy').forEach(b => b.addEventListener('click', () => startAddonCheckout(b.dataset.endpoint, b, 'Start 30-day free trial')));

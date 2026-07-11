@@ -171,7 +171,10 @@ export function registerRoutes(app) {
       if (authError) throw authError
       createdUserId = authData.user.id
 
-      const trialEndsAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
+      // 30-day free trial: full account access AND every add-on switched on. When
+      // it ends, add-ons drop to whatever the dealer actually paid for (see the
+      // expiry sweep in /ai/config + /cron/expire-full-access).
+      const trialEndsAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
 
       // Newsletter consent (CASL/GDPR/CAN-SPAM): only record if explicitly opted in.
       // Stamp the timestamp + IP so we have audit trail of when consent was given.
@@ -186,7 +189,11 @@ export function registerRoutes(app) {
             name: dealershipName,
             website_url: websiteUrl || null,
             billing_status: 'TRIALING',
-            trial_ends_at: trialEndsAt
+            trial_ends_at: trialEndsAt,
+            // Everything unlocked for the 30-day trial; drops to paid-only after.
+            full_access_until: trialEndsAt,
+            ai_boost_active: true,
+            inv_intel_active: true,
           })
           .select()
           .single()
@@ -227,7 +234,11 @@ export function registerRoutes(app) {
             name: `${fullName} — Personal`,
             website_url: null,
             billing_status: null,
-            is_personal: true
+            is_personal: true,
+            // Same 30-day everything-unlocked onboarding.
+            full_access_until: trialEndsAt,
+            ai_boost_active: true,
+            inv_intel_active: true,
           })
           .select()
           .single()

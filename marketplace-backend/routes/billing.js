@@ -26,10 +26,13 @@ function addonKeyForPrice(priceId) {
 
 // Return the Supabase column(s) to toggle for a given add-on key
 function colsForAddon(key, active) {
-  if (key === 'ai_boost')    return { ai_boost_active: active }
+  // For the two sellable add-ons we also set the *_paid flag from Stripe truth, so
+  // the 30-day full-access expiry sweep can drop granted access without touching a
+  // real paid subscription.
+  if (key === 'ai_boost')    return { ai_boost_active: active, ai_boost_paid: active }
   if (key === 'vin_sticker') return { vin_sticker_active: active }
   if (key === 'ai_vision')   return { ai_vision_active: active }
-  if (key === 'inv_intel')   return { inv_intel_active: active }
+  if (key === 'inv_intel')   return { inv_intel_active: active, inv_intel_paid: active }
   return {}
 }
 

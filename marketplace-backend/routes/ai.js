@@ -243,18 +243,37 @@ export function registerAI(app) {
     if (!req.dealershipId) return res.status(400).json({ error: 'No dealership associated' })
     const { data, error } = await supabaseAdmin
       .from('dealerships')
-      .select('ai_boost_active, ai_tone, ai_required_fields, ai_manager_email, vin_sticker_active, inv_intel_active, ai_vision_active, country, province, city, postal_code, daily_digest_enabled')
+      .select('ai_boost_active, ai_tone, ai_required_fields, ai_manager_email, vin_sticker_active, inv_intel_active, ai_vision_active, ai_boost_paid, inv_intel_paid, full_access_until, country, province, city, postal_code, daily_digest_enabled')
       .eq('id', req.dealershipId)
       .single()
     if (error) return res.status(500).json({ error: error.message })
     const isOwner = (req.user.email || '').toLowerCase() === OWNER_EMAIL
+
+    // 30-day full-access onboarding: everything is on until full_access_until. This
+    // is the self-healing expiry — the first config load after the window closes
+    // drops each add-on to whatever was actually paid for. (A cron sweep is the
+    // backstop for dealers who aren't logged in.)
+    const fa = data.full_access_until ? new Date(data.full_access_until) : null
+    const fullAccess = !!fa && fa.getTime() > Date.now()
+    if (fa && !fullAccess) {
+      await supabaseAdmin.from('dealerships').update({
+        ai_boost_active: !!data.ai_boost_paid,
+        inv_intel_active: !!data.inv_intel_paid,
+        full_access_until: null,
+      }).eq('id', req.dealershipId)
+      data.ai_boost_active = !!data.ai_boost_paid
+      data.inv_intel_active = !!data.inv_intel_paid
+      data.full_access_until = null
+    }
+
     // Entitlement model:
     //  • AI Boost is the master switch for ALL AI (listing copy, price reports,
     //    AI Vision, generated/branded sticker & brochure, AI lot narrative).
     //  • Inventory Intelligence includes the VIN decoder + factory OEM docs.
     //  • The AI lot narrative inside Inv Intel needs AI Boost too.
-    const aiBoost = isOwner || !!data.ai_boost_active
-    const invIntel = isOwner || !!data.inv_intel_active
+    const aiBoost = isOwner || fullAccess || !!data.ai_boost_active
+    const invIntel = isOwner || fullAccess || !!data.inv_intel_active
+    const trialDaysLeft = fullAccess ? Math.ceil((fa.getTime() - Date.now()) / 86400000) : 0
     res.json({
       ...data,
       ai_boost_active: aiBoost,
@@ -262,6 +281,9 @@ export function registerAI(app) {
       vin_sticker_active: invIntel,      // VIN decoder is part of Inventory Intelligence
       ai_docs_active: aiBoost,           // generated/branded sticker & AI brochure
       ai_vision_active: aiBoost,         // AI Vision folded into AI Boost
+      full_access: fullAccess,           // in the 30-day everything-on window
+      full_access_until: data.full_access_until,
+      trial_days_left: trialDaysLeft,
     })
   })
 
@@ -3501,6 +3523,33 @@ Units 60d+ on lot: ${stale}`
 
     res.setHeader('Content-Type', 'text/html; charset=utf-8')
     res.send(printHtml)
+  })
+
+  // ── Cron: expire the 30-day full-access onboarding ───────────────────────
+  // Backstop for the lazy expiry in /ai/config (covers dealers not logged in).
+  // Drops each expired dealer's add-ons to what they actually paid for.
+  //   Schedule: daily, e.g. 0 8 * * *
+  //   curl -X POST https://<your-render-url>/cron/expire-full-access -H "x-cron-secret: $CRON_SECRET"
+  app.post('/cron/expire-full-access', async (req, res) => {
+    if ((req.headers['x-cron-secret'] || '').trim() !== (process.env.CRON_SECRET || '').trim()) {
+      return res.status(401).json({ error: 'Unauthorized' })
+    }
+    try {
+      const { data } = await supabaseAdmin.from('dealerships')
+        .select('id, ai_boost_paid, inv_intel_paid')
+        .not('full_access_until', 'is', null)
+        .lt('full_access_until', new Date().toISOString())
+      let expired = 0
+      for (const d of (data || [])) {
+        await supabaseAdmin.from('dealerships').update({
+          ai_boost_active: !!d.ai_boost_paid,
+          inv_intel_active: !!d.inv_intel_paid,
+          full_access_until: null,
+        }).eq('id', d.id)
+        expired++
+      }
+      res.json({ ok: true, expired })
+    } catch (e) { res.status(500).json({ error: e.message }) }
   })
 
   // ── Cron: auto-send weekly health reports every Sunday night ─────────────
