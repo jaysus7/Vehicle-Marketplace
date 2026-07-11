@@ -133,12 +133,45 @@ The app talks to the deployed backend (the API base is set in the page scripts).
 Migrations are plain SQL in `marketplace-backend/migrations/`, named by date. To apply one,
 paste it into the Supabase SQL editor and run it (each is written to be safe to re-run).
 
-## The blog pipeline
+## The blog pipeline (n8n → Supabase)
 
 Blog posts are **not** stored in the repo — they live in the Supabase `blog_posts` table and
-are published by an external **n8n** workflow that calls `POST /blog` with an `x-api-key`
-header (`BLOG_API_KEY`). The backend renders crawlable pages at `/ssr/blog/:slug` and a
-dynamic `/blog-sitemap.xml`. See `marketplace-backend/routes/blog.js`.
+are published by an external **n8n** workflow. The backend renders crawlable pages at
+`/ssr/blog/:slug` and a dynamic `/blog-sitemap.xml`. See `marketplace-backend/routes/blog.js`.
+
+### How the daily automation works
+
+A scheduled n8n workflow runs once a day (`0 11 * * *`) and:
+
+1. **Get Topic** — reads the first row with `Status = "Ready"` from the `BlogTopics` Google
+   Sheet (columns: `ID`, `Category`, `Topic`, `Angle`, `Status`, `Date Published`).
+2. **Message a model** — Gemini writes an ~800-word Markdown post from the `Topic` + `Angle`,
+   with an SEO_META block (title, description, slug, keywords).
+3. **Build Post Payload** — a Code node parses the meta, converts Markdown → HTML, and builds
+   the API payload.
+4. **Generate/Edit/Upload image** — Imagen creates a cover, cropped to WebP and uploaded to
+   Supabase Storage (`blog-images/<slug>.webp`).
+5. **POST to `/blog`** — publishes the post (auth via the `x-api-key: BLOG_API_KEY` header).
+6. **LinkedIn + Append/Update row** — cross-posts to LinkedIn and marks the sheet row
+   `Published` so the next run advances to the next topic.
+
+### Publishing endpoint
+
+`POST /blog` upserts on `slug` and requires the `BLOG_API_KEY` header. It also enforces a
+**duplicate-content guard**: an incoming post whose title+slug is too similar (Jaccard ≥
+`BLOG_DUP_THRESHOLD`, default 0.35) to a post published within `BLOG_DUP_WINDOW_DAYS`
+(default 45) is rejected with **409** to prevent SEO keyword cannibalization. Re-publishing
+the *same* slug (an edit) is always allowed; send `x-blog-force: 1` to override a false
+positive.
+
+### ⚠️ Gotcha: the sheet row must advance by `row_number`, not `ID`
+
+The "mark Published" step must match the sheet row on n8n's **`row_number`** system field —
+**not** the `ID` column. n8n's `row_number` is the physical spreadsheet row, which does not
+equal the `ID` column value once rows are added/reordered. If the update matches on `ID` but
+writes the `row_number` value, it updates the wrong row (or appends a junk row), the topic's
+`Status` never flips to `Published`, and **every run re-pulls the same "Ready" topic** —
+producing many near-duplicate posts for one keyword. Always match on `row_number`.
 
 ## License
 
