@@ -145,6 +145,11 @@ export async function marketcheckMarket({ make, model, year, trim, mileage, driv
           price: Number(l.price ?? 0), miles: Number(l.miles ?? 0),
           city: l.dealer?.city || null, region: l.dealer?.state || null, dealer: l.dealer?.name || null,
           dist: (l.dist != null ? Number(l.dist) : null),
+          // The live listing's detail page + the site it's on (dealer site / AutoTrader
+          // / CarGurus, whatever MarketCheck aggregated it from) so reps can click through.
+          vdp_url: l.vdp_url || l.href || null,
+          source: l.source || null,
+          year: l.build?.year ?? null, trim: l.build?.trim || null,
           drivetrain: normalizeDrivetrain(l.build?.drivetrain),
           engine: l.build?.engine || null,
           litres: (l.build?.engine_size != null ? Number(l.build.engine_size) : engineLitres(l.build?.engine)),

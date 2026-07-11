@@ -891,8 +891,13 @@ ACV / wholesale take-in (what the dealer buys it for): ${cur} $${suggestedOffer.
       },
       // MarketCheck model-comparable predicted retail + confidence band (or null).
       prediction,
-      // Sample comps (price + mileage + location) for the PDF charts.
-      comps: compList.slice(0, 50).map(l => ({ price: l.price, miles: l.miles, city: l.city, region: l.region })),
+      // Sample comps (price + mileage + location + clickable listing link) for the
+      // charts AND the vAuto-style "click through to the live listing" comp table.
+      comps: compList.slice(0, 50).map(l => ({
+        price: l.price, miles: l.miles, city: l.city, region: l.region,
+        dealer: l.dealer || null, url: l.vdp_url || null, source: l.source || null,
+        trim: l.trim || null, dist: l.dist ?? null,
+      })),
       locations,
     })
   })

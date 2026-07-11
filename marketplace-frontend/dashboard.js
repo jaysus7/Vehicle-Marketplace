@@ -651,6 +651,55 @@ function apprTile(label, value, sub) {
   </div>`;
 }
 
+// vAuto-style live comparable listings — click any row to open the actual listing
+// (dealer site / AutoTrader / CarGurus, wherever it's listed) and compare.
+function apprCompsTable(comps, du, money) {
+  const host = (u) => { try { return new URL(u).hostname.replace(/^www\./, ''); } catch { return ''; } };
+  const srcLabel = (c) => {
+    const h = (host(c.url) || (c.source || '')).toLowerCase();
+    if (h.includes('autotrader')) return 'AutoTrader';
+    if (h.includes('cargurus')) return 'CarGurus';
+    if (h.includes('cars.com')) return 'Cars.com';
+    if (h.includes('kijiji')) return 'Kijiji';
+    return host(c.url) || (c.source || 'Listing');
+  };
+  const rows = (comps || []).filter(c => c.price > 0).sort((a, b) => a.price - b.price).slice(0, 30);
+  if (!rows.length) return '';
+  const withLinks = rows.filter(c => c.url).length;
+  return `
+    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4">
+      <div class="flex items-center justify-between mb-2">
+        <div class="text-xs uppercase font-bold tracking-wider text-slate-500 dark:text-slate-400">Comparable listings</div>
+        <div class="text-[11px] text-slate-400">${withLinks} of ${rows.length} link to the live ad</div>
+      </div>
+      <div class="overflow-x-auto -mx-1">
+        <table class="w-full text-sm border-collapse min-w-[520px]">
+          <thead><tr class="text-[10px] uppercase tracking-wider text-slate-400 border-b border-slate-200 dark:border-slate-800">
+            <th class="text-left py-2 px-2">Price</th>
+            <th class="text-right py-2 px-2">${du === 'mi' ? 'Miles' : 'KM'}</th>
+            <th class="text-left py-2 px-2">Dealer / location</th>
+            <th class="text-left py-2 px-2">Source</th>
+            <th class="text-right py-2 px-2"></th>
+          </tr></thead>
+          <tbody>
+            ${rows.map(c => {
+              const loc = [c.dealer, [c.city, c.region].filter(Boolean).join(', ')].filter(Boolean).join(' · ');
+              const clickable = !!c.url;
+              return `<tr class="border-b border-slate-100 dark:border-slate-800/60 ${clickable ? 'cursor-pointer hover:bg-indigo-50 dark:hover:bg-indigo-950/30' : ''}" ${clickable ? `onclick="window.open('${encodeURI(c.url)}','_blank','noopener')"` : ''}>
+                <td class="py-2 px-2 font-bold text-slate-900 dark:text-white tabular-nums">${money(c.price)}</td>
+                <td class="py-2 px-2 text-right tabular-nums text-slate-600 dark:text-slate-300">${c.miles ? Number(c.miles).toLocaleString() : '—'}</td>
+                <td class="py-2 px-2 text-slate-600 dark:text-slate-300 truncate max-w-[220px]">${esc(loc || '—')}</td>
+                <td class="py-2 px-2 text-slate-500 dark:text-slate-400">${esc(srcLabel(c))}</td>
+                <td class="py-2 px-2 text-right">${clickable ? '<span class="text-indigo-500 font-bold text-xs whitespace-nowrap">View ↗</span>' : ''}</td>
+              </tr>`;
+            }).join('')}
+          </tbody>
+        </table>
+      </div>
+      ${withLinks === 0 ? '<div class="text-[11px] text-slate-400 mt-2">Direct links aren\'t available for this vehicle\'s comps yet — they populate as fresh market data comes in.</div>' : ''}
+    </div>`;
+}
+
 function renderAppraisal(d) {
   __apprData = d;
   __apprDealId = null;      // a fresh appraisal starts a new deal record
@@ -772,6 +821,7 @@ function renderAppraisal(d) {
           ${chips.map(c => `<span class="text-[11px] font-medium bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded-full px-2 py-0.5">${esc(c)}</span>`).join('')}
         </div>`;
       })()}
+      ${apprCompsTable(d.comps, du, money)}
       <div class="text-xs text-slate-400">${esc(label)}${v.mileage ? ` · ${Number(v.mileage).toLocaleString()} ${du}` : ''} · Source: ${esc(rt.source || 'MarketCheck')}. Retail-market based — not auction/wholesale values.</div>
     </div>`;
 }
@@ -918,6 +968,26 @@ function generateAppraisalPdf() {
   ${hist ? `<h2>Market price distribution</h2><div class="card">${hist}<div class="cap">Live retail listings for this ${esc(label)}. Dashed lines mark what we sell it for (retail) and what we buy it at (offer).</div></div>` : ''}
 
   ${locs ? `<h2>Where these comparables are</h2><div class="card">${locs}<div class="cap">Locations of the comparable listings (by region), from ${rt.count ?? (d.comps || []).length} active listings.</div></div>` : ''}
+
+  ${(() => {
+    const host = (u) => { try { return new URL(u).hostname.replace(/^www\./, ''); } catch { return ''; } };
+    const rows = (d.comps || []).filter(c => c.price > 0).sort((a, b) => a.price - b.price).slice(0, 20);
+    if (!rows.length) return '';
+    return `<h2>Comparable listings — click to compare</h2><div class="card"><table>
+      <tr style="color:#94a3b8;font-size:10px;text-transform:uppercase;letter-spacing:.04em">
+        <td style="padding:4px 0">Price</td><td style="padding:4px 0;text-align:right">${du === 'mi' ? 'Miles' : 'KM'}</td>
+        <td style="padding:4px 0">Dealer / location</td><td style="padding:4px 0;text-align:right">Link</td></tr>
+      ${rows.map(c => {
+        const loc = [c.dealer, [c.city, c.region].filter(Boolean).join(', ')].filter(Boolean).join(' · ');
+        return `<tr style="border-top:1px solid #f1f5f9">
+          <td style="padding:6px 0;font-weight:700">${money(c.price)}</td>
+          <td style="padding:6px 0;text-align:right;color:#475569">${c.miles ? Number(c.miles).toLocaleString() : '—'}</td>
+          <td style="padding:6px 0;color:#475569;font-size:12px">${esc(loc || '—')}</td>
+          <td style="padding:6px 0;text-align:right">${c.url ? `<a href="${encodeURI(c.url)}" target="_blank" style="color:#4f46e5;font-weight:700;text-decoration:none">${esc(host(c.url) || 'View')} ↗</a>` : '<span style="color:#cbd5e1">—</span>'}</td>
+        </tr>`;
+      }).join('')}
+    </table><div class="cap">Live comparable listings. Click a link to open the actual ad and compare.</div></div>`;
+  })()}
 
   <div style="margin-top:22px;font-size:11px;color:#94a3b8;border-top:1px solid #e2e8f0;padding-top:10px">
     Prepared ${today}. Values are retail-market estimates from live ${esc(rt.source || 'MarketCheck')} listings — not a guaranteed offer or an auction/wholesale value. Final offer subject to inspection.
