@@ -843,9 +843,43 @@ ACV / wholesale take-in (what the dealer buys it for): ${cur} $${suggestedOffer.
       } catch { /* summary is a nice-to-have — never fail the appraisal for it */ }
     }
 
+    // Auto-log this appraisal so it shows in Recent Trades (rep sees own, dealer sees
+    // all). Re-appraising in the same session updates the same row (appraisal_id from
+    // the client) instead of piling up duplicates. Never fail the appraisal on error.
+    const appraisalObj = {
+      suggested_offer: suggestedOffer, retail_mid: retailMid, trade_value: tradeValue,
+      recon, target_gross: targetGross, gross_pct: grossPct, pct_to_market: pctToMarket,
+      ai_summary,
+    }
+    let appraisal_id = null
+    try {
+      const tradeRow = {
+        dealership_id: req.dealershipId,
+        created_by: req.user.id,
+        salesperson_name: req.profile?.full_name || req.user.email || null,
+        year, make, model, trim: trim || null, vin: vehicle.vin || null, mileage,
+        suggested_offer: suggestedOffer, currency: isUS ? 'USD' : 'CAD',
+        appraisal: appraisalObj,
+      }
+      const existingId = String(b.appraisal_id || '').trim()
+      if (existingId) {
+        const { data: owned } = await supabaseAdmin.from('trade_appraisals')
+          .select('id, created_by').eq('id', existingId).eq('dealership_id', req.dealershipId).maybeSingle()
+        if (owned && owned.created_by === req.user.id) {
+          await supabaseAdmin.from('trade_appraisals').update(tradeRow).eq('id', existingId)
+          appraisal_id = existingId
+        }
+      }
+      if (!appraisal_id) {
+        const { data: ins } = await supabaseAdmin.from('trade_appraisals').insert(tradeRow).select('id').single()
+        appraisal_id = ins?.id || null
+      }
+    } catch (e) { console.warn('[appraise] auto-log failed:', e.message) }
+
     res.json({
       ok: true,
       vehicle,
+      appraisal_id,
       dealer_name: dealer?.name || null,
       currency: isUS ? 'USD' : 'CAD',
       distance_unit: isUS ? 'mi' : 'km',
@@ -897,7 +931,7 @@ ACV / wholesale take-in (what the dealer buys it for): ${cur} $${suggestedOffer.
       prediction,
       // Sample comps (price + mileage + location + clickable listing link) for the
       // charts AND the vAuto-style "click through to the live listing" comp table.
-      comps: compList.slice(0, 50).map(l => ({
+      comps: compList.slice(0, 100).map(l => ({
         price: l.price, miles: l.miles, city: l.city, region: l.region,
         dealer: l.dealer || null, url: l.vdp_url || null, source: l.source || null,
         trim: l.trim || null, dist: l.dist ?? null,

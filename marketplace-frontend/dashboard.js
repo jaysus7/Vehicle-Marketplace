@@ -622,6 +622,7 @@ function initAppraisal() {
       drivetrain: ($('appr-drivetrain')?.value || '').trim() || (__apprDecodedSpecs?.drivetrain || ''),
       engine: ($('appr-engine')?.value || '').trim() || (__apprDecodedSpecs?.engine || ''),
       radius: $('appr-radius')?.value ?? '',
+      appraisal_id: __apprDealId || undefined,   // update the same trade log on re-appraise
     };
     if (!body.year || !body.make || !body.model) { showToast('Year, make and model are required', 'error'); return; }
     const orig = runBtn.textContent;
@@ -635,6 +636,7 @@ function initAppraisal() {
       const d = await r.json();
       if (!r.ok) throw new Error(d.error || 'Appraisal failed');
       result.innerHTML = renderAppraisal(d);
+      if (typeof loadApprList === 'function') loadApprList();  // refresh Recent Trades
     } catch (e) {
       result.innerHTML = `<div class="py-8 text-center text-sm text-slate-500">Couldn't appraise: ${esc(e.message)}</div>`;
     } finally { runBtn.disabled = false; runBtn.textContent = orig; }
@@ -663,7 +665,7 @@ function apprCompsTable(comps, du, money, numFound) {
     if (h.includes('kijiji')) return 'Kijiji';
     return host(c.url) || (c.source || 'Listing');
   };
-  const rows = (comps || []).filter(c => c.price > 0).sort((a, b) => a.price - b.price).slice(0, 30);
+  const rows = (comps || []).filter(c => c.price > 0).sort((a, b) => a.price - b.price).slice(0, 75);
   if (!rows.length) return '';
   const withLinks = rows.filter(c => c.url).length;
   return `
@@ -702,7 +704,7 @@ function apprCompsTable(comps, du, money, numFound) {
 
 function renderAppraisal(d) {
   __apprData = d;
-  __apprDealId = null;      // a fresh appraisal starts a new deal record
+  __apprDealId = d.appraisal_id || null;  // the auto-logged trade record (for Deal Details save + updates)
   __apprSalesperson = null; // new appraisal → attributed to the logged-in user
   const v = d.vehicle || {};
   const label = [v.year, v.make, v.model, v.trim].filter(Boolean).join(' ') || 'Vehicle';
@@ -1003,7 +1005,7 @@ function generateAppraisalPdf() {
 
   ${(() => {
     const host = (u) => { try { return new URL(u).hostname.replace(/^www\./, ''); } catch { return ''; } };
-    const rows = (d.comps || []).filter(c => c.price > 0).sort((a, b) => a.price - b.price).slice(0, 20);
+    const rows = (d.comps || []).filter(c => c.price > 0).sort((a, b) => a.price - b.price).slice(0, 40);
     if (!rows.length) return '';
     return `<h2>Comparable listings — click to compare</h2><div class="card"><table>
       <tr style="color:#94a3b8;font-size:10px;text-transform:uppercase;letter-spacing:.04em">

@@ -183,7 +183,7 @@ export async function marketcheckMarket({ make, model, year, trim, mileage, driv
     const p = new URLSearchParams({
       api_key: key, country: isUS ? 'us' : 'ca', car_type: 'used',
       make: String(make), model: String(model), year: String(year),
-      rows: '50', sort_by: 'price', sort_order: 'asc',
+      rows: '100', sort_by: 'price', sort_order: 'asc',
     })
     if (withTrim && trim) p.set('trim', String(trim))
     if (withDrive && wantDrive) p.set('drivetrain', wantDrive)
