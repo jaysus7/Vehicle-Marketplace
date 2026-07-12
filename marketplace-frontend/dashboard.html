@@ -588,6 +588,16 @@
       <!-- ───────── PROFILE & SETTINGS PAGE ───────── -->
       <!-- #profile-card is authored in the sidebar then relocated here by dashboard.js. -->
       <div data-page-content="profile" class="page-content hidden space-y-8">
+        <!-- CRM / DMS connection (ADF lead delivery) — moved here from the CRM Leads tab -->
+        <div id="crm-dms-card" data-admin-only class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-5">
+          <h2 class="text-lg font-bold text-slate-900 dark:text-white">CRM / DMS connection</h2>
+          <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5 mb-3">Your CRM/DMS lead-intake address (VinSolutions, DealerSocket, Elead, PBS, etc.). Leads captured in MarketSync are emailed here as ADF XML and auto-imported. Not sure? Ask your CRM admin for your "ADF" or "email lead" address.</p>
+          <div class="flex gap-2">
+            <input id="crm-adf-email" type="email" placeholder="leads@yourcrm-intake.com" class="flex-1 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm">
+            <button id="crm-adf-save" onclick="saveCrmAdfEmail(this)" class="bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-bold px-4 py-2 rounded-lg transition">Save</button>
+          </div>
+          <p id="crm-adf-msg" class="hidden text-xs mt-2"></p>
+        </div>
         <!-- Language: per-rep dashboard translation (Google Translate) + AI listing-copy language -->
         <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-5 notranslate">
           <h2 class="text-lg font-bold text-slate-900 dark:text-white">Language</h2>
@@ -2426,7 +2436,7 @@
     </div>
   </div>
 
-  <script src="dashboard.js?v=20260712i"></script>
+  <script src="dashboard.js?v=20260712j"></script>
   <!-- Google Translate widget (per-rep dashboard translation) -->
   <script>
     window.googleTranslateElementInit = function () {

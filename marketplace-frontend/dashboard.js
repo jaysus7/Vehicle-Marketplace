@@ -530,7 +530,7 @@ function switchPage(pageId) {
   runPageInit(pageId);
 
   if (pageId === 'vin-sticker') loadVinStickerPage();
-  if (pageId === 'profile') loadProfileBranding();
+  if (pageId === 'profile') { loadProfileBranding(); loadCrmAdfSetting(); }
   if (pageId === 'inv-intel' && typeof window._invIntelPageHook === 'function') window._invIntelPageHook();
   if (pageId === 'ai-vision') loadAiVisionPage();
   if (pageId === 'crm') loadCrmPage();
@@ -1587,6 +1587,26 @@ async function crmSaveAppt(id) {
 }
 
 // ── Full add/edit contact form (the dealership intake workflow) ─────────────
+// CRM / DMS (ADF) connection — lives on the Settings page now.
+async function loadCrmAdfSetting() {
+  const card = document.getElementById('crm-dms-card'); if (!card) return;
+  try {
+    const d = await apiGetJson('/leads/crm-email');
+    card.classList.toggle('hidden', !d.can_configure);
+    const inp = document.getElementById('crm-adf-email'); if (inp) inp.value = d.crm_adf_email || '';
+  } catch { /* leave as-is */ }
+}
+async function saveCrmAdfEmail(btn) {
+  const inp = document.getElementById('crm-adf-email'), msg = document.getElementById('crm-adf-msg');
+  const orig = btn.textContent; btn.disabled = true; btn.textContent = 'Saving…';
+  try {
+    const r = await fetch(`${API}/leads/crm-email`, { method: 'PUT', headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ crm_adf_email: (inp?.value || '').trim() }) });
+    if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || 'Failed');
+    if (msg) { msg.textContent = '✓ Saved — leads now deliver to your CRM.'; msg.className = 'text-xs mt-2 text-emerald-600 dark:text-emerald-400'; msg.classList.remove('hidden'); }
+  } catch (e) { if (msg) { msg.textContent = e.message; msg.className = 'text-xs mt-2 text-red-500'; msg.classList.remove('hidden'); } }
+  finally { btn.disabled = false; btn.textContent = orig; }
+}
+window.saveCrmAdfEmail = saveCrmAdfEmail;
 function openCrmContactModal() { crmOpenForm(null); }
 let __crmTradeDecoded = null;   // decoded trade vehicle held while the form is open
 
@@ -1825,18 +1845,7 @@ async function loadLeadsPage() {
       <p class="text-sm text-slate-500 dark:text-slate-400 mt-1">Log buyer leads — they're delivered to your CRM automatically as an ADF email.</p>
     </div>
 
-    ${data.can_configure ? `
-    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-5">
-      <h3 class="text-sm font-bold text-slate-900 dark:text-white mb-1">CRM ADF email</h3>
-      <p class="text-xs text-slate-500 dark:text-slate-400 mb-3">Your CRM's lead-intake address (VinSolutions, DealerSocket, Elead, etc.). Leads are emailed here as ADF XML and auto-imported. Not sure? Ask your CRM admin for your "ADF" or "email lead" address.</p>
-      <div class="flex gap-2">
-        <input id="crm-email" type="email" value="${esc(data.crm_adf_email || '')}" placeholder="leads@yourcrm-intake.com" class="flex-1 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm">
-        <button id="crm-save" class="bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-bold px-4 py-2 rounded-lg transition">Save</button>
-      </div>
-      <p id="crm-msg" class="hidden text-xs mt-2"></p>
-    </div>` : ''}
-
-    ${!crmSet ? `<div class="bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-lg px-4 py-3 text-sm text-amber-700 dark:text-amber-300">No CRM address set yet — leads are still saved here, and will send once ${data.can_configure ? 'you add' : 'your admin adds'} the CRM ADF email.</div>` : ''}
+    ${!crmSet ? `<div class="bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-lg px-4 py-3 text-sm text-amber-700 dark:text-amber-300">No CRM/DMS connection set yet — leads are still saved here, and will send once ${data.can_configure ? 'you add it in <b>Settings → CRM / DMS connection</b>' : 'your admin adds it in Settings'}.</div>` : ''}
 
     <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-5">
       <h3 class="text-sm font-bold text-slate-900 dark:text-white mb-3">Log a lead</h3>
@@ -1861,15 +1870,6 @@ async function loadLeadsPage() {
         <tbody>${rows}</tbody>
       </table></div>
     </div>`;
-
-  document.getElementById('crm-save')?.addEventListener('click', async () => {
-    const msg = document.getElementById('crm-msg');
-    try {
-      const r = await fetch(`${API}/leads/crm-email`, { method: 'PUT', headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ crm_adf_email: document.getElementById('crm-email').value.trim() }) });
-      if (!r.ok) throw new Error((await r.json()).error || 'Failed');
-      msg.textContent = '✓ Saved'; msg.className = 'text-xs mt-2 text-emerald-600 dark:text-emerald-400'; msg.classList.remove('hidden');
-    } catch (e) { msg.textContent = e.message; msg.className = 'text-xs mt-2 text-red-500'; msg.classList.remove('hidden'); }
-  });
 
   document.getElementById('lead-save')?.addEventListener('click', async () => {
     const btn = document.getElementById('lead-save'); const msg = document.getElementById('lead-msg');

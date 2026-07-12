@@ -153,6 +153,14 @@ export function registerLeads(app) {
   })
 
   // Dealer admins set/clear the CRM's ADF intake email.
+  // Light read of just the CRM/DMS (ADF) connection — used by the Settings page.
+  app.get('/leads/crm-email', requireAuth, async (req, res) => {
+    if (!req.dealershipId) return res.json({ crm_adf_email: null, can_configure: false })
+    const { data: dealer } = await supabaseAdmin
+      .from('dealerships').select('crm_adf_email').eq('id', req.dealershipId).maybeSingle()
+    res.json({ crm_adf_email: dealer?.crm_adf_email || null, can_configure: ['DEALER_ADMIN', 'OWNER', 'MANAGER'].includes(req.profile.role) })
+  })
+
   app.put('/leads/crm-email', requireAuth, async (req, res) => {
     if (!['DEALER_ADMIN', 'OWNER', 'MANAGER'].includes(req.profile.role)) {
       return res.status(403).json({ error: 'Dealer admin required' })
