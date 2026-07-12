@@ -114,7 +114,7 @@ export function registerEquity(app) {
     const s = equitySettings(d)
     const rows = await loadLeasedRows(req.dealershipId, false)
     const out = rows.map(({ o, c, v }) => ({
-      id: o.id, customer_id: o.customer_id,
+      id: o.id, customer_id: o.customer_id, vehicle_id: o.vehicle_id || null,
       name: c?.full_name || [c?.first_name, c?.last_name].filter(Boolean).join(' ') || 'Unknown',
       vehicle: v ? [v.year, v.make, v.model, v.trim].filter(Boolean).join(' ') : '—', vin: v?.vin || null,
       delivery_date: o.delivery_date, is_leased: !!o.is_leased,
@@ -127,6 +127,15 @@ export function registerEquity(app) {
   app.put('/equity/lease/:id', requireAuth, async (req, res) => {
     if (!isMgr(req)) return res.status(403).json({ error: 'Manager access required' })
     const b = req.body || {}, patch = { updated_at: new Date().toISOString() }
+    if (b.vehicle_id !== undefined) {
+      if (b.vehicle_id === '' || b.vehicle_id === null) patch.vehicle_id = null
+      else {
+        // Only allow linking a vehicle this dealership actually owns.
+        const { data: veh } = await supabaseAdmin.from('inventory').select('id').eq('id', b.vehicle_id).eq('dealership_id', req.dealershipId).maybeSingle()
+        if (!veh) return res.status(400).json({ error: 'Vehicle not found in your inventory' })
+        patch.vehicle_id = b.vehicle_id
+      }
+    }
     if (b.is_leased !== undefined) patch.is_leased = !!b.is_leased
     for (const k of ['lease_term_months', 'delivery_mileage', 'annual_km_allowance']) if (b[k] !== undefined) patch[k] = b[k] === '' ? null : (parseInt(b[k]) || null)
     for (const k of ['monthly_payment', 'residual_value', 'msrp', 'payoff_amount']) if (b[k] !== undefined) patch[k] = b[k] === '' ? null : num(b[k])
@@ -160,7 +169,7 @@ export function registerEquity(app) {
     res.json({
       settings: s,
       lease: {
-        id: o.id, customer_id: o.customer_id, vehicle, vin,
+        id: o.id, customer_id: o.customer_id, vehicle_id: o.vehicle_id || null, vehicle, vin,
         delivery_date: o.delivery_date, is_leased: !!o.is_leased,
         lease_term_months: o.lease_term_months, monthly_payment: o.monthly_payment, residual_value: o.residual_value,
         delivery_mileage: o.delivery_mileage, annual_km_allowance: o.annual_km_allowance, payoff_amount: o.payoff_amount,

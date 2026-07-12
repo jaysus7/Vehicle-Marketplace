@@ -1555,7 +1555,7 @@ async function crmToggleTask(taskId, done, contactId) {
 async function crmLeaseForm(id) {
   crmDetailFormSlot(`<div class="bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-900 rounded-lg p-3 text-sm text-slate-500">Loading lease details…</div>`);
   let d;
-  try { d = await apiGetJson(`/equity/lease/by-contact/${id}`); }
+  try { [d] = await Promise.all([apiGetJson(`/equity/lease/by-contact/${id}`), eqEnsureVehicles()]); }
   catch (e) { crmDetailFormSlot(`<div class="bg-rose-50 dark:bg-rose-950/20 border border-rose-200 dark:border-rose-900 rounded-lg p-3 text-sm text-rose-600">Couldn't load: ${esc(e.message)}</div>`); return; }
   const l = d.lease, unit = (d.settings && d.settings.unit) || 'km';
   if (!l) { crmDetailFormSlot(`<div class="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg p-3 space-y-2 text-sm"><div class="text-slate-600 dark:text-slate-300">No delivered vehicle record found for this customer yet. Lease/equity details attach to a delivered ownership record.</div><div class="flex justify-end"><button onclick="crmDetailFormSlot('')" class="text-xs font-bold text-slate-500 px-3 py-1.5">Close</button></div></div>`); return; }
@@ -1566,6 +1566,7 @@ async function crmLeaseForm(id) {
       <label class="flex items-center gap-1.5 text-xs font-bold"><input type="checkbox" class="clz-leased accent-emerald-600" ${l.is_leased ? 'checked' : ''}>Leased</label>
     </div>
     ${l.is_leased && l.equity != null ? `<div class="text-xs font-bold ${l.equity >= 0 ? 'text-emerald-600' : 'text-rose-600'}">${eqMoney(l.equity)} est. equity · ${l.months_remaining ?? '?'} mo left · est. wholesale ${eqMoney(l.wholesaleEst)} − payoff ${eqMoney(l.payoffEst)}</div>` : ''}
+    <div><label class="text-[10px] text-slate-400">Vehicle</label><select class="clz-vehicle w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded px-2 py-1 text-xs">${eqVehicleOptions(l.vehicle_id, l.vehicle)}</select></div>
     <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
       <div><label class="text-[10px] text-slate-400">Term (months)</label>${inp('clz-term', l.lease_term_months, '48')}</div>
       <div><label class="text-[10px] text-slate-400">Monthly payment</label>${inp('clz-pay', l.monthly_payment, '580')}</div>
@@ -1582,6 +1583,7 @@ async function crmSaveLease(leaseId, contactId, btn) {
   const card = btn.closest('[data-lease]'); const g = (c) => card.querySelector(c)?.value.trim();
   const body = {
     is_leased: card.querySelector('.clz-leased')?.checked || false,
+    vehicle_id: card.querySelector('.clz-vehicle')?.value || '',
     lease_term_months: g('.clz-term'), monthly_payment: g('.clz-pay'), residual_value: g('.clz-res'),
     payoff_amount: g('.clz-payoff'), delivery_mileage: g('.clz-miles'), annual_km_allowance: g('.clz-km'),
   };
@@ -5219,11 +5221,31 @@ Object.assign(window, { loadAutomationPage, autoToggleEngine, autoToggleCard, au
 let __equity = { radar: [], leases: [], settings: {}, tab: 'radar' };
 const eqMoney = (n) => (n == null || isNaN(n)) ? '—' : (n < 0 ? '-$' : '$') + Math.abs(Math.round(n)).toLocaleString();
 const eqUnit = () => (__equity.settings && __equity.settings.unit) || 'km';
+let __eqVehicles = null;
+async function eqEnsureVehicles() {
+  if (!__eqVehicles) { try { __eqVehicles = await apiGetJson('/inventory/all', { retries: 1 }); } catch { __eqVehicles = []; } }
+  return __eqVehicles;
+}
+// Vehicle <option>s for linking a lease. Keeps the currently-linked vehicle
+// selectable even if it's aged out of the 2-week sold window.
+function eqVehicleOptions(sel, label) {
+  const list = __eqVehicles || [];
+  const found = sel && list.some(v => v.id === sel);
+  let opts = '<option value="">— No vehicle linked —</option>';
+  if (sel && !found) opts += `<option value="${esc(sel)}" selected>${esc(label || 'Currently linked vehicle')}</option>`;
+  for (const v of list) {
+    const t = [v.year, v.make, v.model, v.trim].filter(Boolean).join(' ')
+      + (v.vin ? ` · …${String(v.vin).slice(-6)}` : '')
+      + (v.status && String(v.status).toLowerCase() !== 'available' ? ` (${v.status})` : '');
+    opts += `<option value="${v.id}" ${v.id === sel ? 'selected' : ''}>${esc(t)}</option>`;
+  }
+  return opts;
+}
 async function loadEquityPage() {
   const root = document.getElementById('equity-root'); if (!root) return;
   root.innerHTML = '<div class="py-16 text-center text-sm text-slate-400 italic">Loading…</div>';
   try {
-    const [radar, leases, settings] = await Promise.all([apiGetJson('/equity/radar'), apiGetJson('/equity/leases'), apiGetJson('/equity/settings')]);
+    const [radar, leases, settings] = await Promise.all([apiGetJson('/equity/radar'), apiGetJson('/equity/leases'), apiGetJson('/equity/settings'), eqEnsureVehicles()]);
     __equity = { radar: radar.radar || [], leases: leases.leases || [], settings: settings.settings || radar.settings || {}, tab: __equity.tab || 'radar' };
   } catch (e) {
     root.innerHTML = String(e.message).toLowerCase().includes('manager')
@@ -5276,6 +5298,7 @@ function eqLeasesHtml() {
       <div class="font-bold text-sm text-slate-900 dark:text-white flex-1 truncate">${esc(l.name)} <span class="text-[11px] font-normal text-slate-400">${esc(l.vehicle)}</span></div>
       ${l.is_leased && l.equity != null ? `<span class="text-xs font-bold ${l.equity >= 0 ? 'text-emerald-600' : 'text-rose-600'}">${eqMoney(l.equity)} equity · ${l.months_remaining ?? '?'} mo left</span>` : ''}
     </div>
+    <div class="mb-2"><label class="text-[10px] text-slate-400">Vehicle</label><select class="lz-vehicle ${ic}">${eqVehicleOptions(l.vehicle_id, l.vehicle)}</select></div>
     <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
       <div><label class="text-[10px] text-slate-400">Term (months)</label><input class="lz-term ${ic}" type="number" value="${l.lease_term_months ?? ''}" placeholder="48"></div>
       <div><label class="text-[10px] text-slate-400">Monthly payment</label><input class="lz-pay ${ic}" type="number" value="${l.monthly_payment ?? ''}" placeholder="580"></div>
@@ -5307,6 +5330,7 @@ async function eqSaveLease(id, btn) {
   const card = btn.closest('[data-lease]'); const g = (c) => card.querySelector(c)?.value.trim();
   const body = {
     is_leased: card.querySelector('.lz-leased')?.checked || false,
+    vehicle_id: card.querySelector('.lz-vehicle')?.value || '',
     lease_term_months: g('.lz-term'), monthly_payment: g('.lz-pay'), residual_value: g('.lz-res'),
     payoff_amount: g('.lz-payoff'), delivery_mileage: g('.lz-miles'), annual_km_allowance: g('.lz-km'),
   };
