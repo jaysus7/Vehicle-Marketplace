@@ -4009,6 +4009,13 @@ async function openCarfax(id, vin) {
 // and everything (website, syndication) reads from this.
 let __vehExistingUrls = [];   // already-uploaded photo URLs (editable)
 let __vehFormFiles = [];      // File objects staged for upload
+// Rendered-car placeholder for photoless stock cards — the car on the dealer's
+// chosen background (if set), else a neutral gradient.
+function catalogCarPlaceholder(cls) {
+  const bg = (typeof __photoBackgroundUrl !== 'undefined' && __photoBackgroundUrl) ? __photoBackgroundUrl : null;
+  const style = bg ? `background-image:url('${esc(bg)}');background-size:cover;background-position:center` : 'background:linear-gradient(135deg,#334155,#0f172a)';
+  return `<div class="${cls} flex items-center justify-center overflow-hidden" style="${style}"><svg viewBox="0 0 120 46" class="w-3/4 max-w-[150px]" style="opacity:.92"><path d="M10 34 h100 a3 3 0 0 0 3-3 v-6 a4 4 0 0 0-3-4 l-14-3 -9-9 a7 7 0 0 0-5-2 H43 a7 7 0 0 0-5 2 l-9 9 -14 3 a4 4 0 0 0-3 4 v6 a3 3 0 0 0 3 3 z" fill="#ffffff" fill-opacity=".9"/><circle cx="34" cy="35" r="7" fill="#0f172a"/><circle cx="86" cy="35" r="7" fill="#0f172a"/><circle cx="34" cy="35" r="3" fill="#fff"/><circle cx="86" cy="35" r="3" fill="#fff"/></svg></div>`;
+}
 let __photoBackgroundUrl = null;  // dealership branded background (or null)
 let __bgProviderReady = false;    // AI cutout provider key configured server-side
 
@@ -4258,28 +4265,14 @@ async function openSiteManager() {
       <div id="site-widget-list" class="space-y-2"></div>
     </div>
 
-    <div class="border-t border-slate-200 dark:border-slate-700 pt-3">
-      <div class="flex items-center justify-between mb-1">
-        <div class="text-sm font-black text-slate-900 dark:text-white">Pages</div>
-        <div class="flex items-center gap-2">
-          <button type="button" onclick="autoBuildPages(this)" class="text-xs font-bold text-violet-600 dark:text-violet-400">✨ Auto-build model &amp; offer pages</button>
-          <button type="button" onclick="addSitePage()" class="text-xs font-bold text-indigo-600 dark:text-indigo-400">+ Add page</button>
-        </div>
-      </div>
-      <p class="text-[11px] text-slate-400 mb-2">Extra pages (About, Financing…) in your nav. Auto-build creates a page per model in your inventory (pulls stock automatically) plus standard offer pages.</p>
-      <div id="site-page-list" class="space-y-2"></div>
-    </div>
-
-    <div class="text-[11px] text-slate-400">Logo, and your sales team, come from your existing branding + team roster.</div>
+    <div class="text-[11px] text-slate-400">Pages (About, model &amp; offer pages) live on the <b>Website → Pages</b> tab. Logo and your sales team come from your existing branding + team roster.</div>
     <div class="flex gap-2 justify-end pt-1">
       <button onclick="this.closest('.fixed').remove()" class="text-sm font-bold text-slate-500 px-4 py-2">Cancel</button>
       <button onclick="saveSite(this)" class="text-sm font-bold bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg">Save</button>
     </div>
   </div>`, 'max-w-lg');
   __siteWidgets = Array.isArray(c.widgets) ? c.widgets.slice() : [];
-  __sitePages = Array.isArray(c.pages) ? c.pages.slice() : [];
   renderSiteWidgets();
-  renderSitePages();
 }
 // Upload an image (hero/page) → returns a public URL into the given input field.
 async function uploadSiteImage(targetId, file) {
@@ -4296,6 +4289,9 @@ async function uploadSiteImage(targetId, file) {
 }
 let __sitePages = [];
 function collectSitePages() {
+  // Only read from the DOM when the Pages editor is actually rendered; otherwise
+  // keep __sitePages as loaded so a save from another tab never wipes pages.
+  if (!document.getElementById('site-page-list')) return;
   // Preserve make/model/kind (not shown in the editor) by merging with existing.
   __sitePages = Array.from(document.querySelectorAll('#site-page-list [data-pgx]')).map((r, idx) => ({
     ...(__sitePages[idx] || {}),
@@ -4381,7 +4377,7 @@ function addSiteWidget() { collectSiteWidgets(); __siteWidgets.push({ slot: 'bel
 function removeSiteWidget(i) { collectSiteWidgets(); __siteWidgets.splice(i, 1); renderSiteWidgets(); }
 async function saveSite(btn) {
   const val = (i) => (document.getElementById(i)?.value || '').trim();
-  collectSiteWidgets(); collectSitePages();
+  collectSiteWidgets();
   const body = {
     site_slug: val('site-slug'), site_published: document.getElementById('site-pub')?.checked || false,
     tagline: val('site-tagline'), about: val('site-about'), phone: val('site-phone'), email: val('site-email'),
@@ -4389,7 +4385,6 @@ async function saveSite(btn) {
     facebook_url: val('site-fb'), instagram_url: val('site-ig'),
     head_html: document.getElementById('site-head')?.value || '',
     widgets: __siteWidgets.filter(w => (w.html || '').trim()),
-    pages: __sitePages.filter(p => (p.title || '').trim()),
   };
   const orig = btn.textContent; btn.disabled = true; btn.textContent = 'Saving…';
   try {
@@ -4433,6 +4428,7 @@ async function loadWebsitePage() {
   root.innerHTML = '<div class="py-16 text-center text-sm text-slate-400 italic">Loading…</div>';
   try { __siteCfg = await apiGetJson('/dealership/site'); } catch (e) { root.innerHTML = `<div class="py-16 text-center text-sm text-slate-500">Couldn't load: ${esc(e.message)}</div>`; return; }
   __siteSections = Array.isArray(__siteCfg.content?.sections) ? __siteCfg.content.sections.slice() : [];
+  __sitePages = Array.isArray(__siteCfg.content?.pages) ? __siteCfg.content.pages.slice() : [];
   renderWebsitePage();
 }
 function renderWebsitePage() {
@@ -4449,11 +4445,11 @@ function renderWebsitePage() {
       <div class="flex items-center gap-2 flex-wrap">
         ${url ? `<a href="${url}" target="_blank" class="text-xs font-bold bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 px-3 py-2 rounded-lg">View site ↗</a>` : ''}
         <label class="flex items-center gap-1.5 text-sm font-bold"><input id="ws-pub" type="checkbox" ${__siteCfg.site_published ? 'checked' : ''} class="accent-indigo-600 w-4 h-4">Published</label>
-        <button onclick="openSiteManager()" class="text-xs font-bold bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 px-3 py-2 rounded-lg">Settings & pages</button>
+        <button onclick="openSiteManager()" class="text-xs font-bold bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 px-3 py-2 rounded-lg">Settings</button>
         <button onclick="saveWebsite(this)" class="text-sm font-bold bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg">Save</button>
       </div>
     </div>
-    <div class="flex items-center gap-1 border-b border-slate-200 dark:border-slate-800">${tab('builder', 'Builder')}${tab('design', 'Design')}</div>
+    <div class="flex items-center gap-1 border-b border-slate-200 dark:border-slate-800">${tab('builder', 'Builder')}${tab('design', 'Design')}${tab('pages', 'Pages')}</div>
     <div id="ws-body"></div>`;
   renderWsBody();
 }
@@ -4461,6 +4457,7 @@ function wsTab(t) { __wsTab = t; renderWsBody(); }
 function renderWsBody() {
   const body = document.getElementById('ws-body'); if (!body) return;
   if (__wsTab === 'design') { body.innerHTML = wsDesign(); return; }
+  if (__wsTab === 'pages') { body.innerHTML = wsPages(); renderSitePages(); return; }
   // Builder
   const palette = SEC_ORDER.map(t => `<button onclick="addSection('${t}')" class="text-left text-xs font-semibold bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 hover:border-indigo-400">+ ${SEC_META[t].label}</button>`).join('');
   body.innerHTML = `
@@ -4535,15 +4532,33 @@ function wsDesign() {
       <select id="ws-typo" class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm">${typos.map(t => `<option value="${t[0]}" ${(c.typography || 'modern') === t[0] ? 'selected' : ''}>${t[1]}</option>`).join('')}</select>
       <p class="text-[11px] text-slate-400 mt-1">Changes every heading &amp; body font across the site.</p>
     </div>
-    <p class="text-[11px] text-slate-400">Logo comes from your branding (Settings & pages). Colours &amp; fonts update the whole site automatically.</p>
+    <p class="text-[11px] text-slate-400">Logo comes from your branding (Settings). Colours &amp; fonts update the whole site automatically.</p>
+  </div>`;
+}
+// Pages tab: extra content pages + auto-built model/offer pages (moved here from Settings).
+function wsPages() {
+  return `<div class="mt-4 max-w-2xl space-y-3">
+    <div class="flex items-center justify-between gap-2">
+      <div>
+        <div class="text-sm font-black text-slate-900 dark:text-white">Pages</div>
+        <p class="text-[11px] text-slate-400">Extra pages (About, Financing…) that appear in your nav. Auto-build creates a page per model in your inventory (pulls stock automatically) plus standard offer pages.</p>
+      </div>
+      <div class="flex items-center gap-2 shrink-0">
+        <button type="button" onclick="autoBuildPages(this)" class="text-xs font-bold text-violet-600 dark:text-violet-400">✨ Auto-build model &amp; offer pages</button>
+        <button type="button" onclick="addSitePage()" class="text-xs font-bold text-indigo-600 dark:text-indigo-400">+ Add page</button>
+      </div>
+    </div>
+    <div id="site-page-list" class="space-y-2"></div>
   </div>`;
 }
 async function saveWebsite(btn) {
   // Collect design values if on that tab (they persist across tabs via __siteCfg.content).
   const c = __siteCfg.content || (__siteCfg.content = {});
   if (document.getElementById('ws-c1')) { c.primary_color = document.getElementById('ws-c1').value; c.secondary_color = document.getElementById('ws-c2').value; c.accent_color = document.getElementById('ws-c3').value; c.typography = document.getElementById('ws-typo').value; }
+  collectSitePages(); // no-op unless the Pages tab is currently rendered
   const body = {
     sections: __siteSections,
+    pages: __sitePages.filter(p => (p.title || '').trim()),
     site_published: document.getElementById('ws-pub')?.checked || false,
     primary_color: c.primary_color, secondary_color: c.secondary_color, accent_color: c.accent_color, typography: c.typography,
   };
@@ -4732,7 +4747,7 @@ function renderCatalog() {
   list.innerHTML = filtered.map(v => {
     const img = v.image_urls?.[0]
       ? `<img src="${API}/proxy-image?url=${encodeURIComponent(v.image_urls[0])}" loading="lazy" class="w-full h-32 object-cover rounded bg-slate-50 dark:bg-slate-950">`
-      : `<div class="w-full h-32 rounded bg-slate-50 dark:bg-slate-950 flex items-center justify-center text-slate-700 text-2xl">⌀</div>`;
+      : catalogCarPlaceholder('w-full h-32 rounded');
     const price = v.price ? `$${Number(v.price).toLocaleString()}` : '—';
     const mileage = v.mileage ? `${Number(v.mileage).toLocaleString()} km` : 'New';
     // Every card is clickable. Prefer the vehicle's source_url (harvested or per-feed),

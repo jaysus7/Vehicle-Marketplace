@@ -8,6 +8,9 @@ const slugOk = (s) => /^[a-z0-9]([a-z0-9-]{1,38})[a-z0-9]$/.test(s)   // 3–40,
 
 // Only expose safe, public-facing vehicle fields (no internal/source data).
 function publicVehicle(v) {
+  // Only surface docs that already exist — factory (oem) or a sticker/brochure the
+  // dealer generated (gen). The public site never generates or decodes anything.
+  const recallCount = Array.isArray(v.recalls) ? v.recalls.length : 0
   return {
     id: v.id, year: v.year, make: v.make, model: v.model, trim: v.trim,
     price: v.price, mileage: v.mileage, condition: v.condition,
@@ -17,6 +20,10 @@ function publicVehicle(v) {
     stocknumber: v.stocknumber, vin: v.vin,
     image_urls: Array.isArray(v.image_urls) ? v.image_urls : [],
     description: v.description || null,
+    carfax_url: v.carfax_url || null,
+    window_sticker_url: v.window_sticker_oem_url || v.window_sticker_gen_url || v.window_sticker_url || null,
+    brochure_url: v.brochure_oem_url || v.brochure_gen_url || v.brochure_url || null,
+    recall_count: recallCount,
   }
 }
 function publicRep(p) {
@@ -94,6 +101,7 @@ function siteContent(d) {
     address: b.address || null,
     city: d.city || null, province: d.province || null, postal_code: d.postal_code || null,
     website_url: d.website_url || null,
+    photo_background_url: d.photo_background_url || null,
     facebook_url: b.facebook_url || null,
     instagram_url: b.instagram_url || null,
     // Dealer-controlled custom code: global vendor scripts injected into <head>
@@ -114,13 +122,13 @@ export function registerSite(app) {
     const slug = String(req.params.slug || '').toLowerCase().trim()
     if (!slug) return res.status(404).json({ error: 'Not found' })
     const { data: d } = await supabaseAdmin.from('dealerships')
-      .select('id, name, branding, site_published, city, province, postal_code, website_url')
+      .select('id, name, branding, site_published, city, province, postal_code, website_url, photo_background_url')
       .ilike('site_slug', slug).maybeSingle()
     if (!d || !d.site_published) return res.status(404).json({ error: 'Site not found' })
 
     const [{ data: inv }, { data: team }] = await Promise.all([
       supabaseAdmin.from('inventory')
-        .select('id, year, make, model, trim, price, mileage, condition, exterior_color, interior_color, drivetrain, fuel_type, transmission, engine, body_style, doors, stocknumber, vin, image_urls, description, created_at')
+        .select('id, year, make, model, trim, price, mileage, condition, exterior_color, interior_color, drivetrain, fuel_type, transmission, engine, body_style, doors, stocknumber, vin, image_urls, description, carfax_url, window_sticker_url, window_sticker_oem_url, window_sticker_gen_url, brochure_url, brochure_oem_url, brochure_gen_url, recalls, created_at')
         .eq('dealership_id', d.id).is('archived_at', null).eq('status', 'available')
         .order('created_at', { ascending: false }).limit(600),
       supabaseAdmin.from('profiles')
