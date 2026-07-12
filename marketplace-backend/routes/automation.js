@@ -58,6 +58,10 @@ const DEFAULT_CAMPAIGNS = [
     subject_template: `Know anyone car shopping? There's {{referral_bonus|a bonus}} in it`,
     message_body_template: `Hi {{customer.first_name|there}},\n\nIt's been a year with your {{vehicle.ymm|vehicle}} — time flies! If you know anyone shopping for a vehicle, send them my way: we'll take great care of them, and you'll get {{referral_bonus|a referral bonus}} when they buy.\n\nThanks for being a loyal customer.\n{{rep.first_name|Your sales team}}` },
 
+  // E. Equity mining / lease pull-ahead
+  { key: 'pull_ahead', name: 'Lease Pull-Ahead', category: 'equity', trigger_event: 'equity', channel: 'sms', delay_minutes: 2, sender_identity: 'rep', sort: 105,
+    message_body_template: `Hi {{customer.first_name|there}}, it's {{rep.first_name|the team}} at {{dealership.name}}. Good news on your {{vehicle.ymm|vehicle}} — you may be in a strong equity position and could get into a brand-new one for a similar (or lower) payment, early. Want me to run the exact numbers for you? No obligation.` },
+
   // D. Calendar triggers
   { key: 'birthday', name: 'Birthday Greeting', category: 'calendar', trigger_event: 'birthday', channel: 'sms', delay_minutes: 0, send_at_hour: 9, sender_identity: 'rep', sort: 110,
     message_body_template: `Happy Birthday, {{customer.first_name|there}}! 🎉 Hope you have a great one. — {{rep.first_name|Your friends}} at {{dealership.name}}` },

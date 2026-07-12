@@ -536,6 +536,7 @@ function switchPage(pageId) {
   if (pageId === 'crm') loadCrmPage();
   if (pageId === 'website') loadWebsitePage();
   if (pageId === 'automation') loadAutomationPage();
+  if (pageId === 'equity') loadEquityPage();
   if (pageId === 'appraisal') { initAppraisal(); loadApprList(); apprEnsureBranding(); }
 }
 
@@ -4971,7 +4972,7 @@ Object.assign(window, { loadWebsitePage, wsTab, wsSetTarget, addSection, moveSec
 // State: __autoCfg { campaigns[], settings{}, region{}, can_manage }; __autoHol = working holiday rows.
 let __autoCfg = { campaigns: [], settings: {}, region: {}, can_manage: false };
 let __autoHol = [];
-const AUTO_CATS = [['pipeline', 'Sales pipeline'], ['retention', 'Post-delivery retention'], ['reviews', 'Reviews'], ['referrals', 'Referrals'], ['calendar', 'Birthdays'], ['custom', 'Custom']];
+const AUTO_CATS = [['pipeline', 'Sales pipeline'], ['retention', 'Post-delivery retention'], ['reviews', 'Reviews'], ['referrals', 'Referrals'], ['equity', 'Lease pull-ahead'], ['calendar', 'Birthdays'], ['custom', 'Custom']];
 const AUTO_TRIGGER_LABEL = { internet_lead: 'New internet lead', appointment_booked: 'Appointment booked', show_no_sale: 'Showed — no sale', delivered: 'Vehicle delivered', birthday: 'Birthday', holiday: 'Holiday' };
 const AUTO_VARS = ['customer.first_name', 'vehicle.ymm', 'vehicle.model', 'rep.first_name', 'dealership.name', 'review_url', 'referral_bonus', 'service_url'];
 function autoDelayLabel(c) {
@@ -5174,6 +5175,118 @@ async function autoSaveGlobals(btn) {
   finally { btn.disabled = false; btn.textContent = orig; }
 }
 Object.assign(window, { loadAutomationPage, autoToggleEngine, autoToggleCard, autoCardField, autoInsertVar, autoSaveCard, autoAiCard, autoHolToggle, autoHolAi, autoAddHolidayRow, autoSaveHolidays, autoSaveGlobals });
+
+// ══ Equity Radar — lease pull-ahead / equity mining (managers) ═══════════════
+let __equity = { radar: [], leases: [], settings: {}, tab: 'radar' };
+const eqMoney = (n) => (n == null || isNaN(n)) ? '—' : (n < 0 ? '-$' : '$') + Math.abs(Math.round(n)).toLocaleString();
+async function loadEquityPage() {
+  const root = document.getElementById('equity-root'); if (!root) return;
+  root.innerHTML = '<div class="py-16 text-center text-sm text-slate-400 italic">Loading…</div>';
+  try {
+    const [radar, leases, settings] = await Promise.all([apiGetJson('/equity/radar'), apiGetJson('/equity/leases'), apiGetJson('/equity/settings')]);
+    __equity = { radar: radar.radar || [], leases: leases.leases || [], settings: settings.settings || radar.settings || {}, tab: __equity.tab || 'radar' };
+  } catch (e) {
+    root.innerHTML = String(e.message).toLowerCase().includes('manager')
+      ? '<div class="py-16 text-center text-sm text-slate-500">Equity Radar is available to managers only.</div>'
+      : `<div class="py-16 text-center text-sm text-slate-500">Couldn't load: ${esc(e.message)}</div>`;
+    return;
+  }
+  renderEquityPage();
+}
+function renderEquityPage() {
+  const root = document.getElementById('equity-root'); if (!root) return;
+  const tab = (id, label, n) => `<button onclick="eqTab('${id}')" class="px-4 py-2 text-sm font-bold border-b-2 transition ${__equity.tab === id ? 'border-indigo-500 text-indigo-600 dark:text-indigo-400' : 'border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}">${label}${n != null ? ` <span class="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800">${n}</span>` : ''}</button>`;
+  root.innerHTML = `
+    <div>
+      <h2 class="text-xl font-bold text-slate-900 dark:text-white">Equity Radar</h2>
+      <p class="text-sm text-slate-500 dark:text-slate-400 mt-1">Lease customers who can likely trade up early. All figures are <b>estimates</b> from your lease inputs + a tunable value model — confirm on the desk before quoting.</p>
+    </div>
+    <div class="flex items-center gap-1 border-b border-slate-200 dark:border-slate-800 flex-wrap">${tab('radar', 'Radar', __equity.radar.length)}${tab('leases', 'Lease data', __equity.leases.length)}${tab('settings', 'Assumptions')}</div>
+    <div id="equity-body"></div>`;
+  renderEquityBody();
+}
+function eqTab(t) { __equity.tab = t; renderEquityBody(); }
+function renderEquityBody() {
+  const body = document.getElementById('equity-body'); if (!body) return;
+  if (__equity.tab === 'settings') { body.innerHTML = eqSettingsHtml(); return; }
+  if (__equity.tab === 'leases') { body.innerHTML = eqLeasesHtml(); return; }
+  body.innerHTML = eqRadarHtml();
+}
+function eqRadarHtml() {
+  if (!__equity.radar.length) return `<div class="py-12 text-center text-sm text-slate-400 italic">No pull-ahead opportunities yet. Add lease details on the <button onclick="eqTab('leases')" class="text-indigo-500 font-bold">Lease data</button> tab — delivered lease customers appear here automatically.</div>`;
+  const rows = __equity.radar.map(r => `<tr class="border-b border-slate-100 dark:border-slate-800/60">
+    <td class="py-2 px-3"><div class="font-semibold text-slate-900 dark:text-white">${esc(r.name)}</div><div class="text-xs text-slate-400">${esc(r.vehicle)}${r.reachable ? '' : ' · <span class="text-rose-500">opted out</span>'}</div></td>
+    <td class="py-2 px-3 text-center">${r.months_remaining ?? '—'}</td>
+    <td class="py-2 px-3 text-right text-slate-600 dark:text-slate-300">${eqMoney(r.wholesale)}</td>
+    <td class="py-2 px-3 text-right text-slate-600 dark:text-slate-300">${eqMoney(r.payoff)}</td>
+    <td class="py-2 px-3 text-right font-bold ${r.equity >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}">${eqMoney(r.equity)}</td>
+    <td class="py-2 px-3 text-xs whitespace-nowrap">${esc(r.tier)}</td>
+    <td class="py-2 px-3 text-right"><button onclick="eqPullAhead('${r.id}', this)" ${r.reachable ? '' : 'disabled'} class="text-xs font-bold ${r.reachable ? 'bg-indigo-600 hover:bg-indigo-500 text-white' : 'bg-slate-200 text-slate-400 dark:bg-slate-800'} px-3 py-1.5 rounded-lg">Start pull-ahead</button></td>
+  </tr>`).join('');
+  return `<div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden mt-3"><div class="overflow-x-auto"><table class="w-full text-sm text-left min-w-[720px]">
+    <thead><tr class="border-b border-slate-200 dark:border-slate-800 text-slate-500 dark:text-slate-400 uppercase text-xs tracking-wider"><th class="py-2 px-3">Customer</th><th class="py-2 px-3 text-center">Mos left</th><th class="py-2 px-3 text-right">Est. wholesale</th><th class="py-2 px-3 text-right">Est. payoff</th><th class="py-2 px-3 text-right">Equity</th><th class="py-2 px-3">Tier</th><th class="py-2 px-3 text-right">Action</th></tr></thead>
+    <tbody>${rows}</tbody></table></div></div>`;
+}
+function eqLeasesHtml() {
+  if (!__equity.leases.length) return `<div class="py-12 text-center text-sm text-slate-400 italic">No delivered customers yet. When you mark a deal <b>Delivered</b> in the CRM, it shows up here to add lease details.</div>`;
+  const ic = 'bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded px-2 py-1 text-xs w-full';
+  return `<div class="space-y-2 mt-3">${__equity.leases.map(l => `<div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-3" data-lease="${l.id}">
+    <div class="flex items-center gap-2 mb-2">
+      <label class="flex items-center gap-1.5 text-sm font-bold"><input type="checkbox" class="lz-leased accent-indigo-600" ${l.is_leased ? 'checked' : ''}>Lease</label>
+      <div class="font-bold text-sm text-slate-900 dark:text-white flex-1 truncate">${esc(l.name)} <span class="text-[11px] font-normal text-slate-400">${esc(l.vehicle)}</span></div>
+      ${l.is_leased && l.equity != null ? `<span class="text-xs font-bold ${l.equity >= 0 ? 'text-emerald-600' : 'text-rose-600'}">${eqMoney(l.equity)} equity · ${l.months_remaining ?? '?'} mo left</span>` : ''}
+    </div>
+    <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
+      <div><label class="text-[10px] text-slate-400">Term (months)</label><input class="lz-term ${ic}" type="number" value="${l.lease_term_months ?? ''}" placeholder="48"></div>
+      <div><label class="text-[10px] text-slate-400">Monthly payment</label><input class="lz-pay ${ic}" type="number" value="${l.monthly_payment ?? ''}" placeholder="580"></div>
+      <div><label class="text-[10px] text-slate-400">Residual value</label><input class="lz-res ${ic}" type="number" value="${l.residual_value ?? ''}" placeholder="24000"></div>
+      <div><label class="text-[10px] text-slate-400">Payoff (blank = est.)</label><input class="lz-payoff ${ic}" type="number" value="${l.payoff_amount ?? ''}" placeholder="auto"></div>
+      <div><label class="text-[10px] text-slate-400">Delivery mileage</label><input class="lz-miles ${ic}" type="number" value="${l.delivery_mileage ?? ''}" placeholder="20"></div>
+      <div><label class="text-[10px] text-slate-400">Annual km allowance</label><input class="lz-km ${ic}" type="number" value="${l.annual_km_allowance ?? ''}" placeholder="${__equity.settings.annual_km_allowance || 20000}"></div>
+      <div class="sm:col-span-2 flex items-end justify-end"><button onclick="eqSaveLease('${l.id}', this)" class="text-xs font-bold bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-1.5 rounded-lg">Save</button></div>
+    </div>
+  </div>`).join('')}</div>`;
+}
+function eqSettingsHtml() {
+  const s = __equity.settings || {};
+  const inp = (id, v, ph) => `<input id="${id}" type="number" step="any" value="${v == null ? '' : v}" placeholder="${ph}" class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm">`;
+  const lbl = (t) => `<label class="block text-[11px] font-semibold text-slate-500 dark:text-slate-400 mb-1">${t}</label>`;
+  return `<div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4 mt-3 max-w-lg space-y-2">
+    <p class="text-[11px] text-slate-400">These drive the estimates. Wholesale haircut is the retail→wholesale spread (0.12 = 12%). Lower it to be more aggressive (closer to retail trade value).</p>
+    <div class="grid grid-cols-2 gap-2">
+      <div>${lbl('Annual km allowance')}${inp('eq-km', s.annual_km_allowance, '20000')}</div>
+      <div>${lbl('Wholesale haircut (0–0.5)')}${inp('eq-haircut', s.wholesale_haircut, '0.12')}</div>
+      <div>${lbl('Min equity to flag ($)')}${inp('eq-min', s.equity_min, '500')}</div>
+      <div>${lbl('High-equity threshold ($)')}${inp('eq-high', s.high_equity, '1000')}</div>
+      <div>${lbl('Maturity window (months)')}${inp('eq-window', s.months_window, '6')}</div>
+    </div>
+    <button onclick="eqSaveSettings(this)" class="text-sm font-bold bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg">Save assumptions</button>
+  </div>`;
+}
+async function eqSaveLease(id, btn) {
+  const card = btn.closest('[data-lease]'); const g = (c) => card.querySelector(c)?.value.trim();
+  const body = {
+    is_leased: card.querySelector('.lz-leased')?.checked || false,
+    lease_term_months: g('.lz-term'), monthly_payment: g('.lz-pay'), residual_value: g('.lz-res'),
+    payoff_amount: g('.lz-payoff'), delivery_mileage: g('.lz-miles'), annual_km_allowance: g('.lz-km'),
+  };
+  const orig = btn.textContent; btn.disabled = true; btn.textContent = 'Saving…';
+  try { await apiSendJson(`/equity/lease/${id}`, 'PUT', body); showToast('Lease saved', 'success'); loadEquityPage(); }
+  catch (e) { btn.disabled = false; btn.textContent = orig; showToast(e.message, 'error'); }
+}
+async function eqSaveSettings(btn) {
+  const v = (i) => document.getElementById(i)?.value;
+  const orig = btn.textContent; btn.disabled = true; btn.textContent = 'Saving…';
+  try { const d = await apiSendJson('/equity/settings', 'PUT', { annual_km_allowance: v('eq-km'), wholesale_haircut: v('eq-haircut'), equity_min: v('eq-min'), high_equity: v('eq-high'), months_window: v('eq-window') }); __equity.settings = d.settings; showToast('Saved — refreshing radar', 'success'); loadEquityPage(); }
+  catch (e) { btn.disabled = false; btn.textContent = orig; showToast(e.message, 'error'); }
+}
+async function eqPullAhead(id, btn) {
+  if (!confirm('Start a pull-ahead? This texts the customer an equity offer (through the compliance checks) and creates a high-priority task for the rep.')) return;
+  const orig = btn.textContent; btn.disabled = true; btn.textContent = '…';
+  try { await apiSendJson(`/equity/pull-ahead/${id}`, 'POST', {}); showToast('Pull-ahead started — message queued + task created', 'success'); btn.textContent = '✓ Started'; }
+  catch (e) { btn.disabled = false; btn.textContent = orig; showToast(e.message, 'error'); }
+}
+Object.assign(window, { loadEquityPage, eqTab, eqSaveLease, eqSaveSettings, eqPullAhead });
 
 window.openVehicleForm = openVehicleForm;
 window.vehDelete = vehDelete;
