@@ -19,7 +19,9 @@ function publicVehicle(v) {
     engine: v.engine, body_style: v.body_style, doors: v.doors,
     stocknumber: v.stocknumber, vin: v.vin,
     image_urls: Array.isArray(v.image_urls) ? v.image_urls : [],
-    description: v.description || null,
+    // Prefer the AI sales pitch when present, else the plain feed description.
+    description: v.sales_pitch || v.description || null,
+    specs_manual: v.specs_manual && typeof v.specs_manual === 'object' ? v.specs_manual : null,
     carfax_url: v.carfax_url || null,
     window_sticker_url: v.window_sticker_oem_url || v.window_sticker_gen_url || v.window_sticker_url || null,
     brochure_url: v.brochure_oem_url || v.brochure_gen_url || v.brochure_url || null,
@@ -130,7 +132,7 @@ export function registerSite(app) {
 
     const [{ data: inv }, { data: team }] = await Promise.all([
       supabaseAdmin.from('inventory')
-        .select('id, year, make, model, trim, price, mileage, condition, exterior_color, interior_color, drivetrain, fuel_type, transmission, engine, body_style, doors, stocknumber, vin, image_urls, description, carfax_url, window_sticker_url, window_sticker_oem_url, window_sticker_gen_url, brochure_url, brochure_oem_url, brochure_gen_url, recalls, vin_data, created_at')
+        .select('id, year, make, model, trim, price, mileage, condition, exterior_color, interior_color, drivetrain, fuel_type, transmission, engine, body_style, doors, stocknumber, vin, image_urls, description, carfax_url, window_sticker_url, window_sticker_oem_url, window_sticker_gen_url, brochure_url, brochure_oem_url, brochure_gen_url, recalls, vin_data, sales_pitch, specs_manual, created_at')
         .eq('dealership_id', d.id).is('archived_at', null).eq('status', 'available')
         .order('created_at', { ascending: false }).limit(600),
       supabaseAdmin.from('profiles')

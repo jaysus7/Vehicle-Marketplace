@@ -36,6 +36,15 @@ async function compositeOnBackground(buffer, bgUrl) {
   } catch (e) { console.warn('[removebg] failed:', e.message); return null }
 }
 const numOrNull = (x) => { const n = Number(x); return Number.isFinite(n) ? n : null }
+// Dealer-entered specs the VIN decode can't provide (towing, HP, torque, etc.).
+// Stored as free-text so the dealer can write units ("9,300 lb", "310 hp @ 5,600 rpm").
+const MANUAL_SPEC_KEYS = ['towing_capacity', 'horsepower', 'torque', 'curb_weight', 'payload', 'seating', 'fuel_economy', 'cargo']
+function cleanSpecs(v) {
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return null
+  const out = {}
+  for (const k of MANUAL_SPEC_KEYS) { const s = v[k] == null ? '' : String(v[k]).trim().slice(0, 120); if (s) out[k] = s }
+  return Object.keys(out).length ? out : null
+}
 // Pull the storage object path back out of a public vehicle-photos URL (for deletes).
 function photoStoragePath(url) {
   const m = String(url || '').match(/\/vehicle-photos\/(.+)$/)
@@ -77,6 +86,7 @@ export function registerRoutes(app) {
       transmission: b.transmission || null, fuel_type: b.fuel_type || null,
       drivetrain: b.drivetrain || null, engine: b.engine || null, body_style: b.body_style || null,
       doors: numOrNull(b.doors), description: b.description || null,
+      specs_manual: cleanSpecs(b.specs_manual),
       image_urls: Array.isArray(b.image_urls) ? b.image_urls : [],
       lot_date: new Date().toISOString(),
     }
@@ -91,7 +101,7 @@ export function registerRoutes(app) {
     if (!canManageInventory(req)) return res.status(403).json({ error: 'Manager access required' })
     const b = req.body || {}
     const patch = {}
-    for (const f of ['make', 'model', 'trim', 'condition', 'stocknumber', 'exterior_color', 'interior_color', 'transmission', 'fuel_type', 'drivetrain', 'engine', 'body_style', 'description']) {
+    for (const f of ['make', 'model', 'trim', 'condition', 'stocknumber', 'exterior_color', 'interior_color', 'transmission', 'fuel_type', 'drivetrain', 'engine', 'body_style', 'description', 'sales_pitch']) {
       if (b[f] !== undefined) patch[f] = b[f] === '' ? null : b[f]
     }
     if (b.vin !== undefined) patch.vin = b.vin ? String(b.vin).trim().toUpperCase().slice(0, 17) : null
@@ -99,6 +109,7 @@ export function registerRoutes(app) {
     if (b.price !== undefined) patch.price = numOrNull(b.price)
     if (b.mileage !== undefined) { const m = numOrNull(b.mileage); patch.mileage = m != null ? Math.round(m) : null }
     if (b.doors !== undefined) patch.doors = numOrNull(b.doors)
+    if (b.specs_manual !== undefined) patch.specs_manual = cleanSpecs(b.specs_manual)
     if (Array.isArray(b.image_urls)) patch.image_urls = b.image_urls
     if (b.status !== undefined && ['available', 'sold', 'pending'].includes(b.status)) {
       patch.status = b.status
@@ -269,7 +280,7 @@ export function registerRoutes(app) {
     const cutoff = new Date(Date.now() - 14 * 86400000).toISOString()
     const { data, error } = await supabaseAdmin
       .from('inventory')
-      .select('id, vin, year, make, model, trim, price, mileage, condition, exterior_color, interior_color, body_style, fuel_type, drivetrain, transmission, engine, doors, status, archived_at, image_urls, source_url, source, description, stocknumber, last_synced_at, window_sticker_url, window_sticker_oem_url, window_sticker_gen_url, brochure_url, brochure_oem_url, brochure_gen_url, recalls, recalls_checked_at, vin_data')
+      .select('id, vin, year, make, model, trim, price, mileage, condition, exterior_color, interior_color, body_style, fuel_type, drivetrain, transmission, engine, doors, status, archived_at, image_urls, source_url, source, description, stocknumber, last_synced_at, window_sticker_url, window_sticker_oem_url, window_sticker_gen_url, brochure_url, brochure_oem_url, brochure_gen_url, recalls, recalls_checked_at, vin_data, sales_pitch, sales_pitch_at, specs_manual')
       .eq('dealership_id', req.dealershipId)
       // Live units (archived_at IS NULL) OR anything archived within the last 2 weeks.
       .or(`archived_at.is.null,archived_at.gte.${cutoff}`)

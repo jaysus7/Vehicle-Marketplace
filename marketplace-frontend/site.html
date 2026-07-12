@@ -273,8 +273,10 @@
     // Brochure-style deep spec sheet from the NHTSA VIN decode (only shows fields we have).
     function specSheet(v){
       const d=v.vin_data||{};
+      const sm=v.specs_manual||{};
       const yn=(x)=> x==null||x===''?null:(x===true?'Yes':x);
       const groups=[
+        ['Key specs',[['Towing capacity',sm.towing_capacity],['Horsepower',sm.horsepower],['Torque',sm.torque],['Curb weight',sm.curb_weight],['Payload',sm.payload],['Seating',sm.seating],['Fuel economy',sm.fuel_economy],['Cargo / bed',sm.cargo]]],
         ['Engine & Performance',[['Engine',v.engine||d.engine_model],['Displacement',d.displacement_l?`${d.displacement_l} L`:null],['Cylinders',d.cylinders],['Configuration',d.engine_config],['Valvetrain',d.valve_train],['Turbocharged',d.turbo],['Horsepower',d.horsepower?`${d.horsepower} hp`:null],['Transmission',v.transmission],['Transmission speeds',d.transmission_speeds],['Drivetrain',v.drivetrain],['Fuel',v.fuel_type||d.fuel_type_secondary],['Electrification',d.electrification]]],
         ['Capability & Weight',[['GVWR',d.gvwr],['Curb weight',d.curb_weight_lb?`${Number(d.curb_weight_lb).toLocaleString()} lb`:null],['Wheelbase',d.wheel_base?`${d.wheel_base} in`:null],['Axles',d.axles],['Brake system',d.brake_system],['Brakes',d.brake_desc]]],
         ['Body & Interior',[['Body style',v.body_style||d.series],['Doors',v.doors],['Seats',d.seats],['Seat rows',d.seat_rows],['Wheels',d.wheels],['Front wheels',d.wheel_size_front],['Rear wheels',d.wheel_size_rear],['Exterior',v.exterior_color],['Interior',v.interior_color]]],

@@ -733,6 +733,62 @@ Return ONLY the copy — no quotes, no markdown, no preamble.${(task === 'faq' |
     } catch (e) { res.status(500).json({ error: e.message }) }
   })
 
+  // POST /ai/sales-pitch — write a compelling sales pitch for one or many vehicles.
+  // Body: { ids: [vehicleId, ...] }. Stores the result on inventory.sales_pitch and
+  // returns the generated text keyed by id. Gated on AI Boost (owner exempt).
+  app.post('/ai/sales-pitch', requireAuth, async (req, res) => {
+    if (!req.dealershipId) return res.status(400).json({ error: 'No dealership' })
+    const ids = Array.isArray(req.body?.ids) ? req.body.ids.filter(Boolean).slice(0, 200) : []
+    if (!ids.length) return res.status(400).json({ error: 'No vehicles selected' })
+    const { data: dealer } = await supabaseAdmin
+      .from('dealerships').select('name, ai_tone, ai_boost_active, city, province').eq('id', req.dealershipId).maybeSingle()
+    const isOwner = (req.user.email || '').toLowerCase() === OWNER_EMAIL
+    if (!isOwner && !dealer?.ai_boost_active) return res.status(403).json({ error: 'AI Boost not active' })
+    if (!process.env.ANTHROPIC_API_KEY) return res.status(503).json({ error: 'AI features not configured' })
+
+    const { data: vehicles, error } = await supabaseAdmin.from('inventory')
+      .select('id, year, make, model, trim, mileage, condition, price, exterior_color, interior_color, drivetrain, fuel_type, transmission, engine, body_style, description, vin_data, specs_manual')
+      .eq('dealership_id', req.dealershipId).in('id', ids)
+    if (error) return res.status(500).json({ error: error.message })
+    if (!vehicles?.length) return res.status(404).json({ error: 'No matching vehicles' })
+
+    const tone = dealer?.ai_tone === 'friendly' ? 'warm and friendly' : dealer?.ai_tone === 'aggressive' ? 'energetic and deal-focused' : 'professional and confident'
+    const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
+    const pitches = {}
+    let done = 0, limited = false
+    for (const v of vehicles) {
+      if (!(await aiAllowed(req.dealershipId, isOwner))) { limited = true; break }
+      const d = v.vin_data && typeof v.vin_data === 'object' ? v.vin_data : {}
+      const sm = v.specs_manual && typeof v.specs_manual === 'object' ? v.specs_manual : {}
+      const facts = {
+        vehicle: [v.year, v.make, v.model, v.trim].filter(Boolean).join(' '),
+        condition: v.condition, mileage_km: v.mileage, price: v.price,
+        exterior: v.exterior_color, interior: v.interior_color,
+        drivetrain: v.drivetrain, fuel: v.fuel_type, transmission: v.transmission,
+        engine: v.engine || d.engine_model, displacement_l: d.displacement_l, cylinders: d.cylinders, turbo: d.turbo,
+        body_style: v.body_style, gvwr: d.gvwr,
+        towing_capacity: sm.towing_capacity, horsepower: sm.horsepower, torque: sm.torque, curb_weight: sm.curb_weight, payload: sm.payload, seating: sm.seating, fuel_economy: sm.fuel_economy, cargo: sm.cargo,
+        safety: Object.entries({ 'forward-collision warning': d.forward_collision, 'automatic emergency braking': d.auto_brake, 'lane-keep assist': d.lane_keep, 'blind-spot monitor': d.blind_spot_mon, 'adaptive cruise': d.adaptive_cruise }).filter(([, x]) => x && String(x).toLowerCase() !== 'not available').map(([k]) => k),
+        feature_list: v.description || null,
+      }
+      const prompt = `You are an expert automotive copywriter for ${dealer?.name || 'a car dealership'}. Write a compelling, honest sales pitch for the vehicle below, to appear on the dealership's website vehicle-detail page.
+Rules: 2–3 short paragraphs (about 60–120 words total). Lead with what makes THIS specific vehicle appealing (capability, comfort, tech, value). Use ONLY the facts provided — never invent specs, pricing, history, or awards. Don't just list features; sell the experience. Tone: ${tone}. No emoji, no markdown, no headings, no quotes.
+Facts (ignore any blank/unknown fields): ${JSON.stringify(facts)}`
+      try {
+        const msg = await Promise.race([
+          anthropic.messages.create({ model: 'claude-haiku-4-5-20251001', max_tokens: 600, messages: [{ role: 'user', content: prompt }] }),
+          new Promise((_, rej) => setTimeout(() => rej(new Error('ai timeout')), 25000)),
+        ])
+        const text = (msg?.content?.[0]?.text || '').trim().replace(/^["']|["']$/g, '')
+        if (!text) continue
+        await supabaseAdmin.from('inventory').update({ sales_pitch: text, sales_pitch_at: new Date().toISOString() }).eq('id', v.id).eq('dealership_id', req.dealershipId)
+        recordUsage(req.dealershipId, { ai: 1 })
+        pitches[v.id] = text; done++
+      } catch (e) { console.warn('[sales-pitch] failed for', v.id, e.message) }
+    }
+    res.json({ ok: true, count: done, pitches, limited })
+  })
+
   // Decode a VIN to year/make/model/trim via NHTSA (free, no key). Used by the
   // Trade Appraisal form's "Decode" button to prefill the manual fields.
   app.post('/ai/vin-decode', requireAuth, async (req, res) => {

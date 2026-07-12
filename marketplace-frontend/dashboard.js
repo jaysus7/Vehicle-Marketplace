@@ -4064,6 +4064,27 @@ function openVehicleForm(vehicle) {
     <div>${lbl('Description')}<textarea id="veh-desc" rows="3" class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm">${esc(v.description || '')}</textarea></div>
     <div>
       <div class="flex items-center justify-between mb-1">
+        <label class="block text-[11px] font-semibold text-slate-500 dark:text-slate-400">Sales pitch <span class="text-slate-400 font-normal">(shown on your website)</span></label>
+        ${isEdit ? `<button type="button" onclick="vehGenPitch('${v.id}', this)" class="text-[11px] font-bold text-violet-600 dark:text-violet-400 hover:text-violet-500">✨ Write with AI</button>` : '<span class="text-[10px] text-slate-400 italic">Save first, then generate</span>'}
+      </div>
+      <textarea id="veh-pitch" rows="3" placeholder="A compelling pitch for this car. Click ✨ Write with AI, or type your own." class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm">${esc(v.sales_pitch || '')}</textarea>
+    </div>
+    <div class="border-t border-slate-200 dark:border-slate-700 pt-3">
+      <div class="text-sm font-black text-slate-900 dark:text-white">Key specs</div>
+      <p class="text-[11px] text-slate-400 mb-2">The VIN decode can't provide these — enter what you know. Each shows on your website's vehicle page only if filled in.</p>
+      <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
+        <div>${lbl('Towing capacity')}${inp('veh-sp-tow', (v.specs_manual || {}).towing_capacity, 'e.g. 7,700 lb', 'w-full')}</div>
+        <div>${lbl('Horsepower')}${inp('veh-sp-hp', (v.specs_manual || {}).horsepower, 'e.g. 310 hp', 'w-full')}</div>
+        <div>${lbl('Torque')}${inp('veh-sp-tq', (v.specs_manual || {}).torque, 'e.g. 430 lb-ft', 'w-full')}</div>
+        <div>${lbl('Curb weight')}${inp('veh-sp-cw', (v.specs_manual || {}).curb_weight, 'e.g. 4,900 lb', 'w-full')}</div>
+        <div>${lbl('Payload')}${inp('veh-sp-pl', (v.specs_manual || {}).payload, 'e.g. 1,550 lb', 'w-full')}</div>
+        <div>${lbl('Seating')}${inp('veh-sp-seat', (v.specs_manual || {}).seating, 'e.g. 5', 'w-full')}</div>
+        <div>${lbl('Fuel economy')}${inp('veh-sp-fe', (v.specs_manual || {}).fuel_economy, 'e.g. 11.5/8.0 L/100km', 'w-full')}</div>
+        <div>${lbl('Cargo / bed')}${inp('veh-sp-cargo', (v.specs_manual || {}).cargo, 'e.g. 5 ft 2 in box', 'w-full')}</div>
+      </div>
+    </div>
+    <div>
+      <div class="flex items-center justify-between mb-1">
         ${lbl('Photos')}
         <button type="button" onclick="openPhotoBackgroundUploader()" class="text-[11px] font-bold text-indigo-600 dark:text-indigo-400 hover:underline">${__photoBackgroundUrl ? 'Change branded background' : 'Set branded background'}</button>
       </div>
@@ -4124,7 +4145,11 @@ async function vehSave(btn, id) {
     stocknumber: val('veh-stock'), exterior_color: val('veh-ext'), interior_color: val('veh-int'),
     drivetrain: document.getElementById('veh-drive')?.value || '', doors: val('veh-doors'),
     transmission: val('veh-trans'), fuel_type: val('veh-fuel'), engine: val('veh-engine'), body_style: val('veh-body'),
-    description: val('veh-desc'), image_urls: __vehExistingUrls,
+    description: val('veh-desc'), sales_pitch: val('veh-pitch'), image_urls: __vehExistingUrls,
+    specs_manual: {
+      towing_capacity: val('veh-sp-tow'), horsepower: val('veh-sp-hp'), torque: val('veh-sp-tq'), curb_weight: val('veh-sp-cw'),
+      payload: val('veh-sp-pl'), seating: val('veh-sp-seat'), fuel_economy: val('veh-sp-fe'), cargo: val('veh-sp-cargo'),
+    },
   };
   if (!body.make || !body.model) { showToast('Make and model are required', 'error'); return; }
   const orig = btn.textContent; btn.disabled = true; btn.textContent = 'Saving…';
@@ -4145,6 +4170,34 @@ async function vehSave(btn, id) {
     showToast(id ? 'Vehicle updated' : 'Vehicle added', 'success');
     if (typeof loadInventoryCatalog === 'function') loadInventoryCatalog();
   } catch (e) { btn.disabled = false; btn.textContent = orig; showToast(e.message, 'error'); }
+}
+// Per-car: write an AI sales pitch and drop it into the form's textarea.
+async function vehGenPitch(id, btn) {
+  const orig = btn.textContent; btn.disabled = true; btn.textContent = '✨ Writing…';
+  try {
+    const d = await apiSendJson('/ai/sales-pitch', 'POST', { ids: [id] });
+    const text = d.pitches && d.pitches[id];
+    if (text) { const ta = document.getElementById('veh-pitch'); if (ta) ta.value = text; showToast('Sales pitch written — review & Save', 'success'); }
+    else showToast(d.limited ? 'Monthly AI limit reached — resets next month.' : 'Could not generate a pitch', 'error');
+  } catch (e) { showToast(e.message === 'AI Boost not active' ? 'Sales pitches need AI Boost (or your free trial).' : e.message, 'error'); }
+  finally { btn.disabled = false; btn.textContent = orig; }
+}
+// Bulk: write pitches for every available car that doesn't have one yet.
+async function generateAllPitches(btn) {
+  let inv = (typeof __catalogCache !== 'undefined' && __catalogCache?.length) ? __catalogCache : [];
+  if (!inv.length) { try { inv = await apiGetJson('/inventory/all', { retries: 1 }); } catch {} }
+  const avail = inv.filter(v => String(v.status || 'available').toLowerCase() === 'available');
+  const missing = avail.filter(v => !(v.sales_pitch && String(v.sales_pitch).trim()));
+  const ids = (missing.length ? missing : avail).map(v => v.id);
+  if (!ids.length) { showToast('No available vehicles to write for.', 'info'); return; }
+  const verb = missing.length ? `Write AI sales pitches for the ${ids.length} car${ids.length > 1 ? 's' : ''} without one?` : `Every car already has a pitch. Re-write all ${ids.length}?`;
+  if (!confirm(`${verb} This uses AI Boost credits.`)) return;
+  const orig = btn.textContent; btn.disabled = true; btn.textContent = `✨ Writing ${ids.length}…`;
+  try {
+    const d = await apiSendJson('/ai/sales-pitch', 'POST', { ids });
+    showToast(`Wrote ${d.count} sales pitch${d.count === 1 ? '' : 'es'}${d.limited ? ' — hit the monthly AI limit' : ''}`, d.count ? 'success' : 'error');
+    if (typeof loadInventoryCatalog === 'function') loadInventoryCatalog();
+  } catch (e) { btn.disabled = false; btn.textContent = orig; showToast(e.message === 'AI Boost not active' ? 'Sales pitches need AI Boost (or your free trial).' : e.message, 'error'); }
 }
 async function vehDelete(id) {
   if (!id || !confirm('Delete this vehicle and its photos? This cannot be undone.')) return;
@@ -4643,6 +4696,8 @@ Object.assign(window, { loadWebsitePage, wsTab, addSection, moveSection, dupSect
 
 window.openVehicleForm = openVehicleForm;
 window.vehDelete = vehDelete;
+window.vehGenPitch = vehGenPitch;
+window.generateAllPitches = generateAllPitches;
 window.editVehicle = editVehicle;
 window.openPhotoBackgroundUploader = openPhotoBackgroundUploader;
 window.uploadPhotoBackground = uploadPhotoBackground;
