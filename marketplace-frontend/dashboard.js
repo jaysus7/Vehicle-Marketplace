@@ -4633,14 +4633,18 @@ function aiMenu(ev, i, key, kind) {
   document.body.appendChild(m);
   setTimeout(() => document.addEventListener('click', function h() { m.remove(); document.removeEventListener('click', h); }, { once: true }), 10);
 }
+const __aiHistory = {}; // per-field recent outputs, so repeated clicks don't repeat
 async function aiRun(i, key, kind, task) {
   const cur = __siteSections[i]?.settings?.[key];
   const current = Array.isArray(cur) ? cur.map(x => `${x.q} :: ${x.a}`).join('\n') : (cur || '');
   const secLabel = SEC_META[__siteSections[i]?.type]?.label || '';
+  const histKey = `${__siteSections[i]?.id || i}:${key}`;
+  const avoid = (__aiHistory[histKey] || []).slice(-5);
   showToast('✨ Writing…', 'info');
   try {
-    const d = await apiSendJson('/ai/site-copy', 'POST', { task, kind, current, hint: secLabel });
+    const d = await apiSendJson('/ai/site-copy', 'POST', { task, kind, current, hint: secLabel, avoid });
     if (kind === 'faq' || key === 'items') setSecFaq(i, key, d.text); else setSec(i, key, d.text);
+    (__aiHistory[histKey] = __aiHistory[histKey] || []).push(d.text);
     renderWsSections();
     showToast('✨ Done — review & Save', 'success');
   } catch (e) { showToast(e.message === 'AI Boost not active' ? 'AI editing needs AI Boost (or your free trial).' : e.message, 'error'); }

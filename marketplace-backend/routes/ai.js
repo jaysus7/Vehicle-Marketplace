@@ -707,23 +707,48 @@ Guidelines: under 90 words; answer their question if they asked one; confirm the
       faq: 'Write 5 genuinely useful FAQ items',
     }[task] || 'Write fresh copy'
     const kindHint = {
-      headline: 'a short, punchy hero headline (max 8 words)',
+      headline: 'a distinctive hero headline, 4–9 words (a real headline, not a generic slogan)',
       subheadline: 'a single supporting subheadline sentence',
       cta: 'a short call-to-action button label (2–4 words)',
       about: 'a warm 2–3 sentence "about the dealership" paragraph',
       faq: 'FAQ content',
       seo: 'SEO website copy',
     }[kind] || 'a short piece of website copy'
-    const tone = dealer?.ai_tone === 'friendly' ? 'warm and friendly' : dealer?.ai_tone === 'aggressive' ? 'energetic and deal-focused' : 'professional and clear'
+    const tone = dealer?.ai_tone === 'friendly' ? 'warm and welcoming' : dealer?.ai_tone === 'aggressive' ? 'energetic and deal-focused' : 'confident and professional'
     const loc = [dealer?.city, dealer?.province].filter(Boolean).join(', ')
-    const prompt = `You are writing website copy for ${dealer?.name || 'a car dealership'}${loc ? ' in ' + loc : ''}. Tone: ${tone}.
-Write ${kindHint}. ${instr}.${hint ? ` Context: ${hint}.` : ''}${current ? `\nCurrent text: "${current}"` : ''}
-Return ONLY the copy — no quotes, no markdown, no preamble.${(task === 'faq' || kind === 'faq') ? ' Put each FAQ on its own line formatted exactly as "Question :: Answer".' : ''}`
+    // Real context so copy isn't generic — the makes this dealer actually stocks.
+    let makes = []
+    try {
+      const { data: mk } = await supabaseAdmin.from('inventory').select('make').eq('dealership_id', req.dealershipId).not('make', 'is', null).limit(500)
+      const counts = {}
+      for (const r of (mk || [])) { const m = (r.make || '').trim(); if (m) counts[m] = (counts[m] || 0) + 1 }
+      makes = Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 5).map(x => x[0])
+    } catch {}
+    // Rotate the creative angle each call so repeated clicks give genuinely different lines.
+    const ANGLES = [
+      'lead with the specific brands or models they carry',
+      'lead with local pride and the community they serve',
+      'lead with selection and inventory breadth',
+      'lead with the buying experience — easy, no-pressure, fast',
+      'lead with trust, expertise, and reputation',
+      'lead with financing and trade-in ease',
+      'lead with a concrete customer benefit or outcome',
+      'lead with service, maintenance, and ownership support',
+    ]
+    const angle = ANGLES[Math.floor(Math.random() * ANGLES.length)]
+    const avoid = Array.isArray(b.avoid) ? b.avoid : (b.avoid ? [String(b.avoid)] : [])
+    const avoidLine = [current, ...avoid].filter(Boolean).slice(0, 6).map(s => `"${String(s).slice(0, 120)}"`).join(', ')
+    const isFaq = task === 'faq' || kind === 'faq'
+    const prompt = `You are a senior copywriter for ${dealer?.name || 'a car dealership'}${loc ? ' in ' + loc : ''}.${makes.length ? ` They primarily sell ${makes.join(', ')}.` : ''} Tone: ${tone}.
+Write ${kindHint}. ${instr}.${hint ? ` This is for the "${hint}" section.` : ''}
+For this version, ${angle}.
+Make it specific and distinctive — reference real details (brands, city, selection) where natural. Avoid generic dealer clichés; NEVER use phrases like "Drive Home Your Dream", "Best Deals", "Your Trusted Dealer", "Today!", "Look no further", "Unbeatable", or empty hype.${avoidLine ? ` Do NOT repeat or lightly reword any of these existing lines: ${avoidLine}.` : ''}${current && !isFaq ? `\nCurrent text to work from: "${current}".` : ''}
+Return ONLY the copy — no quotes, no markdown, no preamble.${isFaq ? ' Put each FAQ on its own line formatted exactly as "Question :: Answer".' : ''}`
 
     try {
       const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
       const msg = await Promise.race([
-        anthropic.messages.create({ model: 'claude-haiku-4-5-20251001', max_tokens: 500, messages: [{ role: 'user', content: prompt }] }),
+        anthropic.messages.create({ model: 'claude-haiku-4-5-20251001', max_tokens: 500, temperature: 1, messages: [{ role: 'user', content: prompt }] }),
         new Promise((_, rej) => setTimeout(() => rej(new Error('ai timeout')), 25000)),
       ])
       const text = (msg?.content?.[0]?.text || '').trim().replace(/^["']|["']$/g, '')
