@@ -4231,7 +4231,13 @@ async function openSiteManager() {
       <div>${lbl('Hours')}<textarea id="site-hours" rows="2" placeholder="Mon–Fri 9–6, Sat 9–5" class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm">${esc(c.hours || '')}</textarea></div>
       <div class="grid grid-cols-2 gap-2">
         <div>${lbl('Brand colour')}<input id="site-color" type="color" value="${esc(c.primary_color || '#1e3a8a')}" class="w-full h-9 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg"></div>
-        <div>${lbl('Hero image URL (optional)')}${inp('site-hero', c.hero_url, 'https://…', 'w-full')}</div>
+        <div>${lbl('Hero image')}
+          <div class="flex gap-1">
+            ${inp('site-hero', c.hero_url, 'Paste URL or upload', 'flex-1')}
+            <input id="site-hero-file" type="file" accept="image/*" class="hidden" onchange="uploadSiteImage('site-hero', this.files[0])">
+            <button type="button" onclick="document.getElementById('site-hero-file').click()" class="text-xs font-bold bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 px-3 rounded-lg">Upload</button>
+          </div>
+        </div>
       </div>
       <div class="grid grid-cols-2 gap-2">
         <div>${lbl('Facebook URL')}${inp('site-fb', c.facebook_url, 'https://facebook.com/…', 'w-full')}</div>
@@ -4251,6 +4257,15 @@ async function openSiteManager() {
       <div id="site-widget-list" class="space-y-2"></div>
     </div>
 
+    <div class="border-t border-slate-200 dark:border-slate-700 pt-3">
+      <div class="flex items-center justify-between mb-1">
+        <div class="text-sm font-black text-slate-900 dark:text-white">Pages</div>
+        <button type="button" onclick="addSitePage()" class="text-xs font-bold text-indigo-600 dark:text-indigo-400">+ Add page</button>
+      </div>
+      <p class="text-[11px] text-slate-400 mb-2">Extra pages (About, Financing info, Service…) shown in your site's nav. Basic HTML allowed.</p>
+      <div id="site-page-list" class="space-y-2"></div>
+    </div>
+
     <div class="text-[11px] text-slate-400">Logo, and your sales team, come from your existing branding + team roster.</div>
     <div class="flex gap-2 justify-end pt-1">
       <button onclick="this.closest('.fixed').remove()" class="text-sm font-bold text-slate-500 px-4 py-2">Cancel</button>
@@ -4258,8 +4273,46 @@ async function openSiteManager() {
     </div>
   </div>`, 'max-w-lg');
   __siteWidgets = Array.isArray(c.widgets) ? c.widgets.slice() : [];
+  __sitePages = Array.isArray(c.pages) ? c.pages.slice() : [];
   renderSiteWidgets();
+  renderSitePages();
 }
+// Upload an image (hero/page) → returns a public URL into the given input field.
+async function uploadSiteImage(targetId, file) {
+  if (!file) return;
+  showToast('Uploading image…', 'info');
+  try {
+    const fd = new FormData(); fd.append('image', file);
+    const r = await fetch(`${API}/dealership/site-image`, { method: 'POST', headers: { 'Authorization': `Bearer ${token}` }, body: fd });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || 'Upload failed');
+    const el = document.getElementById(targetId); if (el) el.value = d.url;
+    showToast('Image uploaded', 'success');
+  } catch (e) { showToast(e.message, 'error'); }
+}
+let __sitePages = [];
+function collectSitePages() {
+  __sitePages = Array.from(document.querySelectorAll('#site-page-list [data-pgx]')).map(r => ({
+    title: r.querySelector('.pg-title')?.value || '',
+    nav: r.querySelector('.pg-nav')?.checked !== false,
+    body_html: r.querySelector('.pg-body')?.value || '',
+  }));
+}
+function renderSitePages() {
+  const box = document.getElementById('site-page-list');
+  if (!box) return;
+  if (!__sitePages.length) { box.innerHTML = '<div class="text-[11px] text-slate-400 italic">No extra pages.</div>'; return; }
+  box.innerHTML = __sitePages.map((p, i) => `<div data-pgx="${i}" class="border border-slate-200 dark:border-slate-700 rounded-lg p-2 space-y-1">
+    <div class="flex gap-2 items-center">
+      <input class="pg-title flex-1 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded px-2 py-1 text-xs" placeholder="Page title (e.g. About Us)" value="${esc(p.title || '')}">
+      <label class="flex items-center gap-1 text-[11px] text-slate-500"><input class="pg-nav" type="checkbox" ${p.nav !== false ? 'checked' : ''}>In nav</label>
+      <button type="button" onclick="removeSitePage(${i})" class="text-rose-500 text-xs font-bold">✕</button>
+    </div>
+    <textarea class="pg-body w-full text-xs bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded px-2 py-1" rows="3" placeholder="Page content — plain text or basic HTML (&lt;p&gt;, &lt;h2&gt;, &lt;ul&gt;…)">${esc(p.body_html || '')}</textarea>
+  </div>`).join('');
+}
+function addSitePage() { collectSitePages(); __sitePages.push({ title: '', nav: true, body_html: '' }); renderSitePages(); }
+function removeSitePage(i) { collectSitePages(); __sitePages.splice(i, 1); renderSitePages(); }
 const SITE_SLOTS = [['top_banner', 'Top banner'], ['hero_below', 'Under hero'], ['above_inventory', 'Above inventory'], ['below_inventory', 'Below inventory'], ['above_footer', 'Above footer']];
 let __siteWidgets = [];
 function collectSiteWidgets() {
@@ -4289,7 +4342,7 @@ function addSiteWidget() { collectSiteWidgets(); __siteWidgets.push({ slot: 'bel
 function removeSiteWidget(i) { collectSiteWidgets(); __siteWidgets.splice(i, 1); renderSiteWidgets(); }
 async function saveSite(btn) {
   const val = (i) => (document.getElementById(i)?.value || '').trim();
-  collectSiteWidgets();
+  collectSiteWidgets(); collectSitePages();
   const body = {
     site_slug: val('site-slug'), site_published: document.getElementById('site-pub')?.checked || false,
     tagline: val('site-tagline'), about: val('site-about'), phone: val('site-phone'), email: val('site-email'),
@@ -4297,6 +4350,7 @@ async function saveSite(btn) {
     facebook_url: val('site-fb'), instagram_url: val('site-ig'),
     head_html: document.getElementById('site-head')?.value || '',
     widgets: __siteWidgets.filter(w => (w.html || '').trim()),
+    pages: __sitePages.filter(p => (p.title || '').trim()),
   };
   const orig = btn.textContent; btn.disabled = true; btn.textContent = 'Saving…';
   try {
@@ -4310,6 +4364,9 @@ window.openSiteManager = openSiteManager;
 window.saveSite = saveSite;
 window.addSiteWidget = addSiteWidget;
 window.removeSiteWidget = removeSiteWidget;
+window.addSitePage = addSitePage;
+window.removeSitePage = removeSitePage;
+window.uploadSiteImage = uploadSiteImage;
 
 window.openVehicleForm = openVehicleForm;
 window.vehDelete = vehDelete;

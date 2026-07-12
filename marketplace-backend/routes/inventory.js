@@ -209,6 +209,21 @@ export function registerRoutes(app) {
     res.json({ ok: true })
   })
 
+  // Generic site image upload (hero, page images) — separate from the avatar used
+  // for gamification. Returns a public WebP URL the site manager can drop anywhere.
+  app.post('/dealership/site-image', requireAuth, photoUpload.single('image'), async (req, res) => {
+    if (!req.dealershipId) return res.status(400).json({ error: 'No dealership' })
+    if (!canManageInventory(req)) return res.status(403).json({ error: 'Manager access required' })
+    if (!req.file) return res.status(400).json({ error: 'No image uploaded' })
+    let webp
+    try { webp = await toWebp(req.file.buffer, { max: 2200, quality: 85 }) } catch (e) { return res.status(500).json({ error: 'Could not process image: ' + e.message }) }
+    const path = `${req.dealershipId}/_site/img-${Date.now()}-${Math.random().toString(36).slice(2, 7)}.webp`
+    const { error: upErr } = await supabaseAdmin.storage.from('vehicle-photos').upload(path, webp, { contentType: 'image/webp', upsert: false })
+    if (upErr) return res.status(500).json({ error: upErr.message })
+    const { data: { publicUrl } } = supabaseAdmin.storage.from('vehicle-photos').getPublicUrl(path)
+    res.json({ ok: true, url: publicUrl })
+  })
+
   // GET /inventory/:id/carfax — resolve the Carfax report link for a vehicle by
   // scraping the badge off its source listing page (cached after first hit).
   app.get('/inventory/:id/carfax', requireAuth, async (req, res) => {

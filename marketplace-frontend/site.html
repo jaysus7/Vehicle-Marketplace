@@ -6,104 +6,109 @@
   <title>Inventory</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
-    :root { --brand:#1e3a8a; --brand2:#0f172a; }
-    .brand-bg{background:var(--brand)} .brand-text{color:var(--brand)} .brand-border{border-color:var(--brand)}
-    .brand2-bg{background:var(--brand2)}
+    :root{--brand:#1e3a8a;--brand2:#0f172a}
+    .brand-bg{background:var(--brand)} .brand-text{color:var(--brand)} .brand2-bg{background:var(--brand2)}
     body{-webkit-font-smoothing:antialiased}
     .cshadow{box-shadow:0 1px 3px rgba(0,0,0,.08),0 1px 2px rgba(0,0,0,.04)}
-    .tile-ov{background:linear-gradient(180deg,rgba(0,0,0,.15),rgba(0,0,0,.65))}
   </style>
 </head>
 <body class="bg-slate-50 text-slate-900">
   <div id="app"><div class="min-h-screen flex items-center justify-center text-slate-400 text-sm">Loading…</div></div>
 
   <script>
-    const API = 'https://vehicle-marketplace-s0e4.onrender.com';
-    const slug = (new URLSearchParams(location.search).get('d') || location.pathname.split('/').filter(Boolean).pop() || '').toLowerCase();
-    const esc = (s)=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-    const attr = (s)=>String(s==null?'':s).replace(/&/g,'&amp;').replace(/"/g,'&quot;');
-    const money = (n)=>n?'$'+Number(n).toLocaleString():'Call for price';
-    const km = (n)=>n?Number(n).toLocaleString()+' km':'—';
-    let DATA=null, FILTERED=[], FILTERS={q:'',condition:'',body:'',sort:'newest'};
+    const API='https://vehicle-marketplace-s0e4.onrender.com';
+    const slug=(new URLSearchParams(location.search).get('d')||location.pathname.split('/').filter(Boolean).pop()||'').toLowerCase();
+    const esc=(s)=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    const attr=(s)=>String(s==null?'':s).replace(/&/g,'&amp;').replace(/"/g,'&quot;');
+    const money=(n)=>n?'$'+Number(n).toLocaleString():'Call for price';
+    const km=(n)=>n?Number(n).toLocaleString()+' km':'—';
+    let DATA=null, FILTERED=[], FILTERS={q:'',condition:'',body:'',sort:'newest'}, VIEW='home';
 
     async function boot(){
       if(!slug){ document.getElementById('app').innerHTML=errPage('No dealership specified.'); return; }
       try{
         const r=await fetch(`${API}/site/${encodeURIComponent(slug)}`);
         if(!r.ok) throw new Error('This site isn\'t available.');
-        DATA=await r.json();
-        const s=DATA.site;
+        DATA=await r.json(); const s=DATA.site;
         document.title=s.name||'Inventory';
-        document.documentElement.style.setProperty('--brand', s.primary_color||'#1e3a8a');
-        document.documentElement.style.setProperty('--brand2', s.secondary_color||'#0f172a');
-        injectHead(s.head_html);       // dealer's global vendor code (analytics, chat, Keyloop…)
-        render();
+        document.documentElement.style.setProperty('--brand',s.primary_color||'#1e3a8a');
+        document.documentElement.style.setProperty('--brand2',s.secondary_color||'#0f172a');
+        injectHead(s.head_html);
+        renderChrome(); go('home');
       }catch(e){ document.getElementById('app').innerHTML=errPage(e.message); }
     }
-    function errPage(msg){ return `<div class="min-h-screen flex flex-col items-center justify-center gap-2 text-center px-6"><div class="text-lg font-bold text-slate-700">${esc(msg)}</div><div class="text-sm text-slate-400">Please check the link.</div></div>`; }
+    const errPage=(m)=>`<div class="min-h-screen flex flex-col items-center justify-center gap-2 text-center px-6"><div class="text-lg font-bold text-slate-700">${esc(m)}</div><div class="text-sm text-slate-400">Please check the link.</div></div>`;
+    function injectHead(html){ if(!html) return; try{ const t=document.createElement('div'); t.innerHTML=html; Array.from(t.childNodes).forEach(n=>{ if(n.nodeType===1&&n.tagName==='SCRIPT'){ const s=document.createElement('script'); for(const a of n.attributes) s.setAttribute(a.name,a.value); s.textContent=n.textContent; document.head.appendChild(s);} else if(n.nodeType===1) document.head.appendChild(n); }); }catch(e){} }
 
-    // Inject dealer-supplied <head> code so third-party scripts actually run.
-    function injectHead(html){
-      if(!html) return;
-      try{
-        const tmp=document.createElement('div'); tmp.innerHTML=html;
-        Array.from(tmp.childNodes).forEach(node=>{
-          if(node.nodeType===1 && node.tagName==='SCRIPT'){
-            const s=document.createElement('script');
-            for(const a of node.attributes) s.setAttribute(a.name,a.value);
-            s.textContent=node.textContent; document.head.appendChild(s);
-          } else if(node.nodeType===1){ document.head.appendChild(node); }
-        });
-      }catch(e){ console.warn('head inject failed',e); }
-    }
+    function widgetBlock(w){ const doc=`<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{margin:0;font-family:-apple-system,Segoe UI,Arial,sans-serif}</style></head><body>${w.html}</body></html>`; return `<div class="w-full">${w.title?`<h3 class="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 max-w-6xl mx-auto px-4">${esc(w.title)}</h3>`:''}<iframe srcdoc="${attr(doc)}" style="width:100%;height:${w.height}px;border:0;display:block" sandbox="allow-scripts allow-forms allow-popups allow-same-origin allow-popups-to-escape-sandbox" loading="lazy"></iframe></div>`; }
+    const slotHtml=(name)=>{ const ws=(DATA.site.widgets||[]).filter(w=>w.slot===name); return ws.length?`<div class="space-y-4 py-2">${ws.map(widgetBlock).join('')}</div>`:''; };
 
-    // A placed widget → sandboxed iframe so the embed's scripts run isolated.
-    function widgetBlock(w){
-      const doc=`<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{margin:0;font-family:-apple-system,Segoe UI,Arial,sans-serif}</style></head><body>${w.html}</body></html>`;
-      return `<div class="w-full">${w.title?`<h3 class="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 max-w-6xl mx-auto px-4">${esc(w.title)}</h3>`:''}
-        <iframe srcdoc="${attr(doc)}" style="width:100%;height:${w.height}px;border:0;display:block" sandbox="allow-scripts allow-forms allow-popups allow-same-origin allow-popups-to-escape-sandbox" loading="lazy"></iframe></div>`;
-    }
-    function slotHtml(name){
-      const ws=(DATA.site.widgets||[]).filter(w=>w.slot===name);
-      if(!ws.length) return '';
-      return `<div class="space-y-4 py-2">${ws.map(widgetBlock).join('')}</div>`;
-    }
-
-    function applyFilters(){
-      let v=(DATA.vehicles||[]).slice();
-      const q=FILTERS.q.toLowerCase();
-      if(q) v=v.filter(x=>[x.year,x.make,x.model,x.trim,x.stocknumber].filter(Boolean).join(' ').toLowerCase().includes(q));
-      if(FILTERS.condition) v=v.filter(x=>(x.condition||'').toLowerCase()===FILTERS.condition);
-      if(FILTERS.body) v=v.filter(x=>(x.body_style||'').toLowerCase()===FILTERS.body);
-      const s=FILTERS.sort;
-      v.sort((a,b)=> s==='price-asc'?(a.price||1e12)-(b.price||1e12) : s==='price-desc'?(b.price||0)-(a.price||0) : s==='miles-asc'?(a.mileage||1e12)-(b.mileage||1e12):0);
-      FILTERED=v;
-    }
-    function setCond(c){ FILTERS.condition=c; const el=document.getElementById('f-cond'); if(el) el.value=c; applyFilters(); renderGrid(); updateCount(); document.getElementById('inventory').scrollIntoView({behavior:'smooth'}); }
-
-    function render(){
-      const s=DATA.site; applyFilters();
-      const bodies=[...new Set((DATA.vehicles||[]).map(v=>(v.body_style||'').trim()).filter(Boolean))].sort();
+    // ── Chrome (header + footer stay; #view swaps) ─────────────────────────────
+    function renderChrome(){
+      const s=DATA.site;
       const addr=[s.address,[s.city,s.province,s.postal_code].filter(Boolean).join(', ')].filter(Boolean).join(', ');
-      document.getElementById('app').innerHTML = `
+      const navPages=(s.pages||[]).filter(p=>p.nav);
+      document.getElementById('app').innerHTML=`
         ${slotHtml('top_banner')}
         <header class="brand-bg text-white sticky top-0 z-30">
           <div class="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between gap-3">
-            <a href="#top" class="flex items-center gap-3 min-w-0">
+            <a href="#" onclick="go('home');return false" class="flex items-center gap-3 min-w-0">
               ${s.logo_url?`<img src="${esc(s.logo_url)}" alt="" class="h-9 w-auto bg-white/10 rounded px-1">`:''}
               <span class="font-black text-lg truncate">${esc(s.name)}</span>
             </a>
-            <nav class="hidden md:flex items-center gap-5 text-sm font-semibold">
-              <a href="#" onclick="setCond('');return false" class="hover:opacity-80">All</a>
-              <a href="#" onclick="setCond('new');return false" class="hover:opacity-80">New</a>
-              <a href="#" onclick="setCond('used');return false" class="hover:opacity-80">Used</a>
-              ${(DATA.team||[]).length?'<a href="#team" class="hover:opacity-80">Our Team</a>':''}
-              <a href="#contact" class="hover:opacity-80">Contact</a>
+            <nav class="hidden lg:flex items-center gap-5 text-sm font-semibold">
+              <a href="#" onclick="go('home');return false" class="hover:opacity-80">Inventory</a>
+              <a href="#" onclick="go('trade');return false" class="hover:opacity-80">Value Trade</a>
+              <a href="#" onclick="go('finance');return false" class="hover:opacity-80">Financing</a>
+              ${(DATA.team||[]).length?'<a href="#" onclick="go(\'home\');setTimeout(()=>document.getElementById(\'team\')?.scrollIntoView({behavior:\'smooth\'}),50);return false" class="hover:opacity-80">Team</a>':''}
+              ${navPages.map(p=>`<a href="#" onclick="go('page:${p.slug}');return false" class="hover:opacity-80">${esc(p.title)}</a>`).join('')}
+              <a href="#" onclick="go('inquiry');return false" class="hover:opacity-80">Contact</a>
             </nav>
-            ${s.phone?`<a href="tel:${esc(s.phone)}" class="bg-white/15 hover:bg-white/25 rounded-lg px-3 py-1.5 text-sm font-bold whitespace-nowrap">${esc(s.phone)}</a>`:''}
+            <div class="flex items-center gap-2">
+              <button onclick="go('finance')" class="hidden sm:inline bg-white text-slate-900 rounded-lg px-3 py-1.5 text-sm font-bold hover:bg-slate-100">Get pre-approved</button>
+              ${s.phone?`<a href="tel:${esc(s.phone)}" class="bg-white/15 hover:bg-white/25 rounded-lg px-3 py-1.5 text-sm font-bold whitespace-nowrap">${esc(s.phone)}</a>`:''}
+            </div>
           </div>
         </header>
+        <div id="view"></div>
+        <footer class="bg-slate-900 text-slate-300">
+          <div class="max-w-6xl mx-auto px-4 py-8 grid sm:grid-cols-4 gap-6 text-sm">
+            <div>
+              ${s.logo_url?`<img src="${esc(s.logo_url)}" class="h-8 mb-2">`:`<div class="font-black text-white mb-2">${esc(s.name)}</div>`}
+              ${addr?`<div class="text-slate-400">${esc(addr)}</div>`:''}
+              ${s.phone?`<div class="text-slate-400 mt-1">${esc(s.phone)}</div>`:''}
+              <div class="flex gap-3 mt-3">${s.facebook_url?`<a href="${esc(s.facebook_url)}" target="_blank" class="hover:text-white">Facebook</a>`:''}${s.instagram_url?`<a href="${esc(s.instagram_url)}" target="_blank" class="hover:text-white">Instagram</a>`:''}</div>
+            </div>
+            <div><div class="font-bold text-white mb-2">Shop</div>
+              <a href="#" onclick="setCond('new');return false" class="block text-slate-400 hover:text-white">New vehicles</a>
+              <a href="#" onclick="setCond('used');return false" class="block text-slate-400 hover:text-white">Used vehicles</a>
+            </div>
+            <div><div class="font-bold text-white mb-2">Finance & Trade</div>
+              <a href="#" onclick="go('trade');return false" class="block text-slate-400 hover:text-white">Value your trade</a>
+              <a href="#" onclick="go('finance');return false" class="block text-slate-400 hover:text-white">Get pre-approved</a>
+              <a href="#" onclick="go('inquiry');return false" class="block text-slate-400 hover:text-white">Contact us</a>
+            </div>
+            <div>${s.hours?`<div class="font-bold text-white mb-2">Hours</div><div class="text-slate-400 whitespace-pre-line">${esc(s.hours)}</div>`:''}</div>
+          </div>
+          <div class="border-t border-slate-800 text-center text-xs text-slate-500 py-4">© ${new Date().getFullYear()} ${esc(s.name)} · Powered by MarketSync</div>
+        </footer>`;
+    }
+    function go(view,vehId,prefill){ VIEW=view; window.scrollTo(0,0); renderView();
+      if(view==='inquiry'){ setTimeout(()=>{ const vf=document.getElementById('i-vehicle'); if(vehId&&vf) vf.value=vehId; const mf=document.getElementById('i-msg'); if(prefill&&mf) mf.value=prefill; },30); } }
+    function renderView(){
+      const el=document.getElementById('view'); if(!el) return;
+      if(VIEW==='trade') return void(el.innerHTML=viewTrade());
+      if(VIEW==='finance') return void(el.innerHTML=viewFinance());
+      if(VIEW==='inquiry') return void(el.innerHTML=viewInquiry());
+      if(VIEW.startsWith('page:')){ const p=(DATA.site.pages||[]).find(x=>x.slug===VIEW.slice(5)); return void(el.innerHTML=viewPage(p)); }
+      renderHome(el);
+    }
 
+    // ── HOME ───────────────────────────────────────────────────────────────────
+    function renderHome(el){
+      const s=DATA.site; applyFilters();
+      const bodies=[...new Set((DATA.vehicles||[]).map(v=>(v.body_style||'').trim()).filter(Boolean))].sort();
+      el.innerHTML=`
         <section id="top" class="relative brand2-bg text-white">
           ${s.hero_url?`<img src="${esc(s.hero_url)}" class="absolute inset-0 w-full h-full object-cover opacity-40">`:''}
           <div class="relative max-w-6xl mx-auto px-4 py-16 sm:py-24">
@@ -111,171 +116,112 @@
             <p class="mt-3 text-white/80 max-w-xl">${esc(s.about?s.about.slice(0,180):`Browse our ${DATA.count} available vehicle${DATA.count===1?'':'s'}.`)}</p>
             <div class="mt-6 flex flex-wrap gap-3">
               <a href="#inventory" class="bg-white text-slate-900 font-bold px-5 py-2.5 rounded-lg hover:bg-slate-100">Browse inventory →</a>
-              <a href="#contact" class="border border-white/40 text-white font-bold px-5 py-2.5 rounded-lg hover:bg-white/10">Value your trade</a>
+              <button onclick="go('trade')" class="border border-white/40 text-white font-bold px-5 py-2.5 rounded-lg hover:bg-white/10">Value your trade</button>
+              <button onclick="go('finance')" class="border border-white/40 text-white font-bold px-5 py-2.5 rounded-lg hover:bg-white/10">Get pre-approved</button>
             </div>
           </div>
         </section>
-
         ${slotHtml('hero_below')}
-
         <section class="max-w-6xl mx-auto px-4 -mt-6 relative z-10">
           <div class="grid grid-cols-2 lg:grid-cols-4 gap-3">
-            ${[['New Inventory',"setCond('new')"],['Used Inventory',"setCond('used')"],['Value Your Trade',"location.hash='#contact'"],['Contact Us',"location.hash='#contact'"]].map(t=>`
-              <button onclick="${t[1]}" class="brand-bg text-white rounded-xl p-4 text-left font-bold hover:opacity-90 transition cshadow flex items-center justify-between">
-                <span>${t[0]}</span><span>→</span>
-              </button>`).join('')}
+            ${[['New Inventory',"setCond('new')"],['Used Inventory',"setCond('used')"],['Value Your Trade',"go('trade')"],['Get Financing',"go('finance')"]].map(t=>`<button onclick="${t[1]}" class="brand-bg text-white rounded-xl p-4 text-left font-bold hover:opacity-90 transition cshadow flex items-center justify-between"><span>${t[0]}</span><span>→</span></button>`).join('')}
           </div>
         </section>
-
         ${slotHtml('above_inventory')}
-
         <main id="inventory" class="max-w-6xl mx-auto px-4 py-8">
           <h2 class="text-2xl font-black mb-4">Our inventory</h2>
           <div class="flex flex-wrap items-center gap-2 mb-4">
             <input id="q" value="${esc(FILTERS.q)}" placeholder="Search make, model, stock…" class="flex-1 min-w-[180px] border border-slate-300 rounded-lg px-3 py-2 text-sm">
-            <select id="f-cond" class="border border-slate-300 rounded-lg px-3 py-2 text-sm">
-              <option value="">All conditions</option>
-              ${['used','new','demo'].map(c=>`<option value="${c}" ${FILTERS.condition===c?'selected':''}>${c[0].toUpperCase()+c.slice(1)}</option>`).join('')}
-            </select>
+            <select id="f-cond" class="border border-slate-300 rounded-lg px-3 py-2 text-sm"><option value="">All conditions</option>${['used','new','demo'].map(c=>`<option value="${c}" ${FILTERS.condition===c?'selected':''}>${c[0].toUpperCase()+c.slice(1)}</option>`).join('')}</select>
             ${bodies.length?`<select id="f-body" class="border border-slate-300 rounded-lg px-3 py-2 text-sm"><option value="">All types</option>${bodies.map(b=>`<option value="${esc(b.toLowerCase())}" ${FILTERS.body===b.toLowerCase()?'selected':''}>${esc(b)}</option>`).join('')}</select>`:''}
-            <select id="f-sort" class="border border-slate-300 rounded-lg px-3 py-2 text-sm">
-              ${[['newest','Newest'],['price-asc','Price ↑'],['price-desc','Price ↓'],['miles-asc','Lowest km']].map(o=>`<option value="${o[0]}" ${FILTERS.sort===o[0]?'selected':''}>${o[1]}</option>`).join('')}
-            </select>
+            <select id="f-sort" class="border border-slate-300 rounded-lg px-3 py-2 text-sm">${[['newest','Newest'],['price-asc','Price ↑'],['price-desc','Price ↓'],['miles-asc','Lowest km']].map(o=>`<option value="${o[0]}" ${FILTERS.sort===o[0]?'selected':''}>${o[1]}</option>`).join('')}</select>
           </div>
           <div id="count" class="text-xs text-slate-500 mb-3">${FILTERED.length} vehicle${FILTERED.length===1?'':'s'}</div>
           <div id="grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4"></div>
         </main>
-
         ${slotHtml('below_inventory')}
-
-        ${(DATA.team||[]).length?`<section id="team" class="bg-white border-t border-slate-200">
-          <div class="max-w-6xl mx-auto px-4 py-12">
-            <h2 class="text-2xl font-black mb-6">Meet our team</h2>
-            <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-6">
-              ${DATA.team.map(t=>`<div class="text-center">
-                ${t.photo?`<img src="${esc(t.photo)}" class="w-24 h-24 rounded-full object-cover mx-auto mb-2">`:`<div class="w-24 h-24 rounded-full brand-bg text-white flex items-center justify-center text-2xl font-black mx-auto mb-2">${esc((t.name||'?')[0])}</div>`}
-                <div class="font-bold">${esc(t.name)}</div>
-                <div class="text-xs text-slate-500">${esc(t.title)}</div>
-                ${t.phone?`<a href="tel:${esc(t.phone)}" class="text-xs brand-text font-semibold">${esc(t.phone)}</a>`:''}
-              </div>`).join('')}
-            </div>
+        ${(DATA.team||[]).length?`<section id="team" class="bg-white border-t border-slate-200"><div class="max-w-6xl mx-auto px-4 py-12"><h2 class="text-2xl font-black mb-6">Meet our team</h2><div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-6">${DATA.team.map(t=>`<div class="text-center">${t.photo?`<img src="${esc(t.photo)}" class="w-24 h-24 rounded-full object-cover mx-auto mb-2">`:`<div class="w-24 h-24 rounded-full brand-bg text-white flex items-center justify-center text-2xl font-black mx-auto mb-2">${esc((t.name||'?')[0])}</div>`}<div class="font-bold">${esc(t.name)}</div><div class="text-xs text-slate-500">${esc(t.title)}</div>${t.phone?`<a href="tel:${esc(t.phone)}" class="text-xs brand-text font-semibold">${esc(t.phone)}</a>`:''}</div>`).join('')}</div></div></section>`:''}
+        <section class="brand-bg text-white"><div class="max-w-6xl mx-auto px-4 py-10 text-center">
+          <h2 class="text-2xl font-black">Ready to find your next vehicle?</h2>
+          <div class="mt-4 flex flex-wrap justify-center gap-3">
+            <button onclick="go('trade')" class="bg-white text-slate-900 font-bold px-5 py-2.5 rounded-lg">Value your trade</button>
+            <button onclick="go('finance')" class="border border-white/50 font-bold px-5 py-2.5 rounded-lg hover:bg-white/10">Get pre-approved</button>
+            <button onclick="go('inquiry')" class="border border-white/50 font-bold px-5 py-2.5 rounded-lg hover:bg-white/10">Contact us</button>
           </div>
-        </section>`:''}
-
-        ${slotHtml('above_footer')}
-
-        <section id="contact" class="brand2-bg text-white">
-          <div class="max-w-6xl mx-auto px-4 py-12 grid md:grid-cols-2 gap-8">
-            <div>
-              <h2 class="text-2xl font-black mb-3">Get in touch</h2>
-              ${addr?`<div class="text-white/80 text-sm mb-1">📍 ${esc(addr)}</div>`:''}
-              ${s.phone?`<div class="text-white/80 text-sm mb-1">📞 <a href="tel:${esc(s.phone)}" class="underline">${esc(s.phone)}</a></div>`:''}
-              ${s.email?`<div class="text-white/80 text-sm mb-1">✉️ <a href="mailto:${esc(s.email)}" class="underline">${esc(s.email)}</a></div>`:''}
-              ${s.hours?`<div class="mt-4"><div class="text-xs uppercase font-bold text-white/60 mb-1">Hours</div><div class="text-white/80 text-sm whitespace-pre-line">${esc(s.hours)}</div></div>`:''}
-            </div>
-            <form onsubmit="submitLead(event)" class="bg-white text-slate-900 rounded-xl p-5 space-y-2">
-              <div class="font-bold">Send us a message</div>
-              <input id="l-name" placeholder="Your name" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm">
-              <div class="flex gap-2">
-                <input id="l-phone" placeholder="Phone" class="flex-1 border border-slate-300 rounded-lg px-3 py-2 text-sm">
-                <input id="l-email" placeholder="Email" class="flex-1 border border-slate-300 rounded-lg px-3 py-2 text-sm">
-              </div>
-              <textarea id="l-msg" rows="3" placeholder="How can we help?" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm"></textarea>
-              <input type="hidden" id="l-vehicle" value="">
-              <button class="w-full brand-bg text-white font-bold py-2.5 rounded-lg">Send</button>
-            </form>
-          </div>
-        </section>
-
-        <footer class="bg-slate-900 text-slate-300">
-          <div class="max-w-6xl mx-auto px-4 py-8 grid sm:grid-cols-3 gap-6 text-sm">
-            <div>
-              ${s.logo_url?`<img src="${esc(s.logo_url)}" class="h-8 mb-2">`:`<div class="font-black text-white mb-2">${esc(s.name)}</div>`}
-              ${addr?`<div class="text-slate-400">${esc(addr)}</div>`:''}
-              ${s.phone?`<div class="text-slate-400 mt-1">${esc(s.phone)}</div>`:''}
-              <div class="flex gap-3 mt-3">
-                ${s.facebook_url?`<a href="${esc(s.facebook_url)}" target="_blank" class="hover:text-white">Facebook</a>`:''}
-                ${s.instagram_url?`<a href="${esc(s.instagram_url)}" target="_blank" class="hover:text-white">Instagram</a>`:''}
-              </div>
-            </div>
-            <div>
-              <div class="font-bold text-white mb-2">Inventory</div>
-              <a href="#" onclick="setCond('new');return false" class="block text-slate-400 hover:text-white">New vehicles</a>
-              <a href="#" onclick="setCond('used');return false" class="block text-slate-400 hover:text-white">Used vehicles</a>
-              <a href="#contact" class="block text-slate-400 hover:text-white">Value your trade</a>
-            </div>
-            <div>
-              ${s.hours?`<div class="font-bold text-white mb-2">Hours</div><div class="text-slate-400 whitespace-pre-line">${esc(s.hours)}</div>`:''}
-            </div>
-          </div>
-          <div class="border-t border-slate-800 text-center text-xs text-slate-500 py-4">© ${new Date().getFullYear()} ${esc(s.name)} · Powered by MarketSync</div>
-        </footer>`;
-
+        </div></section>
+        ${slotHtml('above_footer')}`;
       renderGrid();
-      const on=(id,ev,fn)=>{const el=document.getElementById(id); if(el) el.addEventListener(ev,fn);};
-      on('q','input',e=>{FILTERS.q=e.target.value; applyFilters(); renderGrid(); updateCount();});
-      on('f-cond','change',e=>{FILTERS.condition=e.target.value; applyFilters(); renderGrid(); updateCount();});
-      on('f-body','change',e=>{FILTERS.body=e.target.value; applyFilters(); renderGrid(); updateCount();});
-      on('f-sort','change',e=>{FILTERS.sort=e.target.value; applyFilters(); renderGrid();});
+      const on=(id,ev,fn)=>{const x=document.getElementById(id); if(x) x.addEventListener(ev,fn);};
+      on('q','input',e=>{FILTERS.q=e.target.value;applyFilters();renderGrid();updateCount();});
+      on('f-cond','change',e=>{FILTERS.condition=e.target.value;applyFilters();renderGrid();updateCount();});
+      on('f-body','change',e=>{FILTERS.body=e.target.value;applyFilters();renderGrid();updateCount();});
+      on('f-sort','change',e=>{FILTERS.sort=e.target.value;applyFilters();renderGrid();});
     }
-    function updateCount(){ const el=document.getElementById('count'); if(el) el.textContent=`${FILTERED.length} vehicle${FILTERED.length===1?'':'s'}`; }
-    function renderGrid(){
-      const grid=document.getElementById('grid'); if(!grid) return;
+    function applyFilters(){ let v=(DATA.vehicles||[]).slice(); const q=FILTERS.q.toLowerCase();
+      if(q) v=v.filter(x=>[x.year,x.make,x.model,x.trim,x.stocknumber].filter(Boolean).join(' ').toLowerCase().includes(q));
+      if(FILTERS.condition) v=v.filter(x=>(x.condition||'').toLowerCase()===FILTERS.condition);
+      if(FILTERS.body) v=v.filter(x=>(x.body_style||'').toLowerCase()===FILTERS.body);
+      const s=FILTERS.sort; v.sort((a,b)=>s==='price-asc'?(a.price||1e12)-(b.price||1e12):s==='price-desc'?(b.price||0)-(a.price||0):s==='miles-asc'?(a.mileage||1e12)-(b.mileage||1e12):0); FILTERED=v; }
+    function setCond(c){ if(VIEW!=='home') go('home'); FILTERS.condition=c; const el=document.getElementById('f-cond'); if(el) el.value=c; applyFilters(); renderGrid(); updateCount(); setTimeout(()=>document.getElementById('inventory')?.scrollIntoView({behavior:'smooth'}),50); }
+    const updateCount=()=>{const el=document.getElementById('count'); if(el) el.textContent=`${FILTERED.length} vehicle${FILTERED.length===1?'':'s'}`;};
+    function renderGrid(){ const grid=document.getElementById('grid'); if(!grid) return;
       if(!FILTERED.length){ grid.innerHTML='<div class="col-span-full text-center text-sm text-slate-400 py-10">No vehicles match your search.</div>'; return; }
-      grid.innerHTML=FILTERED.map(v=>{
-        const img=v.image_urls[0];
-        const specs=[v.mileage?km(v.mileage):null,v.drivetrain,v.fuel_type].filter(Boolean).slice(0,3).join(' · ');
-        return `<button onclick="openVehicle('${v.id}')" class="text-left bg-white rounded-xl overflow-hidden cshadow hover:shadow-lg transition">
-          ${img?`<img src="${esc(img)}" loading="lazy" class="w-full h-48 object-cover bg-slate-100">`:`<div class="w-full h-48 bg-slate-100 flex items-center justify-center text-slate-300 text-4xl">⌀</div>`}
-          <div class="p-3">
-            <div class="font-bold truncate">${esc([v.year,v.make,v.model].filter(Boolean).join(' '))}</div>
-            <div class="text-xs text-slate-500 truncate">${esc(v.trim||'')}${v.image_urls.length>1?` · ${v.image_urls.length} photos`:''}</div>
-            <div class="mt-1.5 flex items-center justify-between">
-              <span class="brand-text font-black">${money(v.price)}</span>
-              ${v.condition?`<span class="text-[10px] uppercase font-bold text-slate-400">${esc(v.condition)}</span>`:''}
-            </div>
-            ${specs?`<div class="text-xs text-slate-500 mt-1 truncate">${esc(specs)}</div>`:''}
-          </div>
-        </button>`;
+      grid.innerHTML=FILTERED.map(v=>{ const img=v.image_urls[0]; const specs=[v.mileage?km(v.mileage):null,v.drivetrain,v.fuel_type].filter(Boolean).slice(0,3).join(' · ');
+        return `<button onclick="openVehicle('${v.id}')" class="text-left bg-white rounded-xl overflow-hidden cshadow hover:shadow-lg transition">${img?`<img src="${esc(img)}" loading="lazy" class="w-full h-48 object-cover bg-slate-100">`:`<div class="w-full h-48 bg-slate-100 flex items-center justify-center text-slate-300 text-4xl">⌀</div>`}<div class="p-3"><div class="font-bold truncate">${esc([v.year,v.make,v.model].filter(Boolean).join(' '))}</div><div class="text-xs text-slate-500 truncate">${esc(v.trim||'')}${v.image_urls.length>1?` · ${v.image_urls.length} photos`:''}</div><div class="mt-1.5 flex items-center justify-between"><span class="brand-text font-black">${money(v.price)}</span>${v.condition?`<span class="text-[10px] uppercase font-bold text-slate-400">${esc(v.condition)}</span>`:''}</div>${specs?`<div class="text-xs text-slate-500 mt-1 truncate">${esc(specs)}</div>`:''}</div></button>`;
       }).join('');
     }
-
-    function openVehicle(id){
-      const v=(DATA.vehicles||[]).find(x=>x.id===id); if(!v) return;
+    function openVehicle(id){ const v=(DATA.vehicles||[]).find(x=>x.id===id); if(!v) return;
       const rows=[['Mileage',v.mileage?km(v.mileage):null],['Condition',v.condition],['Drivetrain',v.drivetrain],['Transmission',v.transmission],['Fuel',v.fuel_type],['Engine',v.engine],['Body',v.body_style],['Exterior',v.exterior_color],['Interior',v.interior_color],['Doors',v.doors],['Stock #',v.stocknumber],['VIN',v.vin]].filter(r=>r[1]);
-      const ov=document.createElement('div');
-      ov.className='fixed inset-0 z-40 bg-black/60 overflow-y-auto';
-      ov.onclick=(e)=>{ if(e.target===ov) ov.remove(); };
-      ov.innerHTML=`<div class="min-h-full flex items-start justify-center p-3"><div class="bg-white rounded-2xl w-full max-w-3xl my-4">
-        <div class="flex items-center justify-between px-4 py-3 border-b sticky top-0 bg-white rounded-t-2xl">
-          <div class="font-black">${esc([v.year,v.make,v.model,v.trim].filter(Boolean).join(' '))}</div>
-          <button onclick="this.closest('.fixed').remove()" class="text-slate-400 text-2xl leading-none">&times;</button>
-        </div>
-        <div class="p-4">
-          ${v.image_urls.length?`<div class="grid grid-cols-2 gap-2 mb-4">${v.image_urls.slice(0,8).map((u,i)=>`<img src="${esc(u)}" class="w-full ${i===0?'col-span-2 h-64':'h-32'} object-cover rounded-lg bg-slate-100">`).join('')}</div>`:''}
-          <div class="flex items-center justify-between mb-3"><div class="text-2xl font-black brand-text">${money(v.price)}</div>${v.mileage?`<div class="text-sm text-slate-500">${km(v.mileage)}</div>`:''}</div>
-          ${v.description?`<p class="text-sm text-slate-600 mb-4 whitespace-pre-line">${esc(v.description)}</p>`:''}
-          <div class="grid grid-cols-2 sm:grid-cols-3 gap-y-2 gap-x-4 text-sm mb-4">${rows.map(r=>`<div><div class="text-[10px] uppercase font-bold text-slate-400">${esc(r[0])}</div><div>${esc(r[1])}</div></div>`).join('')}</div>
-          <a href="#contact" onclick="document.getElementById('l-vehicle').value='${v.id}';document.getElementById('l-msg').value='I\\'m interested in the ${esc([v.year,v.make,v.model].filter(Boolean).join(' '))} (stock ${esc(v.stocknumber||v.id.slice(0,6))}).';this.closest('.fixed').remove();" class="block text-center brand-bg text-white font-bold py-2.5 rounded-lg">Ask about this vehicle</a>
-        </div>
-      </div></div>`;
+      const label=esc([v.year,v.make,v.model].filter(Boolean).join(' '));
+      const ov=document.createElement('div'); ov.className='fixed inset-0 z-40 bg-black/60 overflow-y-auto'; ov.onclick=(e)=>{if(e.target===ov)ov.remove();};
+      ov.innerHTML=`<div class="min-h-full flex items-start justify-center p-3"><div class="bg-white rounded-2xl w-full max-w-3xl my-4"><div class="flex items-center justify-between px-4 py-3 border-b sticky top-0 bg-white rounded-t-2xl"><div class="font-black">${esc([v.year,v.make,v.model,v.trim].filter(Boolean).join(' '))}</div><button onclick="this.closest('.fixed').remove()" class="text-slate-400 text-2xl leading-none">&times;</button></div><div class="p-4">${v.image_urls.length?`<div class="grid grid-cols-2 gap-2 mb-4">${v.image_urls.slice(0,8).map((u,i)=>`<img src="${esc(u)}" class="w-full ${i===0?'col-span-2 h-64':'h-32'} object-cover rounded-lg bg-slate-100">`).join('')}</div>`:''}<div class="flex items-center justify-between mb-3"><div class="text-2xl font-black brand-text">${money(v.price)}</div>${v.mileage?`<div class="text-sm text-slate-500">${km(v.mileage)}</div>`:''}</div>${v.description?`<p class="text-sm text-slate-600 mb-4 whitespace-pre-line">${esc(v.description)}</p>`:''}<div class="grid grid-cols-2 sm:grid-cols-3 gap-y-2 gap-x-4 text-sm mb-4">${rows.map(r=>`<div><div class="text-[10px] uppercase font-bold text-slate-400">${esc(r[0])}</div><div>${esc(r[1])}</div></div>`).join('')}</div><div class="grid grid-cols-2 gap-2"><button onclick="this.closest('.fixed').remove();go('inquiry','${v.id}','I\\'m interested in the ${label} (stock ${esc(v.stocknumber||v.id.slice(0,6))}).')" class="brand-bg text-white font-bold py-2.5 rounded-lg">Ask about this</button><button onclick="this.closest('.fixed').remove();go('finance')" class="border-2 brand-border brand-text font-bold py-2.5 rounded-lg">Get financing</button></div></div></div></div>`;
       document.body.appendChild(ov);
     }
 
-    async function submitLead(e){
-      e.preventDefault();
-      const btn=e.target.querySelector('button');
-      const body={ name:document.getElementById('l-name').value.trim(), phone:document.getElementById('l-phone').value.trim(), email:document.getElementById('l-email').value.trim(), message:document.getElementById('l-msg').value.trim(), vehicle_id:document.getElementById('l-vehicle').value||null };
-      if(!body.name&&!body.phone&&!body.email){ alert('Please add a name, phone, or email.'); return; }
-      btn.disabled=true; btn.textContent='Sending…';
-      try{
-        const r=await fetch(`${API}/site/${encodeURIComponent(slug)}/lead`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
-        if(!r.ok) throw new Error('Could not send');
-        e.target.innerHTML='<div class="text-center py-6 font-bold text-emerald-600">Thanks! We\'ll be in touch shortly.</div>';
-      }catch(err){ btn.disabled=false; btn.textContent='Send'; alert('Sorry, something went wrong. Please call us.'); }
-    }
+    // ── Shell forms (Trade / Finance / Inquiry) → CRM ──────────────────────────
+    const field=(id,ph,type='text')=>`<input id="${id}" type="${type}" placeholder="${esc(ph)}" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm">`;
+    function formShell(title,sub,inner,onsubmit){ return `<section class="max-w-2xl mx-auto px-4 py-10"><h1 class="text-3xl font-black">${esc(title)}</h1><p class="text-slate-500 mt-1 mb-5">${esc(sub)}</p><form onsubmit="${onsubmit}" class="bg-white rounded-2xl cshadow p-5 space-y-3">${inner}<button class="w-full brand-bg text-white font-bold py-2.5 rounded-lg">Submit</button><p class="text-[11px] text-slate-400 text-center">By submitting you agree to be contacted. We'll never share your info.</p></form></section>`; }
+    function viewTrade(){ return formShell('Value your trade','Tell us about your vehicle and we\'ll get you a real offer.',`
+      <div class="grid grid-cols-2 gap-2">${field('t-year','Year')}${field('t-make','Make')}</div>
+      <div class="grid grid-cols-2 gap-2">${field('t-model','Model')}${field('t-trim','Trim')}</div>
+      <div class="grid grid-cols-2 gap-2">${field('t-km','Mileage (km)')}${field('t-vin','VIN (optional)')}</div>
+      ${field('t-cond','Condition (e.g. excellent, good)')}
+      <hr class="border-slate-100">
+      <div class="grid grid-cols-2 gap-2">${field('t-name','Your name')}${field('t-phone','Phone','tel')}</div>
+      ${field('t-email','Email','email')}
+      <textarea id="t-notes" rows="2" placeholder="Anything else?" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm"></textarea>`,'submitTrade(event)'); }
+    function viewFinance(){ return formShell('Get pre-approved','Quick and secure. A finance specialist will follow up — this does not affect your credit score.',`
+      <div class="grid grid-cols-2 gap-2">${field('c-name','Full name')}${field('c-phone','Phone','tel')}</div>
+      ${field('c-email','Email','email')}
+      ${field('c-address','Home address')}
+      <div class="grid grid-cols-2 gap-2">${field('c-employer','Employer')}${field('c-job','Job title')}</div>
+      <div class="grid grid-cols-2 gap-2">${field('c-income','Monthly income ($)')}${field('c-vehicle','Vehicle of interest')}</div>
+      <label class="flex items-start gap-2 text-xs text-slate-500"><input id="c-consent" type="checkbox" class="mt-0.5"> I consent to be contacted about financing options.</label>`,'submitFinance(event)'); }
+    function viewInquiry(){ return formShell('Contact us','Send us a message and we\'ll get right back to you.',`
+      ${field('i-name','Your name')}
+      <div class="grid grid-cols-2 gap-2">${field('i-phone','Phone','tel')}${field('i-email','Email','email')}</div>
+      <textarea id="i-msg" rows="4" placeholder="How can we help?" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm"></textarea>
+      <input type="hidden" id="i-vehicle"><input type="hidden" id="i-prefill">`,'submitInquiry(event)'); }
+    function viewPage(p){ if(!p) return `<section class="max-w-3xl mx-auto px-4 py-16 text-center text-slate-400">Page not found.</section>`; return `<section class="max-w-3xl mx-auto px-4 py-10"><h1 class="text-3xl font-black mb-4">${esc(p.title)}</h1><div class="prose max-w-none text-slate-700">${p.body_html||''}</div></section>`; }
 
-    window.openVehicle=openVehicle; window.submitLead=submitLead; window.setCond=setCond;
+    async function postLead(body,formEl,btn){ btn.disabled=true; const t=btn.textContent; btn.textContent='Sending…';
+      try{ const r=await fetch(`${API}/site/${encodeURIComponent(slug)}/lead`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}); if(!r.ok) throw new Error('x');
+        formEl.innerHTML='<div class="text-center py-10"><div class="text-2xl mb-2">✓</div><div class="font-bold text-emerald-600">Thanks! We\'ll be in touch shortly.</div></div>';
+      }catch(e){ btn.disabled=false; btn.textContent=t; alert('Sorry, something went wrong. Please call us.'); } }
+    const V=(id)=>(document.getElementById(id)?.value||'').trim();
+    function submitTrade(e){ e.preventDefault(); const btn=e.target.querySelector('button');
+      if(!V('t-name')&&!V('t-phone')&&!V('t-email')){alert('Add a name, phone, or email.');return;}
+      postLead({form_type:'trade',name:V('t-name'),phone:V('t-phone'),email:V('t-email'),message:V('t-notes'),fields:{Vehicle:[V('t-year'),V('t-make'),V('t-model'),V('t-trim')].filter(Boolean).join(' '),Mileage:V('t-km'),VIN:V('t-vin'),Condition:V('t-cond')}},e.target,btn); }
+    function submitFinance(e){ e.preventDefault(); const btn=e.target.querySelector('button');
+      if(!document.getElementById('c-consent')?.checked){alert('Please consent to be contacted.');return;}
+      if(!V('c-name')&&!V('c-phone')&&!V('c-email')){alert('Add a name, phone, or email.');return;}
+      postLead({form_type:'credit',name:V('c-name'),phone:V('c-phone'),email:V('c-email'),fields:{Address:V('c-address'),Employer:V('c-employer'),'Job title':V('c-job'),'Monthly income':V('c-income'),'Vehicle of interest':V('c-vehicle')}},e.target,btn); }
+    function submitInquiry(e){ e.preventDefault(); const btn=e.target.querySelector('button');
+      if(!V('i-name')&&!V('i-phone')&&!V('i-email')){alert('Add a name, phone, or email.');return;}
+      postLead({form_type:'inquiry',name:V('i-name'),phone:V('i-phone'),email:V('i-email'),message:V('i-msg'),vehicle_id:V('i-vehicle')||null},e.target,btn); }
+
+    window.go=go; window.setCond=setCond; window.openVehicle=openVehicle;
+    window.submitTrade=submitTrade; window.submitFinance=submitFinance; window.submitInquiry=submitInquiry;
     boot();
   </script>
 </body>

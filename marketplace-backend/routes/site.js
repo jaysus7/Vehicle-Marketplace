@@ -28,6 +28,21 @@ function publicRep(p) {
   }
 }
 
+const slugify = (s) => String(s || '').toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40)
+
+// Custom pages the dealer adds (About, Financing info, etc.) — title + HTML body.
+function cleanPages(arr) {
+  if (!Array.isArray(arr)) return []
+  const seen = new Set()
+  return arr.slice(0, 20).map(p => {
+    const title = String(p.title || '').trim().slice(0, 80)
+    let slug = slugify(p.slug || title)
+    while (slug && seen.has(slug)) slug += '-1'
+    seen.add(slug)
+    return { slug, title, body_html: String(p.body_html || '').slice(0, 40000), nav: p.nav !== false }
+  }).filter(p => p.title && p.slug)
+}
+
 // Placed widgets: where they can go and their shape.
 const WIDGET_SLOTS = ['top_banner', 'hero_below', 'above_inventory', 'below_inventory', 'above_footer']
 function cleanWidgets(arr) {
@@ -64,6 +79,7 @@ function siteContent(d) {
     // (analytics, chat, Keyloop tags) + placed embed widgets rendered in slots.
     head_html: b.site_head_html || null,
     widgets: cleanWidgets(b.site_widgets),
+    pages: cleanPages(b.site_pages),
   }
 }
 
@@ -104,6 +120,18 @@ export function registerSite(app) {
     const message = String(b.message || '').trim().slice(0, 2000)
     if (!name && !email && !phone) return res.status(400).json({ error: 'Enter a name, phone, or email' })
 
+    // Which shell form: general Inquiry, Trade-In quote, or Credit Application.
+    const FORMS = { trade: 'Trade-In', credit: 'Credit Application', inquiry: 'Website' }
+    const source = FORMS[String(b.form_type || '').toLowerCase()] || 'Website'
+    // Fold any extra shell fields (trade vehicle, employment, etc.) into the comments.
+    let comments = message
+    if (b.fields && typeof b.fields === 'object') {
+      const extra = Object.entries(b.fields)
+        .filter(([, v]) => v != null && String(v).trim())
+        .map(([k, v]) => `${k}: ${String(v).slice(0, 200)}`).join('\n').slice(0, 3000)
+      if (extra) comments = [message, `— ${source} details —`, extra].filter(Boolean).join('\n')
+    }
+
     let inventory_id = null
     if (b.vehicle_id) {
       const { data: v } = await supabaseAdmin.from('inventory').select('id, dealership_id').eq('id', b.vehicle_id).maybeSingle()
@@ -112,7 +140,7 @@ export function registerSite(app) {
     try {
       const { data: lead } = await supabaseAdmin.from('leads').insert({
         dealership_id: d.id, name: name || null, email: email || null, phone: phone || null,
-        comments: message || null, source: 'Website', inventory_id,
+        comments: comments || null, source, inventory_id,
       }).select('id').single()
       const contactId = await findOrCreateContact({ dealershipId: d.id, name, email, phone, source: 'Website' })
       if (contactId && lead?.id) await supabaseAdmin.from('leads').update({ contact_id: contactId }).eq('id', lead.id)
@@ -154,13 +182,14 @@ export function registerSite(app) {
 
     // Merge site content into the shared branding jsonb (don't wipe sticker fields).
     const contentKeys = ['tagline', 'about', 'hours', 'phone', 'email', 'address', 'hero_url', 'primary_color', 'secondary_color', 'facebook_url', 'instagram_url']
-    const touchesContent = contentKeys.some(k => b[k] !== undefined) || b.head_html !== undefined || b.widgets !== undefined
+    const touchesContent = contentKeys.some(k => b[k] !== undefined) || b.head_html !== undefined || b.widgets !== undefined || b.pages !== undefined
     if (touchesContent) {
       const { data: cur } = await supabaseAdmin.from('dealerships').select('branding').eq('id', req.dealershipId).single()
       const branding = { ...(cur?.branding || {}) }
       for (const k of contentKeys) if (b[k] !== undefined) branding[k] = b[k] === '' ? null : b[k]
       if (b.head_html !== undefined) branding.site_head_html = String(b.head_html || '').slice(0, 20000) || null
       if (b.widgets !== undefined) branding.site_widgets = cleanWidgets(b.widgets)
+      if (b.pages !== undefined) branding.site_pages = cleanPages(b.pages)
       update.branding = branding
     }
 
