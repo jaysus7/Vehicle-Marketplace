@@ -645,7 +645,7 @@ async function _runInventorySyncInner(dealershipId) {
       // causing the entire inventory to flip to sold. Doing it in JS is reliable at any scale.
       const { data: currentRows, error: fetchErr } = await supabaseAdmin
         .from('inventory')
-        .select('id, vin, status')
+        .select('id, vin, status, source')
         .eq('dealership_id', dealershipId)
         .eq('status', 'available')   // only live units can drop off the feed
       if (fetchErr) {
@@ -657,6 +657,7 @@ async function _runInventorySyncInner(dealershipId) {
         // rate and "what sold" analytics have real history to learn from.
         const toArchive = []
         for (const row of currentRows || []) {
+          if (row.source === 'manual') continue   // dealer-entered — never touched by feed sync
           if (!row.vin) continue
           if (!feedVinSet.has(row.vin)) toArchive.push(row.id)
         }

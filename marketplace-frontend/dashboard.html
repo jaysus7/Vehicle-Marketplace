@@ -832,9 +832,15 @@
           <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
             <div>
               <h2 class="text-lg font-bold text-slate-900 dark:text-white">Inventory Catalog</h2>
-              <p class="text-slate-500 dark:text-slate-400 text-xs">Browse every vehicle synced from your feeds.</p>
+              <p class="text-slate-500 dark:text-slate-400 text-xs">Every vehicle — synced from your feeds or added here with photos.</p>
             </div>
-            <input type="text" id="catalog-search" placeholder="Search make, model, VIN, stock..." class="bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded px-3 py-1.5 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-indigo-500 w-full sm:w-64">
+            <div class="flex items-center gap-2">
+              <input type="text" id="catalog-search" placeholder="Search make, model, VIN, stock..." class="bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded px-3 py-1.5 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-indigo-500 w-full sm:w-64">
+              <button id="add-vehicle-btn" data-admin-only onclick="openVehicleForm()" class="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold px-3 py-1.5 rounded transition whitespace-nowrap flex-shrink-0">
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>
+                Add vehicle
+              </button>
+            </div>
           </div>
           <!-- Status pill row -->
           <div class="flex flex-wrap gap-1.5" id="catalog-status-pills">
@@ -2396,7 +2402,7 @@
     </div>
   </div>
 
-  <script src="dashboard.js?v=20260711s"></script>
+  <script src="dashboard.js?v=20260711t"></script>
   <!-- Google Translate widget (per-rep dashboard translation) -->
   <script>
     window.googleTranslateElementInit = function () {

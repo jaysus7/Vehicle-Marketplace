@@ -4003,6 +4003,139 @@ async function openCarfax(id, vin) {
   }
 }
 
+// ══ Manual inventory: add/edit a vehicle with photos ═════════════════════════
+// MarketSync as the source of truth — dealers load units here, photos and all,
+// and everything (website, syndication) reads from this.
+let __vehExistingUrls = [];   // already-uploaded photo URLs (editable)
+let __vehFormFiles = [];      // File objects staged for upload
+
+function openVehicleForm(vehicle) {
+  const v = vehicle || {};
+  const isEdit = !!v.id;
+  __vehExistingUrls = Array.isArray(v.image_urls) ? v.image_urls.slice() : [];
+  __vehFormFiles = [];
+  const inp = (id, val, ph, cls = '') => `<input id="${id}" value="${esc(val == null ? '' : val)}" placeholder="${esc(ph)}" class="${cls} bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm">`;
+  const lbl = (t) => `<label class="block text-[11px] font-semibold text-slate-500 dark:text-slate-400 mb-1">${t}</label>`;
+  const opts = (cur, arr) => arr.map(o => `<option value="${o[0]}" ${String(cur || '') === o[0] ? 'selected' : ''}>${o[1]}</option>`).join('');
+  const selCls = 'w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm';
+  crmOverlay(`<div class="p-5 space-y-3">
+    <div class="flex items-center justify-between">
+      <div class="text-lg font-black text-slate-900 dark:text-white">${isEdit ? 'Edit vehicle' : 'Add vehicle'}</div>
+      <button onclick="this.closest('.fixed').remove()" class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"><svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" d="M6 6l12 12M18 6L6 18"/></svg></button>
+    </div>
+    <div class="flex gap-2">
+      ${inp('veh-vin', v.vin, '17-char VIN (optional — auto-fills specs)', 'flex-1 uppercase')}
+      <button type="button" onclick="vehDecode()" class="text-xs font-bold bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 px-3 rounded-lg">Decode</button>
+    </div>
+    <div class="grid grid-cols-4 gap-2">
+      <div>${lbl('Year')}${inp('veh-year', v.year, '2021', 'w-full')}</div>
+      <div>${lbl('Make')}${inp('veh-make', v.make, 'Make', 'w-full')}</div>
+      <div>${lbl('Model')}${inp('veh-model', v.model, 'Model', 'w-full')}</div>
+      <div>${lbl('Trim')}${inp('veh-trim', v.trim, 'Trim', 'w-full')}</div>
+    </div>
+    <div class="grid grid-cols-4 gap-2">
+      <div>${lbl('Price ($)')}${inp('veh-price', v.price, '', 'w-full')}</div>
+      <div>${lbl('Mileage (km)')}${inp('veh-mileage', v.mileage, '', 'w-full')}</div>
+      <div>${lbl('Condition')}<select id="veh-condition" class="${selCls}">${opts(v.condition || 'used', [['used', 'Used'], ['new', 'New'], ['demo', 'Demo']])}</select></div>
+      <div>${lbl('Stock #')}${inp('veh-stock', v.stocknumber, '', 'w-full')}</div>
+    </div>
+    <div class="grid grid-cols-4 gap-2">
+      <div>${lbl('Ext. colour')}${inp('veh-ext', v.exterior_color, '', 'w-full')}</div>
+      <div>${lbl('Int. colour')}${inp('veh-int', v.interior_color, '', 'w-full')}</div>
+      <div>${lbl('Drivetrain')}<select id="veh-drive" class="${selCls}">${opts(v.drivetrain, [['', '—'], ['FWD', 'FWD'], ['RWD', 'RWD'], ['AWD', 'AWD'], ['4WD', '4WD']])}</select></div>
+      <div>${lbl('Doors')}${inp('veh-doors', v.doors, '', 'w-full')}</div>
+    </div>
+    <div class="grid grid-cols-4 gap-2">
+      <div>${lbl('Transmission')}${inp('veh-trans', v.transmission, '', 'w-full')}</div>
+      <div>${lbl('Fuel')}${inp('veh-fuel', v.fuel_type, '', 'w-full')}</div>
+      <div>${lbl('Engine')}${inp('veh-engine', v.engine, '', 'w-full')}</div>
+      <div>${lbl('Body')}${inp('veh-body', v.body_style, '', 'w-full')}</div>
+    </div>
+    <div>${lbl('Description')}<textarea id="veh-desc" rows="3" class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm">${esc(v.description || '')}</textarea></div>
+    <div>
+      ${lbl('Photos')}
+      <div id="veh-photos" class="grid grid-cols-4 sm:grid-cols-6 gap-2 mb-2"></div>
+      <input id="veh-file" type="file" accept="image/*" multiple class="hidden" onchange="vehAddFiles(this.files); this.value='';">
+      <button type="button" onclick="document.getElementById('veh-file').click()" class="w-full border-2 border-dashed border-slate-300 dark:border-slate-700 hover:border-indigo-400 rounded-lg py-3 text-sm font-semibold text-slate-500 dark:text-slate-400 transition">+ Add photos</button>
+    </div>
+    <div class="flex gap-2 items-center justify-between pt-1">
+      <div>${isEdit ? `<button onclick="vehDelete('${v.id}')" class="text-sm font-bold text-rose-600 hover:text-rose-500 px-2 py-2">Delete</button>` : ''}</div>
+      <div class="flex gap-2">
+        <button onclick="this.closest('.fixed').remove()" class="text-sm font-bold text-slate-500 px-4 py-2">Cancel</button>
+        <button onclick="vehSave(this, ${isEdit ? `'${v.id}'` : 'null'})" class="text-sm font-bold bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg">${isEdit ? 'Save' : 'Add vehicle'}</button>
+      </div>
+    </div>
+  </div>`, 'max-w-2xl');
+  renderVehPhotos();
+}
+function renderVehPhotos() {
+  const box = document.getElementById('veh-photos');
+  if (!box) return;
+  const thumbs = [];
+  __vehExistingUrls.forEach((u, i) => thumbs.push(`<div class="relative aspect-square"><img src="${esc(u)}" class="w-full h-full object-cover rounded-lg"><button type="button" onclick="vehRemoveExisting(${i})" class="absolute top-0.5 right-0.5 bg-black/60 hover:bg-black/80 text-white rounded-full w-5 h-5 text-xs leading-none flex items-center justify-center">×</button></div>`));
+  __vehFormFiles.forEach((f, i) => thumbs.push(`<div class="relative aspect-square"><img src="${URL.createObjectURL(f)}" class="w-full h-full object-cover rounded-lg opacity-90"><button type="button" onclick="vehRemoveFile(${i})" class="absolute top-0.5 right-0.5 bg-black/60 hover:bg-black/80 text-white rounded-full w-5 h-5 text-xs leading-none flex items-center justify-center">×</button><span class="absolute bottom-0.5 left-0.5 bg-indigo-600 text-white text-[8px] font-bold px-1 rounded">new</span></div>`));
+  box.innerHTML = thumbs.join('') || '<div class="col-span-full text-xs text-slate-400 italic py-2">No photos yet — the first one becomes the main photo.</div>';
+}
+function vehAddFiles(fileList) { __vehFormFiles.push(...Array.from(fileList || [])); renderVehPhotos(); }
+function vehRemoveFile(i) { __vehFormFiles.splice(i, 1); renderVehPhotos(); }
+function vehRemoveExisting(i) { __vehExistingUrls.splice(i, 1); renderVehPhotos(); }
+async function vehDecode() {
+  const vin = (document.getElementById('veh-vin')?.value || '').trim().toUpperCase();
+  if (vin.length !== 17) { showToast('Enter a 17-character VIN', 'error'); return; }
+  try {
+    const r = await fetch(`${API}/ai/vin-decode`, { method: 'POST', headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ vin }) });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || 'Decode failed');
+    const set = (id, val) => { const el = document.getElementById(id); if (el && val != null && val !== '') el.value = val; };
+    set('veh-year', d.year); set('veh-make', d.make); set('veh-model', d.model); set('veh-trim', d.trim);
+    set('veh-trans', d.transmission); set('veh-fuel', d.fuel_type); set('veh-engine', d.engine); set('veh-body', d.body_style);
+    const dt = document.getElementById('veh-drive');
+    if (dt && d.drivetrain) { const u = d.drivetrain.toUpperCase(); dt.value = /AWD|ALL|4MATIC|QUATTRO/.test(u) ? 'AWD' : /4WD|4X4/.test(u) ? '4WD' : /RWD|REAR/.test(u) ? 'RWD' : /FWD|FRONT/.test(u) ? 'FWD' : ''; }
+    showToast('VIN decoded', 'success');
+  } catch (e) { showToast(e.message, 'error'); }
+}
+async function vehSave(btn, id) {
+  const val = (i) => (document.getElementById(i)?.value || '').trim();
+  const body = {
+    vin: val('veh-vin'), year: val('veh-year'), make: val('veh-make'), model: val('veh-model'), trim: val('veh-trim'),
+    price: val('veh-price'), mileage: val('veh-mileage'), condition: document.getElementById('veh-condition')?.value || 'used',
+    stocknumber: val('veh-stock'), exterior_color: val('veh-ext'), interior_color: val('veh-int'),
+    drivetrain: document.getElementById('veh-drive')?.value || '', doors: val('veh-doors'),
+    transmission: val('veh-trans'), fuel_type: val('veh-fuel'), engine: val('veh-engine'), body_style: val('veh-body'),
+    description: val('veh-desc'), image_urls: __vehExistingUrls,
+  };
+  if (!body.make || !body.model) { showToast('Make and model are required', 'error'); return; }
+  const orig = btn.textContent; btn.disabled = true; btn.textContent = 'Saving…';
+  try {
+    let vehId = id;
+    if (id) await apiSendJson(`/inventory/${id}`, 'PUT', body);
+    else { const d = await apiSendJson('/inventory', 'POST', body); vehId = d.vehicle?.id; }
+    if (vehId && __vehFormFiles.length) {
+      btn.textContent = `Uploading ${__vehFormFiles.length} photo${__vehFormFiles.length > 1 ? 's' : ''}…`;
+      const fd = new FormData();
+      __vehFormFiles.forEach(f => fd.append('photos', f));
+      const r = await fetch(`${API}/inventory/${vehId}/photos`, { method: 'POST', headers: { 'Authorization': `Bearer ${token}` }, body: fd });
+      if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e.error || 'Photo upload failed'); }
+    }
+    btn.closest('.fixed').remove();
+    showToast(id ? 'Vehicle updated' : 'Vehicle added', 'success');
+    if (typeof loadInventoryCatalog === 'function') loadInventoryCatalog();
+  } catch (e) { btn.disabled = false; btn.textContent = orig; showToast(e.message, 'error'); }
+}
+async function vehDelete(id) {
+  if (!id || !confirm('Delete this vehicle and its photos? This cannot be undone.')) return;
+  try {
+    await apiSendJson(`/inventory/${id}`, 'DELETE');
+    showToast('Vehicle deleted', 'success');
+    document.querySelector('.fixed')?.remove();
+    if (typeof loadInventoryCatalog === 'function') loadInventoryCatalog();
+  } catch (e) { showToast(e.message, 'error'); }
+}
+function editVehicle(id) { const v = (typeof __catalogCache !== 'undefined' ? __catalogCache : []).find(x => x.id === id); if (v) openVehicleForm(v); }
+window.openVehicleForm = openVehicleForm;
+window.vehDelete = vehDelete;
+window.editVehicle = editVehicle;
+
 async function loadInventoryCatalog() {
   const list = document.getElementById('catalog-list');
   list.innerHTML = '<div class="text-xs text-slate-500 italic col-span-full">Loading catalog...</div>';
@@ -4124,7 +4257,8 @@ function renderCatalog() {
       ? `<svg class="w-3 h-3 text-slate-400 dark:text-slate-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/></svg>`
       : '';
     return `
-      <${tag} ${linkAttrs} class="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded p-3 flex flex-col gap-2 ${href ? 'hover:border-indigo-400 dark:hover:border-indigo-500 transition no-underline' : ''}">
+      <${tag} ${linkAttrs} class="relative bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded p-3 flex flex-col gap-2 ${href ? 'hover:border-indigo-400 dark:hover:border-indigo-500 transition no-underline' : ''}">
+        ${v.source === 'manual' ? `<button onclick="event.preventDefault();event.stopPropagation();editVehicle('${v.id}')" title="Edit vehicle" class="absolute top-1.5 right-1.5 z-10 bg-white/90 dark:bg-slate-800/90 hover:bg-white dark:hover:bg-slate-700 rounded-md p-1 shadow border border-slate-200 dark:border-slate-700"><svg class="w-3.5 h-3.5 text-slate-600 dark:text-slate-300" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M11 4H4a1 1 0 00-1 1v14a1 1 0 001 1h14a1 1 0 001-1v-7M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>` : ''}
         ${img}
         <div class="text-xs font-bold text-slate-900 dark:text-white truncate" title="${v.year} ${v.make} ${v.model} ${v.trim || ''}">${v.year} ${v.make} ${v.model}</div>
         <div class="flex items-center gap-1 flex-wrap">
