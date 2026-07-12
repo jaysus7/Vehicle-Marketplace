@@ -24,6 +24,8 @@ function publicVehicle(v) {
     window_sticker_url: v.window_sticker_oem_url || v.window_sticker_gen_url || v.window_sticker_url || null,
     brochure_url: v.brochure_oem_url || v.brochure_gen_url || v.brochure_url || null,
     recall_count: recallCount,
+    // Deep spec sheet (NHTSA decode) for the brochure-style detail layout.
+    vin_data: v.vin_data && typeof v.vin_data === 'object' ? v.vin_data : null,
   }
 }
 function publicRep(p) {
@@ -128,7 +130,7 @@ export function registerSite(app) {
 
     const [{ data: inv }, { data: team }] = await Promise.all([
       supabaseAdmin.from('inventory')
-        .select('id, year, make, model, trim, price, mileage, condition, exterior_color, interior_color, drivetrain, fuel_type, transmission, engine, body_style, doors, stocknumber, vin, image_urls, description, carfax_url, window_sticker_url, window_sticker_oem_url, window_sticker_gen_url, brochure_url, brochure_oem_url, brochure_gen_url, recalls, created_at')
+        .select('id, year, make, model, trim, price, mileage, condition, exterior_color, interior_color, drivetrain, fuel_type, transmission, engine, body_style, doors, stocknumber, vin, image_urls, description, carfax_url, window_sticker_url, window_sticker_oem_url, window_sticker_gen_url, brochure_url, brochure_oem_url, brochure_gen_url, recalls, vin_data, created_at')
         .eq('dealership_id', d.id).is('archived_at', null).eq('status', 'available')
         .order('created_at', { ascending: false }).limit(600),
       supabaseAdmin.from('profiles')
