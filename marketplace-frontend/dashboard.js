@@ -4252,81 +4252,89 @@ async function removePhotoBackground() {
 }
 // ── Website manager: the public dealer site we host ──────────────────────────
 const SITE_BASE = (location.origin && !/^file/.test(location.origin)) ? `${location.origin}/site.html` : 'https://marketsync.link/site.html';
-async function openSiteManager() {
-  let cfg = {};
-  try { cfg = await apiGetJson('/dealership/site'); } catch (e) { showToast(e.message, 'error'); return; }
+// The settings form body (shared by the Website → Settings tab and the modal).
+function siteSettingsFields(cfg) {
   const c = cfg.content || {};
   const publicUrl = cfg.site_slug ? `${SITE_BASE}?d=${encodeURIComponent(cfg.site_slug)}` : null;
   const inp = (id, v, ph, cls = '') => `<input id="${id}" value="${esc(v == null ? '' : v)}" placeholder="${esc(ph)}" class="${cls} bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm">`;
   const lbl = (t) => `<label class="block text-[11px] font-semibold text-slate-500 dark:text-slate-400 mb-1">${t}</label>`;
-  crmOverlay(`<div class="p-5 space-y-3">
-    <div class="flex items-center justify-between">
-      <div class="text-lg font-black text-slate-900 dark:text-white">Your website</div>
-      <button onclick="this.closest('.fixed').remove()" class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"><svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" d="M6 6l12 12M18 6L6 18"/></svg></button>
-    </div>
-    <p class="text-sm text-slate-500 dark:text-slate-400">A branded site that shows your inventory, team and contact info — all from what you manage here. Publish it and share the link.</p>
-
+  const ta = (id, v, ph, rows, mono) => `<textarea id="${id}" rows="${rows}" placeholder="${esc(ph)}" class="w-full ${mono ? 'font-mono text-[11px]' : 'text-sm'} bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2">${esc(v || '')}</textarea>`;
+  return `
     ${publicUrl ? `<div class="flex items-center gap-2 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2">
       <span class="text-xs text-slate-600 dark:text-slate-300 truncate flex-1">${esc(publicUrl)}</span>
       <button onclick="navigator.clipboard?.writeText('${publicUrl}');showToast('Link copied','success')" class="text-xs font-bold text-indigo-600 dark:text-indigo-400">Copy</button>
       <a href="${publicUrl}" target="_blank" class="text-xs font-bold text-indigo-600 dark:text-indigo-400">Open ↗</a>
     </div>` : ''}
-
     <div class="flex items-center gap-2">
       <div class="flex-1">${lbl('Site address (letters, numbers, dashes)')}
-        <div class="flex items-center gap-1 text-sm">
-          <span class="text-xs text-slate-400 whitespace-nowrap">…/site.html?d=</span>
-          ${inp('site-slug', cfg.site_slug, 'welland-chev', 'flex-1')}
-        </div>
+        <div class="flex items-center gap-1 text-sm"><span class="text-xs text-slate-400 whitespace-nowrap">…/site.html?d=</span>${inp('site-slug', cfg.site_slug, 'welland-chev', 'flex-1')}</div>
       </div>
       <label class="flex items-center gap-1.5 text-sm font-bold mt-4 whitespace-nowrap"><input id="site-pub" type="checkbox" ${cfg.site_published ? 'checked' : ''} class="accent-indigo-600 w-4 h-4">Published</label>
     </div>
-
     <div class="grid grid-cols-1 gap-2">
       <div>${lbl('Headline / tagline')}${inp('site-tagline', c.tagline, 'Your trusted local dealership', 'w-full')}</div>
-      <div>${lbl('About')}<textarea id="site-about" rows="2" placeholder="A sentence or two about your store" class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm">${esc(c.about || '')}</textarea></div>
+      <div>${lbl('About')}${ta('site-about', c.about, 'A sentence or two about your store', 2)}</div>
       <div class="grid grid-cols-2 gap-2">
         <div>${lbl('Phone')}${inp('site-phone', c.phone, '905-555-1234', 'w-full')}</div>
         <div>${lbl('Email')}${inp('site-email', c.email, 'sales@…', 'w-full')}</div>
       </div>
       <div>${lbl('Address')}${inp('site-address', c.address, 'Street, City', 'w-full')}</div>
-      <div>${lbl('Hours')}<textarea id="site-hours" rows="2" placeholder="Mon–Fri 9–6, Sat 9–5" class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm">${esc(c.hours || '')}</textarea></div>
+      <div>${lbl('Hours')}${ta('site-hours', c.hours, 'Mon–Fri 9–6, Sat 9–5', 2)}</div>
       <div class="grid grid-cols-2 gap-2">
         <div>${lbl('Brand colour')}<input id="site-color" type="color" value="${esc(c.primary_color || '#1e3a8a')}" class="w-full h-9 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg"></div>
-        <div>${lbl('Hero image')}
-          <div class="flex gap-1">
-            ${inp('site-hero', c.hero_url, 'Paste URL or upload', 'flex-1')}
-            <input id="site-hero-file" type="file" accept="image/*" class="hidden" onchange="uploadSiteImage('site-hero', this.files[0])">
-            <button type="button" onclick="document.getElementById('site-hero-file').click()" class="text-xs font-bold bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 px-3 rounded-lg">Upload</button>
-          </div>
-        </div>
+        <div>${lbl('Hero image')}<div class="flex gap-1">${inp('site-hero', c.hero_url, 'Paste URL or upload', 'flex-1')}<input id="site-hero-file" type="file" accept="image/*" class="hidden" onchange="uploadSiteImage('site-hero', this.files[0])"><button type="button" onclick="document.getElementById('site-hero-file').click()" class="text-xs font-bold bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 px-3 rounded-lg">Upload</button></div></div>
       </div>
       <div class="grid grid-cols-2 gap-2">
         <div>${lbl('Facebook URL')}${inp('site-fb', c.facebook_url, 'https://facebook.com/…', 'w-full')}</div>
         <div>${lbl('Instagram URL')}${inp('site-ig', c.instagram_url, 'https://instagram.com/…', 'w-full')}</div>
       </div>
     </div>
-
+    <div class="border-t border-slate-200 dark:border-slate-700 pt-3">
+      <div class="text-sm font-black text-slate-900 dark:text-white">SEO</div>
+      <p class="text-[11px] text-slate-400 mb-2">How your site shows in Google and when shared. Leave blank to auto-generate from your name, city and About.</p>
+      <div class="space-y-2">
+        <div>${lbl('Page title (Google tab, ~60 chars)')}${inp('seo-title', c.seo_title, 'Welland Chevrolet Buick GMC | New & Used in Welland', 'w-full')}</div>
+        <div>${lbl('Meta description (~155 chars)')}${ta('seo-desc', c.seo_description, 'Shop new and used Chevrolet, Buick & GMC in Welland. Build & price, get financing, value your trade.', 2)}</div>
+        <div>${lbl('Keywords (comma separated, optional)')}${inp('seo-keywords', c.seo_keywords, 'Chevrolet Welland, used trucks Niagara, GMC dealer', 'w-full')}</div>
+        <div>${lbl('Social share image')}<div class="flex gap-1">${inp('seo-image', c.seo_image, 'Paste URL or upload (falls back to hero)', 'flex-1')}<input id="seo-image-file" type="file" accept="image/*" class="hidden" onchange="uploadSiteImage('seo-image', this.files[0])"><button type="button" onclick="document.getElementById('seo-image-file').click()" class="text-xs font-bold bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 px-3 rounded-lg">Upload</button></div></div>
+      </div>
+    </div>
     <div class="border-t border-slate-200 dark:border-slate-700 pt-3">
       <div class="text-sm font-black text-slate-900 dark:text-white">Widgets &amp; integrations</div>
       <p class="text-[11px] text-slate-400 mb-2">Paste embed code from Keyloop, Equifax, trade-value tools, chat or AI tools. Global scripts (analytics/chat) go in “site-wide code”; placed embeds appear as blocks in a chosen section.</p>
       ${lbl('Site-wide code — runs in the page &lt;head&gt;')}
-      <textarea id="site-head" rows="3" placeholder="&lt;script&gt;…&lt;/script&gt; — analytics, chat, Keyloop tags" class="w-full font-mono text-[11px] bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2">${esc(c.head_html || '')}</textarea>
+      ${ta('site-head', c.head_html, '<script>…</script> — analytics, chat, Keyloop tags', 3, true)}
       <div class="flex items-center justify-between mt-3 mb-1">
         <label class="text-[11px] font-semibold text-slate-500 dark:text-slate-400">Placed widgets</label>
         <button type="button" onclick="addSiteWidget()" class="text-xs font-bold text-indigo-600 dark:text-indigo-400">+ Add widget</button>
       </div>
       <div id="site-widget-list" class="space-y-2"></div>
     </div>
-
-    <div class="text-[11px] text-slate-400">Pages (About, model &amp; offer pages) live on the <b>Website → Pages</b> tab. Logo and your sales team come from your existing branding + team roster.</div>
+    <div class="text-[11px] text-slate-400">Pages, Team and design live on their own tabs. Logo comes from your branding.</div>`;
+}
+async function openSiteManager() {
+  let cfg = {};
+  try { cfg = await apiGetJson('/dealership/site'); } catch (e) { showToast(e.message, 'error'); return; }
+  crmOverlay(`<div class="p-5 space-y-3">
+    <div class="flex items-center justify-between">
+      <div class="text-lg font-black text-slate-900 dark:text-white">Website settings</div>
+      <button onclick="this.closest('.fixed').remove()" class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"><svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" d="M6 6l12 12M18 6L6 18"/></svg></button>
+    </div>
+    ${siteSettingsFields(cfg)}
     <div class="flex gap-2 justify-end pt-1">
       <button onclick="this.closest('.fixed').remove()" class="text-sm font-bold text-slate-500 px-4 py-2">Cancel</button>
       <button onclick="saveSite(this)" class="text-sm font-bold bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg">Save</button>
     </div>
   </div>`, 'max-w-lg');
-  __siteWidgets = Array.isArray(c.widgets) ? c.widgets.slice() : [];
+  __siteWidgets = Array.isArray(cfg.content?.widgets) ? cfg.content.widgets.slice() : [];
   renderSiteWidgets();
+}
+// Website → Settings tab (same form, inline instead of a modal).
+function wsSettings() {
+  if (!__siteCfg) return '<div class="mt-4 text-sm text-slate-400">Loading…</div>';
+  return `<div class="mt-4 max-w-2xl space-y-3">${siteSettingsFields(__siteCfg)}
+    <div class="flex justify-end pt-1"><button onclick="saveSite(this)" class="text-sm font-bold bg-indigo-600 hover:bg-indigo-500 text-white px-5 py-2 rounded-lg">Save settings</button></div>
+  </div>`;
 }
 // Upload an image (hero/page) → returns a public URL into the given input field.
 async function uploadSiteImage(targetId, file) {
@@ -4441,6 +4449,7 @@ async function saveSite(btn) {
     tagline: val('site-tagline'), about: val('site-about'), phone: val('site-phone'), email: val('site-email'),
     address: val('site-address'), hours: val('site-hours'), primary_color: val('site-color'), hero_url: val('site-hero'),
     facebook_url: val('site-fb'), instagram_url: val('site-ig'),
+    seo_title: val('seo-title'), seo_description: val('seo-desc'), seo_keywords: val('seo-keywords'), seo_image: val('seo-image'),
     head_html: document.getElementById('site-head')?.value || '',
     widgets: __siteWidgets.filter(w => (w.html || '').trim()),
   };
@@ -4448,8 +4457,10 @@ async function saveSite(btn) {
   try {
     await apiSendJson('/dealership/site', 'PUT', body);
     showToast('Website saved', 'success');
-    btn.closest('.fixed').remove();
-    openSiteManager();
+    btn.disabled = false; btn.textContent = orig;
+    const modal = btn.closest('.fixed');
+    if (modal) { modal.remove(); openSiteManager(); }        // modal context: reopen fresh
+    else if (typeof loadWebsitePage === 'function') { __wsTab = 'settings'; loadWebsitePage(); } // tab context: refresh in place
   } catch (e) { btn.disabled = false; btn.textContent = orig; showToast(e.message, 'error'); }
 }
 window.openSiteManager = openSiteManager;
@@ -4504,11 +4515,11 @@ function renderWebsitePage() {
       <div class="flex items-center gap-2 flex-wrap">
         ${url ? `<a href="${url}" target="_blank" class="text-xs font-bold bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 px-3 py-2 rounded-lg">View site ↗</a>` : ''}
         <label class="flex items-center gap-1.5 text-sm font-bold"><input id="ws-pub" type="checkbox" ${__siteCfg.site_published ? 'checked' : ''} class="accent-indigo-600 w-4 h-4">Published</label>
-        <button onclick="openSiteManager()" class="text-xs font-bold bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 px-3 py-2 rounded-lg">Settings</button>
+        <button onclick="wsTab('settings')" class="text-xs font-bold bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 px-3 py-2 rounded-lg">Settings</button>
         <button onclick="saveWebsite(this)" class="text-sm font-bold bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg">Save</button>
       </div>
     </div>
-    <div class="flex items-center gap-1 border-b border-slate-200 dark:border-slate-800 flex-wrap">${tab('builder', 'Builder')}${tab('design', 'Design')}${tab('pages', 'Pages')}${tab('team', 'Team')}</div>
+    <div class="flex items-center gap-1 border-b border-slate-200 dark:border-slate-800 flex-wrap">${tab('builder', 'Builder')}${tab('design', 'Design')}${tab('pages', 'Pages')}${tab('team', 'Team')}${tab('settings', 'Settings')}</div>
     <div id="ws-body"></div>`;
   renderWsBody();
 }
@@ -4518,6 +4529,7 @@ function renderWsBody() {
   if (__wsTab === 'design') { body.innerHTML = wsDesign(); return; }
   if (__wsTab === 'pages') { body.innerHTML = wsPages(); renderSitePages(); return; }
   if (__wsTab === 'team') { body.innerHTML = wsTeam(); renderSiteStaff(); return; }
+  if (__wsTab === 'settings') { body.innerHTML = wsSettings(); __siteWidgets = Array.isArray(__siteCfg?.content?.widgets) ? __siteCfg.content.widgets.slice() : []; renderSiteWidgets(); return; }
   // Builder
   const palette = SEC_ORDER.map(t => `<button onclick="addSection('${t}')" class="text-left text-xs font-semibold bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 hover:border-indigo-400">+ ${SEC_META[t].label}</button>`).join('');
   body.innerHTML = `
@@ -4716,48 +4728,102 @@ async function aiRun(i, key, kind, task) {
     showToast('✨ Done — review & Save', 'success');
   } catch (e) { showToast(e.message === 'AI Boost not active' ? 'AI editing needs AI Boost (or your free trial).' : e.message, 'error'); }
 }
-// ── OEM templates: one click to brand colours + typography + a pro section layout ──
-const SITE_TEMPLATES = [
-  { id: 'clean', name: 'Clean (any brand)', primary: '#1e3a8a', secondary: '#0f172a', accent: '#2563eb', typography: 'modern' },
-  { id: 'chevy', name: 'Chevrolet / GM', primary: '#0b2a5b', secondary: '#0a1a33', accent: '#d4af37', typography: 'bold' },
-  { id: 'gmc', name: 'GMC', primary: '#c8102e', secondary: '#1a1a1a', accent: '#9ea2a2', typography: 'bold' },
-  { id: 'ford', name: 'Ford', primary: '#003478', secondary: '#00142e', accent: '#1071e5', typography: 'bold' },
-  { id: 'toyota', name: 'Toyota', primary: '#eb0a1e', secondary: '#121212', accent: '#eb0a1e', typography: 'modern' },
-  { id: 'honda', name: 'Honda', primary: '#e40521', secondary: '#121212', accent: '#e40521', typography: 'modern' },
-  { id: 'nissan', name: 'Nissan', primary: '#c3002f', secondary: '#121212', accent: '#c3002f', typography: 'modern' },
-  { id: 'hyundai', name: 'Hyundai', primary: '#002c5f', secondary: '#00142e', accent: '#00aad2', typography: 'modern' },
-  { id: 'mazda', name: 'Mazda', primary: '#a6192e', secondary: '#101010', accent: '#a6192e', typography: 'luxury' },
-  { id: 'vw', name: 'Volkswagen', primary: '#001e50', secondary: '#00142e', accent: '#00b1eb', typography: 'corporate' },
-  { id: 'cdjr', name: 'Chrysler / Dodge / Jeep / Ram', primary: '#ba0c2f', secondary: '#141414', accent: '#8a8d8f', typography: 'bold' },
-  { id: 'luxury', name: 'Luxury', primary: '#111111', secondary: '#000000', accent: '#b08d57', typography: 'luxury' },
-];
-function templateSections() {
-  const mk = (type, settings) => ({ id: 's' + Math.random().toString(36).slice(2, 9), type, settings: settings || {} });
-  return [
-    mk('hero', { headline: '', subheadline: '', button_label: 'Browse inventory', button_target: 'inquiry', overlay: 45, height: 'md' }),
-    mk('featured_inventory', { title: 'Featured vehicles', condition: 'all', count: 6 }),
-    mk('trade_cta', {}), mk('finance_cta', {}),
-    mk('staff', { title: 'Meet our team' }),
-    mk('reviews', { title: 'What our customers say' }),
-    mk('contact', { title: 'Get in touch' }),
-  ];
+// ── Templates: distinct layouts + copy pre-filled from the dealer's own details ──
+const __mk = (type, settings) => ({ id: 's' + Math.random().toString(36).slice(2, 9), type, settings: settings || {} });
+const MAKE_THEME = {
+  chevrolet: { p: '#0b2a5b', s: '#0a1a33', a: '#d4af37', t: 'bold' }, gmc: { p: '#c8102e', s: '#1a1a1a', a: '#9ea2a2', t: 'bold' },
+  buick: { p: '#151a20', s: '#0a0f14', a: '#b08d57', t: 'luxury' }, ford: { p: '#003478', s: '#00142e', a: '#1071e5', t: 'bold' },
+  toyota: { p: '#eb0a1e', s: '#121212', a: '#eb0a1e', t: 'modern' }, honda: { p: '#e40521', s: '#121212', a: '#e40521', t: 'modern' },
+  nissan: { p: '#c3002f', s: '#121212', a: '#c3002f', t: 'modern' }, hyundai: { p: '#002c5f', s: '#00142e', a: '#00aad2', t: 'modern' },
+};
+async function dealerCtxAsync() {
+  const c = __siteCfg?.content || {};
+  let makes = [];
+  try { let inv = (typeof __catalogCache !== 'undefined' && __catalogCache?.length) ? __catalogCache : []; if (!inv.length) { try { inv = await apiGetJson('/inventory/all', { retries: 1 }); } catch {} } makes = [...new Set(inv.map(v => v.make).filter(Boolean))]; } catch {}
+  return { name: c.name || 'our dealership', city: c.city || '', makes, primaryMake: makes[0] || '', makeList: makes.slice(0, 3).join(', ') };
 }
+const SITE_TEMPLATES = [
+  { id: 'generic', name: 'Generic', primary: '#1e3a8a', secondary: '#0f172a', accent: '#2563eb', typography: 'modern', build: (x) => [
+    __mk('hero', { headline: `Welcome to ${x.name}`, subheadline: `Quality new and used vehicles${x.city ? ' in ' + x.city : ''}. Shop, build and finance — all in one place.`, button_label: 'Browse inventory', button_target: 'inquiry', overlay: 45, height: 'md' }),
+    __mk('featured_inventory', { title: 'Featured vehicles', condition: 'all', count: 6 }),
+    __mk('trade_cta', { title: 'Value your trade', subtitle: 'Get a real number in minutes.', button_label: 'Value my trade' }),
+    __mk('finance_cta', { title: 'Get pre-approved', subtitle: 'Fast and secure — no impact to your credit score.', button_label: 'Get pre-approved' }),
+    __mk('staff', { title: 'Meet our team' }),
+    __mk('faq', { title: 'Frequently asked questions', items: [{ q: 'Do you offer financing?', a: 'Yes — apply online in minutes and our team finds you a competitive rate.' }, { q: 'Can I value my trade online?', a: `Absolutely. Use our trade tool and we'll get you a real offer.` }] }),
+    __mk('contact', { title: 'Get in touch' }),
+  ] },
+  { id: 'manufacturer', name: 'Manufacturer', primary: '#0b2a5b', secondary: '#0a1a33', accent: '#d4af37', typography: 'bold', build: (x) => {
+    const mk = x.primaryMake || 'your favourite brands';
+    return [
+      __mk('hero', { headline: `Your ${mk} destination${x.city ? ' in ' + x.city : ''}`, subheadline: `Explore the full ${mk} lineup, build yours, and drive home with confidence.`, button_label: `Shop ${mk}`, button_target: 'inquiry', overlay: 40, height: 'lg' }),
+      __mk('inventory_grid', { title: `${mk} inventory` }),
+      __mk('finance_cta', { title: `${mk} finance offers`, subtitle: 'Competitive rates and factory programs.', button_label: 'Get pre-approved' }),
+      __mk('service_cta', { title: 'Factory-trained service', subtitle: 'Keep your vehicle running like new.', button_label: 'Book service', button_target: 'inquiry' }),
+      __mk('featured_inventory', { title: 'New arrivals', condition: 'new', count: 6 }),
+      __mk('contact', { title: 'Talk to a product specialist' }),
+    ];
+  } },
+  { id: 'modern', name: 'Modern', primary: '#4f46e5', secondary: '#0b1020', accent: '#22d3ee', typography: 'modern', build: (x) => [
+    __mk('hero', { headline: `Find your next vehicle, faster`, subheadline: `${x.name} makes it simple — search, build and finance online${x.city ? ' in ' + x.city : ''}.`, button_label: 'Start shopping', button_target: 'inquiry', overlay: 35, height: 'lg' }),
+    __mk('featured_inventory', { title: 'Trending now', condition: 'all', count: 6 }),
+    __mk('cta_banner', { title: 'Build your dream vehicle online', button_label: 'Build & price', button_target: 'inquiry' }),
+    __mk('gallery', { title: 'Inside our store', images: [] }),
+    __mk('trade_cta', { title: 'Trade up today', subtitle: 'Instant estimate, real offer.', button_label: 'Value my trade' }),
+    __mk('finance_cta', { title: 'Financing that fits', subtitle: 'Pre-approval in minutes.', button_label: 'Get pre-approved' }),
+    __mk('contact', { title: 'Let\'s talk' }),
+  ] },
+  { id: 'clean', name: 'Clean', primary: '#0f766e', secondary: '#111827', accent: '#14b8a6', typography: 'minimal', build: (x) => [
+    __mk('hero', { headline: x.name, subheadline: `A simpler way to buy your next vehicle${x.city ? ' in ' + x.city : ''}.`, button_label: 'View inventory', button_target: 'inquiry', overlay: 30, height: 'sm' }),
+    __mk('featured_inventory', { title: 'Available now', condition: 'all', count: 6 }),
+    __mk('finance_cta', { title: 'Get pre-approved', subtitle: 'Quick, secure, no obligation.', button_label: 'Apply now' }),
+    __mk('contact', { title: 'Contact us' }),
+  ] },
+  { id: 'luxury', name: 'Luxury', primary: '#151515', secondary: '#000000', accent: '#b08d57', typography: 'luxury', build: (x) => [
+    __mk('hero', { headline: `An elevated ownership experience`, subheadline: `${x.name} — curated vehicles and concierge service${x.city ? ' in ' + x.city : ''}.`, button_label: 'View the collection', button_target: 'inquiry', overlay: 55, height: 'lg' }),
+    __mk('featured_inventory', { title: 'The collection', condition: 'all', count: 6 }),
+    __mk('html', { html: `<div class="max-w-3xl"><h2 class="text-2xl font-black mb-2">Effortless from first look to delivery</h2><p class="text-slate-600">Private appointments, home delivery and a dedicated advisor for every client.</p></div>` }),
+    __mk('staff', { title: 'Your advisors' }),
+    __mk('contact', { title: 'Request a private appointment' }),
+  ] },
+  { id: 'usedlot', name: 'Used car lot', primary: '#b45309', secondary: '#1c1917', accent: '#f59e0b', typography: 'bold', build: (x) => [
+    __mk('hero', { headline: `Quality pre-owned, priced to move`, subheadline: `${x.name} — every vehicle inspected and ready to go${x.city ? ' in ' + x.city : ''}.`, button_label: 'Browse used inventory', button_target: 'inquiry', overlay: 45, height: 'md' }),
+    __mk('inventory_grid', { title: 'Our pre-owned inventory' }),
+    __mk('trade_cta', { title: 'We buy cars', subtitle: 'Get top dollar for your trade — even if you don\'t buy from us.', button_label: 'Get my offer' }),
+    __mk('finance_cta', { title: 'Everyone drives', subtitle: 'Good credit, bad credit, no credit — we can help.', button_label: 'Get approved' }),
+    __mk('faq', { title: 'Buying with confidence', items: [{ q: 'Are your vehicles inspected?', a: 'Yes — every vehicle goes through a full mechanical and safety inspection.' }, { q: 'Do you help with financing?', a: 'We work with multiple lenders to get you approved, whatever your credit.' }] }),
+    __mk('contact', { title: 'Come see us' }),
+  ] },
+  { id: 'corporate', name: 'Corporate', primary: '#1e40af', secondary: '#0b1220', accent: '#64748b', typography: 'corporate', build: (x) => [
+    __mk('hero', { headline: `${x.name}`, subheadline: `Trusted vehicle sales, financing and service${x.city ? ' in ' + x.city : ''}${x.makeList ? ' — ' + x.makeList + ' and more' : ''}.`, button_label: 'Explore inventory', button_target: 'inquiry', overlay: 40, height: 'md' }),
+    __mk('featured_inventory', { title: 'Featured inventory', condition: 'all', count: 6 }),
+    __mk('finance_cta', { title: 'Financing & leasing', subtitle: 'Flexible terms for every budget.', button_label: 'Get pre-approved' }),
+    __mk('service_cta', { title: 'Service & maintenance', subtitle: 'Certified technicians and genuine parts.', button_label: 'Book service', button_target: 'inquiry' }),
+    __mk('reviews', { title: 'What our customers say' }),
+    __mk('faq', { title: 'Questions, answered', items: [{ q: 'What are your hours?', a: 'See our hours in the footer — or contact us anytime online.' }, { q: 'Do you offer delivery?', a: 'Yes, we offer vehicle delivery in the surrounding area.' }] }),
+    __mk('map', { title: 'Find us', address: '' }),
+    __mk('contact', { title: 'Get in touch' }),
+  ] },
+];
 function openTemplatePicker() {
   const cards = SITE_TEMPLATES.map(t => `<button onclick="applyTemplate('${t.id}')" class="text-left border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden hover:border-indigo-400 transition">
     <div class="h-16 flex" style="background:${t.primary}"><div class="w-1/4" style="background:${t.secondary}"></div><div class="w-1/4 self-end m-2 h-4 rounded" style="background:${t.accent}"></div></div>
-    <div class="px-3 py-2 text-sm font-bold text-slate-800 dark:text-slate-100">${esc(t.name)}</div>
+    <div class="px-3 py-2"><div class="text-sm font-bold text-slate-800 dark:text-slate-100">${esc(t.name)}</div><div class="text-[10px] text-slate-400">${esc(TEMPLATE_BLURB[t.id] || '')}</div></div>
   </button>`).join('');
   crmOverlay(`<div class="p-5">
     <div class="flex items-center justify-between mb-1"><div class="text-lg font-black text-slate-900 dark:text-white">Start from a template</div><button onclick="this.closest('.fixed').remove()" class="text-slate-400 hover:text-slate-600"><svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" d="M6 6l12 12M18 6L6 18"/></svg></button></div>
-    <p class="text-sm text-slate-500 dark:text-slate-400 mb-4">Applies brand colours, fonts and a professional section layout. You can edit everything after.</p>
+    <p class="text-sm text-slate-500 dark:text-slate-400 mb-4">Each template applies its own layout, colours, fonts and starter copy — already filled in with your dealership's name, city and brands. Edit everything after.</p>
     <div class="grid grid-cols-2 sm:grid-cols-3 gap-3">${cards}</div>
   </div>`, 'max-w-2xl');
 }
-function applyTemplate(id) {
+const TEMPLATE_BLURB = { generic: 'Balanced, all-purpose', manufacturer: 'Auto-branded to your make', modern: 'Bold & contemporary', clean: 'Minimal & fast', luxury: 'Dark, premium feel', usedlot: 'High-volume pre-owned', corporate: 'Professional & complete' };
+async function applyTemplate(id) {
   const t = SITE_TEMPLATES.find(x => x.id === id); if (!t) return;
-  __siteSections = templateSections();
+  const ctx = await dealerCtxAsync();
+  let colors = { primary: t.primary, secondary: t.secondary, accent: t.accent, typography: t.typography };
+  if (id === 'manufacturer') { const th = MAKE_THEME[(ctx.primaryMake || '').toLowerCase()]; if (th) colors = { primary: th.p, secondary: th.s, accent: th.a, typography: th.t }; }
+  __siteSections = t.build(ctx);
   const c = __siteCfg.content || (__siteCfg.content = {});
-  c.primary_color = t.primary; c.secondary_color = t.secondary; c.accent_color = t.accent; c.typography = t.typography;
+  c.primary_color = colors.primary; c.secondary_color = colors.secondary; c.accent_color = colors.accent; c.typography = colors.typography;
   document.querySelector('.fixed')?.remove();
   __wsTab = 'builder';
   renderWebsitePage();

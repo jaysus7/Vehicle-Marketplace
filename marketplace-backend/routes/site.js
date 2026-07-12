@@ -137,6 +137,11 @@ function siteContent(d) {
     photo_background_url: d.photo_background_url || null,
     facebook_url: b.facebook_url || null,
     instagram_url: b.instagram_url || null,
+    // SEO: page title, meta description, keywords, and social-share (OG) image.
+    seo_title: b.seo_title || null,
+    seo_description: b.seo_description || null,
+    seo_keywords: b.seo_keywords || null,
+    seo_image: b.seo_image || null,
     // Dealer-controlled custom code: global vendor scripts injected into <head>
     // (analytics, chat, Keyloop tags) + placed embed widgets rendered in slots.
     head_html: b.site_head_html || null,
@@ -265,7 +270,7 @@ export function registerSite(app) {
     if (b.site_published !== undefined) update.site_published = !!b.site_published
 
     // Merge site content into the shared branding jsonb (don't wipe sticker fields).
-    const contentKeys = ['tagline', 'about', 'hours', 'phone', 'email', 'address', 'hero_url', 'primary_color', 'secondary_color', 'accent_color', 'facebook_url', 'instagram_url', 'typography']
+    const contentKeys = ['tagline', 'about', 'hours', 'phone', 'email', 'address', 'hero_url', 'primary_color', 'secondary_color', 'accent_color', 'facebook_url', 'instagram_url', 'typography', 'seo_title', 'seo_description', 'seo_keywords', 'seo_image']
     const touchesContent = contentKeys.some(k => b[k] !== undefined) || b.head_html !== undefined || b.widgets !== undefined || b.pages !== undefined || b.sections !== undefined || b.staff !== undefined
     if (touchesContent) {
       const { data: cur } = await supabaseAdmin.from('dealerships').select('branding').eq('id', req.dealershipId).single()

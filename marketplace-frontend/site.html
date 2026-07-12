@@ -53,7 +53,7 @@
         const r=await fetch(`${API}/site/${encodeURIComponent(slug)}`);
         if(!r.ok) throw new Error('This site isn\'t available.');
         DATA=await r.json(); const s=DATA.site;
-        document.title=s.name||'Inventory';
+        applySeo(s);
         document.documentElement.style.setProperty('--brand',s.primary_color||'#1e3a8a');
         document.documentElement.style.setProperty('--brand2',s.secondary_color||'#0f172a');
         injectHead(s.head_html);
@@ -62,6 +62,20 @@
       }catch(e){ document.getElementById('app').innerHTML=errPage(e.message); }
     }
     const errPage=(m)=>`<div class="min-h-screen flex flex-col items-center justify-center gap-2 text-center px-6"><div class="text-lg font-bold text-slate-700">${esc(m)}</div><div class="text-sm text-slate-400">Please check the link.</div></div>`;
+    // SEO: set the page title + meta description + Open Graph tags from dealer settings.
+    function applySeo(s){
+      const title=s.seo_title||`${s.name||'Inventory'}${s.city?' | '+s.city:''}`;
+      const desc=s.seo_description||s.about||`Browse inventory, build your vehicle, and get financing at ${s.name||'our dealership'}.`;
+      document.title=title;
+      const meta=(sel,attr,val)=>{ if(!val) return; let el=document.head.querySelector(sel); if(!el){ el=document.createElement('meta'); const [k,v]=attr; el.setAttribute(k,v); document.head.appendChild(el);} el.setAttribute('content',val); };
+      meta('meta[name="description"]',['name','description'],desc);
+      if(s.seo_keywords) meta('meta[name="keywords"]',['name','keywords'],s.seo_keywords);
+      meta('meta[property="og:title"]',['property','og:title'],title);
+      meta('meta[property="og:description"]',['property','og:description'],desc);
+      meta('meta[property="og:type"]',['property','og:type'],'website');
+      if(s.seo_image||s.hero_url||s.logo_url) meta('meta[property="og:image"]',['property','og:image'],s.seo_image||s.hero_url||s.logo_url);
+      meta('meta[name="twitter:card"]',['name','twitter:card'],'summary_large_image');
+    }
     function injectHead(html){ if(!html) return; try{ const t=document.createElement('div'); t.innerHTML=html; Array.from(t.childNodes).forEach(n=>{ if(n.nodeType===1&&n.tagName==='SCRIPT'){ const s=document.createElement('script'); for(const a of n.attributes) s.setAttribute(a.name,a.value); s.textContent=n.textContent; document.head.appendChild(s);} else if(n.nodeType===1) document.head.appendChild(n); }); }catch(e){} }
     // Typography theme → one selector changes every heading/body font site-wide.
     function applyTypography(theme){
@@ -471,12 +485,34 @@
 
     // ── Build & Price: pick from the lineup we carry → send the build as a lead ──
     let BUILD={ make:'', model:'', trim:'', ext:'', int:'' };
+    // Generic manufacturer lineups (independent of current stock). Keyed by make.
+    const GEN_EXT=['Summit White','Black','Silver Metallic','Gray','Red','Blue','Dark Green'];
+    const GEN_INT=['Jet Black','Medium Gray','Beige'];
+    const LINEUP={
+      chevrolet:{models:{'Trax':['LS','1RS','LT','2RS','ACTIV'],'Trailblazer':['LS','LT','ACTIV','RS'],'Equinox':['LT','RS','ACTIV'],'Equinox EV':['LT','RS'],'Blazer':['LT','RS','Premier'],'Blazer EV':['LT','RS','SS'],'Traverse':['LT','RS','Z71','High Country'],'Tahoe':['LS','LT','RST','Z71','Premier','High Country'],'Suburban':['LS','LT','RST','Z71','Premier','High Country'],'Colorado':['WT','LT','Trail Boss','Z71','ZR2'],'Silverado 1500':['WT','Custom','LT','RST','LTZ','High Country','ZR2'],'Silverado HD':['WT','Custom','LT','LTZ','High Country'],'Silverado EV':['WT','RST'],'Corvette':['Stingray','Z06','E-Ray'],'Malibu':['LS','LT','RS']}},
+      gmc:{models:{'Terrain':['Elevation','AT4','Denali'],'Acadia':['Elevation','AT4','Denali'],'Yukon':['Elevation','SLT','AT4','Denali','Denali Ultimate'],'Yukon XL':['Elevation','SLT','AT4','Denali','Denali Ultimate'],'Canyon':['Elevation','AT4','Denali','AT4X'],'Sierra 1500':['Pro','Elevation','SLE','SLT','AT4','Denali','AT4X','Denali Ultimate'],'Sierra HD':['Pro','SLE','SLT','AT4','Denali','Denali Ultimate'],'Hummer EV':['2X','3X']}},
+      buick:{models:{'Envista':['Preferred','Sport Touring','Avenir'],'Encore GX':['Preferred','Sport Touring','Avenir'],'Envision':['Preferred','Sport Touring','Avenir'],'Enclave':['Preferred','Sport Touring','Avenir']}},
+      ford:{models:{'Escape':['Active','ST-Line','Platinum'],'Bronco Sport':['Big Bend','Outer Banks','Badlands'],'Bronco':['Big Bend','Black Diamond','Outer Banks','Badlands','Wildtrak'],'Edge':['SE','SEL','ST-Line','Titanium'],'Explorer':['Active','ST-Line','Platinum','King Ranch'],'F-150':['XL','XLT','Lariat','King Ranch','Platinum','Raptor'],'Mustang':['EcoBoost','GT','Dark Horse'],'Mustang Mach-E':['Select','Premium','GT'],'Maverick':['XL','XLT','Lariat']}},
+      toyota:{models:{'Corolla':['LE','SE','XSE'],'Camry':['LE','SE','XLE','XSE'],'RAV4':['LE','XLE','TRD Off-Road','Limited'],'Highlander':['LE','XLE','Limited','Platinum'],'Tacoma':['SR','SR5','TRD Sport','TRD Off-Road','Limited','TRD Pro'],'Tundra':['SR','SR5','Limited','Platinum','1794'],'4Runner':['SR5','TRD Off-Road','Limited','TRD Pro']}},
+      honda:{models:{'Civic':['LX','Sport','EX','Touring'],'Accord':['LX','Sport','EX-L','Touring'],'CR-V':['LX','EX','EX-L','Touring'],'HR-V':['LX','Sport','EX-L'],'Pilot':['Sport','EX-L','Touring','Elite'],'Ridgeline':['Sport','RTL','Black Edition']}},
+      nissan:{models:{'Kicks':['S','SV','SR'],'Rogue':['S','SV','SL','Platinum'],'Murano':['S','SV','SL','Platinum'],'Pathfinder':['S','SV','SL','Platinum'],'Frontier':['S','SV','PRO-4X'],'Titan':['S','SV','PRO-4X','Platinum Reserve']}},
+      hyundai:{models:{'Kona':['Essential','Preferred','N Line','Ultimate'],'Tucson':['Essential','Preferred','N Line','Ultimate'],'Santa Fe':['Essential','Preferred','Ultimate Calligraphy'],'Elantra':['Essential','Preferred','N Line'],'IONIQ 5':['Preferred','Ultimate']}},
+    };
     function buildLineup(){
-      // Manufacturer lineup derived from what the dealer actually stocks.
-      const L={}; for(const v of (DATA.vehicles||[])){ if(!v.make||!v.model) continue;
-        const mk=v.make, md=v.model; L[mk]=L[mk]||{}; L[mk][md]=L[mk][md]||{trims:new Set(),ext:new Set(),int:new Set()};
-        if(v.trim) L[mk][md].trims.add(v.trim); if(v.exterior_color) L[mk][md].ext.add(v.exterior_color); if(v.interior_color) L[mk][md].int.add(v.interior_color); }
-      return L;
+      const out={};
+      const makes=[...new Set((DATA.vehicles||[]).map(v=>v.make).filter(Boolean))];
+      for(const mk of makes){
+        const data=LINEUP[mk.toLowerCase()];
+        if(data){ const models={}; for(const md in data.models) models[md]=data.models[md].slice();
+          out[mk]={ models, ext:data.ext||GEN_EXT, int:data.int||GEN_INT }; }
+        else { // Unknown make → fall back to what we stock so the tool still works.
+          const models={}, ext=new Set(), int=new Set();
+          for(const v of (DATA.vehicles||[])){ if((v.make||'')!==mk||!v.model) continue; (models[v.model]=models[v.model]||new Set()); if(v.trim) models[v.model].add(v.trim); if(v.exterior_color) ext.add(v.exterior_color); if(v.interior_color) int.add(v.interior_color); }
+          const m2={}; for(const md in models) m2[md]=[...models[md]].sort();
+          out[mk]={ models:m2, ext:ext.size?[...ext]:GEN_EXT, int:int.size?[...int]:GEN_INT };
+        }
+      }
+      return out;
     }
     function renderBuild(el){
       const L=buildLineup(); const makes=Object.keys(L).sort();
@@ -489,10 +525,11 @@
     function renderBuildBody(){
       const box=document.getElementById('build-body'); if(!box) return;
       const L=buildLineup(); const makes=Object.keys(L).sort();
-      const models=BUILD.make&&L[BUILD.make]?Object.keys(L[BUILD.make]).sort():[];
-      if(BUILD.model&&!L[BUILD.make]?.[BUILD.model]) BUILD.model='';
-      const node=BUILD.model?L[BUILD.make][BUILD.model]:null;
-      const trims=node?[...node.trims].sort():[]; const exts=node?[...node.ext].sort():[]; const ints=node?[...node.int].sort():[];
+      const makeNode=L[BUILD.make]||null;
+      const models=makeNode?Object.keys(makeNode.models).sort():[];
+      if(BUILD.model&&makeNode&&!makeNode.models[BUILD.model]) BUILD.model='';
+      const trims=(BUILD.model&&makeNode&&makeNode.models[BUILD.model])?makeNode.models[BUILD.model]:[];
+      const exts=makeNode?makeNode.ext:[]; const ints=makeNode?makeNode.int:[];
       const chip=(active,label,onclick)=>`<button onclick="${onclick}" class="px-3 py-2 rounded-lg border text-sm font-semibold ${active?'brand-bg text-white brand-border':'bg-white border-slate-300 hover:border-slate-400'}">${esc(label)}</button>`;
       const step=(n,title,inner)=>`<div class="mb-6"><div class="text-xs font-bold uppercase tracking-wide text-slate-400 mb-2">Step ${n} · ${esc(title)}</div><div class="flex flex-wrap gap-2">${inner}</div></div>`;
       box.innerHTML=`
