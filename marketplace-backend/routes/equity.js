@@ -14,12 +14,23 @@ import { enqueueForTrigger } from './automation.js'
 const isMgr = (req) => ['DEALER_ADMIN', 'OWNER', 'MANAGER'].includes(req.profile?.role)
 const OPEN_DEAL = new Set(['appointment', 'sold', 'fni', 'turnover'])
 const num = (x) => { const n = Number(x); return Number.isFinite(n) ? n : null }
+const US_STATES = new Set(['al', 'ak', 'az', 'ar', 'ca', 'co', 'ct', 'de', 'fl', 'ga', 'hi', 'id', 'il', 'in', 'ia', 'ks', 'ky', 'la', 'me', 'md', 'ma', 'mi', 'mn', 'ms', 'mo', 'mt', 'ne', 'nv', 'nh', 'nj', 'nm', 'ny', 'nc', 'nd', 'oh', 'ok', 'or', 'pa', 'ri', 'sc', 'sd', 'tn', 'tx', 'ut', 'vt', 'va', 'wa', 'wv', 'wi', 'wy'])
+// US dealers work in miles; Canadian dealers in km. Drives the default mileage
+// allowance and the unit label everywhere.
+function regionOf(dealer) {
+  const c = String(dealer?.country || '').toLowerCase(), p = String(dealer?.province || '').toLowerCase()
+  if (/(^us$|usa|united states|america)/.test(c) || US_STATES.has(p)) return 'US'
+  return 'CA'
+}
 
 // Dealer-tunable equity assumptions (stored in dealerships.automation_settings.equity).
 function equitySettings(dealer) {
   const e = (dealer?.automation_settings && dealer.automation_settings.equity) || {}
+  const region = regionOf(dealer)
+  const defAllow = region === 'US' ? 15000 : 20000   // 15k mi / yr US, 20k km / yr Canada
   return {
-    annual_km_allowance: Number.isFinite(e.annual_km_allowance) ? e.annual_km_allowance : 20000,
+    region, unit: region === 'US' ? 'mi' : 'km',
+    annual_km_allowance: Number.isFinite(e.annual_km_allowance) ? e.annual_km_allowance : defAllow,
     wholesale_haircut: Number.isFinite(e.wholesale_haircut) ? e.wholesale_haircut : 0.12,   // retail → wholesale spread
     equity_min: Number.isFinite(e.equity_min) ? e.equity_min : 500,
     high_equity: Number.isFinite(e.high_equity) ? e.high_equity : 1000,
@@ -77,13 +88,13 @@ export function registerEquity(app) {
   // ── Settings ───────────────────────────────────────────────────────────────
   app.get('/equity/settings', requireAuth, async (req, res) => {
     if (!isMgr(req)) return res.status(403).json({ error: 'Manager access required' })
-    const { data: d } = await supabaseAdmin.from('dealerships').select('automation_settings').eq('id', req.dealershipId).maybeSingle()
+    const { data: d } = await supabaseAdmin.from('dealerships').select('automation_settings, province, country').eq('id', req.dealershipId).maybeSingle()
     res.json({ settings: equitySettings(d) })
   })
   app.put('/equity/settings', requireAuth, async (req, res) => {
     if (!isMgr(req)) return res.status(403).json({ error: 'Manager access required' })
     const b = req.body || {}
-    const { data: cur } = await supabaseAdmin.from('dealerships').select('automation_settings').eq('id', req.dealershipId).maybeSingle()
+    const { data: cur } = await supabaseAdmin.from('dealerships').select('automation_settings, province, country').eq('id', req.dealershipId).maybeSingle()
     const as = { ...(cur?.automation_settings || {}) }
     const e = { ...(as.equity || {}) }
     if (b.annual_km_allowance !== undefined) e.annual_km_allowance = Math.max(0, parseInt(b.annual_km_allowance) || 20000)
@@ -93,13 +104,13 @@ export function registerEquity(app) {
     if (b.months_window !== undefined) e.months_window = Math.max(1, Math.min(24, parseInt(b.months_window) || 6))
     as.equity = e
     await supabaseAdmin.from('dealerships').update({ automation_settings: as }).eq('id', req.dealershipId)
-    res.json({ ok: true, settings: equitySettings({ automation_settings: as }) })
+    res.json({ ok: true, settings: equitySettings({ automation_settings: as, province: cur?.province, country: cur?.country }) })
   })
 
   // ── Delivered customers — enter/edit lease details ──────────────────────────
   app.get('/equity/leases', requireAuth, async (req, res) => {
     if (!isMgr(req)) return res.status(403).json({ error: 'Manager access required' })
-    const { data: d } = await supabaseAdmin.from('dealerships').select('automation_settings').eq('id', req.dealershipId).maybeSingle()
+    const { data: d } = await supabaseAdmin.from('dealerships').select('automation_settings, province, country').eq('id', req.dealershipId).maybeSingle()
     const s = equitySettings(d)
     const rows = await loadLeasedRows(req.dealershipId, false)
     const out = rows.map(({ o, c, v }) => ({
@@ -124,16 +135,44 @@ export function registerEquity(app) {
     if (error) return res.status(500).json({ error: error.message })
     if (!data) return res.status(404).json({ error: 'Record not found' })
     // Refresh the cached estimate immediately.
-    const { data: dl } = await supabaseAdmin.from('dealerships').select('automation_settings').eq('id', req.dealershipId).maybeSingle()
+    const { data: dl } = await supabaseAdmin.from('dealerships').select('automation_settings, province, country').eq('id', req.dealershipId).maybeSingle()
     const calc = computeLease(data, equitySettings(dl))
     await supabaseAdmin.from('customer_ownership_tracking').update({ estimated_value: calc.wholesaleEst || null, estimated_value_at: new Date().toISOString() }).eq('id', data.id)
     res.json({ ok: true, calc })
   })
 
+  // ── Lease details for one delivered customer (CRM shortcut) ─────────────────
+  app.get('/equity/lease/by-contact/:contactId', requireAuth, async (req, res) => {
+    if (!isMgr(req)) return res.status(403).json({ error: 'Manager access required' })
+    const { data: d } = await supabaseAdmin.from('dealerships').select('automation_settings, province, country').eq('id', req.dealershipId).maybeSingle()
+    const s = equitySettings(d)
+    // Newest delivered record for this customer.
+    const { data: rows } = await supabaseAdmin.from('customer_ownership_tracking')
+      .select('*').eq('dealership_id', req.dealershipId).eq('customer_id', req.params.contactId)
+      .eq('vehicle_status', 'delivered').order('delivery_date', { ascending: false }).limit(1)
+    const o = (rows || [])[0]
+    if (!o) return res.json({ lease: null, settings: s })
+    let vehicle = '—', vin = null
+    if (o.vehicle_id) {
+      const { data: v } = await supabaseAdmin.from('inventory').select('year, make, model, trim, vin').eq('id', o.vehicle_id).maybeSingle()
+      if (v) { vehicle = [v.year, v.make, v.model, v.trim].filter(Boolean).join(' '); vin = v.vin || null }
+    }
+    res.json({
+      settings: s,
+      lease: {
+        id: o.id, customer_id: o.customer_id, vehicle, vin,
+        delivery_date: o.delivery_date, is_leased: !!o.is_leased,
+        lease_term_months: o.lease_term_months, monthly_payment: o.monthly_payment, residual_value: o.residual_value,
+        delivery_mileage: o.delivery_mileage, annual_km_allowance: o.annual_km_allowance, payoff_amount: o.payoff_amount,
+        ...(o.is_leased ? computeLease(o, s) : {}),
+      },
+    })
+  })
+
   // ── Equity radar (the tiered opportunity list) ──────────────────────────────
   app.get('/equity/radar', requireAuth, async (req, res) => {
     if (!isMgr(req)) return res.status(403).json({ error: 'Manager access required' })
-    const { data: d } = await supabaseAdmin.from('dealerships').select('automation_settings').eq('id', req.dealershipId).maybeSingle()
+    const { data: d } = await supabaseAdmin.from('dealerships').select('automation_settings, province, country').eq('id', req.dealershipId).maybeSingle()
     const s = equitySettings(d)
     const rows = await loadLeasedRows(req.dealershipId, true)
     const items = []
@@ -175,7 +214,7 @@ export function registerEquity(app) {
   // ── Cron: refresh estimated values (approx wholesale) for all leased rows ────
   app.post('/cron/equity-revalue', async (req, res) => {
     if (!cronOk(req)) return res.status(401).json({ error: 'unauthorized' })
-    const { data: dealers } = await supabaseAdmin.from('dealerships').select('id, automation_settings')
+    const { data: dealers } = await supabaseAdmin.from('dealerships').select('id, automation_settings, province, country')
     let updated = 0
     for (const d of (dealers || [])) {
       const s = equitySettings(d)

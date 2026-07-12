@@ -1,0 +1,21 @@
+name: Automation daily sweep
+
+# Once-a-day lifecycle/retention sweep — enqueues birthday, service-due, ownership
+# anniversary, win-back and other date-driven automations. Runs at 12:00 UTC
+# (≈ 7–8am ET) so morning-appropriate messages send during business hours.
+# Scheduled workflows run in UTC and only from the default branch; the endpoint is
+# idempotent (per-day dedupe markers), so a delayed run is harmless.
+on:
+  schedule:
+    - cron: '0 12 * * *'   # daily at 12:00 UTC
+  workflow_dispatch: {}     # manual trigger from the Actions tab
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call /cron/automation-daily
+        run: |
+          curl -fsS -X POST \
+            "https://vehicle-marketplace-s0e4.onrender.com/cron/automation-daily" \
+            -H "x-cron-secret: ${{ secrets.CRON_SECRET }}"

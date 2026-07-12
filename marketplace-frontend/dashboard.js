@@ -1419,6 +1419,7 @@ function crmDetailHtml(d) {
       <button onclick="crmTaskForm('${c.id}')" class="flex items-center gap-1.5 text-xs font-bold bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 px-3 py-1.5 rounded-lg">Add task</button>
       <button onclick="crmOpenForm('${c.id}')" class="flex items-center gap-1.5 text-xs font-bold bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 px-3 py-1.5 rounded-lg">Edit</button>
       <button onclick="crmApptForm('${c.id}')" class="flex items-center gap-1.5 text-xs font-bold bg-violet-100 dark:bg-violet-950/40 text-violet-700 dark:text-violet-300 hover:bg-violet-200 px-3 py-1.5 rounded-lg"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M8 7V3m8 4V3M4 11h16M5 5h14a1 1 0 011 1v13a1 1 0 01-1 1H5a1 1 0 01-1-1V6a1 1 0 011-1z"/></svg>Book appointment</button>
+      ${c.status === 'delivered' && ['DEALER_ADMIN', 'OWNER', 'MANAGER'].includes(profileContext?.role) ? `<button onclick="crmLeaseForm('${c.id}')" class="flex items-center gap-1.5 text-xs font-bold bg-emerald-100 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-200 px-3 py-1.5 rounded-lg"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 6l9-3 9 3M4 10v10h16V10M9 21v-6h6v6"/></svg>Lease / equity</button>` : ''}
     </div>
     ${c.notes ? `<div class="text-xs bg-amber-50 dark:bg-amber-950/20 border border-amber-100 dark:border-amber-950/40 rounded-lg p-3 text-slate-700 dark:text-slate-300">${esc(c.notes)}</div>` : ''}
     ${crmDetailFacts(c, d)}
@@ -1549,6 +1550,44 @@ async function crmSaveTask(id) {
 async function crmToggleTask(taskId, done, contactId) {
   try { await apiSendJson(`/crm/tasks/${taskId}`, 'PUT', { done }); if (contactId) openCrmContact(contactId); else crmLoadTasks(); }
   catch (e) { showToast(e.message, 'error'); }
+}
+// ── Lease / equity details right on the delivered customer (managers) ────────
+async function crmLeaseForm(id) {
+  crmDetailFormSlot(`<div class="bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-900 rounded-lg p-3 text-sm text-slate-500">Loading lease details…</div>`);
+  let d;
+  try { d = await apiGetJson(`/equity/lease/by-contact/${id}`); }
+  catch (e) { crmDetailFormSlot(`<div class="bg-rose-50 dark:bg-rose-950/20 border border-rose-200 dark:border-rose-900 rounded-lg p-3 text-sm text-rose-600">Couldn't load: ${esc(e.message)}</div>`); return; }
+  const l = d.lease, unit = (d.settings && d.settings.unit) || 'km';
+  if (!l) { crmDetailFormSlot(`<div class="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg p-3 space-y-2 text-sm"><div class="text-slate-600 dark:text-slate-300">No delivered vehicle record found for this customer yet. Lease/equity details attach to a delivered ownership record.</div><div class="flex justify-end"><button onclick="crmDetailFormSlot('')" class="text-xs font-bold text-slate-500 px-3 py-1.5">Close</button></div></div>`); return; }
+  const inp = (cls, v, ph) => `<input class="${cls} w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded px-2 py-1 text-xs" type="number" value="${v ?? ''}" placeholder="${ph}">`;
+  crmDetailFormSlot(`<div class="bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-900 rounded-lg p-3 space-y-2" data-lease="${l.id}">
+    <div class="flex items-center gap-2">
+      <div class="text-[11px] font-bold uppercase tracking-wider text-emerald-600 flex-1">Lease / equity — ${esc(l.vehicle || 'vehicle')}</div>
+      <label class="flex items-center gap-1.5 text-xs font-bold"><input type="checkbox" class="clz-leased accent-emerald-600" ${l.is_leased ? 'checked' : ''}>Leased</label>
+    </div>
+    ${l.is_leased && l.equity != null ? `<div class="text-xs font-bold ${l.equity >= 0 ? 'text-emerald-600' : 'text-rose-600'}">${eqMoney(l.equity)} est. equity · ${l.months_remaining ?? '?'} mo left · est. wholesale ${eqMoney(l.wholesaleEst)} − payoff ${eqMoney(l.payoffEst)}</div>` : ''}
+    <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
+      <div><label class="text-[10px] text-slate-400">Term (months)</label>${inp('clz-term', l.lease_term_months, '48')}</div>
+      <div><label class="text-[10px] text-slate-400">Monthly payment</label>${inp('clz-pay', l.monthly_payment, '580')}</div>
+      <div><label class="text-[10px] text-slate-400">Residual value</label>${inp('clz-res', l.residual_value, '24000')}</div>
+      <div><label class="text-[10px] text-slate-400">Payoff (blank = est.)</label>${inp('clz-payoff', l.payoff_amount, 'auto')}</div>
+      <div><label class="text-[10px] text-slate-400">Delivery mileage (${unit})</label>${inp('clz-miles', l.delivery_mileage, '20')}</div>
+      <div><label class="text-[10px] text-slate-400">Annual ${unit} allowance</label>${inp('clz-km', l.annual_km_allowance, unit === 'mi' ? '15000' : '20000')}</div>
+    </div>
+    <div class="flex gap-2 justify-end"><button onclick="crmDetailFormSlot('')" class="text-xs font-bold text-slate-500 px-3 py-1.5">Cancel</button>
+      <button onclick="crmSaveLease('${l.id}','${id}', this)" class="text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-1.5 rounded-lg">Save</button></div>
+  </div>`);
+}
+async function crmSaveLease(leaseId, contactId, btn) {
+  const card = btn.closest('[data-lease]'); const g = (c) => card.querySelector(c)?.value.trim();
+  const body = {
+    is_leased: card.querySelector('.clz-leased')?.checked || false,
+    lease_term_months: g('.clz-term'), monthly_payment: g('.clz-pay'), residual_value: g('.clz-res'),
+    payoff_amount: g('.clz-payoff'), delivery_mileage: g('.clz-miles'), annual_km_allowance: g('.clz-km'),
+  };
+  const orig = btn.textContent; btn.disabled = true; btn.textContent = 'Saving…';
+  try { await apiSendJson(`/equity/lease/${leaseId}`, 'PUT', body); showToast('Lease saved', 'success'); crmLeaseForm(contactId); }
+  catch (e) { btn.disabled = false; btn.textContent = orig; showToast(e.message, 'error'); }
 }
 // ── Appointment booking (with Gmail + Outlook calendar links) ────────────────
 function crmApptForm(id) {
@@ -5179,6 +5218,7 @@ Object.assign(window, { loadAutomationPage, autoToggleEngine, autoToggleCard, au
 // ══ Equity Radar — lease pull-ahead / equity mining (managers) ═══════════════
 let __equity = { radar: [], leases: [], settings: {}, tab: 'radar' };
 const eqMoney = (n) => (n == null || isNaN(n)) ? '—' : (n < 0 ? '-$' : '$') + Math.abs(Math.round(n)).toLocaleString();
+const eqUnit = () => (__equity.settings && __equity.settings.unit) || 'km';
 async function loadEquityPage() {
   const root = document.getElementById('equity-root'); if (!root) return;
   root.innerHTML = '<div class="py-16 text-center text-sm text-slate-400 italic">Loading…</div>';
@@ -5241,8 +5281,8 @@ function eqLeasesHtml() {
       <div><label class="text-[10px] text-slate-400">Monthly payment</label><input class="lz-pay ${ic}" type="number" value="${l.monthly_payment ?? ''}" placeholder="580"></div>
       <div><label class="text-[10px] text-slate-400">Residual value</label><input class="lz-res ${ic}" type="number" value="${l.residual_value ?? ''}" placeholder="24000"></div>
       <div><label class="text-[10px] text-slate-400">Payoff (blank = est.)</label><input class="lz-payoff ${ic}" type="number" value="${l.payoff_amount ?? ''}" placeholder="auto"></div>
-      <div><label class="text-[10px] text-slate-400">Delivery mileage</label><input class="lz-miles ${ic}" type="number" value="${l.delivery_mileage ?? ''}" placeholder="20"></div>
-      <div><label class="text-[10px] text-slate-400">Annual km allowance</label><input class="lz-km ${ic}" type="number" value="${l.annual_km_allowance ?? ''}" placeholder="${__equity.settings.annual_km_allowance || 20000}"></div>
+      <div><label class="text-[10px] text-slate-400">Delivery mileage (${eqUnit()})</label><input class="lz-miles ${ic}" type="number" value="${l.delivery_mileage ?? ''}" placeholder="20"></div>
+      <div><label class="text-[10px] text-slate-400">Annual ${eqUnit()} allowance</label><input class="lz-km ${ic}" type="number" value="${l.annual_km_allowance ?? ''}" placeholder="${__equity.settings.annual_km_allowance || (eqUnit() === 'mi' ? 15000 : 20000)}"></div>
       <div class="sm:col-span-2 flex items-end justify-end"><button onclick="eqSaveLease('${l.id}', this)" class="text-xs font-bold bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-1.5 rounded-lg">Save</button></div>
     </div>
   </div>`).join('')}</div>`;
@@ -5254,7 +5294,7 @@ function eqSettingsHtml() {
   return `<div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4 mt-3 max-w-lg space-y-2">
     <p class="text-[11px] text-slate-400">These drive the estimates. Wholesale haircut is the retail→wholesale spread (0.12 = 12%). Lower it to be more aggressive (closer to retail trade value).</p>
     <div class="grid grid-cols-2 gap-2">
-      <div>${lbl('Annual km allowance')}${inp('eq-km', s.annual_km_allowance, '20000')}</div>
+      <div>${lbl('Annual ' + eqUnit() + ' allowance')}${inp('eq-km', s.annual_km_allowance, eqUnit() === 'mi' ? '15000' : '20000')}</div>
       <div>${lbl('Wholesale haircut (0–0.5)')}${inp('eq-haircut', s.wholesale_haircut, '0.12')}</div>
       <div>${lbl('Min equity to flag ($)')}${inp('eq-min', s.equity_min, '500')}</div>
       <div>${lbl('High-equity threshold ($)')}${inp('eq-high', s.high_equity, '1000')}</div>
