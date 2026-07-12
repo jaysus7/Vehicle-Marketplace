@@ -4290,6 +4290,11 @@ function siteSettingsFields(cfg) {
       </div>
     </div>
     <div class="border-t border-slate-200 dark:border-slate-700 pt-3">
+      <div class="text-sm font-black text-slate-900 dark:text-white">Build &amp; Price brands</div>
+      <p class="text-[11px] text-slate-400 mb-2">Which brands do you sell new? Only these appear on your Build &amp; Price page — keeps used trade-ins and off-brands out. Leave all unchecked to auto-detect from your new inventory.</p>
+      <div id="bm-wrap" class="flex flex-wrap gap-x-3 gap-y-1">${(() => { const set = new Set((c.build_makes || []).map(s => String(s).toLowerCase())); return ['Chevrolet', 'GMC', 'Buick', 'Cadillac', 'Ford', 'Lincoln', 'Toyota', 'Honda', 'Nissan', 'Hyundai', 'Kia', 'Mazda', 'Subaru', 'Volkswagen', 'Jeep', 'Ram', 'Dodge', 'Chrysler'].map(b => `<label class="flex items-center gap-1.5 text-xs text-slate-700 dark:text-slate-200"><input type="checkbox" class="bm-check accent-indigo-600" value="${b}" ${set.has(b.toLowerCase()) ? 'checked' : ''}>${b}</label>`).join(''); })()}</div>
+    </div>
+    <div class="border-t border-slate-200 dark:border-slate-700 pt-3">
       <div class="text-sm font-black text-slate-900 dark:text-white">SEO</div>
       <p class="text-[11px] text-slate-400 mb-2">How your site shows in Google and when shared. Leave blank to auto-generate from your name, city and About.</p>
       <div class="space-y-2">
@@ -4453,6 +4458,7 @@ async function saveSite(btn) {
     head_html: document.getElementById('site-head')?.value || '',
     widgets: __siteWidgets.filter(w => (w.html || '').trim()),
   };
+  if (document.getElementById('bm-wrap')) body.build_makes = Array.from(document.querySelectorAll('.bm-check:checked')).map(el => el.value);
   const orig = btn.textContent; btn.disabled = true; btn.textContent = 'Saving…';
   try {
     await apiSendJson('/dealership/site', 'PUT', body);

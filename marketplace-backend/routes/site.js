@@ -74,6 +74,13 @@ function cleanPages(arr) {
   }).filter(p => p.title && p.slug)
 }
 
+// The franchise brands a dealer sells new (drives the Build & Price make list).
+function cleanMakes(arr) {
+  if (!Array.isArray(arr)) return []
+  const seen = new Set(), out = []
+  for (const m of arr) { const s = String(m || '').trim().slice(0, 40); const k = s.toLowerCase(); if (s && !seen.has(k)) { seen.add(k); out.push(s) } }
+  return out.slice(0, 20)
+}
 // Dealer staff shown on the Team page, grouped by department with a job label.
 const STAFF_DEPTS = ['Management', 'Sales', 'Finance', 'Service', 'Parts', 'Admin', 'Reception', 'Other']
 function cleanStaff(arr) {
@@ -149,6 +156,8 @@ function siteContent(d) {
     pages: cleanPages(b.site_pages),
     // Dealer-managed staff for the Team page (managers, sales, service, admin…).
     staff: cleanStaff(b.site_team),
+    // Franchise brands sold new — the Build & Price make list (empty = auto-detect).
+    build_makes: cleanMakes(b.build_makes),
     // Page builder: ordered sections + global styling.
     sections: cleanSections(b.site_sections),
     typography: TYPOGRAPHY.includes(b.typography) ? b.typography : 'modern',
@@ -271,7 +280,7 @@ export function registerSite(app) {
 
     // Merge site content into the shared branding jsonb (don't wipe sticker fields).
     const contentKeys = ['tagline', 'about', 'hours', 'phone', 'email', 'address', 'hero_url', 'primary_color', 'secondary_color', 'accent_color', 'facebook_url', 'instagram_url', 'typography', 'seo_title', 'seo_description', 'seo_keywords', 'seo_image']
-    const touchesContent = contentKeys.some(k => b[k] !== undefined) || b.head_html !== undefined || b.widgets !== undefined || b.pages !== undefined || b.sections !== undefined || b.staff !== undefined
+    const touchesContent = contentKeys.some(k => b[k] !== undefined) || b.head_html !== undefined || b.widgets !== undefined || b.pages !== undefined || b.sections !== undefined || b.staff !== undefined || b.build_makes !== undefined
     if (touchesContent) {
       const { data: cur } = await supabaseAdmin.from('dealerships').select('branding').eq('id', req.dealershipId).single()
       const branding = { ...(cur?.branding || {}) }
@@ -280,6 +289,7 @@ export function registerSite(app) {
       if (b.widgets !== undefined) branding.site_widgets = cleanWidgets(b.widgets)
       if (b.pages !== undefined) branding.site_pages = cleanPages(b.pages)
       if (b.staff !== undefined) branding.site_team = cleanStaff(b.staff)
+      if (b.build_makes !== undefined) branding.build_makes = cleanMakes(b.build_makes)
       if (b.sections !== undefined) branding.site_sections = cleanSections(b.sections)
       if (b.typography !== undefined) branding.typography = TYPOGRAPHY.includes(b.typography) ? b.typography : 'modern'
       update.branding = branding

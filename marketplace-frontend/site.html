@@ -498,18 +498,29 @@
       nissan:{models:{'Kicks':['S','SV','SR'],'Rogue':['S','SV','SL','Platinum'],'Murano':['S','SV','SL','Platinum'],'Pathfinder':['S','SV','SL','Platinum'],'Frontier':['S','SV','PRO-4X'],'Titan':['S','SV','PRO-4X','Platinum Reserve']}},
       hyundai:{models:{'Kona':['Essential','Preferred','N Line','Ultimate'],'Tucson':['Essential','Preferred','N Line','Ultimate'],'Santa Fe':['Essential','Preferred','Ultimate Calligraphy'],'Elantra':['Essential','Preferred','N Line'],'IONIQ 5':['Preferred','Ultimate']}},
     };
+    // Canonical display names for the brands we have generic lineups for.
+    const LINEUP_DISPLAY={chevrolet:'Chevrolet',gmc:'GMC',buick:'Buick',ford:'Ford',toyota:'Toyota',honda:'Honda',nissan:'Nissan',hyundai:'Hyundai'};
+    function buildMakes(){
+      // 1) Dealer-configured franchise brands win. 2) Otherwise auto-detect from NEW
+      //    inventory only (so used off-brand trade-ins never show). Deduped by case.
+      const configured=(DATA.site.build_makes||[]).filter(Boolean);
+      const src = configured.length ? configured
+        : (DATA.vehicles||[]).filter(v=>(v.condition||'').toLowerCase()==='new').map(v=>v.make).filter(Boolean);
+      const seen=new Map();
+      for(const mk of src){ const k=mk.toLowerCase(); if(!seen.has(k)) seen.set(k, LINEUP_DISPLAY[k]||mk); }
+      return seen; // Map<lowerKey, displayName>
+    }
     function buildLineup(){
       const out={};
-      const makes=[...new Set((DATA.vehicles||[]).map(v=>v.make).filter(Boolean))];
-      for(const mk of makes){
-        const data=LINEUP[mk.toLowerCase()];
+      for(const [key,disp] of buildMakes()){
+        const data=LINEUP[key];
         if(data){ const models={}; for(const md in data.models) models[md]=data.models[md].slice();
-          out[mk]={ models, ext:data.ext||GEN_EXT, int:data.int||GEN_INT }; }
-        else { // Unknown make → fall back to what we stock so the tool still works.
+          out[disp]={ models, ext:data.ext||GEN_EXT, int:data.int||GEN_INT }; }
+        else { // No generic data → fall back to NEW stock for that make so it still works.
           const models={}, ext=new Set(), int=new Set();
-          for(const v of (DATA.vehicles||[])){ if((v.make||'')!==mk||!v.model) continue; (models[v.model]=models[v.model]||new Set()); if(v.trim) models[v.model].add(v.trim); if(v.exterior_color) ext.add(v.exterior_color); if(v.interior_color) int.add(v.interior_color); }
+          for(const v of (DATA.vehicles||[])){ if((v.make||'').toLowerCase()!==key||!v.model) continue; if((v.condition||'').toLowerCase()!=='new'&&(DATA.site.build_makes||[]).length===0) continue; (models[v.model]=models[v.model]||new Set()); if(v.trim) models[v.model].add(v.trim); if(v.exterior_color) ext.add(v.exterior_color); if(v.interior_color) int.add(v.interior_color); }
           const m2={}; for(const md in models) m2[md]=[...models[md]].sort();
-          out[mk]={ models:m2, ext:ext.size?[...ext]:GEN_EXT, int:int.size?[...int]:GEN_INT };
+          if(Object.keys(m2).length) out[disp]={ models:m2, ext:ext.size?[...ext]:GEN_EXT, int:int.size?[...int]:GEN_INT };
         }
       }
       return out;
