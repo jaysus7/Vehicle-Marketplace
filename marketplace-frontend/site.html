@@ -263,7 +263,15 @@
       <div class="grid grid-cols-2 gap-2">${field('i-phone','Phone','tel')}${field('i-email','Email','email')}</div>
       <textarea id="i-msg" rows="4" placeholder="How can we help?" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm"></textarea>
       <input type="hidden" id="i-vehicle"><input type="hidden" id="i-prefill">`,'submitInquiry(event)'); }
-    function viewPage(p){ if(!p) return `<section class="max-w-3xl mx-auto px-4 py-16 text-center text-slate-400">Page not found.</section>`; return `<section class="max-w-3xl mx-auto px-4 py-10"><h1 class="text-3xl font-black mb-4">${esc(p.title)}</h1><div class="prose max-w-none text-slate-700">${p.body_html||''}</div></section>`; }
+    function viewPage(p){
+      if(!p) return `<section class="max-w-3xl mx-auto px-4 py-16 text-center text-slate-400">Page not found.</section>`;
+      if(p.make&&p.model){
+        const vs=(DATA.vehicles||[]).filter(v=>(v.make||'').toLowerCase()===p.make.toLowerCase()&&(v.model||'').toLowerCase()===p.model.toLowerCase());
+        return `<section class="brand2-bg text-white"><div class="max-w-6xl mx-auto px-4 py-14"><h1 class="text-4xl font-black">${esc(p.title)}</h1>${p.body_html?`<div class="mt-3 text-white/80 max-w-2xl">${p.body_html}</div>`:''}<div class="mt-5 flex flex-wrap gap-3"><button onclick="go('trade')" class="bg-white text-slate-900 font-bold px-5 py-2.5 rounded-lg">Value your trade</button><button onclick="go('finance')" class="border border-white/40 font-bold px-5 py-2.5 rounded-lg hover:bg-white/10">Get pre-approved</button></div></div></section>
+          <section class="max-w-6xl mx-auto px-4 py-8"><h2 class="text-2xl font-black mb-4">${esc(p.make)} ${esc(p.model)} in stock</h2><div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">${vs.map(vehicleCard).join('')||`<div class="col-span-full text-slate-400">None in stock right now — <button onclick="go('inquiry')" class="brand-text font-bold">contact us</button> and we'll find you one.</div>`}</div></section>`;
+      }
+      return `<section class="max-w-3xl mx-auto px-4 py-10"><h1 class="text-3xl font-black mb-4">${esc(p.title)}</h1><div class="prose max-w-none text-slate-700">${p.body_html||''}</div></section>`;
+    }
 
     async function postLead(body,formEl,btn){ btn.disabled=true; const t=btn.textContent; btn.textContent='Sending…';
       try{ const r=await fetch(`${API}/site/${encodeURIComponent(slug)}/lead`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}); if(!r.ok) throw new Error('x');

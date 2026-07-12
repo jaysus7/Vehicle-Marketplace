@@ -4261,9 +4261,12 @@ async function openSiteManager() {
     <div class="border-t border-slate-200 dark:border-slate-700 pt-3">
       <div class="flex items-center justify-between mb-1">
         <div class="text-sm font-black text-slate-900 dark:text-white">Pages</div>
-        <button type="button" onclick="addSitePage()" class="text-xs font-bold text-indigo-600 dark:text-indigo-400">+ Add page</button>
+        <div class="flex items-center gap-2">
+          <button type="button" onclick="autoBuildPages(this)" class="text-xs font-bold text-violet-600 dark:text-violet-400">✨ Auto-build model &amp; offer pages</button>
+          <button type="button" onclick="addSitePage()" class="text-xs font-bold text-indigo-600 dark:text-indigo-400">+ Add page</button>
+        </div>
       </div>
-      <p class="text-[11px] text-slate-400 mb-2">Extra pages (About, Financing info, Service…) shown in your site's nav. Basic HTML allowed.</p>
+      <p class="text-[11px] text-slate-400 mb-2">Extra pages (About, Financing…) in your nav. Auto-build creates a page per model in your inventory (pulls stock automatically) plus standard offer pages.</p>
       <div id="site-page-list" class="space-y-2"></div>
     </div>
 
@@ -4293,7 +4296,9 @@ async function uploadSiteImage(targetId, file) {
 }
 let __sitePages = [];
 function collectSitePages() {
-  __sitePages = Array.from(document.querySelectorAll('#site-page-list [data-pgx]')).map(r => ({
+  // Preserve make/model/kind (not shown in the editor) by merging with existing.
+  __sitePages = Array.from(document.querySelectorAll('#site-page-list [data-pgx]')).map((r, idx) => ({
+    ...(__sitePages[idx] || {}),
     title: r.querySelector('.pg-title')?.value || '',
     nav: r.querySelector('.pg-nav')?.checked !== false,
     body_html: r.querySelector('.pg-body')?.value || '',
@@ -4303,15 +4308,48 @@ function renderSitePages() {
   const box = document.getElementById('site-page-list');
   if (!box) return;
   if (!__sitePages.length) { box.innerHTML = '<div class="text-[11px] text-slate-400 italic">No extra pages.</div>'; return; }
+  const badge = (p) => p.kind === 'model' ? '<span class="text-[9px] font-bold bg-blue-100 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300 px-1.5 py-0.5 rounded-full">Model · auto-inventory</span>'
+    : p.kind === 'incentive' ? '<span class="text-[9px] font-bold bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300 px-1.5 py-0.5 rounded-full">Offer</span>' : '';
   box.innerHTML = __sitePages.map((p, i) => `<div data-pgx="${i}" class="border border-slate-200 dark:border-slate-700 rounded-lg p-2 space-y-1">
     <div class="flex gap-2 items-center">
       <input class="pg-title flex-1 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded px-2 py-1 text-xs" placeholder="Page title (e.g. About Us)" value="${esc(p.title || '')}">
+      ${badge(p)}
       <label class="flex items-center gap-1 text-[11px] text-slate-500"><input class="pg-nav" type="checkbox" ${p.nav !== false ? 'checked' : ''}>In nav</label>
       <button type="button" onclick="removeSitePage(${i})" class="text-rose-500 text-xs font-bold">✕</button>
     </div>
-    <textarea class="pg-body w-full text-xs bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded px-2 py-1" rows="3" placeholder="Page content — plain text or basic HTML (&lt;p&gt;, &lt;h2&gt;, &lt;ul&gt;…)">${esc(p.body_html || '')}</textarea>
+    <textarea class="pg-body w-full text-xs bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded px-2 py-1" rows="${p.kind === 'model' ? 2 : 3}" placeholder="${p.kind === 'model' ? 'Intro blurb (optional) — inventory lists automatically below it. ✨ generate with AI.' : 'Page content — plain text or basic HTML'}">${esc(p.body_html || '')}</textarea>
   </div>`).join('');
 }
+// Auto-build model pages (from your inventory) + standard offer pages.
+async function autoBuildPages(btn) {
+  const orig = btn.textContent; btn.disabled = true; btn.textContent = 'Building…';
+  try {
+    let inv = (typeof __catalogCache !== 'undefined' && __catalogCache?.length) ? __catalogCache : [];
+    if (!inv.length) { try { inv = await apiGetJson('/inventory/all', { retries: 1 }); } catch {} }
+    const avail = inv.filter(v => String(v.status || 'available').toLowerCase() === 'available');
+    // Distinct make+model.
+    const seen = new Map();
+    for (const v of avail) { if (!v.make || !v.model) continue; const key = `${v.make} ${v.model}`.toLowerCase(); if (!seen.has(key)) seen.set(key, { make: v.make, model: v.model }); }
+    collectSitePages();
+    const have = new Set(__sitePages.map(p => (p.title || '').toLowerCase()));
+    let added = 0;
+    for (const { make, model } of seen.values()) {
+      const title = `${make} ${model}`;
+      if (have.has(title.toLowerCase())) continue;
+      __sitePages.push({ title, make, model, kind: 'model', nav: false, body_html: '' });
+      have.add(title.toLowerCase()); added++;
+    }
+    for (const t of ['Current Offers', 'Finance Offers', 'Lease Offers', 'EV Rebates']) {
+      if (have.has(t.toLowerCase())) continue;
+      __sitePages.push({ title: t, kind: 'incentive', nav: true, body_html: '' });
+      have.add(t.toLowerCase()); added++;
+    }
+    renderSitePages();
+    showToast(added ? `Added ${added} page${added === 1 ? '' : 's'} — review & Save` : 'Pages already exist', 'success');
+  } catch (e) { showToast(e.message, 'error'); }
+  finally { btn.disabled = false; btn.textContent = orig; }
+}
+window.autoBuildPages = autoBuildPages;
 function addSitePage() { collectSitePages(); __sitePages.push({ title: '', nav: true, body_html: '' }); renderSitePages(); }
 function removeSitePage(i) { collectSitePages(); __sitePages.splice(i, 1); renderSitePages(); }
 const SITE_SLOTS = [['top_banner', 'Top banner'], ['hero_below', 'Under hero'], ['above_inventory', 'Above inventory'], ['below_inventory', 'Below inventory'], ['above_footer', 'Above footer']];
@@ -4426,7 +4464,11 @@ function renderWsBody() {
   // Builder
   const palette = SEC_ORDER.map(t => `<button onclick="addSection('${t}')" class="text-left text-xs font-semibold bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 hover:border-indigo-400">+ ${SEC_META[t].label}</button>`).join('');
   body.innerHTML = `
-    <div class="grid lg:grid-cols-[minmax(0,1fr)_240px] gap-4 mt-4">
+    <div class="flex items-center justify-between gap-2 mt-4 mb-2">
+      <div class="text-[11px] text-slate-400">Add sections, reorder, and edit — no code. Or start from a branded template.</div>
+      <button onclick="openTemplatePicker()" class="text-xs font-bold bg-violet-600 hover:bg-violet-500 text-white px-3 py-1.5 rounded-lg">Start from a template</button>
+    </div>
+    <div class="grid lg:grid-cols-[minmax(0,1fr)_240px] gap-4">
       <div id="ws-sections" class="space-y-2"></div>
       <div class="lg:sticky lg:top-4 self-start">
         <div class="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-2">+ Add section</div>
@@ -4535,7 +4577,54 @@ async function aiRun(i, key, kind, task) {
     showToast('✨ Done — review & Save', 'success');
   } catch (e) { showToast(e.message === 'AI Boost not active' ? 'AI editing needs AI Boost (or your free trial).' : e.message, 'error'); }
 }
-Object.assign(window, { loadWebsitePage, wsTab, addSection, moveSection, dupSection, delSection, setSec, setSecFaq, delSecImg, uploadToSec, uploadToSecMulti, saveWebsite, aiMenu, aiRun });
+// ── OEM templates: one click to brand colours + typography + a pro section layout ──
+const SITE_TEMPLATES = [
+  { id: 'clean', name: 'Clean (any brand)', primary: '#1e3a8a', secondary: '#0f172a', accent: '#2563eb', typography: 'modern' },
+  { id: 'chevy', name: 'Chevrolet / GM', primary: '#0b2a5b', secondary: '#0a1a33', accent: '#d4af37', typography: 'bold' },
+  { id: 'gmc', name: 'GMC', primary: '#c8102e', secondary: '#1a1a1a', accent: '#9ea2a2', typography: 'bold' },
+  { id: 'ford', name: 'Ford', primary: '#003478', secondary: '#00142e', accent: '#1071e5', typography: 'bold' },
+  { id: 'toyota', name: 'Toyota', primary: '#eb0a1e', secondary: '#121212', accent: '#eb0a1e', typography: 'modern' },
+  { id: 'honda', name: 'Honda', primary: '#e40521', secondary: '#121212', accent: '#e40521', typography: 'modern' },
+  { id: 'nissan', name: 'Nissan', primary: '#c3002f', secondary: '#121212', accent: '#c3002f', typography: 'modern' },
+  { id: 'hyundai', name: 'Hyundai', primary: '#002c5f', secondary: '#00142e', accent: '#00aad2', typography: 'modern' },
+  { id: 'mazda', name: 'Mazda', primary: '#a6192e', secondary: '#101010', accent: '#a6192e', typography: 'luxury' },
+  { id: 'vw', name: 'Volkswagen', primary: '#001e50', secondary: '#00142e', accent: '#00b1eb', typography: 'corporate' },
+  { id: 'cdjr', name: 'Chrysler / Dodge / Jeep / Ram', primary: '#ba0c2f', secondary: '#141414', accent: '#8a8d8f', typography: 'bold' },
+  { id: 'luxury', name: 'Luxury', primary: '#111111', secondary: '#000000', accent: '#b08d57', typography: 'luxury' },
+];
+function templateSections() {
+  const mk = (type, settings) => ({ id: 's' + Math.random().toString(36).slice(2, 9), type, settings: settings || {} });
+  return [
+    mk('hero', { headline: '', subheadline: '', button_label: 'Browse inventory', button_target: 'inquiry', overlay: 45, height: 'md' }),
+    mk('featured_inventory', { title: 'Featured vehicles', condition: 'all', count: 6 }),
+    mk('trade_cta', {}), mk('finance_cta', {}),
+    mk('staff', { title: 'Meet our team' }),
+    mk('reviews', { title: 'What our customers say' }),
+    mk('contact', { title: 'Get in touch' }),
+  ];
+}
+function openTemplatePicker() {
+  const cards = SITE_TEMPLATES.map(t => `<button onclick="applyTemplate('${t.id}')" class="text-left border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden hover:border-indigo-400 transition">
+    <div class="h-16 flex" style="background:${t.primary}"><div class="w-1/4" style="background:${t.secondary}"></div><div class="w-1/4 self-end m-2 h-4 rounded" style="background:${t.accent}"></div></div>
+    <div class="px-3 py-2 text-sm font-bold text-slate-800 dark:text-slate-100">${esc(t.name)}</div>
+  </button>`).join('');
+  crmOverlay(`<div class="p-5">
+    <div class="flex items-center justify-between mb-1"><div class="text-lg font-black text-slate-900 dark:text-white">Start from a template</div><button onclick="this.closest('.fixed').remove()" class="text-slate-400 hover:text-slate-600"><svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+    <p class="text-sm text-slate-500 dark:text-slate-400 mb-4">Applies brand colours, fonts and a professional section layout. You can edit everything after.</p>
+    <div class="grid grid-cols-2 sm:grid-cols-3 gap-3">${cards}</div>
+  </div>`, 'max-w-2xl');
+}
+function applyTemplate(id) {
+  const t = SITE_TEMPLATES.find(x => x.id === id); if (!t) return;
+  __siteSections = templateSections();
+  const c = __siteCfg.content || (__siteCfg.content = {});
+  c.primary_color = t.primary; c.secondary_color = t.secondary; c.accent_color = t.accent; c.typography = t.typography;
+  document.querySelector('.fixed')?.remove();
+  __wsTab = 'builder';
+  renderWebsitePage();
+  showToast('Template applied — review, then Save', 'success');
+}
+Object.assign(window, { loadWebsitePage, wsTab, addSection, moveSection, dupSection, delSection, setSec, setSecFaq, delSecImg, uploadToSec, uploadToSecMulti, saveWebsite, aiMenu, aiRun, openTemplatePicker, applyTemplate });
 
 window.openVehicleForm = openVehicleForm;
 window.vehDelete = vehDelete;

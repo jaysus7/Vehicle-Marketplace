@@ -39,7 +39,12 @@ function cleanPages(arr) {
     let slug = slugify(p.slug || title)
     while (slug && seen.has(slug)) slug += '-1'
     seen.add(slug)
-    return { slug, title, body_html: String(p.body_html || '').slice(0, 40000), nav: p.nav !== false }
+    const kind = ['content', 'model', 'incentive'].includes(p.kind) ? p.kind : 'content'
+    return {
+      slug, title, body_html: String(p.body_html || '').slice(0, 40000), nav: p.nav !== false, kind,
+      make: p.make ? String(p.make).slice(0, 40) : null,
+      model: p.model ? String(p.model).slice(0, 60) : null,
+    }
   }).filter(p => p.title && p.slug)
 }
 
