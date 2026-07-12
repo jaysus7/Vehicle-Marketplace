@@ -28,6 +28,19 @@ function publicRep(p) {
   }
 }
 
+// Placed widgets: where they can go and their shape.
+const WIDGET_SLOTS = ['top_banner', 'hero_below', 'above_inventory', 'below_inventory', 'above_footer']
+function cleanWidgets(arr) {
+  if (!Array.isArray(arr)) return []
+  return arr.slice(0, 40).map((w, i) => ({
+    id: String(w.id || `w${i}_${Math.random().toString(36).slice(2, 7)}`),
+    slot: WIDGET_SLOTS.includes(w.slot) ? w.slot : 'below_inventory',
+    title: (w.title == null ? '' : String(w.title)).slice(0, 120) || null,
+    html: (w.html == null ? '' : String(w.html)).slice(0, 20000),
+    height: Math.min(2000, Math.max(60, parseInt(w.height) || 400)),
+  })).filter(w => w.html.trim())
+}
+
 // The site's content bundle from the dealership's branding jsonb.
 function siteContent(d) {
   const b = d.branding || {}
@@ -45,6 +58,12 @@ function siteContent(d) {
     address: b.address || null,
     city: d.city || null, province: d.province || null, postal_code: d.postal_code || null,
     website_url: d.website_url || null,
+    facebook_url: b.facebook_url || null,
+    instagram_url: b.instagram_url || null,
+    // Dealer-controlled custom code: global vendor scripts injected into <head>
+    // (analytics, chat, Keyloop tags) + placed embed widgets rendered in slots.
+    head_html: b.site_head_html || null,
+    widgets: cleanWidgets(b.site_widgets),
   }
 }
 
@@ -134,11 +153,14 @@ export function registerSite(app) {
     if (b.site_published !== undefined) update.site_published = !!b.site_published
 
     // Merge site content into the shared branding jsonb (don't wipe sticker fields).
-    const contentKeys = ['tagline', 'about', 'hours', 'phone', 'email', 'address', 'hero_url', 'primary_color', 'secondary_color']
-    if (contentKeys.some(k => b[k] !== undefined)) {
+    const contentKeys = ['tagline', 'about', 'hours', 'phone', 'email', 'address', 'hero_url', 'primary_color', 'secondary_color', 'facebook_url', 'instagram_url']
+    const touchesContent = contentKeys.some(k => b[k] !== undefined) || b.head_html !== undefined || b.widgets !== undefined
+    if (touchesContent) {
       const { data: cur } = await supabaseAdmin.from('dealerships').select('branding').eq('id', req.dealershipId).single()
       const branding = { ...(cur?.branding || {}) }
       for (const k of contentKeys) if (b[k] !== undefined) branding[k] = b[k] === '' ? null : b[k]
+      if (b.head_html !== undefined) branding.site_head_html = String(b.head_html || '').slice(0, 20000) || null
+      if (b.widgets !== undefined) branding.site_widgets = cleanWidgets(b.widgets)
       update.branding = branding
     }
 

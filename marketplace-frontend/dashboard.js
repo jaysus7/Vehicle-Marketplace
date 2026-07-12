@@ -4233,20 +4233,70 @@ async function openSiteManager() {
         <div>${lbl('Brand colour')}<input id="site-color" type="color" value="${esc(c.primary_color || '#1e3a8a')}" class="w-full h-9 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg"></div>
         <div>${lbl('Hero image URL (optional)')}${inp('site-hero', c.hero_url, 'https://…', 'w-full')}</div>
       </div>
+      <div class="grid grid-cols-2 gap-2">
+        <div>${lbl('Facebook URL')}${inp('site-fb', c.facebook_url, 'https://facebook.com/…', 'w-full')}</div>
+        <div>${lbl('Instagram URL')}${inp('site-ig', c.instagram_url, 'https://instagram.com/…', 'w-full')}</div>
+      </div>
     </div>
+
+    <div class="border-t border-slate-200 dark:border-slate-700 pt-3">
+      <div class="text-sm font-black text-slate-900 dark:text-white">Widgets &amp; integrations</div>
+      <p class="text-[11px] text-slate-400 mb-2">Paste embed code from Keyloop, Equifax, trade-value tools, chat or AI tools. Global scripts (analytics/chat) go in “site-wide code”; placed embeds appear as blocks in a chosen section.</p>
+      ${lbl('Site-wide code — runs in the page &lt;head&gt;')}
+      <textarea id="site-head" rows="3" placeholder="&lt;script&gt;…&lt;/script&gt; — analytics, chat, Keyloop tags" class="w-full font-mono text-[11px] bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2">${esc(c.head_html || '')}</textarea>
+      <div class="flex items-center justify-between mt-3 mb-1">
+        <label class="text-[11px] font-semibold text-slate-500 dark:text-slate-400">Placed widgets</label>
+        <button type="button" onclick="addSiteWidget()" class="text-xs font-bold text-indigo-600 dark:text-indigo-400">+ Add widget</button>
+      </div>
+      <div id="site-widget-list" class="space-y-2"></div>
+    </div>
+
     <div class="text-[11px] text-slate-400">Logo, and your sales team, come from your existing branding + team roster.</div>
     <div class="flex gap-2 justify-end pt-1">
       <button onclick="this.closest('.fixed').remove()" class="text-sm font-bold text-slate-500 px-4 py-2">Cancel</button>
       <button onclick="saveSite(this)" class="text-sm font-bold bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg">Save</button>
     </div>
   </div>`, 'max-w-lg');
+  __siteWidgets = Array.isArray(c.widgets) ? c.widgets.slice() : [];
+  renderSiteWidgets();
 }
+const SITE_SLOTS = [['top_banner', 'Top banner'], ['hero_below', 'Under hero'], ['above_inventory', 'Above inventory'], ['below_inventory', 'Below inventory'], ['above_footer', 'Above footer']];
+let __siteWidgets = [];
+function collectSiteWidgets() {
+  const rows = document.querySelectorAll('#site-widget-list [data-widx]');
+  __siteWidgets = Array.from(rows).map(r => ({
+    slot: r.querySelector('.wg-slot')?.value || 'below_inventory',
+    title: r.querySelector('.wg-title')?.value || '',
+    html: r.querySelector('.wg-html')?.value || '',
+    height: parseInt(r.querySelector('.wg-height')?.value) || 400,
+  }));
+}
+function renderSiteWidgets() {
+  const box = document.getElementById('site-widget-list');
+  if (!box) return;
+  if (!__siteWidgets.length) { box.innerHTML = '<div class="text-[11px] text-slate-400 italic">No widgets yet.</div>'; return; }
+  box.innerHTML = __siteWidgets.map((w, i) => `<div data-widx="${i}" class="border border-slate-200 dark:border-slate-700 rounded-lg p-2 space-y-1">
+    <div class="flex gap-2 items-center">
+      <select class="wg-slot bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded px-2 py-1 text-xs">${SITE_SLOTS.map(s => `<option value="${s[0]}" ${w.slot === s[0] ? 'selected' : ''}>${s[1]}</option>`).join('')}</select>
+      <input class="wg-title flex-1 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded px-2 py-1 text-xs" placeholder="Title (optional)" value="${esc(w.title || '')}">
+      <input class="wg-height bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded px-2 py-1 text-xs" type="number" value="${w.height || 400}" style="width:64px" title="Height (px)">
+      <button type="button" onclick="removeSiteWidget(${i})" class="text-rose-500 text-xs font-bold">✕</button>
+    </div>
+    <textarea class="wg-html w-full font-mono text-[11px] bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded px-2 py-1" rows="2" placeholder="&lt;iframe …&gt; or embed code">${esc(w.html || '')}</textarea>
+  </div>`).join('');
+}
+function addSiteWidget() { collectSiteWidgets(); __siteWidgets.push({ slot: 'below_inventory', title: '', html: '', height: 400 }); renderSiteWidgets(); }
+function removeSiteWidget(i) { collectSiteWidgets(); __siteWidgets.splice(i, 1); renderSiteWidgets(); }
 async function saveSite(btn) {
   const val = (i) => (document.getElementById(i)?.value || '').trim();
+  collectSiteWidgets();
   const body = {
     site_slug: val('site-slug'), site_published: document.getElementById('site-pub')?.checked || false,
     tagline: val('site-tagline'), about: val('site-about'), phone: val('site-phone'), email: val('site-email'),
     address: val('site-address'), hours: val('site-hours'), primary_color: val('site-color'), hero_url: val('site-hero'),
+    facebook_url: val('site-fb'), instagram_url: val('site-ig'),
+    head_html: document.getElementById('site-head')?.value || '',
+    widgets: __siteWidgets.filter(w => (w.html || '').trim()),
   };
   const orig = btn.textContent; btn.disabled = true; btn.textContent = 'Saving…';
   try {
@@ -4258,6 +4308,8 @@ async function saveSite(btn) {
 }
 window.openSiteManager = openSiteManager;
 window.saveSite = saveSite;
+window.addSiteWidget = addSiteWidget;
+window.removeSiteWidget = removeSiteWidget;
 
 window.openVehicleForm = openVehicleForm;
 window.vehDelete = vehDelete;
