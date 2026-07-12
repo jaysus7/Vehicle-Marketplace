@@ -1,5 +1,6 @@
 import { supabaseAdmin, resend, EMAIL_FROM } from '../shared.js'
 import { requireAuth } from '../middleware.js'
+import { enqueueForTrigger, markDelivered, freezeSequences } from './automation.js'
 
 const DEALER_LEVEL = ['DEALER_ADMIN', 'OWNER', 'MANAGER']
 const isDealerLevel = (req) => DEALER_LEVEL.includes(req.profile?.role)
@@ -220,11 +221,20 @@ export function registerCrm(app) {
   // ── Update a contact ──────────────────────────────────────────────────────
   app.put('/crm/contacts/:id', requireAuth, async (req, res) => {
     if (!req.dealershipId) return res.status(400).json({ error: 'No dealership' })
+    // Grab the prior status so we can fire automation only on a real transition.
+    const { data: before } = await supabaseAdmin.from('contacts')
+      .select('status').eq('id', req.params.id).eq('dealership_id', req.dealershipId).maybeSingle()
     const patch = { ...contactPatchFromBody(req.body || {}), updated_at: new Date().toISOString() }
     const { data, error } = await supabaseAdmin.from('contacts')
       .update(patch).eq('id', req.params.id).eq('dealership_id', req.dealershipId).select('*').maybeSingle()
     if (error) return res.status(500).json({ error: error.message })
     if (!data) return res.status(404).json({ error: 'Contact not found' })
+    // Pipeline-stage automation triggers (fire-and-forget, only on change).
+    if (patch.status && patch.status !== before?.status) {
+      const vehicleId = data.interest_inventory_id || null
+      if (patch.status === 'delivered') markDelivered(req.dealershipId, data.id, vehicleId, data.assigned_rep)
+      else if (patch.status === 'appointment') enqueueForTrigger(req.dealershipId, 'appointment_booked', { contactId: data.id, vehicleId, repId: data.assigned_rep })
+    }
     res.json({ ok: true, contact: data })
   })
 
@@ -251,6 +261,8 @@ export function registerCrm(app) {
       dealershipId: req.dealershipId, contactId: contact.id, channel, direction,
       subject: b.subject || null, body: b.body || null, repId: req.user.id, meta: b.meta || null,
     })
+    // A logged inbound reply (call/text/email from the customer) freezes automation.
+    if (direction === 'in' && channel !== 'note') freezeSequences(contact.id, 'customer_replied')
     res.json({ ok: true, comm })
   })
 

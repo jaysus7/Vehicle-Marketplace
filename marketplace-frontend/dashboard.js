@@ -535,6 +535,7 @@ function switchPage(pageId) {
   if (pageId === 'ai-vision') loadAiVisionPage();
   if (pageId === 'crm') loadCrmPage();
   if (pageId === 'website') loadWebsitePage();
+  if (pageId === 'automation') loadAutomationPage();
   if (pageId === 'appraisal') { initAppraisal(); loadApprList(); apprEnsureBranding(); }
 }
 
@@ -4836,6 +4837,211 @@ async function applyTemplate(id) {
   showToast('Template applied — review, then Save', 'success');
 }
 Object.assign(window, { loadWebsitePage, wsTab, addSection, moveSection, dupSection, delSection, setSec, setSecFaq, delSecImg, uploadToSec, uploadToSecMulti, saveWebsite, aiMenu, aiRun, openTemplatePicker, applyTemplate, addSiteStaff, removeSiteStaff, uploadStaffPhoto });
+
+// ══ Automation engine — follow-up / lifecycle / review / referral ════════════
+// Front-end state architecture:
+//   __autoCfg   : { campaigns[], settings{}, can_manage }   ← server truth, refetched on save
+//   __autoEdit  : the campaign object currently open in the editor (local draft)
+//   __autoMode  : 'manual' | 'ai' | 'context'  ← which of the 3 editor modes is active
+// The editor is a controlled component: edits mutate __autoEdit, a debounced
+// preview call renders the resolved copy, and Save PUTs the draft then refetches.
+let __autoCfg = { campaigns: [], settings: {}, can_manage: false };
+let __autoEdit = null, __autoMode = 'manual';
+const AUTO_CATS = [['pipeline', 'Sales pipeline'], ['retention', 'Post-delivery retention'], ['reviews', 'Reviews'], ['referrals', 'Referrals'], ['calendar', 'Birthdays & holidays'], ['custom', 'Custom']];
+const AUTO_TRIGGER_LABEL = { internet_lead: 'New internet lead', appointment_booked: 'Appointment booked', show_no_sale: 'Showed — no sale', delivered: 'Vehicle delivered', birthday: 'Birthday', holiday: 'Holiday' };
+const AUTO_VARS = ['customer.first_name', 'customer.last_name', 'vehicle.ymm', 'vehicle.model', 'rep.first_name', 'dealership.name', 'review_url', 'referral_bonus', 'service_url'];
+function autoDelayLabel(c) {
+  if (c.interval_months?.length) return `Months ${c.interval_months[0]}–${c.interval_months[c.interval_months.length - 1]}`;
+  const m = c.delay_minutes || 0;
+  if (m < 60) return m <= 2 ? 'Immediately' : `${m} min`;
+  if (m < 1440) return `${Math.round(m / 60)} hr`;
+  return `${Math.round(m / 1440)} day${Math.round(m / 1440) === 1 ? '' : 's'}`;
+}
+async function loadAutomationPage() {
+  const root = document.getElementById('automation-root'); if (!root) return;
+  root.innerHTML = '<div class="py-16 text-center text-sm text-slate-400 italic">Loading…</div>';
+  try { __autoCfg = await apiGetJson('/automation/campaigns'); } catch (e) { root.innerHTML = `<div class="py-16 text-center text-sm text-slate-500">Couldn't load: ${esc(e.message)}</div>`; return; }
+  renderAutomationPage();
+}
+function renderAutomationPage() {
+  const root = document.getElementById('automation-root'); if (!root) return;
+  const s = __autoCfg.settings || {};
+  const byCat = {}; for (const c of (__autoCfg.campaigns || [])) (byCat[c.category] = byCat[c.category] || []).push(c);
+  const card = (c) => `<div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-3 flex items-start gap-3">
+    <button onclick="autoToggle('${c.id}', ${!c.is_active})" title="${c.is_active ? 'Active — click to pause' : 'Paused — click to activate'}" class="mt-0.5 shrink-0 w-9 h-5 rounded-full transition ${c.is_active ? 'bg-emerald-500' : 'bg-slate-300 dark:bg-slate-700'} relative"><span class="absolute top-0.5 ${c.is_active ? 'left-4.5' : 'left-0.5'} w-4 h-4 bg-white rounded-full transition" style="left:${c.is_active ? '18px' : '2px'}"></span></button>
+    <div class="min-w-0 flex-1">
+      <div class="font-bold text-sm text-slate-900 dark:text-white truncate">${esc(c.name)}</div>
+      <div class="flex flex-wrap items-center gap-1.5 mt-1">
+        <span class="text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded-full ${c.channel === 'sms' ? 'bg-sky-100 text-sky-700 dark:bg-sky-950/40 dark:text-sky-300' : 'bg-violet-100 text-violet-700 dark:bg-violet-950/40 dark:text-violet-300'}">${c.channel}</span>
+        <span class="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300">${esc(autoDelayLabel(c))}</span>
+        <span class="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300">${c.sender_identity === 'dynamic_smart_switch' ? 'smart' : c.sender_identity}</span>
+      </div>
+      <div class="text-[11px] text-slate-500 dark:text-slate-400 mt-1.5 line-clamp-2">${esc((c.message_body_template || '').slice(0, 120))}</div>
+    </div>
+    <button onclick="autoOpenEditor('${c.id}')" class="shrink-0 text-xs font-bold text-indigo-600 dark:text-indigo-400">Edit</button>
+  </div>`;
+  root.innerHTML = `
+    <div class="flex items-start justify-between gap-3 flex-wrap">
+      <div>
+        <h2 class="text-xl font-bold text-slate-900 dark:text-white">Automation</h2>
+        <p class="text-sm text-slate-500 dark:text-slate-400 mt-1">Automated texts &amp; emails across the customer lifecycle — with built-in compliance kill switches.</p>
+      </div>
+      <div class="flex items-center gap-2">
+        <label class="flex items-center gap-1.5 text-sm font-bold"><input id="auto-enabled" type="checkbox" ${s.enabled !== false ? 'checked' : ''} onchange="autoToggleEngine(this.checked)" class="accent-indigo-600 w-4 h-4">Engine on</label>
+        <button onclick="autoOpenSettings()" class="text-xs font-bold bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 px-3 py-2 rounded-lg">Settings</button>
+      </div>
+    </div>
+    ${(!s.review_url || !s.referral_bonus) ? `<div class="text-xs bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900 text-amber-800 dark:text-amber-300 rounded-lg px-3 py-2">Finish setup in <button onclick="autoOpenSettings()" class="font-bold underline">Settings</button>: ${[!s.review_url && 'Google review link', !s.referral_bonus && 'referral bonus'].filter(Boolean).join(' · ')}.</div>` : ''}
+    ${AUTO_CATS.filter(([k]) => byCat[k]?.length).map(([k, label]) => `<div><div class="text-xs font-black uppercase tracking-wider text-slate-400 mb-2 mt-2">${label}</div><div class="grid md:grid-cols-2 gap-2">${byCat[k].map(card).join('')}</div></div>`).join('')}`;
+}
+async function autoToggle(id, active) {
+  try { await apiSendJson(`/automation/campaigns/${id}`, 'PUT', { is_active: active }); const c = __autoCfg.campaigns.find(x => x.id === id); if (c) c.is_active = active; renderAutomationPage(); }
+  catch (e) { showToast(e.message, 'error'); }
+}
+async function autoToggleEngine(on) { try { const d = await apiSendJson('/automation/settings', 'PUT', { enabled: on }); __autoCfg.settings = d.settings; showToast(on ? 'Automation on' : 'Automation paused', 'success'); } catch (e) { showToast(e.message, 'error'); } }
+function autoOpenEditor(id) {
+  const c = __autoCfg.campaigns.find(x => x.id === id); if (!c) return;
+  __autoEdit = { ...c }; __autoMode = 'manual';
+  crmOverlay(`<div class="p-5 space-y-3">
+    <div class="flex items-center justify-between"><div class="text-lg font-black text-slate-900 dark:text-white">Edit message</div><button onclick="this.closest('.fixed').remove()" class="text-slate-400 hover:text-slate-600"><svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+    <div class="text-xs text-slate-500 dark:text-slate-400">${esc(c.name)} · <b>${esc(AUTO_TRIGGER_LABEL[c.trigger_event] || c.trigger_event)}</b> · ${c.channel} · ${esc(autoDelayLabel(c))}</div>
+    <div class="flex items-center gap-1 border-b border-slate-200 dark:border-slate-800 text-sm">
+      ${[['manual', 'Manual editor'], ['ai', '✨ AI quick-gen'], ['context', 'Context-aware']].map(t => `<button onclick="autoEditorTab('${t[0]}')" data-atab="${t[0]}" class="px-3 py-2 font-bold border-b-2 ${__autoMode === t[0] ? 'border-indigo-500 text-indigo-600 dark:text-indigo-400' : 'border-transparent text-slate-500'}">${t[1]}</button>`).join('')}
+    </div>
+    <div id="auto-editor-body"></div>
+    <div class="flex gap-2 justify-end pt-1">
+      <button onclick="this.closest('.fixed').remove()" class="text-sm font-bold text-slate-500 px-4 py-2">Cancel</button>
+      <button onclick="autoSaveCampaign(this)" class="text-sm font-bold bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg">Save</button>
+    </div>
+  </div>`, 'max-w-xl');
+  autoEditorTab('manual');
+}
+function autoEditorTab(mode) {
+  __autoMode = mode;
+  document.querySelectorAll('[data-atab]').forEach(b => { const on = b.dataset.atab === mode; b.classList.toggle('border-indigo-500', on); b.classList.toggle('text-indigo-600', on); b.classList.toggle('border-transparent', !on); b.classList.toggle('text-slate-500', !on); });
+  const body = document.getElementById('auto-editor-body'); if (!body) return;
+  const c = __autoEdit;
+  const ta = 'w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm';
+  const chips = `<div class="flex flex-wrap gap-1 mt-1">${AUTO_VARS.map(v => `<button type="button" onclick="autoInsertVar('${v}')" class="text-[10px] font-mono bg-slate-100 dark:bg-slate-800 hover:bg-indigo-100 dark:hover:bg-indigo-950/40 rounded px-1.5 py-0.5">{{${v}}}</button>`).join('')}</div>`;
+  if (mode === 'ai') {
+    body.innerHTML = `<div class="mt-3 space-y-2">
+      <label class="block text-[11px] font-semibold text-slate-500 dark:text-slate-400">Tell the AI what you want — one sentence</label>
+      <textarea id="auto-ai-instr" rows="2" placeholder="e.g. Make it casual and mention the $250 referral bonus" class="${ta}"></textarea>
+      <button type="button" onclick="autoAiGen(this)" class="text-sm font-bold bg-violet-600 hover:bg-violet-500 text-white px-4 py-2 rounded-lg">✨ Generate into the message</button>
+      <p class="text-[11px] text-slate-400">Uses this campaign's channel, timing and sender identity as context. Opt-out text is added automatically — don't include it.</p>
+      <div class="border-t border-slate-100 dark:border-slate-800 pt-2">${autoManualFields(c, ta, chips)}</div>
+    </div>`;
+  } else if (mode === 'context') {
+    body.innerHTML = `<div class="mt-3 space-y-2">
+      <div class="text-xs bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg p-3 font-mono text-[11px] text-slate-600 dark:text-slate-300">{
+  "campaign_type": "${esc(c.category)}",
+  "trigger": "${esc(c.trigger_event)}",
+  "interval_marker": ${c.interval_months?.length ? '"per-touch"' : 'null'},
+  "channel": "${c.channel}",
+  "sender_identity": "${c.sender_identity}",
+  "strict_guardrails": true
+}</div>
+      <p class="text-[11px] text-slate-400">This payload is sent with every AI generation so copy matches the moment in the customer journey. Switch to ✨ AI quick-gen to generate; the wrapper travels automatically.</p>
+      <button type="button" onclick="autoEditorTab('ai')" class="text-sm font-bold text-violet-600 dark:text-violet-400">Go to AI quick-gen →</button>
+      <div class="border-t border-slate-100 dark:border-slate-800 pt-2">${autoManualFields(c, ta, chips)}</div>
+    </div>`;
+  } else {
+    body.innerHTML = `<div class="mt-3">${autoManualFields(c, ta, chips)}</div>`;
+  }
+  autoPreview();
+}
+function autoManualFields(c, ta, chips) {
+  return `${c.channel === 'email' ? `<label class="block text-[11px] font-semibold text-slate-500 dark:text-slate-400 mb-1">Subject</label><input id="auto-subject" value="${esc(c.subject_template || '')}" oninput="__autoEdit.subject_template=this.value;autoPreview()" class="${ta} mb-2">` : ''}
+    <label class="block text-[11px] font-semibold text-slate-500 dark:text-slate-400 mb-1">Message${c.channel === 'sms' ? ' (plain text)' : ''}</label>
+    <textarea id="auto-body" rows="6" oninput="__autoEdit.message_body_template=this.value;autoPreview()" class="${ta}">${esc(c.message_body_template || '')}</textarea>
+    ${chips}
+    <div class="grid grid-cols-2 gap-2 mt-3">
+      <div><label class="block text-[11px] font-semibold text-slate-500 dark:text-slate-400 mb-1">Sender</label>
+        <select onchange="__autoEdit.sender_identity=this.value" class="${ta}">${[['rep', 'Salesperson (rep)'], ['house', 'Dealership (house)'], ['dynamic_smart_switch', 'Smart switch (rep by day, house overnight)']].map(o => `<option value="${o[0]}" ${c.sender_identity === o[0] ? 'selected' : ''}>${o[1]}</option>`).join('')}</select></div>
+      ${c.interval_months?.length ? '' : `<div><label class="block text-[11px] font-semibold text-slate-500 dark:text-slate-400 mb-1">Send at hour (0–23, blank = exact delay)</label><input type="number" min="0" max="23" value="${c.send_at_hour ?? ''}" oninput="__autoEdit.send_at_hour=this.value===''?null:+this.value" class="${ta}"></div>`}
+    </div>
+    <div class="mt-3"><div class="text-[11px] font-semibold text-slate-500 dark:text-slate-400 mb-1">Live preview</div><div id="auto-preview" class="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm whitespace-pre-line text-slate-700 dark:text-slate-200 min-h-[3rem]">…</div></div>`;
+}
+function autoInsertVar(v) {
+  const el = document.getElementById('auto-body'); if (!el) return;
+  const tag = `{{${v}}}`, at = el.selectionStart ?? el.value.length;
+  el.value = el.value.slice(0, at) + tag + el.value.slice(el.selectionEnd ?? at);
+  __autoEdit.message_body_template = el.value; el.focus(); autoPreview();
+}
+let __autoPrevT = null;
+function autoPreview() {
+  clearTimeout(__autoPrevT);
+  __autoPrevT = setTimeout(async () => {
+    const box = document.getElementById('auto-preview'); if (!box) return;
+    try { const d = await apiSendJson('/automation/preview', 'POST', { message_body_template: __autoEdit.message_body_template || '', subject_template: __autoEdit.subject_template || '' }); box.textContent = (d.subject ? `Subject: ${d.subject}\n\n` : '') + (d.body || ''); }
+    catch { box.textContent = __autoEdit.message_body_template || ''; }
+  }, 350);
+}
+async function autoAiGen(btn) {
+  const instr = document.getElementById('auto-ai-instr')?.value.trim();
+  if (!instr) { showToast('Tell the AI what you want first', 'info'); return; }
+  const c = __autoEdit; const orig = btn.textContent; btn.disabled = true; btn.textContent = '✨ Writing…';
+  try {
+    const d = await apiSendJson('/automation/ai-copy', 'POST', { instruction: instr, context: { campaign_type: c.category, channel: c.channel, sender_identity: c.sender_identity, interval_marker: c.interval_months?.length ? 'per-touch' : null, strict_guardrails: true } });
+    __autoEdit.message_body_template = d.text;
+    const bodyEl = document.getElementById('auto-body'); if (bodyEl) bodyEl.value = d.text;
+    autoPreview(); showToast('✨ Generated — review & Save', 'success');
+  } catch (e) { showToast(e.message === 'AI Boost not active' ? 'AI copy needs AI Boost (or your free trial).' : e.message, 'error'); }
+  finally { btn.disabled = false; btn.textContent = orig; }
+}
+async function autoSaveCampaign(btn) {
+  const c = __autoEdit; const orig = btn.textContent; btn.disabled = true; btn.textContent = 'Saving…';
+  try {
+    await apiSendJson(`/automation/campaigns/${c.id}`, 'PUT', { message_body_template: c.message_body_template, subject_template: c.subject_template, sender_identity: c.sender_identity, send_at_hour: c.send_at_hour });
+    btn.closest('.fixed').remove(); showToast('Message saved', 'success'); loadAutomationPage();
+  } catch (e) { btn.disabled = false; btn.textContent = orig; showToast(e.message, 'error'); }
+}
+function autoOpenSettings() {
+  const s = __autoCfg.settings || {};
+  const inp = (id, v, ph, t = 'text') => `<input id="${id}" type="${t}" value="${esc(v == null ? '' : v)}" placeholder="${esc(ph)}" class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm">`;
+  const lbl = (t) => `<label class="block text-[11px] font-semibold text-slate-500 dark:text-slate-400 mb-1">${t}</label>`;
+  const holidays = Array.isArray(s.holidays) ? s.holidays : [];
+  crmOverlay(`<div class="p-5 space-y-3">
+    <div class="flex items-center justify-between"><div class="text-lg font-black text-slate-900 dark:text-white">Automation settings</div><button onclick="this.closest('.fixed').remove()" class="text-slate-400 hover:text-slate-600"><svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+    <div>${lbl('Google review link (deep-links the review request)')}${inp('as-review', s.review_url, 'https://g.page/r/…/review')}</div>
+    <div>${lbl('Referral bonus phrase (injected into referral texts)')}${inp('as-bonus', s.referral_bonus, 'a $200 referral bonus')}</div>
+    <div>${lbl('Service booking URL')}${inp('as-service', s.service_url, 'https://…/book-service')}</div>
+    <div class="grid grid-cols-2 gap-2">
+      <div>${lbl('House SMS number')}${inp('as-sms', s.house_sms, '+1 905 555 1234', 'tel')}</div>
+      <div>${lbl('House email')}${inp('as-email', s.house_email, 'sales@…', 'email')}</div>
+    </div>
+    <div class="grid grid-cols-3 gap-2">
+      <div>${lbl('Business start (hr)')}${inp('as-bstart', s.business_start ?? 8, '8', 'number')}</div>
+      <div>${lbl('Business end (hr)')}${inp('as-bend', s.business_end ?? 19, '19', 'number')}</div>
+      <div>${lbl('Timezone')}${inp('as-tz', s.timezone || 'America/Toronto', 'America/Toronto')}</div>
+    </div>
+    <div><div class="flex items-center justify-between mb-1">${lbl('Holidays (name + MM-DD)')}<button type="button" onclick="autoAddHoliday()" class="text-xs font-bold text-indigo-600 dark:text-indigo-400">+ Add</button></div><div id="as-holidays" class="space-y-1"></div></div>
+    <div class="flex gap-2 justify-end pt-1">
+      <button onclick="this.closest('.fixed').remove()" class="text-sm font-bold text-slate-500 px-4 py-2">Cancel</button>
+      <button onclick="autoSaveSettings(this)" class="text-sm font-bold bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg">Save</button>
+    </div>
+  </div>`, 'max-w-lg');
+  __autoHolidays = holidays.slice(); renderAutoHolidays();
+}
+let __autoHolidays = [];
+function renderAutoHolidays() {
+  const box = document.getElementById('as-holidays'); if (!box) return;
+  const ic = 'bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded px-2 py-1 text-xs';
+  if (!__autoHolidays.length) { box.innerHTML = '<div class="text-[11px] text-slate-400 italic">No holidays yet.</div>'; return; }
+  box.innerHTML = __autoHolidays.map((h, i) => `<div data-hx="${i}" class="flex gap-1 items-center"><input class="h-name flex-1 ${ic}" placeholder="Christmas" value="${esc(h.name || '')}"><input class="h-date ${ic}" placeholder="12-25" value="${esc(h.date || '')}" style="width:70px"><button type="button" onclick="autoRemoveHoliday(${i})" class="text-rose-500 text-xs font-bold">✕</button></div>`).join('');
+}
+function autoCollectHolidays() { const box = document.getElementById('as-holidays'); if (!box) return; __autoHolidays = Array.from(box.querySelectorAll('[data-hx]')).map(r => ({ name: r.querySelector('.h-name')?.value || '', date: r.querySelector('.h-date')?.value || '' })); }
+function autoAddHoliday() { autoCollectHolidays(); __autoHolidays.push({ name: '', date: '' }); renderAutoHolidays(); }
+function autoRemoveHoliday(i) { autoCollectHolidays(); __autoHolidays.splice(i, 1); renderAutoHolidays(); }
+async function autoSaveSettings(btn) {
+  autoCollectHolidays();
+  const val = (i) => (document.getElementById(i)?.value || '').trim();
+  const body = { review_url: val('as-review'), referral_bonus: val('as-bonus'), service_url: val('as-service'), house_sms: val('as-sms'), house_email: val('as-email'), timezone: val('as-tz'), business_start: +val('as-bstart') || 0, business_end: +val('as-bend') || 19, holidays: __autoHolidays.filter(h => h.name && /^\d{2}-\d{2}$/.test(h.date)) };
+  const orig = btn.textContent; btn.disabled = true; btn.textContent = 'Saving…';
+  try { const d = await apiSendJson('/automation/settings', 'PUT', body); __autoCfg.settings = d.settings; btn.closest('.fixed').remove(); showToast('Settings saved', 'success'); renderAutomationPage(); }
+  catch (e) { btn.disabled = false; btn.textContent = orig; showToast(e.message, 'error'); }
+}
+Object.assign(window, { loadAutomationPage, autoToggle, autoToggleEngine, autoOpenEditor, autoEditorTab, autoInsertVar, autoPreview, autoAiGen, autoSaveCampaign, autoOpenSettings, autoAddHoliday, autoRemoveHoliday, autoSaveSettings });
 
 window.openVehicleForm = openVehicleForm;
 window.vehDelete = vehDelete;
