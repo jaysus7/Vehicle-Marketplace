@@ -93,7 +93,7 @@
       const navPages=(s.pages||[]).filter(p=>p.nav);
       // One nav list drives both the desktop bar and the mobile drop-down menu.
       const teamNav=(DATA.team||[]).length?[['Team',"go('home');setTimeout(()=>document.getElementById('team')&&document.getElementById('team').scrollIntoView({behavior:'smooth'}),50)"]]:[];
-      const navItems=[['Inventory',"go('home')"],['Value Trade',"go('trade')"],['Financing',"go('finance')"],...teamNav,...navPages.map(p=>[p.title,`go('page:${p.slug}')`]),['Contact',"go('inquiry')"]];
+      const navItems=[['Inventory',"go('inventory')"],['Value Trade',"go('trade')"],['Financing',"go('finance')"],...teamNav,...navPages.map(p=>[p.title,`go('page:${p.slug}')`]),['Contact',"go('inquiry')"]];
       document.getElementById('app').innerHTML=`
         ${slotHtml('top_banner')}
         <header class="brand-bg text-white sticky top-0 z-30">
@@ -148,6 +148,7 @@
       if(view==='inquiry'){ setTimeout(()=>{ const vf=document.getElementById('i-vehicle'); if(vehId&&vf) vf.value=vehId; const mf=document.getElementById('i-msg'); if(prefill&&mf) mf.value=prefill; },30); } }
     function renderView(){
       const el=document.getElementById('view'); if(!el) return;
+      if(VIEW==='inventory') return void renderInventory(el);
       if(VIEW==='trade') return void(el.innerHTML=viewTrade());
       if(VIEW==='finance') return void(el.innerHTML=viewFinance());
       if(VIEW==='inquiry') return void(el.innerHTML=viewInquiry());
@@ -167,7 +168,7 @@
             <h1 class="text-3xl sm:text-5xl font-black max-w-2xl">${esc(s.tagline||'Find your next vehicle')}</h1>
             <p class="mt-3 text-white/80 max-w-xl">${esc(s.about?s.about.slice(0,180):`Browse our ${DATA.count} available vehicle${DATA.count===1?'':'s'}.`)}</p>
             <div class="mt-6 flex flex-wrap gap-3">
-              <a href="#inventory" class="bg-white text-slate-900 font-bold px-5 py-2.5 rounded-lg hover:bg-slate-100">Browse inventory →</a>
+              <a href="#" onclick="go('inventory');return false" class="bg-white text-slate-900 font-bold px-5 py-2.5 rounded-lg hover:bg-slate-100">Browse inventory →</a>
               <button onclick="go('trade')" class="border border-white/40 text-white font-bold px-5 py-2.5 rounded-lg hover:bg-white/10">Value your trade</button>
               <button onclick="go('finance')" class="border border-white/40 text-white font-bold px-5 py-2.5 rounded-lg hover:bg-white/10">Get pre-approved</button>
             </div>
@@ -180,17 +181,7 @@
           </div>
         </section>
         ${slotHtml('above_inventory')}
-        <main id="inventory" class="max-w-6xl mx-auto px-4 py-8">
-          <h2 class="text-2xl font-black mb-4">Our inventory</h2>
-          <div class="flex flex-wrap items-center gap-2 mb-4">
-            <input id="q" value="${esc(FILTERS.q)}" placeholder="Search make, model, stock…" class="flex-1 min-w-[180px] border border-slate-300 rounded-lg px-3 py-2 text-sm">
-            <select id="f-cond" class="border border-slate-300 rounded-lg px-3 py-2 text-sm"><option value="">All conditions</option>${['used','new','demo'].map(c=>`<option value="${c}" ${FILTERS.condition===c?'selected':''}>${c[0].toUpperCase()+c.slice(1)}</option>`).join('')}</select>
-            ${bodies.length?`<select id="f-body" class="border border-slate-300 rounded-lg px-3 py-2 text-sm"><option value="">All types</option>${bodies.map(b=>`<option value="${esc(b.toLowerCase())}" ${FILTERS.body===b.toLowerCase()?'selected':''}>${esc(b)}</option>`).join('')}</select>`:''}
-            <select id="f-sort" class="border border-slate-300 rounded-lg px-3 py-2 text-sm">${[['newest','Newest'],['price-asc','Price ↑'],['price-desc','Price ↓'],['miles-asc','Lowest km']].map(o=>`<option value="${o[0]}" ${FILTERS.sort===o[0]?'selected':''}>${o[1]}</option>`).join('')}</select>
-          </div>
-          <div id="count" class="text-xs text-slate-500 mb-3">${FILTERED.length} vehicle${FILTERED.length===1?'':'s'}</div>
-          <div id="grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4"></div>
-        </main>
+        ${homeSearchBlock('Our inventory')}
         ${slotHtml('below_inventory')}
         ${(DATA.team||[]).length?`<section id="team" class="bg-white border-t border-slate-200"><div class="max-w-6xl mx-auto px-4 py-12"><h2 class="text-2xl font-black mb-6">Meet our team</h2><div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-6">${DATA.team.map(t=>`<div class="text-center">${t.photo?`<img src="${esc(t.photo)}" class="w-24 h-24 rounded-full object-cover mx-auto mb-2">`:`<div class="w-24 h-24 rounded-full brand-bg text-white flex items-center justify-center text-2xl font-black mx-auto mb-2">${esc((t.name||'?')[0])}</div>`}<div class="font-bold">${esc(t.name)}</div><div class="text-xs text-slate-500">${esc(t.title)}</div>${t.phone?`<a href="tel:${esc(t.phone)}" class="text-xs brand-text font-semibold">${esc(t.phone)}</a>`:''}</div>`).join('')}</div></div></section>`:''}
         <section class="brand-bg text-white"><div class="max-w-6xl mx-auto px-4 py-10 text-center">
@@ -202,14 +193,11 @@
           </div>
         </div></section>
         ${slotHtml('above_footer')}`;
-      renderGrid(); wireInventory();
     }
 
     // ── Section-based page builder (public render) ─────────────────────────────
     function renderSections(el, secs){
-      applyFilters();
       el.innerHTML = secs.map(sectionHtml).join('');
-      if(secs.some(s=>s.type==='inventory_grid')){ renderGrid(); wireInventory(); }
     }
     function ctaTarget(t,link){ if(t==='link'&&link) return `onclick="window.open('${esc(link)}','_blank')"`; const v={trade:'trade',finance:'finance',contact:'inquiry',inquiry:'inquiry'}[t]||'inquiry'; return `onclick="go('${v}')"`; }
     function sectionHtml(sec){
@@ -227,12 +215,7 @@
           vs=vs.slice(0,Math.min(12,Math.max(3,parseInt(g.count)||6)));
           return `<section class="max-w-6xl mx-auto px-4 py-10"><div class="flex items-center justify-between mb-4"><h2 class="text-2xl font-black">${esc(g.title||'Featured vehicles')}</h2><a href="#" onclick="setCond('');return false" class="text-sm font-bold brand-text">View all →</a></div><div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">${vs.map(vehicleCard).join('')||'<div class="text-sm text-slate-400">No vehicles yet.</div>'}</div></section>`;
         }
-        case 'inventory_grid': {
-          const bodies=[...new Set((DATA.vehicles||[]).map(v=>(v.body_style||'').trim()).filter(Boolean))].sort();
-          return `<main id="inventory" class="max-w-6xl mx-auto px-4 py-8"><h2 class="text-2xl font-black mb-4">${esc(g.title||'Our inventory')}</h2>
-            <div class="flex flex-wrap items-center gap-2 mb-4"><input id="q" placeholder="Search…" class="flex-1 min-w-[180px] border border-slate-300 rounded-lg px-3 py-2 text-sm"><select id="f-cond" class="border border-slate-300 rounded-lg px-3 py-2 text-sm"><option value="">All conditions</option>${['used','new','demo'].map(c=>`<option value="${c}">${c[0].toUpperCase()+c.slice(1)}</option>`).join('')}</select>${bodies.length?`<select id="f-body" class="border border-slate-300 rounded-lg px-3 py-2 text-sm"><option value="">All types</option>${bodies.map(b=>`<option value="${esc(b.toLowerCase())}">${esc(b)}</option>`).join('')}</select>`:''}<select id="f-sort" class="border border-slate-300 rounded-lg px-3 py-2 text-sm">${[['newest','Newest'],['price-asc','Price ↑'],['price-desc','Price ↓'],['miles-asc','Lowest km']].map(o=>`<option value="${o[0]}">${o[1]}</option>`).join('')}</select></div>
-            <div id="count" class="text-xs text-slate-500 mb-3">${FILTERED.length} vehicles</div><div id="grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4"></div></main>`;
-        }
+        case 'inventory_grid': return homeSearchBlock(g.title||'Our inventory');
         case 'finance_cta': return ctaBand(g.title||'Get pre-approved today',g.subtitle||'Fast, secure, no impact to your credit score.',g.button_label||'Get pre-approved','finance');
         case 'trade_cta': return ctaBand(g.title||'Value your trade',g.subtitle||'Get a real offer in minutes.',g.button_label||'Value my trade','trade');
         case 'service_cta': return ctaBand(g.title||'Book your service',g.subtitle||'Factory-trained technicians.',g.button_label||'Book service',g.button_target||'inquiry',g.button_link);
@@ -253,11 +236,113 @@
       if(FILTERS.condition) v=v.filter(x=>(x.condition||'').toLowerCase()===FILTERS.condition);
       if(FILTERS.body) v=v.filter(x=>(x.body_style||'').toLowerCase()===FILTERS.body);
       const s=FILTERS.sort; v.sort((a,b)=>s==='price-asc'?(a.price||1e12)-(b.price||1e12):s==='price-desc'?(b.price||0)-(a.price||0):s==='miles-asc'?(a.mileage||1e12)-(b.mileage||1e12):0); FILTERED=v; }
-    function setCond(c){ if(VIEW!=='home') go('home'); FILTERS.condition=c; const el=document.getElementById('f-cond'); if(el) el.value=c; applyFilters(); renderGrid(); updateCount(); setTimeout(()=>document.getElementById('inventory')?.scrollIntoView({behavior:'smooth'}),50); }
+    function setCond(c){ invReset(); if(c) INV.facets.condition=new Set([cap(c)]); go('inventory'); }
     const updateCount=()=>{const el=document.getElementById('count'); if(el) el.textContent=`${FILTERED.length} vehicle${FILTERED.length===1?'':'s'}`;};
     function renderGrid(){ const grid=document.getElementById('grid'); if(!grid) return;
       if(!FILTERED.length){ grid.innerHTML='<div class="col-span-full text-center text-sm text-slate-400 py-10">No vehicles match your search.</div>'; return; }
       grid.innerHTML=FILTERED.map(vehicleCard).join('');
+    }
+
+    // ── Faceted inventory page (its own view) ──────────────────────────────────
+    let INV={ q:'', sort:'newest', facets:{}, limit:24, showFilters:false, collapsed:{}, more:{}, _results:[], _io:null };
+    const INV_FACETS=[['condition','Condition'],['make','Make'],['model','Model'],['body','Body type'],['year','Year'],['price','Price'],['drivetrain','Drivetrain'],['fuel','Fuel']];
+    const PRICE_BUCKETS=[['Under $20,000',0,20000],['$20,000 – $30,000',20000,30000],['$30,000 – $40,000',30000,40000],['$40,000 – $50,000',40000,50000],['$50,000 – $70,000',50000,70000],['$70,000+',70000,1e12]];
+    const cap=(s)=>s?String(s)[0].toUpperCase()+String(s).slice(1).toLowerCase():'';
+    function priceBucket(p){ if(!p) return ''; for(const b of PRICE_BUCKETS){ if(p>=b[1]&&p<b[2]) return b[0]; } return ''; }
+    function facetVal(v,f){ switch(f){ case 'condition':return cap(v.condition); case 'make':return v.make||''; case 'model':return v.model||''; case 'body':return v.body_style||''; case 'drivetrain':return v.drivetrain||''; case 'fuel':return v.fuel_type||''; case 'year':return v.year?String(v.year):''; case 'price':return priceBucket(v.price); } return ''; }
+    function invMatch(v,except){ if(INV.q){ const hay=[v.year,v.make,v.model,v.trim,v.stocknumber,v.body_style].filter(Boolean).join(' ').toLowerCase(); if(!hay.includes(INV.q)) return false; } for(const f in INV.facets){ if(f===except) continue; const set=INV.facets[f]; if(set&&set.size&&!set.has(facetVal(v,f))) return false; } return true; }
+    function invResults(){ let v=(DATA.vehicles||[]).filter(x=>invMatch(x,null)); const s=INV.sort; v.sort((a,b)=>s==='price-asc'?(a.price||1e12)-(b.price||1e12):s==='price-desc'?(b.price||0)-(a.price||0):s==='miles-asc'?(a.mileage||1e12)-(b.mileage||1e12):s==='year-desc'?(b.year||0)-(a.year||0):0); return v; }
+    function invFacetCounts(f){ const m=new Map(); for(const v of (DATA.vehicles||[])){ if(!invMatch(v,f)) continue; const val=facetVal(v,f); if(!val) continue; m.set(val,(m.get(val)||0)+1); } let e=[...m.entries()]; if(f==='year') e.sort((a,b)=>Number(b[0])-Number(a[0])); else if(f==='price') e.sort((a,b)=>PRICE_BUCKETS.findIndex(x=>x[0]===a[0])-PRICE_BUCKETS.findIndex(x=>x[0]===b[0])); else e.sort((a,b)=>b[1]-a[1]||String(a[0]).localeCompare(String(b[0]))); return e; }
+    function invActiveCount(){ let n=INV.q?1:0; for(const f in INV.facets) n+=(INV.facets[f]?.size||0); return n; }
+    function renderInventory(el){
+      const active=invActiveCount();
+      el.innerHTML=`<div class="max-w-7xl mx-auto px-4 py-6">
+        <div class="flex items-center justify-between mb-4 gap-3 flex-wrap">
+          <h1 class="text-2xl font-black">Inventory</h1>
+          <div class="flex items-center gap-2">
+            <button onclick="invToggleFilters()" class="lg:hidden text-sm font-bold border border-slate-300 rounded-lg px-3 py-2">Filters${active?` (${active})`:''}</button>
+            <label class="text-sm text-slate-500 hidden sm:block">Sort by</label>
+            <select onchange="invSort(this.value)" class="border border-slate-300 rounded-lg px-3 py-2 text-sm">${[['newest','Newest'],['price-asc','Price ↑'],['price-desc','Price ↓'],['miles-asc','Lowest km'],['year-desc','Year']].map(o=>`<option value="${o[0]}" ${INV.sort===o[0]?'selected':''}>${o[1]}</option>`).join('')}</select>
+          </div>
+        </div>
+        <div class="grid lg:grid-cols-[280px_minmax(0,1fr)] gap-6 items-start">
+          <aside id="inv-sidebar" class="${INV.showFilters?'':'hidden'} lg:block lg:sticky lg:top-20 lg:max-h-[calc(100vh-6rem)] lg:overflow-y-auto bg-white rounded-xl cshadow p-4">
+            <div class="flex items-center justify-between mb-2"><div class="font-black">Search</div><button onclick="invClear()" class="text-xs font-bold brand-text">Clear all</button></div>
+            <div class="relative mb-1"><input id="inv-q" value="${esc(INV.q)}" oninput="invSearch(this.value)" placeholder="Make, model, or keyword" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm pr-9"><span class="absolute right-3 top-2.5 text-slate-400">🔍</span></div>
+            <div id="inv-facets"></div>
+          </aside>
+          <div>
+            <div id="inv-count" class="text-sm text-slate-500 mb-3"></div>
+            <div id="inv-results" class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4"></div>
+            <div id="inv-sentinel" class="h-10"></div>
+          </div>
+        </div></div>`;
+      const fc=document.getElementById('inv-facets');
+      if(fc) fc.addEventListener('change',e=>{ const cb=e.target.closest('input[data-facet]'); if(cb) invToggle(cb.dataset.facet,cb.dataset.value); });
+      invRefresh();
+    }
+    function invFacetHtml(f,label){
+      const entries=invFacetCounts(f); const sel=INV.facets[f]||new Set();
+      if(!entries.length&&!sel.size) return '';
+      const collapsed=!!INV.collapsed[f], showAll=!!INV.more[f], LIMIT=6;
+      const shown=collapsed?[]:(showAll?entries:entries.slice(0,LIMIT));
+      const rows=shown.map(([val,cnt])=>`<label class="flex items-center gap-2 py-1 cursor-pointer text-sm"><input type="checkbox" data-facet="${f}" data-value="${attr(val)}" ${sel.has(val)?'checked':''} class="w-4 h-4 shrink-0" style="accent-color:var(--brand)"><span class="uppercase text-[13px] tracking-wide flex-1 truncate">${esc(val)}</span><span class="text-slate-400 text-xs">(${cnt})</span></label>`).join('');
+      const moreBtn=(!collapsed&&!showAll&&entries.length>LIMIT)?`<button onclick="invMore('${f}')" class="text-sm font-bold brand-text mt-1">+ View more</button>`:'';
+      return `<div class="border-t border-slate-100 py-3">
+        <button onclick="invCollapse('${f}')" class="w-full flex items-center justify-between font-black text-slate-800"><span>${esc(label)}</span><span class="text-slate-400 text-xs">${collapsed?'▾':'▴'}</span></button>
+        ${collapsed?'':`<div class="mt-2">${rows||'<div class="text-xs text-slate-400 italic">None</div>'}${moreBtn}</div>`}</div>`;
+    }
+    function invRefresh(){
+      const fc=document.getElementById('inv-facets'); if(fc) fc.innerHTML=INV_FACETS.map(([f,l])=>invFacetHtml(f,l)).join('');
+      INV._results=invResults();
+      const cnt=document.getElementById('inv-count'); if(cnt) cnt.textContent=`${INV._results.length} vehicle${INV._results.length===1?'':'s'}`;
+      invRenderResults();
+    }
+    function invRenderResults(){
+      const grid=document.getElementById('inv-results'); if(!grid) return;
+      const res=INV._results||[];
+      if(!res.length){ grid.innerHTML='<div class="col-span-full text-center text-sm text-slate-400 py-16">No vehicles match your filters. <button onclick="invClear()" class="brand-text font-bold">Clear filters</button></div>'; invObserve(false); return; }
+      grid.innerHTML=res.slice(0,INV.limit).map(vehicleCard).join('');
+      invObserve(res.length>INV.limit);
+    }
+    function invObserve(hasMore){
+      const sent=document.getElementById('inv-sentinel'); if(!sent) return;
+      if(INV._io){ INV._io.disconnect(); INV._io=null; }
+      if(!hasMore){ sent.innerHTML=''; return; }
+      sent.innerHTML='<div class="text-center text-xs text-slate-400 py-4">Loading more…</div>';
+      INV._io=new IntersectionObserver(es=>{ if(es[0].isIntersecting){ INV.limit+=24; invRenderResults(); } },{rootMargin:'400px'});
+      INV._io.observe(sent);
+    }
+    function invToggle(f,val){ if(!INV.facets[f]) INV.facets[f]=new Set(); const s=INV.facets[f]; if(s.has(val)) s.delete(val); else s.add(val); if(!s.size) delete INV.facets[f]; INV.limit=24; invRefresh(); }
+    function invCollapse(f){ INV.collapsed[f]=!INV.collapsed[f]; invRefresh(); }
+    function invMore(f){ INV.more[f]=true; invRefresh(); }
+    function invSort(v){ INV.sort=v; INV.limit=24; invRenderResults(); }
+    function invSearch(v){ INV.q=String(v||'').toLowerCase(); INV.limit=24; invRefresh(); }
+    function invClear(){ INV.q=''; INV.facets={}; INV.more={}; INV.limit=24; const q=document.getElementById('inv-q'); if(q) q.value=''; invRefresh(); }
+    function invToggleFilters(){ INV.showFilters=!INV.showFilters; document.getElementById('inv-sidebar')?.classList.toggle('hidden'); }
+    // Reset inventory filters to a clean slate (used by home entry points).
+    function invReset(){ INV={ q:'', sort:'newest', facets:{}, limit:24, showFilters:false, collapsed:{}, more:{}, _results:[], _io:null }; }
+    // Compact "search our inventory" block for the home page → hands off to the page.
+    function homeSearchBlock(title){
+      const bodies=[...new Set((DATA.vehicles||[]).map(v=>(v.body_style||'').trim()).filter(Boolean))].sort();
+      return `<main id="inventory" class="max-w-6xl mx-auto px-4 py-8">
+        <h2 class="text-2xl font-black mb-1">${esc(title||'Search our inventory')}</h2>
+        <p class="text-sm text-slate-500 mb-4">${DATA.count} vehicle${DATA.count===1?'':'s'} in stock.</p>
+        <form onsubmit="homeSearch();return false" class="flex flex-wrap items-center gap-2">
+          <input id="hq" placeholder="Make, model, or keyword" class="flex-1 min-w-[180px] border border-slate-300 rounded-lg px-3 py-2 text-sm">
+          <select id="hcond" class="border border-slate-300 rounded-lg px-3 py-2 text-sm"><option value="">All conditions</option>${['new','used','demo'].map(c=>`<option value="${c}">${cap(c)}</option>`).join('')}</select>
+          ${bodies.length?`<select id="hbody" class="border border-slate-300 rounded-lg px-3 py-2 text-sm"><option value="">All types</option>${bodies.map(b=>`<option value="${esc(b)}">${esc(b)}</option>`).join('')}</select>`:''}
+          <button class="brand-bg text-white font-bold px-5 py-2 rounded-lg">Search</button>
+          <a href="#" onclick="go('inventory');return false" class="text-sm font-bold brand-text">Browse all →</a>
+        </form></main>`;
+    }
+    function homeSearch(){
+      const q=(document.getElementById('hq')?.value||'').trim();
+      const cond=document.getElementById('hcond')?.value||'', body=document.getElementById('hbody')?.value||'';
+      invReset(); INV.q=q.toLowerCase();
+      if(cond) INV.facets.condition=new Set([cap(cond)]);
+      if(body) INV.facets.body=new Set([body]);
+      go('inventory');
     }
     function openVehicle(id){ const v=(DATA.vehicles||[]).find(x=>x.id===id); if(!v) return;
       const imgs=Array.isArray(v.image_urls)?v.image_urls:[];
@@ -358,6 +443,7 @@
     function toggleMobileNav(){ const m=document.getElementById('mnav'); if(m) m.classList.toggle('hidden'); }
     window.go=go; window.setCond=setCond; window.openVehicle=openVehicle; window.toggleMobileNav=toggleMobileNav;
     window.openLightbox=openLightbox; window.lbNext=lbNext; window.closeLightbox=closeLightbox;
+    Object.assign(window,{ invToggle, invCollapse, invMore, invSort, invSearch, invClear, invToggleFilters, homeSearch });
     window.submitTrade=submitTrade; window.submitFinance=submitFinance; window.submitInquiry=submitInquiry;
     boot();
   </script>
