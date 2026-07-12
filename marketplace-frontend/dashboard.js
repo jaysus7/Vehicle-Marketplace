@@ -4450,9 +4450,11 @@ function renderWsSections() {
       <div class="p-3 grid sm:grid-cols-2 gap-2">${(SEC_META[sec.type]?.fields || []).map(f => wsField(i, sec, f)).join('')}</div>
     </div>`).join('');
 }
+const WS_AI_KIND = { headline: 'headline', subheadline: 'subheadline', title: 'headline', subtitle: 'subheadline', button_label: 'cta', items: 'faq', html: 'text', embed_html: 'text' };
 function wsField(i, sec, [key, label, type]) {
   const v = sec.settings?.[key];
-  const lbl = `<label class="block text-[11px] font-semibold text-slate-500 dark:text-slate-400 mb-1">${label}</label>`;
+  const aiKind = WS_AI_KIND[key];
+  const lbl = `<div class="flex items-center justify-between mb-1"><label class="block text-[11px] font-semibold text-slate-500 dark:text-slate-400">${label}</label>${aiKind ? `<button type="button" onclick="aiMenu(event,${i},'${key}','${aiKind}')" class="text-[11px] font-bold text-violet-600 dark:text-violet-400 hover:text-violet-500">✨ AI</button>` : ''}</div>`;
   const cls = 'w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1.5 text-sm';
   const wide = ['textarea', 'faq', 'images', 'image', 'html'].includes(type) ? 'sm:col-span-2' : '';
   let input;
@@ -4507,7 +4509,33 @@ async function saveWebsite(btn) {
   try { await apiSendJson('/dealership/site', 'PUT', body); showToast('Website saved', 'success'); btn.disabled = false; btn.textContent = orig; }
   catch (e) { btn.disabled = false; btn.textContent = orig; showToast(e.message, 'error'); }
 }
-Object.assign(window, { loadWebsitePage, wsTab, addSection, moveSection, dupSection, delSection, setSec, setSecFaq, delSecImg, uploadToSec, uploadToSecMulti, saveWebsite });
+// ✨ AI-per-section: one-click Rewrite / Improve / Generate / SEO on copy fields.
+function aiMenu(ev, i, key, kind) {
+  ev.stopPropagation();
+  document.querySelectorAll('.ai-menu').forEach(m => m.remove());
+  const acts = kind === 'faq' ? [['faq', 'Generate FAQ']]
+    : [['improve', '✨ Improve'], ['rewrite', 'Rewrite'], ['shorten', 'Shorten'], ['expand', 'Expand'], ['generate', 'Generate new'], ['seo', 'SEO version']];
+  const m = document.createElement('div');
+  m.className = 'ai-menu fixed z-[9999] bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg shadow-xl py-1 min-w-[140px]';
+  const r = ev.currentTarget.getBoundingClientRect();
+  m.style.top = (r.bottom + 4) + 'px'; m.style.left = Math.max(8, r.right - 150) + 'px';
+  m.innerHTML = acts.map(a => `<button class="block w-full text-left px-3 py-1.5 text-sm hover:bg-slate-100 dark:hover:bg-slate-800" onclick="aiRun(${i},'${key}','${kind}','${a[0]}');this.closest('.ai-menu').remove()">${a[1]}</button>`).join('');
+  document.body.appendChild(m);
+  setTimeout(() => document.addEventListener('click', function h() { m.remove(); document.removeEventListener('click', h); }, { once: true }), 10);
+}
+async function aiRun(i, key, kind, task) {
+  const cur = __siteSections[i]?.settings?.[key];
+  const current = Array.isArray(cur) ? cur.map(x => `${x.q} :: ${x.a}`).join('\n') : (cur || '');
+  const secLabel = SEC_META[__siteSections[i]?.type]?.label || '';
+  showToast('✨ Writing…', 'info');
+  try {
+    const d = await apiSendJson('/ai/site-copy', 'POST', { task, kind, current, hint: secLabel });
+    if (kind === 'faq' || key === 'items') setSecFaq(i, key, d.text); else setSec(i, key, d.text);
+    renderWsSections();
+    showToast('✨ Done — review & Save', 'success');
+  } catch (e) { showToast(e.message === 'AI Boost not active' ? 'AI editing needs AI Boost (or your free trial).' : e.message, 'error'); }
+}
+Object.assign(window, { loadWebsitePage, wsTab, addSection, moveSection, dupSection, delSection, setSec, setSecFaq, delSecImg, uploadToSec, uploadToSecMulti, saveWebsite, aiMenu, aiRun });
 
 window.openVehicleForm = openVehicleForm;
 window.vehDelete = vehDelete;

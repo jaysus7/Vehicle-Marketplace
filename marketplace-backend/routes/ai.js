@@ -680,6 +680,59 @@ Guidelines: under 90 words; answer their question if they asked one; confirm the
     }
   })
 
+  // ── AI copy for the website builder (✨ per-section actions) ────────────────
+  // task: rewrite | improve | expand | shorten | generate | seo | faq
+  // kind: headline | subheadline | cta | about | faq | seo | text
+  app.post('/ai/site-copy', requireAuth, async (req, res) => {
+    if (!req.dealershipId) return res.status(400).json({ error: 'No dealership' })
+    const b = req.body || {}
+    const task = String(b.task || 'generate').toLowerCase()
+    const kind = String(b.kind || 'text').toLowerCase().slice(0, 30)
+    const current = String(b.current || '').slice(0, 2000)
+    const hint = String(b.hint || '').slice(0, 200)
+    const { data: dealer } = await supabaseAdmin
+      .from('dealerships').select('name, ai_tone, ai_boost_active, city, province').eq('id', req.dealershipId).maybeSingle()
+    const isOwner = (req.user.email || '').toLowerCase() === OWNER_EMAIL
+    if (!isOwner && !dealer?.ai_boost_active) return res.status(403).json({ error: 'AI Boost not active' })
+    if (!process.env.ANTHROPIC_API_KEY) return res.status(503).json({ error: 'AI features not configured' })
+    if (!(await aiAllowed(req.dealershipId, isOwner))) return res.status(429).json({ error: 'Monthly AI limit reached — resets next month.' })
+
+    const instr = {
+      rewrite: 'Rewrite it to be clearer and more compelling',
+      improve: 'Improve it (grammar, punch, flow) while keeping the meaning',
+      expand: 'Expand it with a little more useful detail',
+      shorten: 'Make it shorter and punchier',
+      generate: 'Write fresh copy',
+      seo: 'Rewrite it to be SEO-friendly with natural keywords (no keyword stuffing)',
+      faq: 'Write 5 genuinely useful FAQ items',
+    }[task] || 'Write fresh copy'
+    const kindHint = {
+      headline: 'a short, punchy hero headline (max 8 words)',
+      subheadline: 'a single supporting subheadline sentence',
+      cta: 'a short call-to-action button label (2–4 words)',
+      about: 'a warm 2–3 sentence "about the dealership" paragraph',
+      faq: 'FAQ content',
+      seo: 'SEO website copy',
+    }[kind] || 'a short piece of website copy'
+    const tone = dealer?.ai_tone === 'friendly' ? 'warm and friendly' : dealer?.ai_tone === 'aggressive' ? 'energetic and deal-focused' : 'professional and clear'
+    const loc = [dealer?.city, dealer?.province].filter(Boolean).join(', ')
+    const prompt = `You are writing website copy for ${dealer?.name || 'a car dealership'}${loc ? ' in ' + loc : ''}. Tone: ${tone}.
+Write ${kindHint}. ${instr}.${hint ? ` Context: ${hint}.` : ''}${current ? `\nCurrent text: "${current}"` : ''}
+Return ONLY the copy — no quotes, no markdown, no preamble.${(task === 'faq' || kind === 'faq') ? ' Put each FAQ on its own line formatted exactly as "Question :: Answer".' : ''}`
+
+    try {
+      const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
+      const msg = await Promise.race([
+        anthropic.messages.create({ model: 'claude-haiku-4-5-20251001', max_tokens: 500, messages: [{ role: 'user', content: prompt }] }),
+        new Promise((_, rej) => setTimeout(() => rej(new Error('ai timeout')), 25000)),
+      ])
+      const text = (msg?.content?.[0]?.text || '').trim().replace(/^["']|["']$/g, '')
+      if (!text) throw new Error('No copy generated')
+      recordUsage(req.dealershipId, { ai: 1 })
+      res.json({ ok: true, text })
+    } catch (e) { res.status(500).json({ error: e.message }) }
+  })
+
   // Decode a VIN to year/make/model/trim via NHTSA (free, no key). Used by the
   // Trade Appraisal form's "Decode" button to prefill the manual fields.
   app.post('/ai/vin-decode', requireAuth, async (req, res) => {
