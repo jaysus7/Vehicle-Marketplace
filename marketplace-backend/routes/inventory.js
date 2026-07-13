@@ -1,5 +1,6 @@
 import { supabaseAdmin, browserFetch } from '../shared.js'
 import { requireAuth } from '../middleware.js'
+import { createNotifications } from '../notifications.js'
 import { runInventorySync, syncProgress } from '../sync/engine.js'
 import multer from 'multer'
 import sharp from 'sharp'
@@ -85,6 +86,25 @@ function extractCarfaxLink(html, vin) {
   return carfax.sort((a, b) => score(b) - score(a))[0]
 }
 
+// When a unit's price changes and it's live on Facebook Marketplace, flag the rep
+// who posted it — Marketplace listings don't auto-update, so they must edit it.
+async function notifyMarketplacePriceChange(dealershipId, vehicle, priorPrice) {
+  const { data: listings } = await supabaseAdmin.from('listings')
+    .select('posted_by').eq('inventory_id', vehicle.id).eq('status', 'posted').is('deleted_at', null)
+  const reps = [...new Set((listings || []).map(l => l.posted_by).filter(Boolean))]
+  if (!reps.length) return
+  const label = [vehicle.year, vehicle.make, vehicle.model, vehicle.trim].filter(Boolean).join(' ') || 'A vehicle'
+  const money = (n) => (n != null && n !== '') ? '$' + Number(n).toLocaleString('en-US') : '—'
+  const dir = (Number(vehicle.price) < Number(priorPrice)) ? 'dropped' : 'changed'
+  const rows = reps.map(uid => ({
+    dealership_id: dealershipId, type: 'price_drift',
+    title: `Price ${dir} — update your Marketplace post`,
+    body: `${label} is now ${money(vehicle.price)} (was ${money(priorPrice)}). Update your Facebook Marketplace listing so it matches.`,
+    link_page: 'inventory', link_filter: vehicle.stocknumber || null, target_user_id: uid, read: false,
+  }))
+  await createNotifications(rows)
+}
+
 export function registerRoutes(app) {
   // ── Manual inventory: dealers load their own units (source of truth) ────────
   // Managed units are marked source='manual' so the nightly FEED archiver never
@@ -137,10 +157,21 @@ export function registerRoutes(app) {
       patch.status = b.status
       if (b.status === 'available') patch.archived_at = null
     }
+    // Grab the prior price first so we can flag reps when it changes on a unit
+    // that's live on Facebook Marketplace (they need to update the listing).
+    let priorPrice = null
+    if (b.price !== undefined) {
+      const { data: cur } = await supabaseAdmin.from('inventory')
+        .select('price').eq('id', req.params.id).eq('dealership_id', req.dealershipId).maybeSingle()
+      priorPrice = cur ? cur.price : null
+    }
     const { data, error } = await supabaseAdmin.from('inventory')
       .update(patch).eq('id', req.params.id).eq('dealership_id', req.dealershipId).select('*').maybeSingle()
     if (error) return res.status(500).json({ error: error.message })
     if (!data) return res.status(404).json({ error: 'Vehicle not found' })
+    if (b.price !== undefined && Number(priorPrice) !== Number(data.price)) {
+      notifyMarketplacePriceChange(req.dealershipId, data, priorPrice).catch(() => {})
+    }
     res.json({ ok: true, vehicle: data })
   })
 

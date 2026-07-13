@@ -244,8 +244,11 @@ export function registerCrm(app) {
     if (!req.dealershipId) return res.status(400).json({ error: 'No dealership' })
     // Grab the prior status so we can fire automation only on a real transition.
     const { data: before } = await supabaseAdmin.from('contacts')
-      .select('status').eq('id', req.params.id).eq('dealership_id', req.dealershipId).maybeSingle()
+      .select('status, sold_at').eq('id', req.params.id).eq('dealership_id', req.dealershipId).maybeSingle()
     const patch = { ...contactPatchFromBody(req.body || {}), updated_at: new Date().toISOString() }
+    // Stamp the moment a deal is first marked won, so sales reports are period-bound.
+    const WON = ['sold', 'fni', 'delivered']
+    if (patch.status && WON.includes(patch.status) && !before?.sold_at) patch.sold_at = new Date().toISOString()
     const { data, error } = await supabaseAdmin.from('contacts')
       .update(patch).eq('id', req.params.id).eq('dealership_id', req.dealershipId).select('*').maybeSingle()
     if (error) return res.status(500).json({ error: error.message })

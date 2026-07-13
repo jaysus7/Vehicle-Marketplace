@@ -819,9 +819,12 @@ export function registerRoutes(app) {
 
     // Contacts (owner + status) → conversion, attribution, and contact→rep map.
     const { data: contactRows } = await supabaseAdmin.from('contacts')
-      .select('id, status, assigned_rep, sold_source').eq('dealership_id', did).limit(50000)
+      .select('id, status, assigned_rep, sold_source, sold_at').eq('dealership_id', did).limit(50000)
     const contactRep = {}
     for (const c of (contactRows || [])) if (c.id) contactRep[c.id] = c.assigned_rep || null
+    const WON = ['sold', 'fni', 'delivered']
+    // A "sale" is a won contact whose deal closed inside the window (sold_at).
+    const soldInRange = (c) => WON.includes(c.status) && c.sold_at && c.sold_at >= startIso
 
     // Leads over the double window; attribute each to the contact's owner (routed
     // rep), falling back to whoever keyed it in.
@@ -887,10 +890,11 @@ export function registerRoutes(app) {
     const sp = speedOf(curLeads)
     const under5Pct = sp.responded ? Math.round((sp.under5 / sp.responded) * 100) : 0
     const respRate = curLeads.length ? Math.round((sp.responded / curLeads.length) * 100) : 0
-    const wonRows = contacts.filter(c => ['sold', 'fni', 'delivered'].includes(c.status))
+    const wonRows = contacts.filter(c => WON.includes(c.status))          // snapshot → conversion
+    const salesInRange = contacts.filter(soldInRange)                      // period-bound → sales
     const conversionPct = contacts.length ? Math.round((wonRows.length / contacts.length) * 1000) / 10 : 0
     const sourceMap = {}
-    for (const c of wonRows) { const s = c.sold_source || 'Unattributed'; sourceMap[s] = (sourceMap[s] || 0) + 1 }
+    for (const c of salesInRange) { const s = c.sold_source || 'Unattributed'; sourceMap[s] = (sourceMap[s] || 0) + 1 }
     const sold_by_source = Object.entries(sourceMap).map(([k, v]) => ({ source: k, count: v })).sort((a, b) => b.count - a.count)
     const taskTotal = tasks.length, taskDone = tasks.filter(t => t.done).length
     const followupPct = taskTotal ? Math.round((taskDone / taskTotal) * 100) : 0
@@ -909,7 +913,7 @@ export function registerRoutes(app) {
         const touch = firstTouch[cid], lead = firstLeadByContact[cid]
         if (touch && lead && touch >= lead) { bump(r).responded++; if ((touch - lead) / 60000 <= 5) bump(r).under5++ }
       }
-      for (const c of (contactRows || [])) if (c.assigned_rep && ['sold', 'fni', 'delivered'].includes(c.status)) bump(c.assigned_rep).deals++
+      for (const c of (contactRows || [])) if (c.assigned_rep && soldInRange(c)) bump(c.assigned_rep).deals++
       for (const t of (taskRows || [])) if (t.assigned_to) { const a = bump(t.assigned_to); a.tasks_total++; if (t.done) a.tasks_done++ }
       for (const a of (apprRows || [])) if (a.created_by) bump(a.created_by).appraisals++
       per_rep = Object.values(acc)
@@ -921,7 +925,7 @@ export function registerRoutes(app) {
         }))
         .sort((a, b) => b.deals - a.deals || b.leads - a.leads)
     }
-    const totalSales = (contactRows || []).filter(c => ['sold', 'fni', 'delivered'].includes(c.status)).length
+    const totalSales = (contactRows || []).filter(soldInRange).length
 
     res.json({
       ok: true, range_days: days, is_manager: isMgr,
