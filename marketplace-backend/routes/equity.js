@@ -35,6 +35,9 @@ function equitySettings(dealer) {
     equity_min: Number.isFinite(e.equity_min) ? e.equity_min : 500,
     high_equity: Number.isFinite(e.high_equity) ? e.high_equity : 1000,
     months_window: Number.isFinite(e.months_window) ? e.months_window : 6,
+    // Finance/cash depreciation: how fast a purchased vehicle sheds value per month
+    // (0.015 ≈ 18%/yr). Drives the current-value estimate for retail deals.
+    depreciation_per_month: Number.isFinite(e.depreciation_per_month) ? e.depreciation_per_month : 0.015,
     // Assumed financing for the upgrade worksheet's replacement payment (clearly an estimate).
     default_apr: Number.isFinite(e.default_apr) ? e.default_apr : 6.9,
     default_term_months: Number.isFinite(e.default_term_months) ? e.default_term_months : 60,
@@ -90,10 +93,72 @@ function computeLease(o, s) {
   else if (monthsRemaining != null && monthsRemaining <= s.months_window) tier = '⏳ Lease Maturity Window'
   return { monthsInto, monthsRemaining, estMileage, retailEst, wholesaleEst, payoffEst, equity, tier }
 }
-// Their filtering logic: near maturity OR in the high-equity sweet spot.
+// Remaining balance on an amortized loan after k payments.
+function amortBalance(P, apr, term, k) {
+  if (!(P > 0) || !(term > 0)) return 0
+  const r = (Number(apr) || 0) / 100 / 12
+  k = Math.max(0, Math.min(term, k))
+  if (r === 0) return Math.max(0, Math.round(P * (term - k) / term))
+  const factor = Math.pow(1 + r, term)
+  return Math.max(0, Math.round(P * (factor - Math.pow(1 + r, k)) / (factor - 1)))
+}
+function monthsSince(deliveryDate) {
+  const d = deliveryDate ? new Date(deliveryDate) : null
+  return d ? Math.max(0, Math.round((Date.now() - d) / (30.44 * 86400000))) : 0
+}
+function depreciatedValue(basis, s, monthsInto) {
+  const dep = Math.min(0.8, (s.depreciation_per_month || 0.015) * monthsInto)
+  return basis ? Math.round(basis * (1 - dep)) : 0
+}
+// Retail finance: equity = today's wholesale − remaining loan balance.
+function computeFinance(o, s) {
+  const monthsInto = monthsSince(o.delivery_date)
+  const term = num(o.lease_term_months) || 0            // loan term (shared column)
+  const monthsRemaining = term ? Math.max(0, term - monthsInto) : null
+  const annualKm = num(o.annual_km_allowance) || s.annual_km_allowance
+  const estMileage = (num(o.delivery_mileage) || 0) + Math.round(annualKm * (monthsInto / 12))
+  const basis = num(o.purchase_price) || num(o.msrp) || 0
+  const retailEst = basis ? depreciatedValue(basis, s, monthsInto) : (num(o.estimated_value) || 0)
+  const wholesaleEst = Math.round(retailEst * (1 - s.wholesale_haircut))
+  const payoffEst = o.payoff_amount != null
+    ? num(o.payoff_amount)
+    : amortBalance(num(o.loan_amount) || basis, num(o.loan_apr) || 0, term, monthsInto)
+  const equity = (wholesaleEst || 0) - (payoffEst || 0)
+  let tier = '📈 Strategy Target'
+  if (equity > s.high_equity) tier = '🔥 High Equity Upgrade'
+  else if (monthsRemaining != null && monthsRemaining <= s.months_window) tier = '⏳ Loan Maturing'
+  return { monthsInto, monthsRemaining, estMileage, retailEst, wholesaleEst, payoffEst, equity, tier }
+}
+// Paid cash / owns outright: no payoff, so wholesale value is pure equity.
+function computeCash(o, s) {
+  const monthsInto = monthsSince(o.delivery_date)
+  const annualKm = num(o.annual_km_allowance) || s.annual_km_allowance
+  const estMileage = (num(o.delivery_mileage) || 0) + Math.round(annualKm * (monthsInto / 12))
+  const basis = num(o.purchase_price) || num(o.msrp) || 0
+  const retailEst = basis ? depreciatedValue(basis, s, monthsInto) : (num(o.estimated_value) || 0)
+  const wholesaleEst = Math.round(retailEst * (1 - s.wholesale_haircut))
+  const equity = wholesaleEst
+  return { monthsInto, monthsRemaining: null, estMileage, retailEst, wholesaleEst, payoffEst: 0, equity, tier: equity > s.high_equity ? '🔥 High Equity Upgrade' : '📈 Strategy Target' }
+}
+function dealTypeOf(o) {
+  const dt = eqLc(o.deal_type)
+  if (dt === 'finance' || dt === 'cash' || dt === 'lease') return dt
+  return o.is_leased ? 'lease' : 'finance'   // legacy rows: is_leased drove everything
+}
+// Dispatch to the right equity model for this deal.
+function computeDeal(o, s) {
+  const t = dealTypeOf(o)
+  const calc = t === 'lease' ? computeLease(o, s) : t === 'cash' ? computeCash(o, s) : computeFinance(o, s)
+  return { ...calc, deal_type: t }
+}
+// A row has enough entered to bother estimating (avoids empty records on the radar).
+function hasDealData(o) {
+  return [o.lease_term_months, o.monthly_payment, o.residual_value, o.loan_amount, o.purchase_price, o.payoff_amount, o.msrp, o.estimated_value].some(v => num(v) != null && num(v) !== 0)
+}
+// Radar filter: in positive equity, or a lease/loan nearing maturity.
 function inRadar(c, s) {
-  return (c.monthsRemaining != null && c.monthsRemaining <= s.months_window && c.monthsRemaining > 0)
-    || (c.equity >= s.equity_min && c.monthsRemaining != null && c.monthsRemaining <= 12)
+  return (c.equity >= s.equity_min)
+    || (c.monthsRemaining != null && c.monthsRemaining > 0 && c.monthsRemaining <= s.months_window)
 }
 
 async function loadLeasedRows(dealershipId, onlyLeased) {
@@ -135,6 +200,7 @@ export function registerEquity(app) {
     if (b.default_apr !== undefined) e.default_apr = Math.max(0, Math.min(35, Number(b.default_apr) || 0))
     if (b.default_term_months !== undefined) e.default_term_months = Math.max(12, Math.min(96, parseInt(b.default_term_months) || 60))
     if (b.default_down !== undefined) e.default_down = Math.max(0, parseInt(b.default_down) || 0)
+    if (b.depreciation_per_month !== undefined) e.depreciation_per_month = Math.max(0, Math.min(0.1, Number(b.depreciation_per_month) || 0.015))
     as.equity = e
     await supabaseAdmin.from('dealerships').update({ automation_settings: as }).eq('id', req.dealershipId)
     res.json({ ok: true, settings: equitySettings({ automation_settings: as, province: cur?.province, country: cur?.country }) })
@@ -150,10 +216,11 @@ export function registerEquity(app) {
       id: o.id, customer_id: o.customer_id, vehicle_id: o.vehicle_id || null,
       name: c?.full_name || [c?.first_name, c?.last_name].filter(Boolean).join(' ') || 'Unknown',
       vehicle: v ? [v.year, v.make, v.model, v.trim].filter(Boolean).join(' ') : '—', vin: v?.vin || null,
-      delivery_date: o.delivery_date, is_leased: !!o.is_leased,
+      delivery_date: o.delivery_date, is_leased: !!o.is_leased, deal_type: dealTypeOf(o),
       lease_term_months: o.lease_term_months, monthly_payment: o.monthly_payment, residual_value: o.residual_value,
+      loan_apr: o.loan_apr, loan_amount: o.loan_amount, purchase_price: o.purchase_price,
       delivery_mileage: o.delivery_mileage, annual_km_allowance: o.annual_km_allowance, payoff_amount: o.payoff_amount,
-      ...(o.is_leased ? computeLease(o, s) : {}),
+      ...(hasDealData(o) ? computeDeal(o, s) : {}),
     }))
     res.json({ leases: out })
   })
@@ -169,16 +236,23 @@ export function registerEquity(app) {
         patch.vehicle_id = b.vehicle_id
       }
     }
-    if (b.is_leased !== undefined) patch.is_leased = !!b.is_leased
+    if (b.deal_type !== undefined) {
+      const dt = eqLc(b.deal_type)
+      patch.deal_type = ['lease', 'finance', 'cash'].includes(dt) ? dt : 'finance'
+      patch.is_leased = patch.deal_type === 'lease'   // keep the legacy flag in sync
+    } else if (b.is_leased !== undefined) {
+      patch.is_leased = !!b.is_leased
+      patch.deal_type = b.is_leased ? 'lease' : 'finance'
+    }
     for (const k of ['lease_term_months', 'delivery_mileage', 'annual_km_allowance']) if (b[k] !== undefined) patch[k] = b[k] === '' ? null : (parseInt(b[k]) || null)
-    for (const k of ['monthly_payment', 'residual_value', 'msrp', 'payoff_amount']) if (b[k] !== undefined) patch[k] = b[k] === '' ? null : num(b[k])
+    for (const k of ['monthly_payment', 'residual_value', 'msrp', 'payoff_amount', 'loan_apr', 'loan_amount', 'purchase_price']) if (b[k] !== undefined) patch[k] = b[k] === '' ? null : num(b[k])
     if (b.payoff_amount !== undefined) patch.payoff_estimated = !(b.payoff_amount !== '' && b.payoff_amount != null)
     const { data, error } = await supabaseAdmin.from('customer_ownership_tracking').update(patch).eq('id', req.params.id).eq('dealership_id', req.dealershipId).select('*').maybeSingle()
     if (error) return res.status(500).json({ error: error.message })
     if (!data) return res.status(404).json({ error: 'Record not found' })
     // Refresh the cached estimate immediately.
     const { data: dl } = await supabaseAdmin.from('dealerships').select('automation_settings, province, country').eq('id', req.dealershipId).maybeSingle()
-    const calc = computeLease(data, equitySettings(dl))
+    const calc = computeDeal(data, equitySettings(dl))
     await supabaseAdmin.from('customer_ownership_tracking').update({ estimated_value: calc.wholesaleEst || null, estimated_value_at: new Date().toISOString() }).eq('id', data.id)
     res.json({ ok: true, calc })
   })
@@ -203,10 +277,11 @@ export function registerEquity(app) {
       settings: s,
       lease: {
         id: o.id, customer_id: o.customer_id, vehicle_id: o.vehicle_id || null, vehicle, vin,
-        delivery_date: o.delivery_date, is_leased: !!o.is_leased,
+        delivery_date: o.delivery_date, is_leased: !!o.is_leased, deal_type: dealTypeOf(o),
         lease_term_months: o.lease_term_months, monthly_payment: o.monthly_payment, residual_value: o.residual_value,
+        loan_apr: o.loan_apr, loan_amount: o.loan_amount, purchase_price: o.purchase_price,
         delivery_mileage: o.delivery_mileage, annual_km_allowance: o.annual_km_allowance, payoff_amount: o.payoff_amount,
-        ...(o.is_leased ? computeLease(o, s) : {}),
+        ...(hasDealData(o) ? computeDeal(o, s) : {}),
       },
     })
   })
@@ -224,7 +299,7 @@ export function registerEquity(app) {
       const { data: v } = await supabaseAdmin.from('inventory').select('id, year, make, model, trim, vin, price, mileage, image_urls, condition').eq('id', o.vehicle_id).maybeSingle()
       cur = v || null
     }
-    const calc = computeLease(o, s)
+    const calc = computeDeal(o, s)
     const curPayment = num(o.monthly_payment) || 0
     // Replacement suggestion + estimated payment (equity applied as cash down).
     const rep = await findReplacement(req.dealershipId, cur)
@@ -253,7 +328,7 @@ export function registerEquity(app) {
         ownership_id: o.id,
         vehicle: cur ? [cur.year, cur.make, cur.model, cur.trim].filter(Boolean).join(' ') : (o.vehicle_id ? '—' : 'No vehicle linked'),
         vin: cur?.vin || null, image: (Array.isArray(cur?.image_urls) ? cur.image_urls[0] : null) || null,
-        is_leased: !!o.is_leased, monthly_payment: curPayment,
+        is_leased: !!o.is_leased, deal_type: calc.deal_type, monthly_payment: curPayment,
         term: num(o.lease_term_months), months_into: calc.monthsInto, months_remaining: calc.monthsRemaining,
         delivery_mileage: num(o.delivery_mileage), est_mileage: calc.estMileage,
         residual: num(o.residual_value), payoff: calc.payoffEst, wholesale: calc.wholesaleEst,
@@ -268,17 +343,20 @@ export function registerEquity(app) {
     if (!isMgr(req)) return res.status(403).json({ error: 'Manager access required' })
     const { data: d } = await supabaseAdmin.from('dealerships').select('automation_settings, province, country').eq('id', req.dealershipId).maybeSingle()
     const s = equitySettings(d)
-    const rows = await loadLeasedRows(req.dealershipId, true)
+    const rows = await loadLeasedRows(req.dealershipId, false)
     const items = []
     for (const { o, c, v } of rows) {
       if (!c) continue
+      if (!hasDealData(o)) continue                                        // nothing entered yet
       if (OPEN_DEAL.has(String(c.status || '').toLowerCase())) continue   // kill switch: skip live deals
-      const calc = computeLease(o, s)
+      const calc = computeDeal(o, s)
+      if (!(calc.wholesaleEst > 0)) continue                              // no value basis to estimate from
       if (!inRadar(calc, s)) continue
       items.push({
         id: o.id, customer_id: o.customer_id, name: c.full_name || [c.first_name, c.last_name].filter(Boolean).join(' ') || 'Unknown',
         phone: c.phone || null, assigned_rep: c.assigned_rep || null, reachable: !c.opt_out && !c.dnc,
         vehicle: v ? [v.year, v.make, v.model].filter(Boolean).join(' ') : '—', vin: v?.vin || null,
+        deal_type: calc.deal_type,
         months_remaining: calc.monthsRemaining, est_mileage: calc.estMileage, wholesale: calc.wholesaleEst, payoff: calc.payoffEst,
         equity: calc.equity, tier: calc.tier,
       })
@@ -312,9 +390,10 @@ export function registerEquity(app) {
     let updated = 0
     for (const d of (dealers || [])) {
       const s = equitySettings(d)
-      const { data: rows } = await supabaseAdmin.from('customer_ownership_tracking').select('*').eq('dealership_id', d.id).eq('is_leased', true).eq('vehicle_status', 'delivered')
+      const { data: rows } = await supabaseAdmin.from('customer_ownership_tracking').select('*').eq('dealership_id', d.id).eq('vehicle_status', 'delivered')
       for (const o of (rows || [])) {
-        const calc = computeLease(o, s)
+        if (!hasDealData(o)) continue
+        const calc = computeDeal(o, s)
         const patch = { estimated_value: calc.wholesaleEst || null, estimated_value_at: new Date().toISOString() }
         if (o.payoff_estimated) patch.payoff_amount = calc.payoffEst || null
         await supabaseAdmin.from('customer_ownership_tracking').update(patch).eq('id', o.id); updated++

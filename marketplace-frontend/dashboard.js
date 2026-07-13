@@ -1419,7 +1419,7 @@ function crmDetailHtml(d) {
       <button onclick="crmTaskForm('${c.id}')" class="flex items-center gap-1.5 text-xs font-bold bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 px-3 py-1.5 rounded-lg">Add task</button>
       <button onclick="crmOpenForm('${c.id}')" class="flex items-center gap-1.5 text-xs font-bold bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 px-3 py-1.5 rounded-lg">Edit</button>
       <button onclick="crmApptForm('${c.id}')" class="flex items-center gap-1.5 text-xs font-bold bg-violet-100 dark:bg-violet-950/40 text-violet-700 dark:text-violet-300 hover:bg-violet-200 px-3 py-1.5 rounded-lg"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M8 7V3m8 4V3M4 11h16M5 5h14a1 1 0 011 1v13a1 1 0 01-1 1H5a1 1 0 01-1-1V6a1 1 0 011-1z"/></svg>Book appointment</button>
-      ${c.status === 'delivered' && ['DEALER_ADMIN', 'OWNER', 'MANAGER'].includes(profileContext?.role) ? `<button onclick="crmLeaseForm('${c.id}')" class="flex items-center gap-1.5 text-xs font-bold bg-emerald-100 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-200 px-3 py-1.5 rounded-lg"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 6l9-3 9 3M4 10v10h16V10M9 21v-6h6v6"/></svg>Lease / equity</button>` : ''}
+      ${c.status === 'delivered' && ['DEALER_ADMIN', 'OWNER', 'MANAGER'].includes(profileContext?.role) ? `<button onclick="crmLeaseForm('${c.id}')" class="flex items-center gap-1.5 text-xs font-bold bg-emerald-100 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-200 px-3 py-1.5 rounded-lg"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 6l9-3 9 3M4 10v10h16V10M9 21v-6h6v6"/></svg>Deal / equity</button>` : ''}
     </div>
     ${c.notes ? `<div class="text-xs bg-amber-50 dark:bg-amber-950/20 border border-amber-100 dark:border-amber-950/40 rounded-lg p-3 text-slate-700 dark:text-slate-300">${esc(c.notes)}</div>` : ''}
     ${crmDetailFacts(c, d)}
@@ -1557,23 +1557,19 @@ async function crmLeaseForm(id) {
   let d;
   try { [d] = await Promise.all([apiGetJson(`/equity/lease/by-contact/${id}`), eqEnsureVehicles()]); }
   catch (e) { crmDetailFormSlot(`<div class="bg-rose-50 dark:bg-rose-950/20 border border-rose-200 dark:border-rose-900 rounded-lg p-3 text-sm text-rose-600">Couldn't load: ${esc(e.message)}</div>`); return; }
-  const l = d.lease, unit = (d.settings && d.settings.unit) || 'km';
-  if (!l) { crmDetailFormSlot(`<div class="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg p-3 space-y-2 text-sm"><div class="text-slate-600 dark:text-slate-300">No delivered vehicle record found for this customer yet. Lease/equity details attach to a delivered ownership record.</div><div class="flex justify-end"><button onclick="crmDetailFormSlot('')" class="text-xs font-bold text-slate-500 px-3 py-1.5">Close</button></div></div>`); return; }
-  const inp = (cls, v, ph) => `<input class="${cls} w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded px-2 py-1 text-xs" type="number" value="${v ?? ''}" placeholder="${ph}">`;
+  const l = d.lease;
+  if (!l) { crmDetailFormSlot(`<div class="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg p-3 space-y-2 text-sm"><div class="text-slate-600 dark:text-slate-300">No delivered vehicle record found for this customer yet. Lease/finance details attach to a delivered ownership record.</div><div class="flex justify-end"><button onclick="crmDetailFormSlot('')" class="text-xs font-bold text-slate-500 px-3 py-1.5">Close</button></div></div>`); return; }
+  const dt = l.deal_type || (l.is_leased ? 'lease' : 'finance');
+  const ic = 'w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded px-2 py-1 text-xs';
   crmDetailFormSlot(`<div class="bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-900 rounded-lg p-3 space-y-2" data-lease="${l.id}">
-    <div class="flex items-center gap-2">
-      <div class="text-[11px] font-bold uppercase tracking-wider text-emerald-600 flex-1">Lease / equity — ${esc(l.vehicle || 'vehicle')}</div>
-      <label class="flex items-center gap-1.5 text-xs font-bold"><input type="checkbox" class="clz-leased accent-emerald-600" ${l.is_leased ? 'checked' : ''}>Leased</label>
+    <div class="flex items-center gap-2 flex-wrap">
+      <div class="text-[11px] font-bold uppercase tracking-wider text-emerald-600 flex-1 min-w-0">Deal / equity — ${esc(l.vehicle || 'vehicle')}</div>
+      <select class="clz-dtype bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded px-2 py-1 text-xs font-bold" onchange="eqDealTypeToggle(this)">${Object.keys(DEAL_LABELS).map(t => `<option value="${t}" ${dt === t ? 'selected' : ''}>${DEAL_LABELS[t]}</option>`).join('')}</select>
     </div>
-    ${l.is_leased && l.equity != null ? `<div class="text-xs font-bold ${l.equity >= 0 ? 'text-emerald-600' : 'text-rose-600'}">${eqMoney(l.equity)} est. equity · ${l.months_remaining ?? '?'} mo left · est. wholesale ${eqMoney(l.wholesaleEst)} − payoff ${eqMoney(l.payoffEst)}</div>` : ''}
-    <div><label class="text-[10px] text-slate-400">Vehicle</label><select class="clz-vehicle w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded px-2 py-1 text-xs">${eqVehicleOptions(l.vehicle_id, l.vehicle)}</select></div>
+    ${l.equity != null ? `<div class="text-xs font-bold ${l.equity >= 0 ? 'text-emerald-600' : 'text-rose-600'}">${eqMoney(l.equity)} est. equity${l.months_remaining != null ? ` · ${l.months_remaining} mo left` : ''} · est. wholesale ${eqMoney(l.wholesaleEst)} − payoff ${eqMoney(l.payoffEst)}</div>` : ''}
+    <div><label class="text-[10px] text-slate-400">Vehicle purchased</label><select class="clz-vehicle ${ic}">${eqVehicleOptions(l.vehicle_id, l.vehicle)}</select></div>
     <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
-      <div><label class="text-[10px] text-slate-400">Term (months)</label>${inp('clz-term', l.lease_term_months, '48')}</div>
-      <div><label class="text-[10px] text-slate-400">Monthly payment</label>${inp('clz-pay', l.monthly_payment, '580')}</div>
-      <div><label class="text-[10px] text-slate-400">Residual value</label>${inp('clz-res', l.residual_value, '24000')}</div>
-      <div><label class="text-[10px] text-slate-400">Payoff (blank = est.)</label>${inp('clz-payoff', l.payoff_amount, 'auto')}</div>
-      <div><label class="text-[10px] text-slate-400">Delivery mileage (${unit})</label>${inp('clz-miles', l.delivery_mileage, '20')}</div>
-      <div><label class="text-[10px] text-slate-400">Annual ${unit} allowance</label>${inp('clz-km', l.annual_km_allowance, unit === 'mi' ? '15000' : '20000')}</div>
+      ${eqDealFields(l, ic, 'clz-', dt, d.settings)}
     </div>
     <div class="flex gap-2 justify-end"><button onclick="crmDetailFormSlot('')" class="text-xs font-bold text-slate-500 px-3 py-1.5">Cancel</button>
       <button onclick="crmSaveLease('${l.id}','${id}', this)" class="text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-1.5 rounded-lg">Save</button></div>
@@ -1582,13 +1578,14 @@ async function crmLeaseForm(id) {
 async function crmSaveLease(leaseId, contactId, btn) {
   const card = btn.closest('[data-lease]'); const g = (c) => card.querySelector(c)?.value.trim();
   const body = {
-    is_leased: card.querySelector('.clz-leased')?.checked || false,
+    deal_type: card.querySelector('.clz-dtype')?.value || 'lease',
     vehicle_id: card.querySelector('.clz-vehicle')?.value || '',
     lease_term_months: g('.clz-term'), monthly_payment: g('.clz-pay'), residual_value: g('.clz-res'),
+    loan_amount: g('.clz-loan'), loan_apr: g('.clz-apr'), purchase_price: g('.clz-price'),
     payoff_amount: g('.clz-payoff'), delivery_mileage: g('.clz-miles'), annual_km_allowance: g('.clz-km'),
   };
   const orig = btn.textContent; btn.disabled = true; btn.textContent = 'Saving…';
-  try { await apiSendJson(`/equity/lease/${leaseId}`, 'PUT', body); showToast('Lease saved', 'success'); crmLeaseForm(contactId); }
+  try { await apiSendJson(`/equity/lease/${leaseId}`, 'PUT', body); showToast('Deal saved', 'success'); crmLeaseForm(contactId); }
   catch (e) { btn.disabled = false; btn.textContent = orig; showToast(e.message, 'error'); }
 }
 // ── Appointment booking (with Gmail + Outlook calendar links) ────────────────
@@ -5305,9 +5302,9 @@ function renderEquityPage() {
   root.innerHTML = `
     <div>
       <h2 class="text-xl font-bold text-slate-900 dark:text-white">Equity Radar</h2>
-      <p class="text-sm text-slate-500 dark:text-slate-400 mt-1">Lease customers who can likely trade up early. All figures are <b>estimates</b> from your lease inputs + a tunable value model — confirm on the desk before quoting.</p>
+      <p class="text-sm text-slate-500 dark:text-slate-400 mt-1">Lease <b>and finance</b> customers who can likely trade up early. All figures are <b>estimates</b> from your deal inputs + a tunable value model — confirm on the desk before quoting.</p>
     </div>
-    <div class="flex items-center gap-1 border-b border-slate-200 dark:border-slate-800 flex-wrap">${tab('radar', 'Radar', __equity.radar.length)}${tab('leases', 'Lease data', __equity.leases.length)}${tab('settings', 'Assumptions')}</div>
+    <div class="flex items-center gap-1 border-b border-slate-200 dark:border-slate-800 flex-wrap">${tab('radar', 'Radar', __equity.radar.length)}${tab('leases', 'Customer deals', __equity.leases.length)}${tab('settings', 'Assumptions')}</div>
     <div id="equity-body"></div>`;
   renderEquityBody();
 }
@@ -5319,7 +5316,7 @@ function renderEquityBody() {
   body.innerHTML = eqRadarHtml();
 }
 function eqRadarHtml() {
-  if (!__equity.radar.length) return `<div class="py-12 text-center text-sm text-slate-400 italic">No pull-ahead opportunities yet. Add lease details on the <button onclick="eqTab('leases')" class="text-indigo-500 font-bold">Lease data</button> tab — delivered lease customers appear here automatically.</div>`;
+  if (!__equity.radar.length) return `<div class="py-12 text-center text-sm text-slate-400 italic">No pull-ahead opportunities yet. Add deal details on the <button onclick="eqTab('leases')" class="text-indigo-500 font-bold">Customer deals</button> tab — delivered customers in equity or nearing lease-end appear here automatically.</div>`;
   const rows = __equity.radar.map(r => `<tr class="border-b border-slate-100 dark:border-slate-800/60 hover:bg-slate-50 dark:hover:bg-slate-800/40 cursor-pointer" onclick="eqWorksheet('${r.id}')">
     <td class="py-2 px-3"><div class="font-semibold text-slate-900 dark:text-white">${esc(r.name)}</div><div class="text-xs text-slate-400">${esc(r.vehicle)}${r.reachable ? '' : ' · <span class="text-rose-500">opted out</span>'}</div></td>
     <td class="py-2 px-3 text-center">${r.months_remaining ?? '—'}</td>
@@ -5372,7 +5369,7 @@ function eqWorksheetHtml(w) {
         <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-3">
           <div class="text-[11px] font-black uppercase tracking-wider text-slate-400 mb-1">Current vehicle</div>
           ${eqWsPhoto(cu.image, cu.vehicle)}
-          <div class="font-bold text-sm text-slate-900 dark:text-white mb-2">${esc(cu.vehicle)}${cu.is_leased ? ' <span class="text-[10px] font-bold text-indigo-500">LEASE</span>' : ''}</div>
+          <div class="font-bold text-sm text-slate-900 dark:text-white mb-2">${esc(cu.vehicle)}${cu.deal_type ? ` <span class="text-[10px] font-bold text-indigo-500">${esc(String(cu.deal_type).toUpperCase())}</span>` : ''}</div>
           <div class="text-sm space-y-0.5">
             ${cu.monthly_payment ? line('Payment', `${eqMoney(cu.monthly_payment)}/mo`) : ''}
             ${cu.months_remaining != null ? line('Payments left', `${cu.months_remaining} of ${cu.term || '?'}`) : ''}
@@ -5405,26 +5402,46 @@ function eqWorksheetHtml(w) {
     </div>
   </div>`;
 }
+// Deal-type field visibility: which deal types each input applies to.
+function eqDealTypeToggle(sel) {
+  const card = sel.closest('[data-lease]'); if (!card) return;
+  const dt = sel.value;
+  card.querySelectorAll('[data-dt]').forEach(el => { el.style.display = el.dataset.dt.split(' ').includes(dt) ? '' : 'none'; });
+}
+const eqDvis = (applies, dt) => applies.split(' ').includes(dt) ? '' : 'style="display:none"';
+const DEAL_LABELS = { lease: 'Lease', finance: 'Finance', cash: 'Cash / owned' };
+// The deal-detail fields, shared by the Customer-deals tab and the CRM shortcut.
+function eqDealFields(l, ic, prefix, dt, settings) {
+  const s = settings || __equity.settings || {};
+  const unit = s.unit || 'km', km = s.annual_km_allowance || (unit === 'mi' ? 15000 : 20000);
+  const f = (applies, label, cls, val, ph) => `<div data-dt="${applies}" ${eqDvis(applies, dt)}><label class="text-[10px] text-slate-400">${label}</label><input class="${prefix}${cls} ${ic}" type="number" value="${val ?? ''}" placeholder="${ph}"></div>`;
+  return [
+    f('lease finance', 'Term (months)', 'term', l.lease_term_months, dt === 'lease' ? '48' : '72'),
+    f('lease finance', 'Monthly payment', 'pay', l.monthly_payment, '680'),
+    f('lease', 'Residual value', 'res', l.residual_value, '24000'),
+    f('finance', 'Amount financed', 'loan', l.loan_amount, '52000'),
+    f('finance', 'APR (%)', 'apr', l.loan_apr, '6.9'),
+    f('finance cash', 'Purchase price', 'price', l.purchase_price, '54900'),
+    f('lease finance', 'Payoff (blank = est.)', 'payoff', l.payoff_amount, 'auto'),
+    f('lease finance cash', `Delivery mileage (${unit})`, 'miles', l.delivery_mileage, '20'),
+    f('lease finance cash', `Annual ${unit} allowance`, 'km', l.annual_km_allowance, String(km)),
+  ].join('');
+}
 function eqLeasesHtml() {
-  if (!__equity.leases.length) return `<div class="py-12 text-center text-sm text-slate-400 italic">No delivered customers yet. When you mark a deal <b>Delivered</b> in the CRM, it shows up here to add lease details.</div>`;
+  if (!__equity.leases.length) return `<div class="py-12 text-center text-sm text-slate-400 italic">No delivered customers yet. When you mark a deal <b>Delivered</b> in the CRM, it shows up here to add lease or finance details.</div>`;
   const ic = 'bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded px-2 py-1 text-xs w-full';
-  return `<div class="space-y-2 mt-3">${__equity.leases.map(l => `<div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-3" data-lease="${l.id}">
-    <div class="flex items-center gap-2 mb-2">
-      <label class="flex items-center gap-1.5 text-sm font-bold"><input type="checkbox" class="lz-leased accent-indigo-600" ${l.is_leased ? 'checked' : ''}>Lease</label>
-      <div class="font-bold text-sm text-slate-900 dark:text-white flex-1 truncate">${esc(l.name)} <span class="text-[11px] font-normal text-slate-400">${esc(l.vehicle)}</span></div>
-      ${l.is_leased && l.equity != null ? `<span class="text-xs font-bold ${l.equity >= 0 ? 'text-emerald-600' : 'text-rose-600'}">${eqMoney(l.equity)} equity · ${l.months_remaining ?? '?'} mo left</span>` : ''}
+  return `<div class="space-y-2 mt-3">${__equity.leases.map(l => { const dt = l.deal_type || (l.is_leased ? 'lease' : 'finance'); return `<div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-3" data-lease="${l.id}">
+    <div class="flex items-center gap-2 mb-2 flex-wrap">
+      <select class="lz-dtype bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded px-2 py-1 text-xs font-bold" onchange="eqDealTypeToggle(this)">${Object.keys(DEAL_LABELS).map(t => `<option value="${t}" ${dt === t ? 'selected' : ''}>${DEAL_LABELS[t]}</option>`).join('')}</select>
+      <div class="font-bold text-sm text-slate-900 dark:text-white flex-1 truncate min-w-0">${esc(l.name)} <span class="text-[11px] font-normal text-slate-400">${esc(l.vehicle)}</span></div>
+      ${l.equity != null ? `<span class="text-xs font-bold ${l.equity >= 0 ? 'text-emerald-600' : 'text-rose-600'}">${eqMoney(l.equity)} equity${l.months_remaining != null ? ` · ${l.months_remaining} mo left` : ''}</span>` : ''}
     </div>
-    <div class="mb-2"><label class="text-[10px] text-slate-400">Vehicle</label><select class="lz-vehicle ${ic}">${eqVehicleOptions(l.vehicle_id, l.vehicle)}</select></div>
+    <div class="mb-2"><label class="text-[10px] text-slate-400">Vehicle purchased</label><select class="lz-vehicle ${ic}">${eqVehicleOptions(l.vehicle_id, l.vehicle)}</select></div>
     <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
-      <div><label class="text-[10px] text-slate-400">Term (months)</label><input class="lz-term ${ic}" type="number" value="${l.lease_term_months ?? ''}" placeholder="48"></div>
-      <div><label class="text-[10px] text-slate-400">Monthly payment</label><input class="lz-pay ${ic}" type="number" value="${l.monthly_payment ?? ''}" placeholder="580"></div>
-      <div><label class="text-[10px] text-slate-400">Residual value</label><input class="lz-res ${ic}" type="number" value="${l.residual_value ?? ''}" placeholder="24000"></div>
-      <div><label class="text-[10px] text-slate-400">Payoff (blank = est.)</label><input class="lz-payoff ${ic}" type="number" value="${l.payoff_amount ?? ''}" placeholder="auto"></div>
-      <div><label class="text-[10px] text-slate-400">Delivery mileage (${eqUnit()})</label><input class="lz-miles ${ic}" type="number" value="${l.delivery_mileage ?? ''}" placeholder="20"></div>
-      <div><label class="text-[10px] text-slate-400">Annual ${eqUnit()} allowance</label><input class="lz-km ${ic}" type="number" value="${l.annual_km_allowance ?? ''}" placeholder="${__equity.settings.annual_km_allowance || (eqUnit() === 'mi' ? 15000 : 20000)}"></div>
-      <div class="sm:col-span-2 flex items-end justify-end"><button onclick="eqSaveLease('${l.id}', this)" class="text-xs font-bold bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-1.5 rounded-lg">Save</button></div>
+      ${eqDealFields(l, ic, 'lz-', dt, __equity.settings)}
+      <div class="sm:col-span-4 flex items-end justify-end"><button onclick="eqSaveLease('${l.id}', this)" class="text-xs font-bold bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-1.5 rounded-lg">Save</button></div>
     </div>
-  </div>`).join('')}</div>`;
+  </div>`; }).join('')}</div>`;
 }
 function eqSettingsHtml() {
   const s = __equity.settings || {};
@@ -5446,6 +5463,10 @@ function eqSettingsHtml() {
         <div>${lbl('Term (months)')}${inp('eq-term', s.default_term_months, '60')}</div>
         <div>${lbl('Cash down ($)')}${inp('eq-down', s.default_down, '0')}</div>
       </div>
+      <div class="grid grid-cols-2 gap-2 mt-2">
+        <div>${lbl('Retail depreciation / mo (0–0.1)')}${inp('eq-dep', s.depreciation_per_month, '0.015')}</div>
+      </div>
+      <p class="text-[10px] text-slate-400 mt-1">Depreciation estimates a financed/owned vehicle's current value from its purchase price. 0.015 ≈ 18%/yr.</p>
     </div>
     <button onclick="eqSaveSettings(this)" class="text-sm font-bold bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg">Save assumptions</button>
   </div>`;
@@ -5453,19 +5474,20 @@ function eqSettingsHtml() {
 async function eqSaveLease(id, btn) {
   const card = btn.closest('[data-lease]'); const g = (c) => card.querySelector(c)?.value.trim();
   const body = {
-    is_leased: card.querySelector('.lz-leased')?.checked || false,
+    deal_type: card.querySelector('.lz-dtype')?.value || 'lease',
     vehicle_id: card.querySelector('.lz-vehicle')?.value || '',
     lease_term_months: g('.lz-term'), monthly_payment: g('.lz-pay'), residual_value: g('.lz-res'),
+    loan_amount: g('.lz-loan'), loan_apr: g('.lz-apr'), purchase_price: g('.lz-price'),
     payoff_amount: g('.lz-payoff'), delivery_mileage: g('.lz-miles'), annual_km_allowance: g('.lz-km'),
   };
   const orig = btn.textContent; btn.disabled = true; btn.textContent = 'Saving…';
-  try { await apiSendJson(`/equity/lease/${id}`, 'PUT', body); showToast('Lease saved', 'success'); loadEquityPage(); }
+  try { await apiSendJson(`/equity/lease/${id}`, 'PUT', body); showToast('Deal saved', 'success'); loadEquityPage(); }
   catch (e) { btn.disabled = false; btn.textContent = orig; showToast(e.message, 'error'); }
 }
 async function eqSaveSettings(btn) {
   const v = (i) => document.getElementById(i)?.value;
   const orig = btn.textContent; btn.disabled = true; btn.textContent = 'Saving…';
-  try { const d = await apiSendJson('/equity/settings', 'PUT', { annual_km_allowance: v('eq-km'), wholesale_haircut: v('eq-haircut'), equity_min: v('eq-min'), high_equity: v('eq-high'), months_window: v('eq-window'), default_apr: v('eq-apr'), default_term_months: v('eq-term'), default_down: v('eq-down') }); __equity.settings = d.settings; showToast('Saved — refreshing radar', 'success'); loadEquityPage(); }
+  try { const d = await apiSendJson('/equity/settings', 'PUT', { annual_km_allowance: v('eq-km'), wholesale_haircut: v('eq-haircut'), equity_min: v('eq-min'), high_equity: v('eq-high'), months_window: v('eq-window'), default_apr: v('eq-apr'), default_term_months: v('eq-term'), default_down: v('eq-down'), depreciation_per_month: v('eq-dep') }); __equity.settings = d.settings; showToast('Saved — refreshing radar', 'success'); loadEquityPage(); }
   catch (e) { btn.disabled = false; btn.textContent = orig; showToast(e.message, 'error'); }
 }
 async function eqPullAhead(id, btn) {
@@ -5474,7 +5496,7 @@ async function eqPullAhead(id, btn) {
   try { await apiSendJson(`/equity/pull-ahead/${id}`, 'POST', {}); showToast('Pull-ahead started — message queued + task created', 'success'); btn.textContent = '✓ Started'; }
   catch (e) { btn.disabled = false; btn.textContent = orig; showToast(e.message, 'error'); }
 }
-Object.assign(window, { loadEquityPage, eqTab, eqSaveLease, eqSaveSettings, eqPullAhead, eqWorksheet });
+Object.assign(window, { loadEquityPage, eqTab, eqSaveLease, eqSaveSettings, eqPullAhead, eqWorksheet, eqDealTypeToggle });
 
 window.openVehicleForm = openVehicleForm;
 window.vehDelete = vehDelete;
