@@ -9824,9 +9824,55 @@ document.addEventListener('DOMContentLoaded', () => {
     } catch {}
   }
 
+  // ── Desktop / browser push notifications (#25) ────────────────────────────
+  // No push service needed: we already poll, so when a new unread notification
+  // appears we raise a native OS Notification (if the user granted permission).
+  const NOTIF_TS_KEY = 'ms_notif_last_ts'
+  function desktopEnabled() {
+    return ('Notification' in window) && Notification.permission === 'granted' && localStorage.getItem('ms_desktop_notify') !== 'off'
+  }
+  async function pollDesktop() {
+    if (!desktopEnabled()) return
+    try {
+      const data = await authFetch(`${API}/notifications`)
+      const items = Array.isArray(data) ? data : []
+      if (!items.length) return
+      const lastTs = Number(localStorage.getItem(NOTIF_TS_KEY) || 0)
+      const maxTs = Math.max(...items.map(n => new Date(n.created_at).getTime()).filter(Number.isFinite))
+      localStorage.setItem(NOTIF_TS_KEY, String(Math.max(lastTs, maxTs)))
+      if (!lastTs) return   // first run just records the watermark — don't backfill-spam
+      const fresh = items.filter(n => !n.read && new Date(n.created_at).getTime() > lastTs)
+      fresh.slice(0, 3).reverse().forEach(n => {
+        try {
+          const dn = new Notification(n.title || 'MarketSync', { body: n.body || '', tag: String(n.id) })
+          dn.onclick = () => {
+            window.focus()
+            if (n.link_url) window.open(n.link_url, '_blank', 'noopener')
+            else if (n.link_page && typeof switchPage === 'function') switchPage(n.link_page)
+            dn.close()
+          }
+        } catch {}
+      })
+    } catch {}
+  }
+  function requestDesktopPermission() {
+    if (!('Notification' in window)) { showToast?.('This browser doesn\'t support desktop alerts', 'error'); return }
+    if (Notification.permission === 'granted') { localStorage.setItem('ms_desktop_notify', 'on'); showToast?.('Desktop alerts on', 'success'); return }
+    if (Notification.permission === 'denied') { showToast?.('Desktop alerts are blocked in your browser settings', 'error'); return }
+    Notification.requestPermission().then(p => {
+      if (p === 'granted') { localStorage.setItem('ms_desktop_notify', 'on'); localStorage.setItem(NOTIF_TS_KEY, String(Date.now())); showToast?.('Desktop alerts on', 'success') }
+    })
+  }
+  window.requestDesktopPermission = requestDesktopPermission
+
   function openPanel() {
     panel.classList.remove('hidden')
     document.body.style.overflow = 'hidden'
+    // First time the user opens the bell, offer to turn on desktop alerts.
+    if (('Notification' in window) && Notification.permission === 'default' && !localStorage.getItem('ms_desktop_prompted')) {
+      localStorage.setItem('ms_desktop_prompted', '1')
+      requestDesktopPermission()
+    }
     loadNotifications()
   }
 
@@ -9847,10 +9893,11 @@ document.addEventListener('DOMContentLoaded', () => {
     badge.classList.add('hidden')
   })
 
-  // Poll for badge count every 60s after login
+  // Poll for badge count every 60s after login; raise desktop alerts on new ones.
   function startPolling() {
     updateBadge()
-    setInterval(updateBadge, 60000)
+    pollDesktop()
+    setInterval(() => { updateBadge(); pollDesktop() }, 60000)
   }
 
   // Start after auth resolves — wait for API constant to be ready
