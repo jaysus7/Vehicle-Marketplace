@@ -5116,6 +5116,16 @@ function renderWsBody() {
       <span class="text-[11px] text-slate-400 flex-1">${(__sitePages || []).length ? 'Pick a page to build it — its own hero, CTAs and sections, just like home.' : 'Only Home so far. Add pages in the Pages tab, then pick them here to customize.'}</span>
       <button onclick="openTemplatePicker()" class="text-xs font-bold bg-violet-600 hover:bg-violet-500 text-white px-3 py-1.5 rounded-lg">Template</button>
     </div>
+    ${(typeof __wsTarget === 'number' && __sitePages[__wsTarget]) ? (() => { const cp = __sitePages[__wsTarget]; return `
+    <div class="flex items-center gap-3 mb-3 flex-wrap text-xs bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg px-3 py-2">
+      <span class="font-bold text-slate-500 dark:text-slate-400">This page's brand:</span>
+      <label class="flex items-center gap-1.5 text-slate-600 dark:text-slate-300">Accent
+        <input type="color" value="${cp.accent || '#4f46e5'}" oninput="setPageStyle('accent',this.value)" class="w-8 h-7 rounded border border-slate-200 dark:border-slate-700 bg-transparent cursor-pointer"></label>
+      ${cp.accent ? `<button onclick="setPageStyle('accent','',true)" class="text-slate-400 hover:text-rose-500 font-bold" title="Use site default">reset</button>` : '<span class="text-slate-400">(site default)</span>'}
+      <label class="flex items-center gap-1.5 text-slate-600 dark:text-slate-300 ml-2">Nav icon
+        <input value="${esc(cp.icon || '')}" maxlength="4" placeholder="🚗" oninput="setPageStyle('icon',this.value)" class="w-16 text-center bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded px-1 py-1"></label>
+      <span class="text-slate-400 flex-1">Shows in the site nav and tints this page's buttons/links.</span>
+    </div>`; })() : ''}
     <div class="grid lg:grid-cols-[minmax(0,1fr)_240px] gap-4">
       <div id="ws-sections" class="space-y-2"></div>
       <div class="lg:sticky lg:top-4 self-start">
@@ -5187,6 +5197,14 @@ function setSecFaq(i, key, text) { const items = text.split('\n').map(l => { con
 function delSecImg(i, key, k) { const arr = (__siteSections[i].settings?.[key] || []).slice(); arr.splice(k, 1); setSec(i, key, arr); renderWsSections(); }
 async function uploadToSec(i, key, file) { if (!file) return; showToast('Uploading…', 'info'); try { const fd = new FormData(); fd.append('image', file); const r = await fetch(`${API}/dealership/site-image`, { method: 'POST', headers: { 'Authorization': `Bearer ${token}` }, body: fd }); const d = await r.json(); if (!r.ok) throw new Error(d.error); setSec(i, key, d.url); renderWsSections(); showToast('Uploaded', 'success'); } catch (e) { showToast(e.message, 'error'); } }
 async function uploadToSecMulti(i, key, files) { for (const f of Array.from(files || [])) { try { const fd = new FormData(); fd.append('image', f); const r = await fetch(`${API}/dealership/site-image`, { method: 'POST', headers: { 'Authorization': `Bearer ${token}` }, body: fd }); const d = await r.json(); if (r.ok) { const arr = (__siteSections[i].settings?.[key] || []).slice(); arr.push(d.url); setSec(i, key, arr); } } catch {} } renderWsSections(); showToast('Images added', 'success'); }
+// Per-page brand accent + nav icon (#28). rerender only when we must repaint the row.
+function setPageStyle(key, val, rerender) {
+  if (typeof __wsTarget === 'number' && __sitePages[__wsTarget]) {
+    __sitePages[__wsTarget][key] = (val && String(val).trim()) || null;
+    if (rerender) renderWsBody();
+  }
+}
+window.setPageStyle = setPageStyle;
 function addSection(type) { __siteSections.push({ id: 's' + Date.now().toString(36), type, settings: {} }); renderWsSections(); }
 function moveSection(i, dir) { const j = i + dir; if (j < 0 || j >= __siteSections.length) return; const [s] = __siteSections.splice(i, 1); __siteSections.splice(j, 0, s); renderWsSections(); }
 function dupSection(i) { __siteSections.splice(i + 1, 0, JSON.parse(JSON.stringify(__siteSections[i]))); renderWsSections(); }

@@ -107,6 +107,9 @@ function cleanPages(arr) {
       menu: p.menu ? String(p.menu).slice(0, 40) : null,
       make: p.make ? String(p.make).slice(0, 40) : null,
       model: p.model ? String(p.model).slice(0, 60) : null,
+      // Per-page brand accent (hex) + nav icon (emoji/short glyph) — #28.
+      accent: /^#[0-9a-fA-F]{6}$/.test(String(p.accent || '')) ? String(p.accent) : null,
+      icon: p.icon ? String(p.icon).slice(0, 8) : null,
       // Full section builder per page (hero, CTAs, inventory…) — same as the home page.
       sections: Array.isArray(p.sections) ? cleanSections(p.sections) : [],
     }

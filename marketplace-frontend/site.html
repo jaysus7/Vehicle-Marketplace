@@ -163,7 +163,7 @@
       const entries=[];
       if(biOn('inventory')) entries.push({token:'b:inventory',label:biLabel('inventory','Inventory'),onclick:"go('inventory')",menu:biMenu('inventory')});
       if(biOn('build')) entries.push({token:'b:build',label:biLabel('build','Build & Price'),onclick:"go('build')",menu:biMenu('build')});
-      for(const p of navPages) entries.push({token:'p:'+(p.id||p.slug),label:p.title,onclick:`go('page:${p.slug}')`,menu:p.menu||null});
+      for(const p of navPages) entries.push({token:'p:'+(p.id||p.slug),label:(p.icon?p.icon+' ':'')+p.title,onclick:`go('page:${p.slug}')`,menu:p.menu||null});
       if(biOn('trade')) entries.push({token:'b:trade',label:biLabel('trade','Value Trade'),onclick:"go('trade')",menu:biMenu('trade')});
       if(biOn('finance')) entries.push({token:'b:finance',label:biLabel('finance','Financing'),onclick:"go('finance')",menu:biMenu('finance')});
       if(hasTeam&&biOn('team')) entries.push({token:'b:team',label:biLabel('team','Team'),onclick:"go('team')",menu:biMenu('team')});
@@ -745,18 +745,21 @@
 
     function viewPage(p){
       if(!p) return `<section class="max-w-3xl mx-auto px-4 py-16 text-center text-slate-400">Page not found.</section>`;
+      // Per-page brand accent (#28): override --brand within this page so its buttons/links tint.
+      const acc=/^#[0-9a-fA-F]{6}$/.test(p.accent||'')?p.accent:null;
+      const wrap=(inner)=>acc?`<div style="--brand:${acc};--brand2:${acc}">${inner}</div>`:inner;
       // Custom-built page (hero, CTAs, inventory…) — rendered exactly like the home sections.
       if(Array.isArray(p.sections)&&p.sections.length){
         const html=p.sections.map(sectionHtml).join('');
         setTimeout(()=>{ if(p.sections.some(s=>s.type==='inventory_grid')) wireInventory(); },0);
-        return html + (p.body_html?`<section class="max-w-3xl mx-auto px-4 py-6"><div class="prose max-w-none text-slate-700">${p.body_html}</div></section>`:'');
+        return wrap(html + (p.body_html?`<section class="max-w-3xl mx-auto px-4 py-6"><div class="prose max-w-none text-slate-700">${p.body_html}</div></section>`:''));
       }
       if(p.make&&p.model){
         const vs=(DATA.vehicles||[]).filter(v=>(v.make||'').toLowerCase()===p.make.toLowerCase()&&(v.model||'').toLowerCase()===p.model.toLowerCase());
-        return `<section class="brand2-bg text-white"><div class="max-w-6xl mx-auto px-4 py-14"><h1 class="text-4xl font-black">${esc(p.title)}</h1>${p.body_html?`<div class="mt-3 text-white/80 max-w-2xl">${p.body_html}</div>`:''}<div class="mt-5 flex flex-wrap gap-3"><button onclick="go('trade')" class="bg-white text-slate-900 font-bold px-5 py-2.5 rounded-lg">Value your trade</button><button onclick="go('finance')" class="border border-white/40 font-bold px-5 py-2.5 rounded-lg hover:bg-white/10">Get pre-approved</button></div></div></section>
-          <section class="max-w-6xl mx-auto px-4 py-8"><h2 class="text-2xl font-black mb-4">${esc(p.make)} ${esc(p.model)} in stock</h2><div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">${vs.map(vehicleCard).join('')||`<div class="col-span-full text-slate-400">None in stock right now — <button onclick="go('inquiry')" class="brand-text font-bold">contact us</button> and we'll find you one.</div>`}</div></section>`;
+        return wrap(`<section class="brand2-bg text-white"><div class="max-w-6xl mx-auto px-4 py-14"><h1 class="text-4xl font-black">${esc(p.title)}</h1>${p.body_html?`<div class="mt-3 text-white/80 max-w-2xl">${p.body_html}</div>`:''}<div class="mt-5 flex flex-wrap gap-3"><button onclick="go('trade')" class="bg-white text-slate-900 font-bold px-5 py-2.5 rounded-lg">Value your trade</button><button onclick="go('finance')" class="border border-white/40 font-bold px-5 py-2.5 rounded-lg hover:bg-white/10">Get pre-approved</button></div></div></section>
+          <section class="max-w-6xl mx-auto px-4 py-8"><h2 class="text-2xl font-black mb-4">${esc(p.make)} ${esc(p.model)} in stock</h2><div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">${vs.map(vehicleCard).join('')||`<div class="col-span-full text-slate-400">None in stock right now — <button onclick="go('inquiry')" class="brand-text font-bold">contact us</button> and we'll find you one.</div>`}</div></section>`);
       }
-      return `<section class="max-w-3xl mx-auto px-4 py-10"><h1 class="text-3xl font-black mb-4">${esc(p.title)}</h1><div class="prose max-w-none text-slate-700">${p.body_html||''}</div></section>`;
+      return wrap(`<section class="max-w-3xl mx-auto px-4 py-10"><h1 class="text-3xl font-black mb-4">${esc(p.title)}</h1><div class="prose max-w-none text-slate-700">${p.body_html||''}</div></section>`);
     }
 
     async function postLead(body,formEl,btn){ btn.disabled=true; const t=btn.textContent; btn.textContent='Sending…';
