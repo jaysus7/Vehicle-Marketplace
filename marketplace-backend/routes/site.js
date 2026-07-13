@@ -113,6 +113,8 @@ function cleanBuiltins(obj) {
       label: (v.label ? String(v.label).trim().slice(0, 40) : '') || BUILTIN_DEFAULTS[k],
       // Optional dropdown group in the nav (e.g. put Value Trade + Financing under "Finance").
       menu: v.menu ? String(v.menu).trim().slice(0, 40) : null,
+      // Dealer-defined intro sections (hero/SEO) rendered above the built-in's functional content.
+      sections: Array.isArray(v.sections) ? cleanSections(v.sections) : [],
     }
   }
   return out

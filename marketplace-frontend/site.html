@@ -17,6 +17,14 @@
     input,select,textarea{min-width:0;max-width:100%}
     img{max-width:100%}
     .cshadow{box-shadow:0 1px 3px rgba(0,0,0,.08),0 1px 2px rgba(0,0,0,.04)}
+    /* The Tailwind CDN doesn't ship the typography plugin, so give .prose (used by
+       html sections + page bodies) sensible readable defaults. */
+    .prose{color:#334155;line-height:1.7}
+    .prose h1{font-size:2rem;font-weight:800;margin:.2em 0 .5em;color:#0f172a}
+    .prose h2{font-size:1.5rem;font-weight:800;margin:1em 0 .4em;color:#0f172a}
+    .prose h3{font-size:1.2rem;font-weight:700;margin:.9em 0 .3em;color:#0f172a}
+    .prose p{margin:0 0 1em} .prose ul{list-style:disc;padding-left:1.4em;margin:0 0 1em} .prose li{margin:.25em 0}
+    .prose a{color:var(--brand);text-decoration:underline}
   </style>
 </head>
 <body class="bg-slate-50 text-slate-900">
@@ -230,14 +238,17 @@
     function renderView(){
       const el=document.getElementById('view'); if(!el) return;
       const gate=VIEW_BUILTIN[VIEW]; if(gate&&!builtinOn(gate)){ VIEW='home'; return void renderHome(el); }
-      if(VIEW==='inventory') return void renderInventory(el);
-      if(VIEW==='build') return void renderBuild(el);
-      if(VIEW==='team') return void(el.innerHTML=viewTeam());
-      if(VIEW==='trade') return void(el.innerHTML=viewTrade());
-      if(VIEW==='finance') return void(el.innerHTML=viewFinance());
-      if(VIEW==='inquiry') return void(el.innerHTML=viewInquiry());
-      if(VIEW.startsWith('page:')){ const p=(DATA.site.pages||[]).find(x=>x.slug===VIEW.slice(5)); return void(el.innerHTML=viewPage(p)); }
-      renderHome(el);
+      if(VIEW==='inventory') renderInventory(el);
+      else if(VIEW==='build') renderBuild(el);
+      else if(VIEW==='team') el.innerHTML=viewTeam();
+      else if(VIEW==='trade') el.innerHTML=viewTrade();
+      else if(VIEW==='finance') el.innerHTML=viewFinance();
+      else if(VIEW==='inquiry') el.innerHTML=viewInquiry();
+      else if(VIEW.startsWith('page:')){ const p=(DATA.site.pages||[]).find(x=>x.slug===VIEW.slice(5)); el.innerHTML=viewPage(p); return; }
+      else { renderHome(el); return; }
+      // Prepend dealer-defined intro sections (hero/SEO) above a built-in view's functional content.
+      const bkey=VIEW_BUILTIN[VIEW]; const bsecs=bkey&&((DATA.site.builtins||{})[bkey]||{}).sections;
+      if(bsecs&&bsecs.length) el.insertAdjacentHTML('afterbegin', bsecs.map(sectionHtml).join(''));
     }
 
     // ── HOME ───────────────────────────────────────────────────────────────────

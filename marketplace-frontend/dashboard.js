@@ -4516,10 +4516,10 @@ const BUILTIN_META = [
   ['contact', 'Contact', 'General contact / inquiry form'],
 ];
 let __siteBuiltins = {};
-function defaultBuiltins() { const o = {}; for (const [k, label] of BUILTIN_META) o[k] = { enabled: true, label, menu: '' }; return o; }
+function defaultBuiltins() { const o = {}; for (const [k, label] of BUILTIN_META) o[k] = { enabled: true, label, menu: '', sections: [] }; return o; }
 function normBuiltins(src) {
   const o = defaultBuiltins();
-  if (src && typeof src === 'object') for (const [k, def] of BUILTIN_META) { const v = src[k] || {}; o[k] = { enabled: v.enabled !== false, label: (v.label || def).toString().slice(0, 40), menu: (v.menu || '').toString().slice(0, 40) }; }
+  if (src && typeof src === 'object') for (const [k, def] of BUILTIN_META) { const v = src[k] || {}; o[k] = { enabled: v.enabled !== false, label: (v.label || def).toString().slice(0, 40), menu: (v.menu || '').toString().slice(0, 40), sections: Array.isArray(v.sections) ? v.sections : [] }; }
   return o;
 }
 let __menuOrder = [];
@@ -4532,7 +4532,7 @@ function collectMenu() {
   __menuOrder = rows.map(r => r.dataset.token).filter(Boolean);
   for (const [k] of BUILTIN_META) {
     const r = list.querySelector(`.menu-row[data-bi="${k}"]`); if (!r) continue;
-    __siteBuiltins[k] = { enabled: r.querySelector('.bi-on')?.checked !== false, label: (r.querySelector('.bi-label')?.value || '').trim() || __siteBuiltins[k]?.label || k, menu: (r.querySelector('.bi-menu')?.value || '').trim() };
+    __siteBuiltins[k] = { ...(__siteBuiltins[k] || {}), enabled: r.querySelector('.bi-on')?.checked !== false, label: (r.querySelector('.bi-label')?.value || '').trim() || __siteBuiltins[k]?.label || k, menu: (r.querySelector('.bi-menu')?.value || '').trim() };
   }
   const byId = Object.fromEntries((__sitePages || []).map(p => [p.id, p]));
   __sitePages = rows.filter(r => r.dataset.pid).map(r => {
@@ -4674,19 +4674,73 @@ function addSitePage() { collectMenu(); __sitePages.push({ id: 'pg' + Math.rando
 function removeSitePage(i) { collectMenu(); __sitePages.splice(i, 1); renderMenuList(); }
 // Starter pages the dealer can drop in with one click, pre-filled + grouped in the nav.
 const __psec = (type, settings) => ({ id: 's' + Math.random().toString(36).slice(2, 9), type, settings: settings || {} });
+function ctxName() { return (__siteCfg?.content?.name) || 'our dealership'; }
+function ctxCity() { const c = __siteCfg?.content?.city; return c ? (' in ' + c) : ''; }
+// Section builders shared by presets + templates.
+const psHero = (h, s, btn, target) => __psec('hero', { headline: h, subheadline: s, button_label: btn || 'Contact us', button_target: target || 'inquiry', overlay: 45, height: 'md' });
+const psSeo = (h, paras) => __psec('html', { html: `<h2>${h}</h2>` + paras.map(p => `<p>${p}</p>`).join('') });
+const psContact = () => __psec('contact', { title: 'Get in touch', subtitle: 'Send us a message and we’ll get right back to you.' });
+const psCta = (t, s, btn, target) => __psec('cta_banner', { title: t, subtitle: s, button_label: btn, button_target: target || 'inquiry' });
 function PAGE_PRESETS() {
-  const name = (__siteCfg?.content?.name) || 'our dealership';
-  const hero = (h, s) => __psec('hero', { headline: h, subheadline: s, button_label: 'Contact us', button_target: 'inquiry', overlay: 45, height: 'md' });
-  const contact = () => __psec('contact', { title: 'Get in touch', subtitle: 'Send us a message and we’ll get right back to you.' });
-  const text = (html) => __psec('html', { html });
+  const name = ctxName(), city = ctxCity();
   return {
-    about: { label: 'About Us', page: { title: 'About Us', menu: '', nav: true, sections: [hero(`About ${name}`, 'Get to know our team, our story and what sets us apart.'), text(`<p>${esc(name)} has proudly served our community for years. Our team is committed to a no-pressure, transparent experience from first hello to long after you drive off.</p>`)] } },
-    book_service: { label: 'Book a Service Appointment', page: { title: 'Book Service', menu: 'Service', nav: true, sections: [hero('Book a Service Appointment', 'Factory-trained technicians. Genuine parts. Quick, easy scheduling.'), contact()] } },
-    service: { label: 'Service Department', page: { title: 'Service', menu: 'Service', nav: true, sections: [hero('Service Department', 'Keep your vehicle running its best with our certified team.'), text('<p>Oil changes, brakes, tires, diagnostics and full factory-scheduled maintenance — all under one roof.</p>'), contact()] } },
-    parts: { label: 'Parts Department', page: { title: 'Parts', menu: 'Service', nav: true, sections: [hero('Parts Department', 'Genuine OEM parts and accessories, ordered fast.'), text('<p>Looking for a specific part? Tell us what you need and we’ll source it for you.</p>'), contact()] } },
-    accessories: { label: 'Accessories', page: { title: 'Accessories', menu: 'Service', nav: true, sections: [hero('Accessories', 'Personalize your vehicle with genuine accessories.'), text('<p>From all-weather mats to tonneau covers and roof racks — build your vehicle your way.</p>'), contact()] } },
-    specials: { label: 'Specials / Offers', page: { title: 'Specials', menu: '', nav: true, sections: [hero('Current Specials', 'Limited-time offers on new and pre-owned vehicles.'), __psec('featured_inventory', { title: 'Featured deals', condition: 'all', count: 6 })] } },
-    careers: { label: 'Careers', page: { title: 'Careers', menu: 'About', nav: true, sections: [hero('Careers', 'Join a team that puts people first.'), text('<p>We’re always looking for great people. Tell us about yourself below.</p>'), contact()] } },
+    about: { label: 'About Us', page: { title: 'About Us', menu: '', nav: true, sections: [
+      psHero(`About ${name}`, `Proudly serving drivers${city} with honest deals and a no-pressure experience.`, 'Meet the team', 'inquiry'),
+      psSeo('Your trusted local dealership', [
+        `At ${name}, buying a vehicle should feel easy, transparent and even a little fun. From your first message to long after you drive off the lot, our team is here to make sure you get the right vehicle at the right price — with zero pressure.`,
+        `We’ve built our reputation${city} on straight answers, fair pricing and treating every customer like a neighbour. Whether you’re shopping new, pre-owned or certified, our specialists know the inventory inside and out and will help you find the perfect fit for your life and budget.`,
+      ]),
+      __psec('staff', { title: 'Meet our team' }),
+      psContact(),
+    ] } },
+    book_service: { label: 'Book a Service Appointment', page: { title: 'Book Service', menu: 'Service', nav: true, sections: [
+      psHero('Book a Service Appointment', 'Factory-trained technicians, genuine parts, and scheduling that fits your day.', 'Request appointment', 'inquiry'),
+      psSeo('Service you can count on', [
+        `Keep your vehicle running like new with the certified team at ${name}. From routine oil changes and tire rotations to brakes, diagnostics and full factory-scheduled maintenance, we do it right the first time.`,
+        `Booking is simple — tell us your vehicle and preferred time below and a service advisor will confirm the details. Genuine parts, transparent pricing, and a job done right, every time.`,
+      ]),
+      psContact(),
+    ] } },
+    service: { label: 'Service Department', page: { title: 'Service', menu: 'Service', nav: true, sections: [
+      psHero('Service Department', 'Certified techs. Genuine parts. Your vehicle at its best.', 'Book service', 'inquiry'),
+      psSeo('Expert care for every vehicle', [
+        `Our factory-trained technicians at ${name} handle everything from quick maintenance to complex repairs — oil changes, brakes, tires, batteries, diagnostics and full manufacturer-scheduled service.`,
+        `We use genuine OEM parts, quote honestly up front, and get you back on the road fast. Your vehicle is an investment — protect it with a service team that treats it like their own.`,
+      ]),
+      psContact(),
+    ] } },
+    parts: { label: 'Parts Department', page: { title: 'Parts', menu: 'Service', nav: true, sections: [
+      psHero('Parts Department', 'Genuine OEM parts and accessories, sourced fast.', 'Request a part', 'inquiry'),
+      psSeo('The right part, guaranteed to fit', [
+        `Looking for a specific part? The parts team at ${name} stocks and orders genuine OEM components built to fit and last — no guesswork, no aftermarket compromises.`,
+        `Tell us the year, make, model and what you need, and we’ll track it down and let you know availability and pricing right away.`,
+      ]),
+      psContact(),
+    ] } },
+    accessories: { label: 'Accessories', page: { title: 'Accessories', menu: 'Service', nav: true, sections: [
+      psHero('Accessories', 'Make it yours with genuine accessories.', 'Ask about accessories', 'inquiry'),
+      psSeo('Personalize your ride', [
+        `From all-weather floor mats and cargo liners to tonneau covers, roof racks, running boards and more, ${name} carries the genuine accessories that make your vehicle work harder and look better.`,
+        `Not sure what fits? Our team will match the right accessories to your exact vehicle and how you use it.`,
+      ]),
+      psContact(),
+    ] } },
+    specials: { label: 'Specials / Offers', page: { title: 'Specials', menu: '', nav: true, sections: [
+      psHero('Current Specials', 'Limited-time offers on new, pre-owned and certified vehicles.', 'Get my price', 'inquiry'),
+      psSeo('Deals worth driving for', [
+        `Great vehicles at even better prices — the current specials at ${name} won’t last long. Our best deals move fast, so if something catches your eye, reach out and we’ll hold it for you.`,
+      ]),
+      __psec('featured_inventory', { title: 'Featured deals', condition: 'all', count: 6 }),
+      psCta('See something you like?', 'Get your best price today — no pressure, no games.', 'Get my price', 'inquiry'),
+    ] } },
+    careers: { label: 'Careers', page: { title: 'Careers', menu: 'About', nav: true, sections: [
+      psHero('Careers', 'Join a team that puts people first.', 'Apply now', 'inquiry'),
+      psSeo(`Grow your career at ${name}`, [
+        `We’re always looking for driven, people-first talent — sales, service, parts, finance and admin. If you love helping people and want to grow with a dealership that invests in its team, we want to hear from you.`,
+        `Tell us a little about yourself below and attach nothing more than your enthusiasm — we’ll take it from there.`,
+      ]),
+      psContact(),
+    ] } },
     blank: { label: 'Blank page', page: { title: '', menu: '', nav: true, sections: [] } },
   };
 }
@@ -4805,12 +4859,14 @@ async function loadWebsitePage() {
 // Move the active buffer back onto its source (home or a page) before switching/saving.
 function wsFlushTarget() {
   if (__wsTarget === 'home') __homeSections = __siteSections;
+  else if (typeof __wsTarget === 'string' && __wsTarget.startsWith('b:')) { const k = __wsTarget.slice(2); (__siteBuiltins[k] = __siteBuiltins[k] || { enabled: true, label: k, menu: '' }).sections = __siteSections; }
   else if (__sitePages[__wsTarget]) __sitePages[__wsTarget].sections = __siteSections;
 }
 function wsSetTarget(v) {
   wsFlushTarget();
-  __wsTarget = v === 'home' ? 'home' : parseInt(v);
-  __siteSections = __wsTarget === 'home' ? (__homeSections || []) : (Array.isArray(__sitePages[__wsTarget]?.sections) ? __sitePages[__wsTarget].sections : []);
+  if (v === 'home') { __wsTarget = 'home'; __siteSections = __homeSections || []; }
+  else if (typeof v === 'string' && v.startsWith('b:')) { __wsTarget = v; const k = v.slice(2); const b = (__siteBuiltins[k] = __siteBuiltins[k] || { enabled: true, label: k, menu: '' }); b.sections = Array.isArray(b.sections) ? b.sections : []; __siteSections = b.sections; }
+  else { __wsTarget = parseInt(v); __siteSections = Array.isArray(__sitePages[__wsTarget]?.sections) ? __sitePages[__wsTarget].sections : []; }
   __wsTab = 'builder'; renderWebsitePage();   // full re-render so the Builder tab lights up
 }
 function renderWebsitePage() {
@@ -4844,12 +4900,13 @@ function renderWsBody() {
   if (__wsTab === 'settings') { body.innerHTML = wsSettings(); __siteWidgets = Array.isArray(__siteCfg?.content?.widgets) ? __siteCfg.content.widgets.slice() : []; renderSiteWidgets(); return; }
   // Builder
   const palette = SEC_ORDER.map(t => `<button onclick="addSection('${t}')" class="text-left text-xs font-semibold bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 hover:border-indigo-400">+ ${SEC_META[t].label}</button>`).join('');
-  const pageOpts = (__sitePages || []).map((p, i) => `<option value="${i}" ${__wsTarget === i ? 'selected' : ''}>${esc(p.title || 'Untitled page')}</option>`).join('');
+  const pageOpts = (__sitePages || []).map((p, i) => `<option value="${i}" ${__wsTarget === i ? 'selected' : ''}>📄 ${esc(p.title || 'Untitled page')}</option>`).join('');
+  const builtinOpts = BUILTIN_META.filter(([k]) => (__siteBuiltins[k]?.enabled !== false)).map(([k, label]) => `<option value="b:${k}" ${__wsTarget === 'b:' + k ? 'selected' : ''}>🧩 ${esc((__siteBuiltins[k] && __siteBuiltins[k].label) || label)} — top section</option>`).join('');
   body.innerHTML = `
     <div class="flex items-center gap-2 mt-4 mb-2 flex-wrap">
       <span class="text-xs font-bold text-slate-500 dark:text-slate-400">Editing:</span>
       <select onchange="wsSetTarget(this.value)" class="text-sm font-bold bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-1.5">
-        <option value="home" ${__wsTarget === 'home' ? 'selected' : ''}>🏠 Home page</option>${pageOpts}
+        <option value="home" ${__wsTarget === 'home' ? 'selected' : ''}>🏠 Home page</option>${pageOpts}${builtinOpts ? `<optgroup label="Built-in pages — add a hero/intro on top">${builtinOpts}</optgroup>` : ''}
       </select>
       <button onclick="wsTab('pages')" class="text-xs font-bold text-indigo-600 dark:text-indigo-400">＋ Add / manage pages</button>
       <span class="text-[11px] text-slate-400 flex-1">${(__sitePages || []).length ? 'Pick a page to build it — its own hero, CTAs and sections, just like home.' : 'Only Home so far. Add pages in the Pages tab, then pick them here to customize.'}</span>
@@ -5163,17 +5220,47 @@ function openTemplatePicker() {
 const TEMPLATE_BLURB = { generic: 'Balanced, all-purpose', manufacturer: 'Auto-branded to your make', modern: 'Bold & contemporary', clean: 'Minimal & fast', luxury: 'Dark, premium feel', usedlot: 'High-volume pre-owned', corporate: 'Professional & complete' };
 async function applyTemplate(id) {
   const t = SITE_TEMPLATES.find(x => x.id === id); if (!t) return;
+  if ((__sitePages || []).length || (__homeSections || []).length) {
+    if (!confirm('Apply this template? It lays out your whole site — home, standard pages, the menu (with submenus) and the design — pre-filled with editable starter content and SEO copy. This replaces your current pages, menu and design. Your inventory, team and settings are untouched.')) return;
+  }
   const ctx = await dealerCtxAsync();
   let colors = { primary: t.primary, secondary: t.secondary, accent: t.accent, typography: t.typography };
   if (id === 'manufacturer') { const th = MAKE_THEME[(ctx.primaryMake || '').toLowerCase()]; if (th) colors = { primary: th.p, secondary: th.s, accent: th.a, typography: th.t }; }
-  __siteSections = t.build(ctx);
+
+  // Home — the template's own hero/section layout.
+  __homeSections = t.build(ctx);
+  __wsTarget = 'home'; __siteSections = __homeSections;
+
+  // A complete, editable page set — rich content + SEO already written.
+  const P = PAGE_PRESETS();
+  const mk = (preset) => ({ id: 'pg' + Math.random().toString(36).slice(2, 9), ...JSON.parse(JSON.stringify(preset.page)) });
+  __sitePages = [mk(P.about), mk(P.specials), mk(P.service), mk(P.book_service), mk(P.parts), mk(P.accessories), mk(P.careers)];
+  // Submenu structure: Service is the parent of Book Service / Parts / Accessories; Careers sits under About Us.
+  for (const p of __sitePages) {
+    const tt = (p.title || '').toLowerCase();
+    if (tt === 'service') p.menu = '';
+    else if (tt === 'book service' || tt === 'parts' || tt === 'accessories') p.menu = 'Service';
+    else if (tt === 'careers') p.menu = 'About Us';
+    else p.menu = '';
+  }
+  // Built-ins on, with a hero/intro on the key functional pages.
+  __siteBuiltins = defaultBuiltins();
+  __siteBuiltins.inventory.sections = [psHero('Browse our inventory', `New, pre-owned and certified vehicles${ctxCity()} — updated daily.`, 'Get pre-approved', 'finance')];
+  __siteBuiltins.finance.sections = [psHero('Financing made easy', 'Apply in minutes — all credit situations welcome, and it won’t affect your score.', 'Start my application', 'finance')];
+  __siteBuiltins.trade.sections = [psHero('What’s your trade worth?', 'Get a real number from our team — fast, and with no obligation.', 'Value my trade', 'trade')];
+
+  // Nav order with the submenus laid out (parent immediately before its children).
+  const pageTok = (title) => { const p = __sitePages.find(x => (x.title || '').toLowerCase() === title.toLowerCase()); return p ? ('p:' + p.id) : null; };
+  __menuOrder = ['b:inventory', 'b:build', 'b:trade', 'b:finance', pageTok('Specials'), pageTok('About Us'), pageTok('Careers'), pageTok('Service'), pageTok('Book Service'), pageTok('Parts'), pageTok('Accessories'), 'b:team', 'b:contact'].filter(Boolean);
+
+  // Design — colours + fonts.
   const c = __siteCfg.content || (__siteCfg.content = {});
   c.primary_color = colors.primary; c.secondary_color = colors.secondary; c.accent_color = colors.accent; c.typography = colors.typography;
-  if (!Object.keys(__siteBuiltins).length) __siteBuiltins = defaultBuiltins();   // template ships the built-in pages, all on
+
   document.querySelector('.fixed')?.remove();
-  __wsTab = 'builder';
+  __wsTab = 'pages';   // show the freshly laid-out menu + pages
   renderWebsitePage();
-  showToast('Template applied — review, then Save', 'success');
+  showToast('Template applied — full site laid out with content. Review the menu, tweak, then Save.', 'success');
 }
 Object.assign(window, { loadWebsitePage, wsTab, wsSetTarget, addSection, moveSection, dupSection, delSection, setSec, setSecFaq, delSecImg, uploadToSec, uploadToSecMulti, saveWebsite, aiMenu, aiRun, openTemplatePicker, applyTemplate, addSiteStaff, removeSiteStaff, uploadStaffPhoto, collectMenu, renderMenuList, menuMove, menuIndent, wsCustomizeById, removeSitePageById, addSitePagePreset, wsApplyPalette });
 
