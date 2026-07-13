@@ -2560,13 +2560,12 @@ async function loadSyncHealth() {
   } catch { /* non-fatal */ }
 }
 
-// ── Executive ROI dashboard (managers) — the "is this paying off?" view ──────
+// ── Executive ROI dashboard — the "is this paying off?" view ─────────────────
+// Managers see the whole store + a per-rep breakdown; a rep sees their own book.
 let __execRoiRange = '90';
 async function loadExecutiveRoi() {
   const root = document.getElementById('exec-roi');
   if (!root) return;
-  const isMgr = ['DEALER_ADMIN', 'OWNER', 'MANAGER'].includes(profileContext?.role);
-  if (!isMgr) { root.innerHTML = ''; return; }
   let d;
   try { d = await apiGetJson(`/dashboard/executive?range=${encodeURIComponent(__execRoiRange)}`, { retries: 1 }); }
   catch { root.innerHTML = ''; return; }
@@ -2588,15 +2587,35 @@ async function loadExecutiveRoi() {
         <div class="w-8 text-right font-bold tabular-nums text-slate-700 dark:text-slate-200">${s.count}</div></div>`).join('')
     : '<div class="text-xs text-slate-400 italic">No attributed sales yet — set a “sold source” when you mark a deal delivered.</div>';
 
+  // Per-rep breakdown (managers) — the sales-per-salesperson report.
+  const perRepHtml = (d.is_manager && (d.per_rep || []).length) ? `
+    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden">
+      <div class="px-4 pt-4 pb-2 text-sm font-bold text-slate-900 dark:text-white">Sales by salesperson</div>
+      <div class="overflow-x-auto"><table class="w-full text-sm text-left min-w-[520px]">
+        <thead><tr class="border-y border-slate-200 dark:border-slate-800 text-slate-500 dark:text-slate-400 uppercase text-[11px] tracking-wider">
+          <th class="py-2 px-4">Salesperson</th><th class="py-2 px-3 text-right">Sales</th><th class="py-2 px-3 text-right">Leads</th><th class="py-2 px-3 text-right">&lt; 5 min</th><th class="py-2 px-3 text-right">Follow-up</th><th class="py-2 px-3 text-right">Appraisals</th>
+        </tr></thead>
+        <tbody>${d.per_rep.map((r, i) => `<tr class="border-b border-slate-100 dark:border-slate-800/60">
+          <td class="py-2.5 px-4 font-semibold text-slate-900 dark:text-white">${i < 3 ? ['🥇', '🥈', '🥉'][i] + ' ' : ''}${esc(r.name)}</td>
+          <td class="py-2.5 px-3 text-right font-black tabular-nums text-emerald-600 dark:text-emerald-400">${r.deals}</td>
+          <td class="py-2.5 px-3 text-right tabular-nums text-slate-700 dark:text-slate-200">${r.leads}</td>
+          <td class="py-2.5 px-3 text-right tabular-nums text-slate-700 dark:text-slate-200">${r.under_5min_pct}%</td>
+          <td class="py-2.5 px-3 text-right tabular-nums text-slate-700 dark:text-slate-200">${r.followup_pct}%</td>
+          <td class="py-2.5 px-3 text-right tabular-nums text-slate-700 dark:text-slate-200">${r.appraisals}</td>
+        </tr>`).join('')}</tbody>
+      </table></div>
+    </div>` : '';
+
   root.innerHTML = `
     <div class="flex items-center justify-between gap-3 flex-wrap">
       <div>
         <h2 class="text-xl font-black text-slate-900 dark:text-white">Executive summary</h2>
-        <p class="text-sm text-slate-500 dark:text-slate-400">What MarketSync moved for you — last ${d.range_days} days.</p>
+        <p class="text-sm text-slate-500 dark:text-slate-400">${d.is_manager ? 'Whole store' : 'Your book'} · what MarketSync moved — last ${d.range_days} days.</p>
       </div>
       <div class="flex gap-1.5">${rangeBtn('7', '7d')}${rangeBtn('30', '30d')}${rangeBtn('90', '90d')}${rangeBtn('365', '1y')}</div>
     </div>
     <div class="grid grid-cols-2 lg:grid-cols-4 gap-3">
+      ${tile('Overall sales', d.sales.total, d.is_manager ? 'deals won, store-wide' : 'your deals won', 'text-emerald-600 dark:text-emerald-400')}
       ${tile('New leads', d.leads.total, trendHtml)}
       ${tile('Responded &lt; 5 min', d.leads.under_5min_pct + '%', `${d.leads.responded} responded · median ${d.leads.median_response_min != null ? d.leads.median_response_min + ' min' : '—'}`, speedAccent)}
       ${tile('Conversion', d.pipeline.conversion_pct + '%', `${d.pipeline.won} of ${d.pipeline.total_contacts} contacts`)}
@@ -2604,11 +2623,14 @@ async function loadExecutiveRoi() {
       ${tile('Marketplace posts', d.inventory.marketplace_posted, 'vehicles posted')}
       ${tile('Trade appraisals', d.activity.appraisals, 'completed')}
       ${tile('Follow-up completion', d.activity.followup_completion_pct + '%', `${d.activity.tasks_done}/${d.activity.tasks_total} tasks`)}
-      ${tile('Repricing signals', d.inventory.repricing_signals, 'off-market alerts')}
     </div>
-    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4">
-      <div class="text-sm font-bold text-slate-900 dark:text-white mb-3">Attributed sales by source</div>
-      <div class="space-y-2">${srcHtml}</div>
+    ${perRepHtml}
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-3">
+      <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4">
+        <div class="text-sm font-bold text-slate-900 dark:text-white mb-3">Attributed sales by source</div>
+        <div class="space-y-2">${srcHtml}</div>
+      </div>
+      ${tile('Repricing signals', d.inventory.repricing_signals, 'off-market alerts surfaced')}
     </div>
     <div class="border-b border-slate-200 dark:border-slate-800 pt-1"></div>`;
 }
@@ -7814,6 +7836,22 @@ async function verifyAIBoostSession(sessionId) {
   } catch {}
 }
 
+// Nav "Paid" badges — green when the dealer has that entitlement, grey when not.
+// data-ent="base" = included in every plan (Website, CRM); data-ent="pro" = part of
+// the Inventory Intelligence / Professional bundle (Automation, Equity, Appraisal).
+function applyPaidBadges() {
+  const invIntel = !!__invIntelActive;
+  const base = 'nav-paid hidden md:inline text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded-full ml-auto';
+  const green = base + ' bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300';
+  const grey = base + ' bg-slate-100 text-slate-400 dark:bg-slate-800 dark:text-slate-500';
+  document.querySelectorAll('.nav-paid').forEach(el => {
+    const on = el.dataset.ent === 'base' ? true : invIntel;
+    el.className = on ? green : grey;
+    el.title = on ? 'Included in your plan' : 'Requires Inventory Intelligence — tap to upgrade';
+    el.textContent = 'Paid';
+  });
+}
+
 async function loadAIBoostSection() {
   const section = document.getElementById('ai-boost-section');
   if (!section) return;
@@ -7832,6 +7870,8 @@ async function loadAIBoostSection() {
     __bgProviderReady = !!cfg.background_provider_ready;
     // Trade Appraisal is part of the Inventory Intelligence add-on — hide otherwise.
     document.getElementById('nav-appraisal')?.classList.toggle('hidden', !__invIntelActive);
+    // Paint the nav "Paid" badges: green when the dealer is entitled, grey when not.
+    applyPaidBadges();
     // Reveal the floating AI assistant dock for entitled dealers (owner exempt).
     updateAiDockVisibility();
     // Reveal the fixed Reports quick-access rail for Inventory Intelligence dealers.
