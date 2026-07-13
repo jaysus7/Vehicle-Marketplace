@@ -5276,18 +5276,90 @@ function renderEquityBody() {
 }
 function eqRadarHtml() {
   if (!__equity.radar.length) return `<div class="py-12 text-center text-sm text-slate-400 italic">No pull-ahead opportunities yet. Add lease details on the <button onclick="eqTab('leases')" class="text-indigo-500 font-bold">Lease data</button> tab — delivered lease customers appear here automatically.</div>`;
-  const rows = __equity.radar.map(r => `<tr class="border-b border-slate-100 dark:border-slate-800/60">
+  const rows = __equity.radar.map(r => `<tr class="border-b border-slate-100 dark:border-slate-800/60 hover:bg-slate-50 dark:hover:bg-slate-800/40 cursor-pointer" onclick="eqWorksheet('${r.id}')">
     <td class="py-2 px-3"><div class="font-semibold text-slate-900 dark:text-white">${esc(r.name)}</div><div class="text-xs text-slate-400">${esc(r.vehicle)}${r.reachable ? '' : ' · <span class="text-rose-500">opted out</span>'}</div></td>
     <td class="py-2 px-3 text-center">${r.months_remaining ?? '—'}</td>
     <td class="py-2 px-3 text-right text-slate-600 dark:text-slate-300">${eqMoney(r.wholesale)}</td>
     <td class="py-2 px-3 text-right text-slate-600 dark:text-slate-300">${eqMoney(r.payoff)}</td>
     <td class="py-2 px-3 text-right font-bold ${r.equity >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}">${eqMoney(r.equity)}</td>
     <td class="py-2 px-3 text-xs whitespace-nowrap">${esc(r.tier)}</td>
-    <td class="py-2 px-3 text-right"><button onclick="eqPullAhead('${r.id}', this)" ${r.reachable ? '' : 'disabled'} class="text-xs font-bold ${r.reachable ? 'bg-indigo-600 hover:bg-indigo-500 text-white' : 'bg-slate-200 text-slate-400 dark:bg-slate-800'} px-3 py-1.5 rounded-lg">Start pull-ahead</button></td>
+    <td class="py-2 px-3 text-right"><button onclick="event.stopPropagation();eqWorksheet('${r.id}')" class="text-xs font-bold bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-1.5 rounded-lg whitespace-nowrap">View deal →</button></td>
   </tr>`).join('');
-  return `<div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden mt-3"><div class="overflow-x-auto"><table class="w-full text-sm text-left min-w-[720px]">
+  return `<div class="text-xs text-slate-400 mt-3 mb-1">Click a customer to open the upgrade worksheet.</div>
+  <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden"><div class="overflow-x-auto"><table class="w-full text-sm text-left min-w-[720px]">
     <thead><tr class="border-b border-slate-200 dark:border-slate-800 text-slate-500 dark:text-slate-400 uppercase text-xs tracking-wider"><th class="py-2 px-3">Customer</th><th class="py-2 px-3 text-center">Mos left</th><th class="py-2 px-3 text-right">Est. wholesale</th><th class="py-2 px-3 text-right">Est. payoff</th><th class="py-2 px-3 text-right">Equity</th><th class="py-2 px-3">Tier</th><th class="py-2 px-3 text-right">Action</th></tr></thead>
     <tbody>${rows}</tbody></table></div></div>`;
+}
+// AutoAlert-style upgrade worksheet: current lease vs a matched replacement, with the payment delta.
+async function eqWorksheet(ownershipId) {
+  let ov = document.getElementById('eq-ws-overlay');
+  if (!ov) { ov = document.createElement('div'); ov.id = 'eq-ws-overlay'; ov.className = 'fixed inset-0 bg-black/50 z-[70] flex items-start sm:items-center justify-center p-0 sm:p-4 overflow-y-auto'; document.body.appendChild(ov); }
+  ov.innerHTML = `<div class="bg-slate-50 dark:bg-slate-950 w-full sm:max-w-3xl sm:rounded-2xl shadow-2xl"><div class="p-10 text-center text-sm text-slate-400 italic">Loading worksheet…</div></div>`;
+  ov.onclick = (e) => { if (e.target === ov) ov.remove(); };
+  let w;
+  try { w = await apiGetJson(`/equity/worksheet/${ownershipId}`); }
+  catch (e) { ov.innerHTML = `<div class="bg-white dark:bg-slate-900 w-full sm:max-w-md sm:rounded-2xl p-6 text-center"><div class="text-sm text-rose-600 mb-3">${esc(e.message)}</div><button onclick="document.getElementById('eq-ws-overlay').remove()" class="text-sm font-bold bg-slate-200 dark:bg-slate-800 px-4 py-2 rounded-lg">Close</button></div>`; return; }
+  ov.innerHTML = eqWorksheetHtml(w);
+}
+function eqWsPhoto(url, alt) {
+  return url ? `<img src="${esc(url)}" alt="${esc(alt || '')}" class="w-full h-32 object-cover rounded-lg mb-2" onerror="this.style.display='none'">`
+    : `<div class="w-full h-32 rounded-lg mb-2 bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-300 dark:text-slate-600"><svg class="w-10 h-10" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M8 17l3-9 4 4 2-3 3 8H6zm-2 3h14a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg></div>`;
+}
+function eqWorksheetHtml(w) {
+  const cu = w.current, rep = w.replacement, cust = w.customer, unit = (w.settings && w.settings.unit) || 'km';
+  const line = (k, v, cls = '') => `<div class="flex justify-between gap-2 py-0.5"><span class="text-slate-400">${k}</span><span class="font-semibold text-slate-800 dark:text-slate-100 ${cls}">${v}</span></div>`;
+  const equityCls = cu.equity >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400';
+  const deltaBadge = rep && rep.payment_delta != null
+    ? `<div class="text-center py-3 px-4 rounded-xl ${rep.payment_delta <= 0 ? 'bg-emerald-50 dark:bg-emerald-950/30' : 'bg-amber-50 dark:bg-amber-950/30'} border ${rep.payment_delta <= 0 ? 'border-emerald-200 dark:border-emerald-900' : 'border-amber-200 dark:border-amber-900'}">
+        <div class="text-3xl font-black ${rep.payment_delta <= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'}">${rep.payment_delta <= 0 ? '−' : '+'}${eqMoney(Math.abs(rep.payment_delta)).replace('$', '$')}/mo</div>
+        <div class="text-xs text-slate-500 mt-0.5">${rep.payment_delta <= 0 ? 'LESS' : 'more'} than their current payment to get into a newer vehicle</div>
+      </div>` : '';
+  return `<div class="bg-slate-50 dark:bg-slate-950 w-full sm:max-w-3xl sm:rounded-2xl shadow-2xl max-h-screen overflow-y-auto">
+    <div class="sticky top-0 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-5 py-3 flex items-center justify-between z-10">
+      <div>
+        <div class="text-base font-black text-slate-900 dark:text-white">${esc(cust.name)}</div>
+        <div class="text-xs text-slate-400">Upgrade worksheet · ${esc(cu.tier)}</div>
+      </div>
+      <button onclick="document.getElementById('eq-ws-overlay').remove()" class="text-slate-400 hover:text-slate-600"><svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" d="M6 6l12 12M18 6L6 18"/></svg></button>
+    </div>
+    <div class="p-4 space-y-3">
+      ${deltaBadge}
+      <div class="grid sm:grid-cols-2 gap-3">
+        <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-3">
+          <div class="text-[11px] font-black uppercase tracking-wider text-slate-400 mb-1">Current vehicle</div>
+          ${eqWsPhoto(cu.image, cu.vehicle)}
+          <div class="font-bold text-sm text-slate-900 dark:text-white mb-2">${esc(cu.vehicle)}${cu.is_leased ? ' <span class="text-[10px] font-bold text-indigo-500">LEASE</span>' : ''}</div>
+          <div class="text-sm space-y-0.5">
+            ${cu.monthly_payment ? line('Payment', `${eqMoney(cu.monthly_payment)}/mo`) : ''}
+            ${cu.months_remaining != null ? line('Payments left', `${cu.months_remaining} of ${cu.term || '?'}`) : ''}
+            ${line('Est. mileage', `${Number(cu.est_mileage || 0).toLocaleString()} ${unit}`)}
+            ${line('Est. payoff', eqMoney(cu.payoff))}
+            ${line('Est. wholesale', eqMoney(cu.wholesale))}
+            <div class="border-t border-slate-100 dark:border-slate-800 mt-1 pt-1">${line('Estimated equity', eqMoney(cu.equity), equityCls)}</div>
+          </div>
+        </div>
+        <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-3">
+          <div class="text-[11px] font-black uppercase tracking-wider text-indigo-500 mb-1">Suggested replacement</div>
+          ${rep ? `${eqWsPhoto(rep.image, rep.vehicle)}
+            <div class="font-bold text-sm text-slate-900 dark:text-white mb-2">${esc(rep.vehicle)}${rep.condition ? ` <span class="text-[10px] font-bold text-slate-400 uppercase">${esc(rep.condition)}</span>` : ''}</div>
+            <div class="text-sm space-y-0.5">
+              ${line('Price', eqMoney(rep.price))}
+              ${line('Equity applied', `−${eqMoney(rep.equity_applied)}`)}
+              ${rep.down ? line('Cash down', `−${eqMoney(rep.down)}`) : ''}
+              ${line('Financed', eqMoney(rep.financed))}
+              <div class="border-t border-slate-100 dark:border-slate-800 mt-1 pt-1">${line('Est. payment', `${eqMoney(rep.est_payment)}/mo`, 'text-indigo-600 dark:text-indigo-400')}</div>
+              <div class="text-[10px] text-slate-400 text-right">est. ${rep.apr}% APR · ${rep.term} mo — confirm on desk</div>
+            </div>`
+            : `<div class="py-8 text-center text-sm text-slate-400 italic">No matching in-stock vehicle to suggest right now. Add inventory and reopen.</div>`}
+        </div>
+      </div>
+      <div class="flex flex-wrap gap-2 justify-end pt-1">
+        ${cust.phone ? `<a href="tel:${esc(cust.phone)}" class="text-sm font-bold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 px-4 py-2 rounded-lg">Call</a>` : ''}
+        <button onclick="eqPullAhead('${cu.ownership_id}', this)" ${cust.reachable ? '' : 'disabled'} class="text-sm font-bold ${cust.reachable ? 'bg-indigo-600 hover:bg-indigo-500 text-white' : 'bg-slate-200 text-slate-400 dark:bg-slate-800'} px-4 py-2 rounded-lg">Start pull-ahead</button>
+      </div>
+      <p class="text-[11px] text-slate-400">Every figure is an <b>estimate</b> from the lease inputs, a tunable value model, and your assumed rate — not a lender quote. Confirm on the desk before presenting.</p>
+    </div>
+  </div>`;
 }
 function eqLeasesHtml() {
   if (!__equity.leases.length) return `<div class="py-12 text-center text-sm text-slate-400 italic">No delivered customers yet. When you mark a deal <b>Delivered</b> in the CRM, it shows up here to add lease details.</div>`;
@@ -5323,6 +5395,14 @@ function eqSettingsHtml() {
       <div>${lbl('High-equity threshold ($)')}${inp('eq-high', s.high_equity, '1000')}</div>
       <div>${lbl('Maturity window (months)')}${inp('eq-window', s.months_window, '6')}</div>
     </div>
+    <div class="pt-2 border-t border-slate-100 dark:border-slate-800">
+      <p class="text-[11px] text-slate-400 mb-2">Assumed financing for the <b>upgrade worksheet</b> — used only to estimate the replacement vehicle's payment. Not a lender quote.</p>
+      <div class="grid grid-cols-3 gap-2">
+        <div>${lbl('Assumed APR (%)')}${inp('eq-apr', s.default_apr, '6.9')}</div>
+        <div>${lbl('Term (months)')}${inp('eq-term', s.default_term_months, '60')}</div>
+        <div>${lbl('Cash down ($)')}${inp('eq-down', s.default_down, '0')}</div>
+      </div>
+    </div>
     <button onclick="eqSaveSettings(this)" class="text-sm font-bold bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg">Save assumptions</button>
   </div>`;
 }
@@ -5341,7 +5421,7 @@ async function eqSaveLease(id, btn) {
 async function eqSaveSettings(btn) {
   const v = (i) => document.getElementById(i)?.value;
   const orig = btn.textContent; btn.disabled = true; btn.textContent = 'Saving…';
-  try { const d = await apiSendJson('/equity/settings', 'PUT', { annual_km_allowance: v('eq-km'), wholesale_haircut: v('eq-haircut'), equity_min: v('eq-min'), high_equity: v('eq-high'), months_window: v('eq-window') }); __equity.settings = d.settings; showToast('Saved — refreshing radar', 'success'); loadEquityPage(); }
+  try { const d = await apiSendJson('/equity/settings', 'PUT', { annual_km_allowance: v('eq-km'), wholesale_haircut: v('eq-haircut'), equity_min: v('eq-min'), high_equity: v('eq-high'), months_window: v('eq-window'), default_apr: v('eq-apr'), default_term_months: v('eq-term'), default_down: v('eq-down') }); __equity.settings = d.settings; showToast('Saved — refreshing radar', 'success'); loadEquityPage(); }
   catch (e) { btn.disabled = false; btn.textContent = orig; showToast(e.message, 'error'); }
 }
 async function eqPullAhead(id, btn) {
@@ -5350,7 +5430,7 @@ async function eqPullAhead(id, btn) {
   try { await apiSendJson(`/equity/pull-ahead/${id}`, 'POST', {}); showToast('Pull-ahead started — message queued + task created', 'success'); btn.textContent = '✓ Started'; }
   catch (e) { btn.disabled = false; btn.textContent = orig; showToast(e.message, 'error'); }
 }
-Object.assign(window, { loadEquityPage, eqTab, eqSaveLease, eqSaveSettings, eqPullAhead });
+Object.assign(window, { loadEquityPage, eqTab, eqSaveLease, eqSaveSettings, eqPullAhead, eqWorksheet });
 
 window.openVehicleForm = openVehicleForm;
 window.vehDelete = vehDelete;

@@ -35,7 +35,37 @@ function equitySettings(dealer) {
     equity_min: Number.isFinite(e.equity_min) ? e.equity_min : 500,
     high_equity: Number.isFinite(e.high_equity) ? e.high_equity : 1000,
     months_window: Number.isFinite(e.months_window) ? e.months_window : 6,
+    // Assumed financing for the upgrade worksheet's replacement payment (clearly an estimate).
+    default_apr: Number.isFinite(e.default_apr) ? e.default_apr : 6.9,
+    default_term_months: Number.isFinite(e.default_term_months) ? e.default_term_months : 60,
+    default_down: Number.isFinite(e.default_down) ? e.default_down : 0,
   }
+}
+
+// Standard amortized monthly payment.
+function monthlyPayment(principal, apr, term) {
+  if (!(principal > 0) || !(term > 0)) return 0
+  const r = (Number(apr) || 0) / 100 / 12
+  if (r === 0) return Math.round(principal / term)
+  return Math.round(principal * r / (1 - Math.pow(1 + r, -term)))
+}
+const eqLc = (x) => String(x || '').trim().toLowerCase()
+
+// Suggest a replacement unit from live inventory: same model → same make → anything,
+// preferring new + newest year. Powers the "put them in this one" side of the worksheet.
+async function findReplacement(dealershipId, cur) {
+  const { data } = await supabaseAdmin.from('inventory')
+    .select('id, year, make, model, trim, price, vin, condition, status, image_urls, mileage')
+    .eq('dealership_id', dealershipId).is('archived_at', null)
+  let list = (data || []).filter(v => eqLc(v.status || 'available') === 'available' && Number(v.price) > 0)
+  if (cur?.id) list = list.filter(v => v.id !== cur.id)
+  if (cur?.make) {
+    const sameModel = list.filter(v => eqLc(v.make) === eqLc(cur.make) && eqLc(v.model) === eqLc(cur.model))
+    const sameMake = list.filter(v => eqLc(v.make) === eqLc(cur.make))
+    list = sameModel.length ? sameModel : (sameMake.length ? sameMake : list)
+  }
+  list.sort((a, b) => (eqLc(b.condition) === 'new' ? 1 : 0) - (eqLc(a.condition) === 'new' ? 1 : 0) || (b.year || 0) - (a.year || 0) || (a.price || 0) - (b.price || 0))
+  return list[0] || null
 }
 
 // Transparent lease math. Everything here is an ESTIMATE until a desk/lender confirms.
@@ -102,6 +132,9 @@ export function registerEquity(app) {
     if (b.equity_min !== undefined) e.equity_min = Math.max(0, parseInt(b.equity_min) || 0)
     if (b.high_equity !== undefined) e.high_equity = Math.max(0, parseInt(b.high_equity) || 0)
     if (b.months_window !== undefined) e.months_window = Math.max(1, Math.min(24, parseInt(b.months_window) || 6))
+    if (b.default_apr !== undefined) e.default_apr = Math.max(0, Math.min(35, Number(b.default_apr) || 0))
+    if (b.default_term_months !== undefined) e.default_term_months = Math.max(12, Math.min(96, parseInt(b.default_term_months) || 60))
+    if (b.default_down !== undefined) e.default_down = Math.max(0, parseInt(b.default_down) || 0)
     as.equity = e
     await supabaseAdmin.from('dealerships').update({ automation_settings: as }).eq('id', req.dealershipId)
     res.json({ ok: true, settings: equitySettings({ automation_settings: as, province: cur?.province, country: cur?.country }) })
@@ -175,6 +208,58 @@ export function registerEquity(app) {
         delivery_mileage: o.delivery_mileage, annual_km_allowance: o.annual_km_allowance, payoff_amount: o.payoff_amount,
         ...(o.is_leased ? computeLease(o, s) : {}),
       },
+    })
+  })
+
+  // ── Upgrade worksheet — the AutoAlert-style deal sheet for one customer ──────
+  app.get('/equity/worksheet/:id', requireAuth, async (req, res) => {
+    if (!isMgr(req)) return res.status(403).json({ error: 'Manager access required' })
+    const { data: d } = await supabaseAdmin.from('dealerships').select('automation_settings, province, country').eq('id', req.dealershipId).maybeSingle()
+    const s = equitySettings(d)
+    const { data: o } = await supabaseAdmin.from('customer_ownership_tracking').select('*').eq('id', req.params.id).eq('dealership_id', req.dealershipId).maybeSingle()
+    if (!o) return res.status(404).json({ error: 'Record not found' })
+    const { data: c } = await supabaseAdmin.from('contacts').select('id, full_name, first_name, last_name, phone, email, assigned_rep, status, opt_out, dnc').eq('id', o.customer_id).maybeSingle()
+    let cur = null
+    if (o.vehicle_id) {
+      const { data: v } = await supabaseAdmin.from('inventory').select('id, year, make, model, trim, vin, price, mileage, image_urls, condition').eq('id', o.vehicle_id).maybeSingle()
+      cur = v || null
+    }
+    const calc = computeLease(o, s)
+    const curPayment = num(o.monthly_payment) || 0
+    // Replacement suggestion + estimated payment (equity applied as cash down).
+    const rep = await findReplacement(req.dealershipId, cur)
+    let replacement = null
+    if (rep) {
+      const price = num(rep.price) || 0
+      const principal = Math.max(0, price - Math.max(0, calc.equity) - (s.default_down || 0))
+      const newPayment = monthlyPayment(principal, s.default_apr, s.default_term_months)
+      replacement = {
+        id: rep.id, vehicle: [rep.year, rep.make, rep.model, rep.trim].filter(Boolean).join(' '),
+        vin: rep.vin || null, price, condition: rep.condition || null,
+        image: (Array.isArray(rep.image_urls) ? rep.image_urls[0] : null) || null,
+        equity_applied: Math.max(0, calc.equity), down: s.default_down || 0, financed: principal,
+        est_payment: newPayment, term: s.default_term_months, apr: s.default_apr,
+        payment_delta: curPayment ? newPayment - curPayment : null,
+      }
+    }
+    res.json({
+      settings: s,
+      customer: {
+        id: c?.id, name: c?.full_name || [c?.first_name, c?.last_name].filter(Boolean).join(' ') || 'Unknown',
+        phone: c?.phone || null, email: c?.email || null, assigned_rep: c?.assigned_rep || null,
+        reachable: c ? (!c.opt_out && !c.dnc) : false,
+      },
+      current: {
+        ownership_id: o.id,
+        vehicle: cur ? [cur.year, cur.make, cur.model, cur.trim].filter(Boolean).join(' ') : (o.vehicle_id ? '—' : 'No vehicle linked'),
+        vin: cur?.vin || null, image: (Array.isArray(cur?.image_urls) ? cur.image_urls[0] : null) || null,
+        is_leased: !!o.is_leased, monthly_payment: curPayment,
+        term: num(o.lease_term_months), months_into: calc.monthsInto, months_remaining: calc.monthsRemaining,
+        delivery_mileage: num(o.delivery_mileage), est_mileage: calc.estMileage,
+        residual: num(o.residual_value), payoff: calc.payoffEst, wholesale: calc.wholesaleEst,
+        equity: calc.equity, tier: calc.tier,
+      },
+      replacement,
     })
   })
 
