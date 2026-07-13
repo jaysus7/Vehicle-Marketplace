@@ -312,7 +312,14 @@
       g7:['#10b981','radial-gradient(70% 85% at 14% 16%, var(--brand) 0%, transparent 55%),radial-gradient(60% 70% at 86% 84%, #10b981 0%, transparent 52%),linear-gradient(135deg, var(--brand2), #0b1220)'],
       g8:['#06b6d4','radial-gradient(78% 88% at 82% 8%, var(--brand) 0%, transparent 55%),radial-gradient(60% 70% at 18% 90%, #06b6d4 0%, transparent 55%),linear-gradient(170deg, #0b1220, var(--brand2))'],
     };
-    function heroArt(bg){ const p=HERO_BGS[bg]||HERO_BGS.g1; return `<div class="absolute inset-0" style="background:${p[1]}"></div><div class="absolute inset-0" style="opacity:.06;background-image:radial-gradient(circle at 1px 1px,#fff 1px,transparent 0);background-size:22px 22px"></div>`; }
+    const HERO_SEED={g1:0,g2:1,g3:2,g4:3,g5:4,g6:5,g7:6,g8:7};
+    function heroPhotoList(){ if(window.__hp) return window.__hp; window.__hp=(DATA.vehicles||[]).map(v=>Array.isArray(v.image_urls)&&v.image_urls[0]).filter(Boolean); return window.__hp; }
+    function heroArt(bg){
+      // When the dealer opts in, put a real inventory photo behind the hero (a
+      // different vehicle per hero). Falls back to the generated gradient art.
+      if(DATA.site.hero_photos){ const list=heroPhotoList(); if(list.length){ const src=list[(HERO_SEED[bg]||0)%list.length]; return `<img src="${esc(src)}" class="w-full h-full object-cover"><div class="absolute inset-0 bg-slate-900/45"></div>`; } }
+      const p=HERO_BGS[bg]||HERO_BGS.g1; return `<div class="absolute inset-0" style="background:${p[1]}"></div><div class="absolute inset-0" style="opacity:.06;background-image:radial-gradient(circle at 1px 1px,#fff 1px,transparent 0);background-size:22px 22px"></div>`;
+    }
     function sectionHtml(sec){
       const s=DATA.site, g=sec.settings||{};
       switch(sec.type){
@@ -360,11 +367,56 @@
         case 'gallery': { const imgs=Array.isArray(g.images)?g.images:[]; return imgs.length?`<section class="max-w-6xl mx-auto px-4 py-10">${g.title?`<h2 class="text-2xl font-black mb-4">${esc(g.title)}</h2>`:''}<div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">${imgs.map(u=>`<img src="${esc(u)}" class="w-full h-40 object-cover rounded-lg">`).join('')}</div></section>`:''; }
         case 'map': { const addr=g.address||[s.address,s.city,s.province].filter(Boolean).join(', '); return addr?`<section class="max-w-6xl mx-auto px-4 py-10">${g.title?`<h2 class="text-2xl font-black mb-4">${esc(g.title)}</h2>`:''}<iframe class="w-full h-72 rounded-lg border-0" loading="lazy" src="https://www.google.com/maps?q=${encodeURIComponent(addr)}&output=embed"></iframe></section>`:''; }
         case 'contact': return `<section id="contact" class="brand-bg text-white"><div class="max-w-6xl mx-auto px-4 py-12 grid md:grid-cols-2 gap-8"><div><h2 class="text-2xl font-black mb-3">${esc(g.title||'Get in touch')}</h2>${s.phone?`<div class="text-white/80 text-sm mb-1">📞 <a href="tel:${esc(s.phone)}" class="underline">${esc(s.phone)}</a></div>`:''}${s.email?`<div class="text-white/80 text-sm mb-1">✉️ <a href="mailto:${esc(s.email)}" class="underline">${esc(s.email)}</a></div>`:''}${s.hours?`<div class="text-white/80 text-sm mt-3 whitespace-pre-line">${esc(s.hours)}</div>`:''}</div><form onsubmit="submitInquiry(event)" class="bg-white text-slate-900 rounded-xl p-5 space-y-2"><div class="font-bold">Send us a message</div><input id="i-name" placeholder="Your name" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm"><div class="flex gap-2"><input id="i-phone" placeholder="Phone" class="flex-1 border border-slate-300 rounded-lg px-3 py-2 text-sm"><input id="i-email" placeholder="Email" class="flex-1 border border-slate-300 rounded-lg px-3 py-2 text-sm"></div><textarea id="i-msg" rows="3" placeholder="How can we help?" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm"></textarea><input type="hidden" id="i-vehicle"><button class="w-full brand-bg text-white font-bold py-2.5 rounded-lg">Send</button></form></div></section>`;
+        case 'payment_calc': {
+          const rate=g.rate!=null?g.rate:7.99, term=g.term||72, tax=taxRate();
+          const termOpts=[24,36,48,60,72,84,96].map(t=>`<option value="${t}" ${t===term?'selected':''}>${t}</option>`).join('');
+          const sel='w-full border border-slate-300 rounded-lg px-2 py-2 text-sm';
+          setTimeout(calcPayment,0);
+          return `<section class="max-w-3xl mx-auto px-4 py-12"><div class="bg-white rounded-2xl cshadow border border-slate-200 p-6">
+            <h2 class="text-2xl font-black">${esc(g.title||'Payment calculator')}</h2>
+            <p class="text-sm text-slate-500 mb-5">Estimate your payment in seconds. Final terms are confirmed by our finance team.</p>
+            <div class="grid grid-cols-2 gap-3">
+              ${pcField('pc-price','Vehicle price','$','')}
+              ${pcField('pc-tax','Sales tax','%',tax)}
+              ${pcField('pc-trade','Trade-in value','$','')}
+              ${pcField('pc-balance','Trade loan balance','$','')}
+              ${pcField('pc-down','Down payment','$','')}
+              ${pcField('pc-rate','Interest rate','%',rate)}
+              <div><label class="block text-xs font-semibold text-slate-500 mb-1">Term (months)</label><select id="pc-term" onchange="calcPayment()" class="${sel}">${termOpts}</select></div>
+              <div><label class="block text-xs font-semibold text-slate-500 mb-1">Payment frequency</label><select id="pc-freq" onchange="calcPayment()" class="${sel}"><option value="monthly">Monthly</option><option value="biweekly">Bi-weekly</option><option value="weekly">Weekly</option></select></div>
+            </div>
+            <div class="mt-5 bg-slate-50 rounded-xl p-4 flex items-center justify-between gap-3 flex-wrap">
+              <div><div class="text-xs text-slate-500">Balance to finance: <span id="pc-fin" class="font-bold text-slate-700">$0</span></div><div class="text-xs text-slate-500 mt-1">Estimated payment</div><div id="pc-out" class="text-2xl font-black brand-text">$0 /month</div></div>
+              <button onclick="go('finance')" class="brand-bg text-white font-bold px-5 py-2.5 rounded-lg">Get pre-approved</button>
+            </div>
+            <p class="text-[11px] text-slate-400 mt-2">Estimate only, on approved credit. Taxes are ${taxLabel()} where applicable.</p>
+          </div></section>`;
+        }
         case 'html': return `<section class="max-w-6xl mx-auto px-4 py-8"><div class="prose max-w-none">${g.html||''}</div></section>`;
         default: return '';
       }
     }
     function ctaBand(title,sub,label,target,link){ return `<section class="brand-bg text-white"><div class="max-w-6xl mx-auto px-4 py-10 text-center"><h2 class="text-2xl font-black">${esc(title)}</h2>${sub?`<p class="mt-1 text-white/80">${esc(sub)}</p>`:''}<div class="mt-4"><button ${ctaTarget(target,link)} class="bg-white text-slate-900 font-bold px-6 py-2.5 rounded-lg">${esc(label)}</button></div></div></section>`; }
+    // Default combined sales-tax rate by province/state (approximate; user can edit).
+    function taxRate(){ const p=(DATA&&DATA.site&&DATA.site.province||'').trim().toLowerCase();
+      const m={on:13,ontario:13,nb:15,'new brunswick':15,nl:15,ns:15,'nova scotia':15,pe:15,pei:15,bc:12,'british columbia':12,mb:12,manitoba:12,sk:11,saskatchewan:11,qc:14.975,quebec:14.975,'québec':14.975,ab:5,alberta:5,nt:5,nu:5,yt:5};
+      return m[p]!=null?m[p]:13; }
+    function pcField(id,label,pre,val){ return `<div><label class="block text-xs font-semibold text-slate-500 mb-1">${esc(label)}</label><div class="flex items-center border border-slate-300 rounded-lg px-2 focus-within:border-slate-500"><span class="text-slate-400 text-sm">${pre}</span><input id="${id}" type="number" inputmode="decimal" value="${val==null?'':val}" oninput="calcPayment()" class="w-full px-1 py-2 text-sm outline-none bg-transparent"></div></div>`; }
+    function calcPayment(){
+      const n=id=>{ const x=parseFloat(document.getElementById(id)?.value); return isFinite(x)?x:0; };
+      const price=n('pc-price'), tax=n('pc-tax'), trade=n('pc-trade'), bal=n('pc-balance'), down=n('pc-down'), rate=n('pc-rate');
+      const term=parseInt(document.getElementById('pc-term')?.value)||72;
+      const freq=document.getElementById('pc-freq')?.value||'monthly';
+      const taxAmt=Math.max(0,price-trade)*tax/100;
+      const financed=Math.max(0, price+taxAmt-trade+bal-down);
+      const r=rate/100/12;
+      const monthly=r?financed*r/(1-Math.pow(1+r,-term)):(term?financed/term:0);
+      const per=freq==='weekly'?monthly*12/52:freq==='biweekly'?monthly*12/26:monthly;
+      const lbl=freq==='weekly'?'/week':freq==='biweekly'?'/bi-weekly':'/month';
+      const out=document.getElementById('pc-out'); if(out) out.textContent=(per>0?money(Math.round(per)):'$0')+' '+lbl;
+      const bf=document.getElementById('pc-fin'); if(bf) bf.textContent=money(Math.round(financed));
+    }
+    window.calcPayment=calcPayment;
     function applyFilters(){ let v=(DATA.vehicles||[]).slice(); const q=FILTERS.q.toLowerCase();
       if(q) v=v.filter(x=>[x.year,x.make,x.model,x.trim,x.stocknumber].filter(Boolean).join(' ').toLowerCase().includes(q));
       if(FILTERS.condition) v=v.filter(x=>(x.condition||'').toLowerCase()===FILTERS.condition);
@@ -609,6 +661,17 @@
       }
       return out;
     }
+    // A photo of the vehicle being configured — matched from inventory (trim → model → make).
+    function buildImage(){
+      if(!BUILD.make) return null;
+      const mk=BUILD.make.toLowerCase(), md=(BUILD.model||'').toLowerCase(), tr=(BUILD.trim||'').toLowerCase();
+      const has=v=>Array.isArray(v.image_urls)&&v.image_urls[0];
+      const pool=(DATA.vehicles||[]).filter(v=>(v.make||'').toLowerCase()===mk&&has(v));
+      const byModel=md?pool.filter(v=>(v.model||'').toLowerCase()===md):[];
+      const byTrim=tr?byModel.filter(v=>(v.trim||'').toLowerCase()===tr):[];
+      const pick=byTrim[0]||byModel[0]||(md?null:pool[0]);   // don't show a random other-model car once a model is chosen
+      return pick?pick.image_urls[0]:null;
+    }
     function renderBuild(el){
       const L=buildLineup(); const makes=Object.keys(L).sort();
       if(!makes.length){ el.innerHTML=`<section class="max-w-3xl mx-auto px-4 py-16 text-center text-slate-400">Build &amp; Price isn't available yet.</section>`; return; }
@@ -627,7 +690,10 @@
       const exts=makeNode?makeNode.ext:[]; const ints=makeNode?makeNode.int:[];
       const chip=(active,label,onclick)=>`<button onclick="${onclick}" class="px-3 py-2 rounded-lg border text-sm font-semibold ${active?'brand-bg text-white brand-border':'bg-white border-slate-300 hover:border-slate-400'}">${esc(label)}</button>`;
       const step=(n,title,inner)=>`<div class="mb-6"><div class="text-xs font-bold uppercase tracking-wide text-slate-400 mb-2">Step ${n} · ${esc(title)}</div><div class="flex flex-wrap gap-2">${inner}</div></div>`;
+      const bimg=buildImage();
       box.innerHTML=`
+        ${bimg?`<div class="rounded-2xl overflow-hidden mb-6 border border-slate-200 cshadow"><img src="${esc(bimg)}" class="w-full h-56 sm:h-64 object-cover bg-slate-100"></div>`
+          : (BUILD.model?`<div class="rounded-2xl mb-6 h-40 brand2-bg flex flex-col items-center justify-center text-white/70">${carPlaceholder('h-14 w-auto opacity-70')}<div class="text-sm mt-2 font-semibold">${esc([BUILD.make,BUILD.model].filter(Boolean).join(' '))}</div></div>`:'')}
         ${step(1,'Make',makes.map(m=>chip(BUILD.make===m,m,`buildSet('make','${attr(m)}')`)).join(''))}
         ${BUILD.make?step(2,'Model',models.map(m=>chip(BUILD.model===m,m,`buildSet('model','${attr(m)}')`)).join('')||'<span class="text-sm text-slate-400">No models found.</span>'):''}
         ${BUILD.model&&trims.length?step(3,'Trim',trims.map(t=>chip(BUILD.trim===t,t,`buildSet('trim','${attr(t)}')`)).join('')):''}

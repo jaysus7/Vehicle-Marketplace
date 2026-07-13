@@ -4807,7 +4807,7 @@ function templateBuiltinSections() {
     inventory: [psHero('Browse our inventory', `New, used and certified vehicles${city} — updated daily and priced to move.`, 'Get pre-approved', 'finance', 'g2')],
     build: [psHero('Build your vehicle', 'Configure your next vehicle exactly how you want it, then send us your build — we’ll find it or order it for you.', 'Start building', 'build', 'g3')],
     trade: [psHero('What’s your trade worth?', 'Get a real number from our team — fast, and with no obligation.', 'Value my trade', 'trade', 'g4')],
-    finance: [psHero('Financing made easy', 'Apply in minutes — all credit situations welcome, and it won’t affect your score.', 'Start my application', 'finance', 'g5')],
+    finance: [psHero('Financing made easy', 'Apply in minutes — all credit situations welcome, and it won’t affect your score.', 'Start my application', 'finance', 'g5'), __psec('payment_calc', { title: 'Calculate your payments', rate: 7.99, term: 72 })],
     team: [psHero('Meet our team', 'The friendly people behind your next great vehicle.', 'Contact us', 'inquiry', 'g6')],
     contact: [psHero('Get in touch', 'Questions, a test drive, or just want to talk numbers? We’d love to hear from you.', 'Call us', 'inquiry', 'g7')],
   };
@@ -4902,6 +4902,7 @@ const SEC_META = {
   inventory_grid:     { label: 'Inventory grid', fields: [['title','Title','text']] },
   text_image:         { label: 'Text + image split', fields: [['image','Image','image'],['headline','Headline','text'],['body','Paragraph','textarea'],['button_label','Button label','text'],['button_target','Button goes to','target']] },
   body_style:         { label: 'Browse by body style', fields: [['title','Title','text']] },
+  payment_calc:       { label: 'Payment calculator', fields: [['title','Title','text'],['rate','Default rate %','number'],['term','Default term (months)','number']] },
   trade_cta:          { label: 'Trade-in banner', fields: [['title','Title','text'],['subtitle','Subtitle','text'],['button_label','Button label','text']] },
   finance_cta:        { label: 'Finance banner', fields: [['title','Title','text'],['subtitle','Subtitle','text'],['button_label','Button label','text']] },
   service_cta:        { label: 'Service banner', fields: [['title','Title','text'],['subtitle','Subtitle','text'],['button_label','Button label','text'],['button_target','Button goes to','target'],['button_link','Custom link','text']] },
@@ -4914,7 +4915,7 @@ const SEC_META = {
   contact:            { label: 'Contact form', fields: [['title','Title','text']] },
   html:               { label: 'Custom HTML', fields: [['html','HTML','textarea']] },
 };
-const SEC_ORDER = ['hero','feature_cards','featured_inventory','text_image','body_style','inventory_grid','trade_cta','finance_cta','service_cta','staff','reviews','faq','gallery','map','contact','cta_banner','html'];
+const SEC_ORDER = ['hero','feature_cards','featured_inventory','text_image','body_style','payment_calc','inventory_grid','trade_cta','finance_cta','service_cta','staff','reviews','faq','gallery','map','contact','cta_banner','html'];
 
 async function loadWebsitePage() {
   const root = document.getElementById('website-root');
@@ -5076,6 +5077,10 @@ function wsDesign() {
       </div>
       <p class="text-[11px] text-slate-400 mt-1">Pick any Google Font for headings/body — they override the preset. Leave on “Use preset” to keep the preset pairing.</p>
     </div>
+    <div class="border-t border-slate-100 dark:border-slate-800 pt-4">
+      <label class="flex items-center gap-2 text-sm font-bold"><input id="ws-heroimg" type="checkbox" ${c.hero_photos ? 'checked' : ''} class="accent-indigo-600 w-4 h-4">Use my inventory photos for hero backgrounds</label>
+      <p class="text-[11px] text-slate-400 mt-1">On: each hero shows a real vehicle from your lot (a different one per page). Off: the built-in gradient art. Upload a photo on any individual hero to override either way.</p>
+    </div>
     <p class="text-[11px] text-slate-400">Logo comes from your branding (Settings). Colours &amp; fonts update the whole site automatically.</p>
   </div>`;
 }
@@ -5157,7 +5162,7 @@ async function uploadStaffPhoto(i, file) {
 async function saveWebsite(btn) {
   // Collect design values if on that tab (they persist across tabs via __siteCfg.content).
   const c = __siteCfg.content || (__siteCfg.content = {});
-  if (document.getElementById('ws-c1')) { c.primary_color = document.getElementById('ws-c1').value; c.secondary_color = document.getElementById('ws-c2').value; c.accent_color = document.getElementById('ws-c3').value; c.typography = document.getElementById('ws-typo').value; c.heading_font = document.getElementById('ws-hfont')?.value || ''; c.body_font = document.getElementById('ws-bfont')?.value || ''; }
+  if (document.getElementById('ws-c1')) { c.primary_color = document.getElementById('ws-c1').value; c.secondary_color = document.getElementById('ws-c2').value; c.accent_color = document.getElementById('ws-c3').value; c.typography = document.getElementById('ws-typo').value; c.heading_font = document.getElementById('ws-hfont')?.value || ''; c.body_font = document.getElementById('ws-bfont')?.value || ''; c.hero_photos = !!document.getElementById('ws-heroimg')?.checked; }
   collectMenu(); collectSiteStaff();      // no-op unless that tab is currently rendered
   wsFlushTarget();                        // push the active buffer onto home / its page
   const body = {
@@ -5168,7 +5173,7 @@ async function saveWebsite(btn) {
     menu_order: __menuOrder,
     site_published: document.getElementById('ws-pub')?.checked || false,
     primary_color: c.primary_color, secondary_color: c.secondary_color, accent_color: c.accent_color, typography: c.typography,
-    heading_font: c.heading_font || '', body_font: c.body_font || '',
+    heading_font: c.heading_font || '', body_font: c.body_font || '', hero_photos: !!c.hero_photos,
   };
   const orig = btn.textContent; btn.disabled = true; btn.textContent = 'Saving…';
   try { await apiSendJson('/dealership/site', 'PUT', body); showToast('Website saved', 'success'); btn.disabled = false; btn.textContent = orig; }
