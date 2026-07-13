@@ -8,9 +8,34 @@ import { routeAndNotifyLead } from '../lead-routing.js'
 const SITE_ADMINS = ['DEALER_ADMIN', 'OWNER', 'MANAGER']
 const isSiteAdmin = (req) => SITE_ADMINS.includes(req.profile?.role)
 const slugOk = (s) => /^[a-z0-9]([a-z0-9-]{1,38})[a-z0-9]$/.test(s)   // 3–40, no leading/trailing dash
-// The host a dealer points their custom domain's CNAME at (the static-site domain).
+// The host a dealer points their custom domain's CNAME at (the static-site domain,
+// or the Cloudflare-for-SaaS CNAME target once that's set up).
 const SITE_HOST = (process.env.SITE_DOMAIN_TARGET || 'marketsync.link').replace(/^https?:\/\//, '').replace(/\/.*$/, '')
 const domainOk = (s) => /^(?!-)[a-z0-9-]{1,63}(?<!-)(\.(?!-)[a-z0-9-]{1,63}(?<!-))+$/.test(s)   // basic FQDN
+
+// ── Cloudflare for SaaS (Custom Hostnames) — auto-provisions a TLS cert per domain.
+// Inert until CF_API_TOKEN + CF_ZONE_ID are set on the backend; falls back to a
+// plain DNS check when not configured.
+const CF_ENABLED = !!(process.env.CF_API_TOKEN && process.env.CF_ZONE_ID)
+async function cfApi(path, method = 'GET', body) {
+  const r = await fetch(`https://api.cloudflare.com/client/v4/zones/${process.env.CF_ZONE_ID}${path}`, {
+    method, headers: { Authorization: `Bearer ${process.env.CF_API_TOKEN}`, 'Content-Type': 'application/json' },
+    body: body ? JSON.stringify(body) : undefined,
+  })
+  const j = await r.json().catch(() => ({}))
+  return { ok: r.ok && j.success !== false, result: j.result, errors: j.errors }
+}
+// Register a custom hostname (idempotent-ish) → returns the CF hostname id.
+async function cfCreateHostname(domain) {
+  const { ok, result } = await cfApi('/custom_hostnames', 'POST', { hostname: domain, ssl: { method: 'http', type: 'dv', settings: { min_tls_version: '1.2' } } })
+  return ok ? (result?.id || null) : null
+}
+async function cfDeleteHostname(id) { if (id) { try { await cfApi(`/custom_hostnames/${id}`, 'DELETE') } catch {} } }
+async function cfHostnameActive(id) {
+  if (!id) return false
+  const { ok, result } = await cfApi(`/custom_hostnames/${id}`)
+  return ok && result?.status === 'active' && (result?.ssl?.status === 'active')
+}
 
 // Only expose safe, public-facing vehicle fields (no internal/source data).
 // Derive a vehicle's public market status from the inventory flag + the pipeline
@@ -349,16 +374,25 @@ export function registerSite(app) {
     if (b.site_published !== undefined) update.site_published = !!b.site_published
 
     if (b.custom_domain !== undefined) {
-      const dom = String(b.custom_domain || '').toLowerCase().trim().replace(/^https?:\/\//, '').replace(/\/.*$/, '').replace(/^www\./, '')
+      const dom = String(b.custom_domain || '').toLowerCase().trim().replace(/^https?:\/\//, '').replace(/\/.*$/, '')
+      const { data: cur } = await supabaseAdmin.from('dealerships').select('custom_domain, custom_domain_cf_id').eq('id', req.dealershipId).single()
       if (dom) {
-        if (!domainOk(dom)) return res.status(400).json({ error: 'Enter a valid domain like yourdealership.com (no http:// or paths).' })
+        if (!domainOk(dom)) return res.status(400).json({ error: 'Enter a valid domain like yourdealership.com or www.yourdealership.com (no http:// or paths).' })
+        const bare = dom.replace(/^www\./, '')
         const { data: taken } = await supabaseAdmin.from('dealerships').select('id')
-          .or(`custom_domain.ilike.${dom},custom_domain.ilike.www.${dom}`).neq('id', req.dealershipId).maybeSingle()
+          .or(`custom_domain.ilike.${bare},custom_domain.ilike.www.${bare}`).neq('id', req.dealershipId).maybeSingle()
         if (taken) return res.status(409).json({ error: 'That domain is already connected to another account.' })
         update.custom_domain = dom
         update.custom_domain_verified = false
         update.custom_domain_added_at = new Date().toISOString()
-      } else { update.custom_domain = null; update.custom_domain_verified = false }
+        if (CF_ENABLED && dom !== cur?.custom_domain) {
+          await cfDeleteHostname(cur?.custom_domain_cf_id)
+          update.custom_domain_cf_id = await cfCreateHostname(dom)   // provisions the TLS cert
+        }
+      } else {
+        if (CF_ENABLED) await cfDeleteHostname(cur?.custom_domain_cf_id)
+        update.custom_domain = null; update.custom_domain_verified = false; update.custom_domain_cf_id = null
+      }
     }
 
     // Merge site content into the shared branding jsonb (don't wipe sticker fields).
@@ -389,22 +423,28 @@ export function registerSite(app) {
   // ── ADMIN: check whether the dealer's custom domain now points at us ─────────
   app.post('/dealership/site/verify-domain', requireAuth, async (req, res) => {
     if (!isSiteAdmin(req)) return res.status(403).json({ error: 'Manager access required' })
-    const { data: d } = await supabaseAdmin.from('dealerships').select('custom_domain').eq('id', req.dealershipId).single()
+    const { data: d } = await supabaseAdmin.from('dealerships').select('custom_domain, custom_domain_cf_id').eq('id', req.dealershipId).single()
     const dom = d?.custom_domain
     if (!dom) return res.status(400).json({ error: 'Add a domain first.' })
     let ok = false
-    // A CNAME (usually on www) that points at our host is the strongest signal.
-    for (const n of [dom, 'www.' + dom]) {
-      try { const c = await dns.resolveCname(n); if (c.some(x => x.toLowerCase().includes(SITE_HOST))) { ok = true; break } } catch {}
-    }
-    // Apex domains can't CNAME — fall back to comparing A records with our host's.
-    if (!ok) {
-      try {
-        const [ourA, theirA] = await Promise.all([dns.resolve4(SITE_HOST).catch(() => []), dns.resolve4(dom).catch(() => [])])
-        if (theirA.length && theirA.some(ip => ourA.includes(ip))) ok = true
-      } catch {}
+    if (CF_ENABLED) {
+      // Cloudflare tells us authoritatively when the hostname + cert are live.
+      let cfId = d.custom_domain_cf_id
+      if (!cfId) { cfId = await cfCreateHostname(dom); if (cfId) await supabaseAdmin.from('dealerships').update({ custom_domain_cf_id: cfId }).eq('id', req.dealershipId) }
+      ok = await cfHostnameActive(cfId)
+    } else {
+      const bare = dom.replace(/^www\./, '')
+      for (const n of [dom, bare, 'www.' + bare]) {
+        try { const c = await dns.resolveCname(n); if (c.some(x => x.toLowerCase().includes(SITE_HOST))) { ok = true; break } } catch {}
+      }
+      if (!ok) {
+        try {
+          const [ourA, theirA] = await Promise.all([dns.resolve4(SITE_HOST).catch(() => []), dns.resolve4(dom).catch(() => [])])
+          if (theirA.length && theirA.some(ip => ourA.includes(ip))) ok = true
+        } catch {}
+      }
     }
     await supabaseAdmin.from('dealerships').update({ custom_domain_verified: ok }).eq('id', req.dealershipId)
-    res.json({ verified: ok, domain: dom, target: SITE_HOST, message: ok ? 'Connected! Your domain points to MarketSync.' : 'Not detected yet — DNS changes can take up to an hour. Add the record shown, then check again.' })
+    res.json({ verified: ok, domain: dom, target: SITE_HOST, message: ok ? 'Connected! Your domain is live with a secure certificate.' : 'Not live yet — DNS/SSL can take a few minutes to an hour after you add the record. Try again shortly.' })
   })
 }
