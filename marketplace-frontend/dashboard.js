@@ -1895,9 +1895,18 @@ async function loadLeadsPage() {
     </tr>`).join('') || '<tr><td colspan="5" class="py-8 text-center text-sm text-slate-400 italic">No leads yet.</td></tr>';
 
   root.innerHTML = `
-    <div class="mb-5">
-      <h2 class="text-xl font-bold text-slate-900 dark:text-white">Leads</h2>
-      <p class="text-sm text-slate-500 dark:text-slate-400 mt-1">Log buyer leads — they're delivered to your CRM automatically as an ADF email.</p>
+    <div class="mb-5 flex items-start justify-between gap-3 flex-wrap">
+      <div>
+        <h2 class="text-xl font-bold text-slate-900 dark:text-white">Leads</h2>
+        <p class="text-sm text-slate-500 dark:text-slate-400 mt-1">Log buyer leads — they're delivered to your CRM automatically as an ADF email.</p>
+      </div>
+      <div class="flex items-center gap-2">
+        <button onclick="leadsExportCsv(this)" class="inline-flex items-center gap-1.5 text-xs font-bold border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 px-3 py-2 rounded-lg">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Export CSV</button>
+        ${data.can_configure ? `<button onclick="document.getElementById('leads-import-file').click()" class="inline-flex items-center gap-1.5 text-xs font-bold border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 px-3 py-2 rounded-lg">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>Import CSV</button>
+        <input id="leads-import-file" type="file" accept=".csv,text/csv" class="hidden" onchange="leadsImportCsv(this.files[0])">` : ''}
+      </div>
     </div>
 
     ${!crmSet ? `<div class="bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-lg px-4 py-3 text-sm text-amber-700 dark:text-amber-300">No CRM/DMS connection set yet — leads are still saved here, and will send once ${data.can_configure ? 'you add it in <b>Settings → CRM / DMS connection</b>' : 'your admin adds it in Settings'}.</div>` : ''}
@@ -4389,6 +4398,34 @@ async function invImportCsv(file) {
   finally { if (input) input.value = ''; }
 }
 window.invExportCsv = invExportCsv; window.invImportCsv = invImportCsv;
+
+// Leads CSV import/export (#19).
+async function leadsExportCsv(btn) {
+  const orig = btn.innerHTML; btn.disabled = true;
+  try {
+    const r = await fetch(`${API}/leads/export.csv`, { headers: { 'Authorization': `Bearer ${token}` } });
+    if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || 'Export failed');
+    const blob = await r.blob(); const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url; a.download = `leads-${new Date().toISOString().slice(0, 10)}.csv`; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+    showToast('Leads exported', 'success');
+  } catch (e) { showToast(e.message, 'error'); }
+  finally { btn.disabled = false; btn.innerHTML = orig; }
+}
+async function leadsImportCsv(file) {
+  if (!file) return;
+  const input = document.getElementById('leads-import-file');
+  let text; try { text = await file.text(); } catch { showToast('Could not read that file', 'error'); return; }
+  showToast('Importing…', 'info');
+  try {
+    const d = await apiSendJson('/leads/import', 'POST', { csv: text });
+    const parts = [`${d.created} added`]; if (d.skipped) parts.push(`${d.skipped} skipped`);
+    showToast('Imported — ' + parts.join(', '), 'success');
+    if (d.errors && d.errors.length) console.warn('Lead import row errors:', d.errors);
+    loadLeadsPage?.();
+  } catch (e) { showToast(e.message, 'error'); }
+  finally { if (input) input.value = ''; }
+}
+window.leadsExportCsv = leadsExportCsv; window.leadsImportCsv = leadsImportCsv;
 
 // Upload/replace the dealership's branded photo background (used by the AI swap).
 function openPhotoBackgroundUploader() {

@@ -5,6 +5,39 @@ import { routeAndNotifyLead } from '../lead-routing.js'
 
 const xmlEsc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;' }[c]))
 
+// ── CSV import/export (#19) — dependency-free, RFC-4180-ish ──────────────────
+const LEAD_CSV_COLS = ['name', 'email', 'phone', 'source', 'status', 'comments', 'vehicle', 'rep', 'created_at']
+function csvCell(v) {
+  const s = v == null ? '' : String(v)
+  return /[",\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s
+}
+function toCsv(rows) {
+  const head = LEAD_CSV_COLS.join(',')
+  const body = rows.map(r => LEAD_CSV_COLS.map(c => csvCell(r[c])).join(',')).join('\n')
+  return head + '\n' + body + '\n'
+}
+function parseCsv(text) {
+  const rows = []
+  let row = [], cell = '', i = 0, q = false
+  const s = String(text).replace(/^﻿/, '')   // strip BOM
+  while (i < s.length) {
+    const ch = s[i]
+    if (q) {
+      if (ch === '"') { if (s[i + 1] === '"') { cell += '"'; i += 2; continue } q = false; i++; continue }
+      cell += ch; i++; continue
+    }
+    if (ch === '"') { q = true; i++; continue }
+    if (ch === ',') { row.push(cell); cell = ''; i++; continue }
+    if (ch === '\n' || ch === '\r') {
+      if (ch === '\r' && s[i + 1] === '\n') i++
+      row.push(cell); rows.push(row); row = []; cell = ''; i++; continue
+    }
+    cell += ch; i++
+  }
+  if (cell !== '' || row.length) { row.push(cell); rows.push(row) }
+  return rows.filter(r => r.length && r.some(c => String(c).trim() !== ''))
+}
+
 // Build a standard ADF (Auto-lead Data Format) XML document that any dealer CRM
 // can ingest. https://www.adfxml.info/
 function buildAdf(lead, vehicle, dealerName, rep) {
@@ -83,6 +116,80 @@ export function registerLeads(app) {
     const { data: dealer } = await supabaseAdmin
       .from('dealerships').select('crm_adf_email').eq('id', req.dealershipId).maybeSingle()
     res.json({ leads, crm_adf_email: dealer?.crm_adf_email || null, can_configure: dealerLevel })
+  })
+
+  // Export leads as CSV. Reps get their own; dealer-level gets the whole team.
+  app.get('/leads/export.csv', requireAuth, async (req, res) => {
+    if (!req.dealershipId) return res.status(400).json({ error: 'No dealership' })
+    const dealerLevel = ['DEALER_ADMIN', 'OWNER', 'MANAGER'].includes(req.profile.role)
+    let q = supabaseAdmin.from('leads')
+      .select('name, email, phone, source, status, comments, inventory_id, created_by, created_at')
+      .eq('dealership_id', req.dealershipId).order('created_at', { ascending: false }).limit(5000)
+    if (!dealerLevel) q = q.eq('created_by', req.user.id)
+    const { data, error } = await q
+    if (error) return res.status(500).json({ error: error.message })
+    // Resolve vehicle labels + rep names in bulk.
+    const invIds = [...new Set((data || []).map(l => l.inventory_id).filter(Boolean))]
+    const repIds = [...new Set((data || []).map(l => l.created_by).filter(Boolean))]
+    let veh = {}, reps = {}
+    if (invIds.length) {
+      const { data: iv } = await supabaseAdmin.from('inventory').select('id, year, make, model, trim').in('id', invIds)
+      veh = Object.fromEntries((iv || []).map(v => [v.id, [v.year, v.make, v.model, v.trim].filter(Boolean).join(' ')]))
+    }
+    if (repIds.length) {
+      const { data: rp } = await supabaseAdmin.from('profiles').select('id, full_name, display_name').in('id', repIds)
+      reps = Object.fromEntries((rp || []).map(r => [r.id, r.full_name || r.display_name || '']))
+    }
+    const rows = (data || []).map(l => ({
+      name: l.name, email: l.email, phone: l.phone, source: l.source, status: l.status,
+      comments: l.comments, vehicle: veh[l.inventory_id] || '', rep: reps[l.created_by] || '',
+      created_at: l.created_at,
+    }))
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8')
+    res.setHeader('Content-Disposition', `attachment; filename="leads-${new Date().toISOString().slice(0, 10)}.csv"`)
+    res.send(toCsv(rows))
+  })
+
+  // Import leads from CSV (manager only). Matches header names to fields; each row
+  // becomes a lead + CRM contact (deduped) and is routed/notified like a normal lead.
+  app.post('/leads/import', requireAuth, async (req, res) => {
+    if (!req.dealershipId) return res.status(400).json({ error: 'No dealership' })
+    if (!['DEALER_ADMIN', 'OWNER', 'MANAGER'].includes(req.profile.role)) return res.status(403).json({ error: 'Manager access required' })
+    const csv = String(req.body?.csv || '')
+    if (!csv.trim()) return res.status(400).json({ error: 'Empty file' })
+    const rows = parseCsv(csv)
+    if (rows.length < 2) return res.status(400).json({ error: 'No data rows found' })
+    const header = rows[0].map(h => String(h).trim().toLowerCase().replace(/\s+/g, '_'))
+    const idx = (name) => header.indexOf(name)
+    const iName = idx('name'), iEmail = idx('email'), iPhone = idx('phone'), iSource = idx('source'), iComments = idx('comments'), iStatus = idx('status')
+    if (iName < 0 && iEmail < 0 && iPhone < 0) return res.status(400).json({ error: 'CSV needs at least a name, email, or phone column' })
+    let created = 0, skipped = 0
+    const errors = []
+    for (let r = 1; r < rows.length; r++) {
+      const cells = rows[r]
+      const get = (i) => (i >= 0 && i < cells.length ? String(cells[i]).trim() : '')
+      const name = get(iName).slice(0, 120), email = get(iEmail).slice(0, 160), phone = get(iPhone).slice(0, 40)
+      if (!name && !email && !phone) { skipped++; continue }
+      try {
+        const { data: lead, error } = await supabaseAdmin.from('leads').insert({
+          dealership_id: req.dealershipId, created_by: req.user.id,
+          name: name || null, email: email || null, phone: phone || null,
+          comments: get(iComments).slice(0, 2000) || null,
+          source: get(iSource).slice(0, 80) || 'Import',
+          status: get(iStatus).slice(0, 40) || null,
+        }).select('id').single()
+        if (error) { errors.push(`Row ${r + 1}: ${error.message}`); continue }
+        const contactId = await findOrCreateContact({
+          dealershipId: req.dealershipId, name, email, phone, repId: req.user.id, source: get(iSource) || 'Import',
+        })
+        if (contactId && lead?.id) {
+          await supabaseAdmin.from('leads').update({ contact_id: contactId }).eq('id', lead.id)
+          routeAndNotifyLead(req.dealershipId, { contactId, vehicleId: null, name, source: get(iSource) || 'Import' })
+        }
+        created++
+      } catch (e) { errors.push(`Row ${r + 1}: ${e.message}`) }
+    }
+    res.json({ ok: true, created, skipped, errors: errors.slice(0, 20) })
   })
 
   // Capture a lead and (if a CRM address is set) deliver it as ADF XML by email.
