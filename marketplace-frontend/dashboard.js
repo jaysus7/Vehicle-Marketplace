@@ -645,6 +645,7 @@ function initAppraisal() {
       condition: $('appr-condition').value,
       recon: num('appr-recon'),
       target_gross: num('appr-gross'),
+      book_value: num('appr-book'),
       accident: $('appr-accident')?.value || 'none',
       damage: num('appr-damage'),
       // Like-for-like comp filters. Fall back to the decoded specs when the field
@@ -828,6 +829,8 @@ function renderAppraisal(d) {
             <div class="flex items-center gap-2 mt-1 flex-wrap">
               <div class="text-3xl font-black">${money(ap.suggested_offer)} <span class="text-base font-semibold text-indigo-200">${cur}</span></div>
               ${hasTradeSpread ? `<span class="text-[11px] font-bold bg-white/15 rounded-full px-2 py-0.5">Wholesale ${money(ap.trade_value)}</span>` : ''}
+              ${ap.book_value ? `<span class="text-[11px] font-bold bg-white/15 rounded-full px-2 py-0.5">Book ${money(ap.book_value)}</span>` : ''}
+              ${ap.book_capped ? `<span class="text-[11px] font-bold bg-amber-400/90 text-amber-950 rounded-full px-2 py-0.5">Capped to book</span>` : ''}
             </div>
           </div>
           <button onclick="generateAppraisalPdf()" class="flex-shrink-0 flex items-center gap-1.5 bg-white/15 hover:bg-white/25 text-white text-xs font-bold px-3 py-2 rounded-lg transition">

@@ -892,6 +892,10 @@ Facts (ignore any blank/unknown fields): ${JSON.stringify(facts)}`
     const recon = Math.max(0, Number(b.recon) || 0)
     // Target gross is now a DOLLAR figure (default $2,500), same units as recon.
     const targetGross = Math.max(0, b.target_gross != null && b.target_gross !== '' ? Number(b.target_gross) : 2500)
+    // Optional Black Book / guide value the rep enters — the dealer's ground truth.
+    // When present it caps the suggested offer so the tool never recommends paying
+    // over book (MarketCheck asks run high, especially on thin CA sold coverage).
+    const bookValue = (b.book_value != null && b.book_value !== '') ? Math.max(0, Number(b.book_value) || 0) : null
 
     // Accident / history — a reported accident permanently lowers what a car retails
     // AND wholesales for (buyers discount it, and it re-lists with the same disclosure).
@@ -1056,7 +1060,10 @@ Facts (ignore any blank/unknown fields): ${JSON.stringify(facts)}`
       return Number.isFinite(env) && env > 0 ? Math.min(1, env) : 1.0
     })()
     const tradeValue = Math.round(retailMid * tradeRatio)          // pre-cost retail (=retail when ratio 1.0)
-    const suggestedOffer = Math.max(0, tradeValue - recon - targetGross)
+    let suggestedOffer = Math.max(0, tradeValue - recon - targetGross)
+    // Book-value anchor: never suggest paying more than the dealer's guide book.
+    let bookCapped = false
+    if (bookValue != null && bookValue > 0 && suggestedOffer > bookValue) { suggestedOffer = Math.round(bookValue); bookCapped = true }
     // Effective gross = the full spread between retail and what we pay.
     const grossPct = retailMid > 0 ? Math.round(((retailMid - suggestedOffer) / retailMid) * 1000) / 10 : null
     // Offer as a % of retail market value (vAuto-style "% to market").
@@ -1115,6 +1122,7 @@ ACV / wholesale take-in (what the dealer buys it for): ${cur} $${suggestedOffer.
       accident_tier: accidentTier !== 'none' ? accidentTier : null,
       accident_amount: historyCut || null,
       retail_clean: retailClean,
+      book_value: bookValue, book_capped: bookCapped,
     }
     let appraisal_id = null
     try {
@@ -1176,6 +1184,8 @@ ACV / wholesale take-in (what the dealer buys it for): ${cur} $${suggestedOffer.
         target_gross: targetGross,
         gross_pct: grossPct,
         pct_to_market: pctToMarket,
+        book_value: bookValue,                 // dealer's guide book, if entered
+        book_capped: bookCapped,               // offer was capped down to book
         ai_summary,
         // Transparent value bridge: comp asking median → adjusted retail → trade → offer.
         adjustments: {
