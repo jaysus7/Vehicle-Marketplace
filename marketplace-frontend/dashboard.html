@@ -528,9 +528,9 @@
                 <svg class="w-4 h-4 flex-shrink-0 opacity-70" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
                 <span>Facebook</span>
               </button>
-              <button type="button" onclick="toggleNavGroup('fb')" aria-label="Toggle Facebook" class="px-2 py-2 rounded text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"><svg id="chev-fb" class="w-3.5 h-3.5 transition-transform" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg></button>
+              <button type="button" onclick="toggleNavGroup('fb')" aria-label="Toggle Facebook" class="px-2 py-2 rounded text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"><svg id="chev-fb" class="w-3.5 h-3.5 transition-transform -rotate-90" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg></button>
             </div>
-            <div id="grp-fb" class="nav-group-body space-y-0.5 mt-0.5">
+            <div id="grp-fb" class="nav-group-body space-y-0.5 mt-0.5 hidden">
               <button type="button" data-page="inventory" title="Marketplace Posting" class="nav-item nav-sub w-full flex items-center gap-2 pl-9 pr-3 py-1.5 rounded text-[13px] font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition"><span class="w-1.5 h-1.5 rounded-full bg-slate-300 dark:bg-slate-600 flex-shrink-0"></span>Marketplace Posting</button>
               <button type="button" data-page="inventory" title="Inventory Sync" class="nav-item nav-sub w-full flex items-center gap-2 pl-9 pr-3 py-1.5 rounded text-[13px] font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition"><span class="w-1.5 h-1.5 rounded-full bg-slate-300 dark:bg-slate-600 flex-shrink-0"></span>Inventory Sync</button>
               <button type="button" data-page="leaderboard" title="Leaderboard" class="nav-item nav-sub w-full flex items-center gap-2 pl-9 pr-3 py-1.5 rounded text-[13px] font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition"><span class="w-1.5 h-1.5 rounded-full bg-slate-300 dark:bg-slate-600 flex-shrink-0"></span>Leaderboard</button>
@@ -545,9 +545,9 @@
                 <span>CRM</span>
                 <span class="nav-paid hidden text-[9px] font-black uppercase tracking-wider bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300 px-1.5 py-0.5 rounded-full" data-ent="base">Paid</span>
               </button>
-              <button type="button" onclick="toggleNavGroup('crm')" aria-label="Toggle CRM" class="px-2 py-2 rounded text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"><svg id="chev-crm" class="w-3.5 h-3.5 transition-transform" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg></button>
+              <button type="button" onclick="toggleNavGroup('crm')" aria-label="Toggle CRM" class="px-2 py-2 rounded text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"><svg id="chev-crm" class="w-3.5 h-3.5 transition-transform -rotate-90" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg></button>
             </div>
-            <div id="grp-crm" class="nav-group-body space-y-0.5 mt-0.5">
+            <div id="grp-crm" class="nav-group-body space-y-0.5 mt-0.5 hidden">
               <button type="button" data-page="crm" data-tab="contacts" title="Add / Search Customers" class="nav-item nav-sub w-full flex items-center gap-2 pl-9 pr-3 py-1.5 rounded text-[13px] font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition"><span class="w-1.5 h-1.5 rounded-full bg-slate-300 dark:bg-slate-600 flex-shrink-0"></span>Add / Search Customers</button>
               <button type="button" data-page="crm" data-tab="leads" title="New Leads" class="nav-item nav-sub w-full flex items-center gap-2 pl-9 pr-3 py-1.5 rounded text-[13px] font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition"><span class="w-1.5 h-1.5 rounded-full bg-slate-300 dark:bg-slate-600 flex-shrink-0"></span>New Leads</button>
               <button type="button" data-page="crm" data-tab="appointments" title="Appointments" class="nav-item nav-sub w-full flex items-center gap-2 pl-9 pr-3 py-1.5 rounded text-[13px] font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition"><span class="w-1.5 h-1.5 rounded-full bg-slate-300 dark:bg-slate-600 flex-shrink-0"></span>Appointments</button>
@@ -572,9 +572,9 @@
                   <span class="text-[9px] font-black uppercase tracking-wider bg-slate-200 dark:bg-slate-700 text-slate-500 dark:text-slate-400 px-1.5 py-0.5 rounded-full leading-none">Paid</span>
                 </span>
               </button>
-              <button type="button" onclick="toggleNavGroup('ii')" aria-label="Toggle Inventory Intelligence" class="px-2 py-2 rounded text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"><svg id="chev-ii" class="w-3.5 h-3.5 transition-transform" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg></button>
+              <button type="button" onclick="toggleNavGroup('ii')" aria-label="Toggle Inventory Intelligence" class="px-2 py-2 rounded text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"><svg id="chev-ii" class="w-3.5 h-3.5 transition-transform -rotate-90" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg></button>
             </div>
-            <div id="grp-ii" class="nav-group-body space-y-0.5 mt-0.5">
+            <div id="grp-ii" class="nav-group-body space-y-0.5 mt-0.5 hidden">
               <button type="button" data-page="inv-intel" title="Pricing &amp; Acquisition" class="nav-item nav-sub w-full flex items-center gap-2 pl-9 pr-3 py-1.5 rounded text-[13px] font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition"><span class="w-1.5 h-1.5 rounded-full bg-slate-300 dark:bg-slate-600 flex-shrink-0"></span>Pricing &amp; Acquisition</button>
               <button type="button" data-page="inv-intel" title="Market &amp; Competitors" class="nav-item nav-sub w-full flex items-center gap-2 pl-9 pr-3 py-1.5 rounded text-[13px] font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition"><span class="w-1.5 h-1.5 rounded-full bg-slate-300 dark:bg-slate-600 flex-shrink-0"></span>Market &amp; Competitors</button>
               <button type="button" data-page="inventory" title="Inventory List + Feed" class="nav-item nav-sub w-full flex items-center gap-2 pl-9 pr-3 py-1.5 rounded text-[13px] font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition"><span class="w-1.5 h-1.5 rounded-full bg-slate-300 dark:bg-slate-600 flex-shrink-0"></span>Inventory List + Feed</button>
@@ -602,9 +602,9 @@
                 <span>Website</span>
                 <span class="nav-paid hidden text-[9px] font-black uppercase tracking-wider bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300 px-1.5 py-0.5 rounded-full" data-ent="base">Paid</span>
               </button>
-              <button type="button" onclick="toggleNavGroup('web')" aria-label="Toggle Website" class="px-2 py-2 rounded text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"><svg id="chev-web" class="w-3.5 h-3.5 transition-transform" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg></button>
+              <button type="button" onclick="toggleNavGroup('web')" aria-label="Toggle Website" class="px-2 py-2 rounded text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"><svg id="chev-web" class="w-3.5 h-3.5 transition-transform -rotate-90" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg></button>
             </div>
-            <div id="grp-web" class="nav-group-body space-y-0.5 mt-0.5">
+            <div id="grp-web" class="nav-group-body space-y-0.5 mt-0.5 hidden">
               <button type="button" data-page="website" title="Builder" class="nav-item nav-sub w-full flex items-center gap-2 pl-9 pr-3 py-1.5 rounded text-[13px] font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition"><span class="w-1.5 h-1.5 rounded-full bg-slate-300 dark:bg-slate-600 flex-shrink-0"></span>Builder</button>
               <button type="button" data-page="website" data-section="settings" title="Website Settings" class="nav-item nav-sub w-full flex items-center gap-2 pl-9 pr-3 py-1.5 rounded text-[13px] font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition"><span class="w-1.5 h-1.5 rounded-full bg-slate-300 dark:bg-slate-600 flex-shrink-0"></span>Settings</button>
             </div>
@@ -631,9 +631,9 @@
                 <svg class="w-4 h-4 flex-shrink-0 opacity-70" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path stroke-linecap="round" stroke-linejoin="round" d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
                 <span>Settings</span>
               </button>
-              <button type="button" onclick="toggleNavGroup('set')" aria-label="Toggle Settings" class="px-2 py-2 rounded text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"><svg id="chev-set" class="w-3.5 h-3.5 transition-transform" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg></button>
+              <button type="button" onclick="toggleNavGroup('set')" aria-label="Toggle Settings" class="px-2 py-2 rounded text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"><svg id="chev-set" class="w-3.5 h-3.5 transition-transform -rotate-90" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg></button>
             </div>
-            <div id="grp-set" class="nav-group-body space-y-0.5 mt-0.5">
+            <div id="grp-set" class="nav-group-body space-y-0.5 mt-0.5 hidden">
               <button type="button" data-page="profile" data-tab="team" data-admin-nav title="Team" class="nav-item nav-sub w-full flex items-center gap-2 pl-9 pr-3 py-1.5 rounded text-[13px] font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition"><span class="w-1.5 h-1.5 rounded-full bg-slate-300 dark:bg-slate-600 flex-shrink-0"></span>Team</button>
               <button type="button" data-page="profile" data-tab="account" title="Account" class="nav-item nav-sub w-full flex items-center gap-2 pl-9 pr-3 py-1.5 rounded text-[13px] font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition"><span class="w-1.5 h-1.5 rounded-full bg-slate-300 dark:bg-slate-600 flex-shrink-0"></span>Account</button>
               <button type="button" data-page="profile" data-tab="branding" data-admin-nav title="Branding" class="nav-item nav-sub w-full flex items-center gap-2 pl-9 pr-3 py-1.5 rounded text-[13px] font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition"><span class="w-1.5 h-1.5 rounded-full bg-slate-300 dark:bg-slate-600 flex-shrink-0"></span>Branding</button>
@@ -2608,7 +2608,7 @@
     </div>
   </div>
 
-  <script src="dashboard.js?v=20260714f"></script>
+  <script src="dashboard.js?v=20260714g"></script>
   <!-- Google Translate widget (per-rep dashboard translation) -->
   <script>
     window.googleTranslateElementInit = function () {

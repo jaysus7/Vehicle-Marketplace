@@ -554,14 +554,15 @@ function switchPage(pageId) {
     if (active) btn.setAttribute('aria-current', 'page'); else btn.removeAttribute('aria-current');
   });
 
-  // Keep the active leaf visible: expand its collapsible group if collapsed.
-  const activeLeaf = document.querySelector('#nav-desktop .nav-item[aria-current="page"]');
-  const body = activeLeaf?.closest('.nav-group-body');
-  if (body?.classList.contains('hidden')) {
-    body.classList.remove('hidden');
-    const g = body.id.replace('grp-', '');
-    document.getElementById('chev-' + g)?.classList.remove('-rotate-90');
-  }
+  // Groups load collapsed; expand any group that contains the active page so
+  // the current item is visible (a page can live in more than one group).
+  document.querySelectorAll('#nav-desktop .nav-item[aria-current="page"]').forEach(leaf => {
+    const body = leaf.closest('.nav-group-body');
+    if (body?.classList.contains('hidden')) {
+      body.classList.remove('hidden');
+      document.getElementById('chev-' + body.id.replace('grp-', ''))?.classList.remove('-rotate-90');
+    }
+  });
 
   // Fire any one-time lazy loaders registered for this page (feeds, catalog,
   // leaderboard, guardrail settings, inventory-intelligence tags).
