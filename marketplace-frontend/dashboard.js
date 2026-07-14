@@ -433,6 +433,21 @@ async function initializeDashboardEcosystem() {
       document.querySelectorAll('[data-team-nav]').forEach(el => el.classList.add('hidden'));
     }
 
+    // Solo / personal reps get ONLY Facebook posting & CRM. `canManageFeeds`
+    // treats them like admins for feeds, so the dealer-grade features (Inv
+    // Intelligence, Website, Equity, Automation, Reports, Desking, Appraisals)
+    // and the dealer Settings tabs would otherwise show. Hide them explicitly.
+    if (isSolo) {
+      document.querySelectorAll('.nav-group[data-group="ii"], .nav-group[data-group="web"], [data-page="equity"], [data-page="automation"], #nav-reports, #nav-reports-m, #nav-desk, #nav-appraisal')
+        .forEach(el => el.classList.add('hidden'));
+      // Dealer-only Settings tabs + their section cards.
+      ['team', 'branding', 'aiboost', 'group', 'dealermgmt'].forEach(t =>
+        document.querySelector(`#settings-tabs [data-stab="${t}"]`)?.classList.add('hidden'));
+      ['settings-team', 'prof-branding-section', 'ai-boost-section', 'inv-intel-section', 'groups-settings-section', 'crm-dms-card', 'guardrail-settings-section']
+        .forEach(id => document.getElementById(id)?.classList.add('hidden'));
+      __settingsTab = 'account';
+    }
+
     // All role-based hide rules above have run. Reveal the page now (the head CSS
     // kept role-gated items hidden until this point, so nothing dealer-only ever
     // flashed for a solo rep). This happens synchronously after the hides, so the
