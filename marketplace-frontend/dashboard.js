@@ -2927,9 +2927,11 @@ function rbRenderTable() {
   const cols = rbActiveCols();
   if (!rows.length) { rr.innerHTML = '<div class="text-sm text-slate-400 italic px-4 py-6">No sold deals in this range.</div>'; return; }
   const head = `<th class="py-2 px-3 text-right sticky left-0 bg-slate-50 dark:bg-slate-950">#</th>` +
+    `<th class="py-2 px-3"></th>` +
     cols.map(c => `<th class="py-2 px-3 whitespace-nowrap ${c.blank ? 'text-slate-400' : ''}">${esc(c.label)}</th>`).join('');
   const body = rows.map((r, i) => `<tr class="border-b border-slate-100 dark:border-slate-800/60">
       <td class="py-2 px-3 text-right tabular-nums text-slate-400 sticky left-0 bg-white dark:bg-slate-900">${i + 1}</td>
+      <td class="py-2 px-3"><button onclick="rbOpenDeal('${r.contact_id}')" title="${r.has_deal ? 'Edit deal desk fields' : 'Add deal desk fields'}" class="text-xs font-bold ${r.has_deal ? 'text-emerald-600 dark:text-emerald-400' : 'text-indigo-600 dark:text-indigo-400'} hover:underline whitespace-nowrap">${r.has_deal ? '✎ Deal' : '+ Deal'}</button></td>
       ${cols.map(c => `<td class="py-2 px-3 whitespace-nowrap ${c.blank ? 'text-slate-300 dark:text-slate-600' : 'text-slate-700 dark:text-slate-200'}">${esc(rbFmt(r[c.key], c.type))}</td>`).join('')}
     </tr>`).join('');
   rr.innerHTML = `
@@ -2956,6 +2958,92 @@ function rbExportCsv() {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 window.loadReportBuilder = loadReportBuilder;
+
+// ── Deal desk-record modal (managers) — fills the F&I columns ────────────────
+async function rbOpenDeal(contactId) {
+  const r = (__rbData?.rows || []).find(x => x.contact_id === contactId);
+  const who = r ? [r.first_name, r.last_name].filter(Boolean).join(' ') || r.email || 'Customer' : 'Customer';
+  const veh = r ? [r.year, r.make, r.model, r.trim].filter(Boolean).join(' ') : '';
+  let deal = {};
+  try { const d = await apiGetJson(`/reports/deal?contact_id=${encodeURIComponent(contactId)}`, { retries: 1 }); deal = d?.deal || {}; } catch {}
+
+  const val = (k) => deal[k] != null ? String(deal[k]) : '';
+  const chk = (k) => deal[k] === true ? 'checked' : '';
+  const sel = (k, opts) => `<select id="dl-${k}" class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm">
+    <option value="">—</option>${opts.map(o => `<option value="${o}" ${val(k) === o ? 'selected' : ''}>${o}</option>`).join('')}</select>`;
+  const txt = (k, type = 'text', ph = '') => `<input id="dl-${k}" type="${type}" value="${esc(val(k))}" placeholder="${ph}" class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm">`;
+  const cbx = (k, label) => `<label class="inline-flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-200 cursor-pointer"><input type="checkbox" id="dl-${k}" ${chk(k)} class="rounded"> ${label}</label>`;
+  const field = (label, html) => `<div><label class="text-[11px] uppercase tracking-wider text-slate-400 font-bold block mb-1">${label}</label>${html}</div>`;
+
+  document.getElementById('rb-deal-modal')?.remove();
+  const m = document.createElement('div');
+  m.id = 'rb-deal-modal';
+  m.className = 'fixed inset-0 z-[80] bg-black/50 flex items-start sm:items-center justify-center p-3 sm:p-6 overflow-y-auto';
+  m.innerHTML = `
+    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-2xl w-full max-w-2xl my-auto">
+      <div class="flex items-start justify-between gap-3 p-5 border-b border-slate-200 dark:border-slate-800">
+        <div>
+          <h3 class="text-lg font-black text-slate-900 dark:text-white">Deal desk record</h3>
+          <p class="text-sm text-slate-500 dark:text-slate-400">${esc(who)}${veh ? ' · ' + esc(veh) : ''}</p>
+        </div>
+        <button onclick="document.getElementById('rb-deal-modal').remove()" class="text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 text-2xl leading-none p-1">&times;</button>
+      </div>
+      <div class="p-5 grid grid-cols-1 sm:grid-cols-2 gap-4">
+        ${field('Delivery date', txt('delivery_date', 'date'))}
+        ${field('Delivery time', txt('delivery_time', 'time'))}
+        ${field('F&amp;I manager', txt('fni_manager', 'text', 'Name'))}
+        ${field('Deposit amount', txt('deposit_amount', 'number', '0'))}
+        ${field('Deal type', sel('deal_type', ['Finance', 'Lease', 'Cash']))}
+        ${field('Term (months)', txt('term', 'number', '60'))}
+        ${field('Plates', sel('plates', ['New', 'Transfer']))}
+        ${field('GM survey %', txt('gm_survey_pct', 'number', '0'))}
+        <div class="sm:col-span-2">${field('F&amp;I products', txt('fni_products', 'text', 'Warranty, GAP, etc.'))}</div>
+        ${field('Split with', txt('split_with', 'text', 'Rep name'))}
+        ${field('Vehicle commission', txt('vehicle_commission', 'number', '0'))}
+        ${field('F&amp;I commission', txt('fni_commission', 'number', '0'))}
+        <div></div>
+        <div class="sm:col-span-2 grid grid-cols-2 gap-3 pt-1">
+          ${cbx('google_review', 'Google review')}
+          ${cbx('gm_survey', 'GM survey done')}
+          ${cbx('fni_gross_1500', '$1,500 F&I gross')}
+          ${cbx('split_deal', 'Split deal')}
+        </div>
+        <div class="sm:col-span-2">${field('Notes', `<textarea id="dl-notes" rows="2" class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm">${esc(val('notes'))}</textarea>`)}</div>
+      </div>
+      <div class="flex items-center justify-end gap-2 p-5 border-t border-slate-200 dark:border-slate-800">
+        <button onclick="document.getElementById('rb-deal-modal').remove()" class="text-sm font-bold text-slate-600 dark:text-slate-300 px-4 py-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800">Cancel</button>
+        <button id="dl-save" onclick="rbSaveDeal('${contactId}')" class="bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-bold px-5 py-2 rounded-lg transition">Save deal</button>
+      </div>
+    </div>`;
+  document.body.appendChild(m);
+  m.addEventListener('click', e => { if (e.target === m) m.remove(); });
+}
+
+async function rbSaveDeal(contactId) {
+  const g = (k) => document.getElementById('dl-' + k);
+  const payload = { contact_id: contactId };
+  ['delivery_date', 'delivery_time', 'fni_manager', 'deposit_amount', 'deal_type', 'term', 'plates', 'fni_products', 'gm_survey_pct', 'split_with', 'vehicle_commission', 'fni_commission', 'notes']
+    .forEach(k => { const el = g(k); if (el) payload[k] = el.value; });
+  ['google_review', 'gm_survey', 'fni_gross_1500', 'split_deal'].forEach(k => { const el = g(k); if (el) payload[k] = el.checked; });
+  const btn = document.getElementById('dl-save');
+  if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
+  try {
+    const res = await fetch(`${API}/reports/deal`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Save failed');
+    document.getElementById('rb-deal-modal')?.remove();
+    showToast('Deal saved', 'success');
+    await rbFetch();
+  } catch (e) {
+    if (btn) { btn.disabled = false; btn.textContent = 'Save deal'; }
+    showToast(e.message || 'Could not save the deal', 'error');
+  }
+}
+window.rbOpenDeal = rbOpenDeal;
+window.rbSaveDeal = rbSaveDeal;
 
 // Reports page — stacks the three manager reports + the sold-per-rep report and
 // the custom report builder. Called from switchPage('reports').

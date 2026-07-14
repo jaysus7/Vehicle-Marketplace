@@ -1107,12 +1107,17 @@ export function registerRoutes(app) {
       veh = Object.fromEntries((iv || []).map(v => [v.id, v]))
     }
     const contactIds = (contacts || []).map(c => c.id)
-    let own = {}
+    let own = {}, deals = {}
     if (contactIds.length) {
       const { data: ot } = await supabaseAdmin.from('customer_ownership_tracking')
         .select('customer_id, delivery_date, owns_vehicle, vehicle_status').in('customer_id', contactIds)
       own = Object.fromEntries((ot || []).map(o => [o.customer_id, o]))
+      const { data: dl } = await supabaseAdmin.from('deals')
+        .select('*').eq('dealership_id', did).in('contact_id', contactIds)
+      deals = Object.fromEntries((dl || []).map(d => [d.contact_id, d]))
     }
+    const money = (n) => (n == null || n === '') ? null : Number(n).toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 })
+    const yn = (b) => b === true ? 'Yes' : b === false ? 'No' : null
 
     const STATUS_LABEL = { sold: 'Sold', fni: 'F&I', delivered: 'Delivered' }
     const rows = (contacts || [])
@@ -1120,10 +1125,13 @@ export function registerRoutes(app) {
       .map(c => {
         const v = veh[c.interest_inventory_id] || {}
         const o = own[c.id] || {}
-        const delivered = o.delivery_date || (c.status === 'delivered' ? c.sold_at : null)
+        const dl = deals[c.id] || {}
+        const delivered = dl.delivery_date || o.delivery_date || (c.status === 'delivered' ? c.sold_at : null)
         const noLongerOwns = o.owns_vehicle === false || ['traded_in', 'sold_private', 'totaled'].includes(o.vehicle_status)
         const cond = (v.condition || '').toLowerCase()
         return {
+          contact_id: c.id,
+          has_deal: !!deals[c.id],
           sold_date: c.sold_at || null,
           source: c.sold_source || c.source || null,
           first_name: c.first_name || null,
@@ -1138,23 +1146,74 @@ export function registerRoutes(app) {
           birthday: c.birthday || null,
           status: STATUS_LABEL[c.status] || c.status,
           delivery_date: delivered || null,
-          delivery_time: null,
-          fni_manager: null,
-          deposit_amount: null,
+          delivery_time: dl.delivery_time || null,
+          fni_manager: dl.fni_manager || null,
+          deposit_amount: money(dl.deposit_amount),
           type_of_vehicle: cond === 'new' ? 'New' : cond === 'demo' ? 'Demo' : cond === 'certified' ? 'Certified' : cond ? 'Used' : (v.body_style || null),
           stock_number: v.stocknumber || null,
           vin: v.vin || null,
           year: v.year || null, make: v.make || null, model: v.model || null, trim: v.trim || null,
           drivetrain: v.drivetrain || null,
-          deal_type: null, term: null, plates: null, fni_products: null,
+          deal_type: dl.deal_type || null,
+          term: dl.term != null ? String(dl.term) : null,
+          plates: dl.plates || null,
+          fni_products: dl.fni_products || null,
           trade_type: c.trade_vehicle ? 'Trade' : null,
-          google_review: null, gm_survey: null, gm_survey_pct: null, fni_gross_1500: null,
-          split_deal: null, split_with: null, vehicle_commission: null, fni_commission: null,
+          google_review: yn(dl.google_review),
+          gm_survey: yn(dl.gm_survey),
+          gm_survey_pct: dl.gm_survey_pct != null ? dl.gm_survey_pct + '%' : null,
+          fni_gross_1500: yn(dl.fni_gross_1500),
+          split_deal: yn(dl.split_deal),
+          split_with: dl.split_with || null,
+          vehicle_commission: money(dl.vehicle_commission),
+          fni_commission: money(dl.fni_commission),
           unsubscribed: (c.opt_out || c.consent_email === false || c.consent_sms === false) ? 'Yes' : 'No',
           no_longer_owns: noLongerOwns ? 'Yes' : 'No',
           salesperson: repName(c.assigned_rep) || null,
         }
       })
     res.json({ ok: true, rows, reps, count: rows.length })
+  })
+
+  // Desk / F&I record for a sold deal — managers enter the fields MarketSync
+  // doesn't otherwise capture. Keyed one-per-contact; upserted on contact_id.
+  const DEAL_FIELDS = ['inventory_id', 'delivery_date', 'delivery_time', 'fni_manager', 'deposit_amount', 'deal_type', 'term', 'plates', 'fni_products', 'google_review', 'gm_survey', 'gm_survey_pct', 'fni_gross_1500', 'split_deal', 'split_with', 'vehicle_commission', 'fni_commission', 'notes']
+
+  app.get('/reports/deal', requireAuth, async (req, res) => {
+    if (!req.dealershipId) return res.status(400).json({ error: 'No dealership' })
+    if (!['DEALER_ADMIN', 'OWNER', 'MANAGER'].includes(req.profile?.role)) return res.status(403).json({ error: 'Manager access required' })
+    const contactId = String(req.query.contact_id || '')
+    if (!contactId) return res.status(400).json({ error: 'contact_id required' })
+    const { data } = await supabaseAdmin.from('deals')
+      .select('*').eq('dealership_id', req.dealershipId).eq('contact_id', contactId).maybeSingle()
+    res.json({ ok: true, deal: data || null })
+  })
+
+  app.post('/reports/deal', requireAuth, async (req, res) => {
+    if (!req.dealershipId) return res.status(400).json({ error: 'No dealership' })
+    if (!['DEALER_ADMIN', 'OWNER', 'MANAGER'].includes(req.profile?.role)) return res.status(403).json({ error: 'Manager access required' })
+    const contactId = String(req.body?.contact_id || '')
+    if (!contactId) return res.status(400).json({ error: 'contact_id required' })
+    // Confirm the contact belongs to this dealership before writing.
+    const { data: ct } = await supabaseAdmin.from('contacts').select('id').eq('id', contactId).eq('dealership_id', req.dealershipId).maybeSingle()
+    if (!ct) return res.status(404).json({ error: 'Contact not found' })
+
+    const num = (v) => { if (v == null || v === '') return null; const n = Number(v); return Number.isFinite(n) ? n : null }
+    const bool = (v) => v === true || v === 'true' || v === 'on' || v === 1 || v === '1'
+    const str = (v) => { const s = (v == null ? '' : String(v)).trim(); return s || null }
+    const row = { dealership_id: req.dealershipId, contact_id: contactId, created_by: req.user?.id || null, updated_at: new Date().toISOString() }
+    for (const f of DEAL_FIELDS) {
+      if (!(f in (req.body || {}))) continue
+      const v = req.body[f]
+      if (['deposit_amount', 'gm_survey_pct', 'vehicle_commission', 'fni_commission'].includes(f)) row[f] = num(v)
+      else if (f === 'term') row[f] = num(v)
+      else if (['google_review', 'gm_survey', 'fni_gross_1500', 'split_deal'].includes(f)) row[f] = bool(v)
+      else if (f === 'inventory_id') row[f] = str(v)
+      else row[f] = str(v)
+    }
+    const { data, error } = await supabaseAdmin.from('deals')
+      .upsert(row, { onConflict: 'contact_id' }).select().maybeSingle()
+    if (error) { console.error('deal upsert failed:', error.message); return res.status(500).json({ error: 'Save failed' }) }
+    res.json({ ok: true, deal: data })
   })
 }
