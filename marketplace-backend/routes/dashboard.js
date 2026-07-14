@@ -1267,4 +1267,61 @@ export function registerRoutes(app) {
       })
     res.json({ ok: true, rows, count: rows.length })
   })
+
+  // ── Teams ────────────────────────────────────────────────────────────────
+  // Sales & Management are login users (profiles); Service/Admin/Cleanup/Lot are
+  // label-only staff records. One roster endpoint serves both.
+  const LOGIN_TEAMS = { sales: ['SALES_REP'], management: ['MANAGER', 'DEALER_ADMIN', 'OWNER'] }
+  const LABEL_TEAMS = ['service', 'admin', 'cleanup', 'lot']
+  const isMgr = (req) => ['DEALER_ADMIN', 'OWNER', 'MANAGER'].includes(req.profile?.role)
+
+  app.get('/team/roster', requireAuth, async (req, res) => {
+    if (!req.dealershipId) return res.json({ ok: true, team: 'sales', members: [], login: false })
+    const team = String(req.query.team || 'sales').toLowerCase()
+    if (LOGIN_TEAMS[team]) {
+      const { data } = await supabaseAdmin.from('profiles')
+        .select('id, full_name, display_name, role, avatar_url').eq('dealership_id', req.dealershipId).in('role', LOGIN_TEAMS[team])
+      const members = (data || []).map(p => ({ id: p.id, name: p.full_name || p.display_name || '—', role: p.role, avatar_url: p.avatar_url || null, login: true }))
+        .sort((a, b) => a.name.localeCompare(b.name))
+      return res.json({ ok: true, team, login: true, members })
+    }
+    if (LABEL_TEAMS.includes(team)) {
+      const { data } = await supabaseAdmin.from('staff_members')
+        .select('id, name, phone, email, notes, active').eq('dealership_id', req.dealershipId).eq('team', team).order('name')
+      return res.json({ ok: true, team, login: false, members: (data || []).map(m => ({ ...m, login: false })) })
+    }
+    res.status(400).json({ error: 'Unknown team' })
+  })
+
+  app.post('/team/staff', requireAuth, async (req, res) => {
+    if (!req.dealershipId) return res.status(400).json({ error: 'No dealership' })
+    if (!isMgr(req)) return res.status(403).json({ error: 'Manager access required' })
+    const team = String(req.body?.team || '').toLowerCase()
+    const name = String(req.body?.name || '').trim()
+    if (!LABEL_TEAMS.includes(team)) return res.status(400).json({ error: 'Invalid team' })
+    if (!name) return res.status(400).json({ error: 'Name required' })
+    const row = {
+      dealership_id: req.dealershipId, team, name,
+      phone: String(req.body?.phone || '').trim() || null,
+      email: String(req.body?.email || '').trim() || null,
+      notes: String(req.body?.notes || '').trim() || null,
+      created_by: req.user?.id || null, updated_at: new Date().toISOString(),
+    }
+    if (req.body?.id) {
+      const { data, error } = await supabaseAdmin.from('staff_members').update(row).eq('id', req.body.id).eq('dealership_id', req.dealershipId).select().maybeSingle()
+      if (error) return res.status(500).json({ error: 'Save failed' })
+      return res.json({ ok: true, member: data })
+    }
+    const { data, error } = await supabaseAdmin.from('staff_members').insert(row).select().maybeSingle()
+    if (error) return res.status(500).json({ error: 'Save failed' })
+    res.json({ ok: true, member: data })
+  })
+
+  app.delete('/team/staff/:id', requireAuth, async (req, res) => {
+    if (!req.dealershipId) return res.status(400).json({ error: 'No dealership' })
+    if (!isMgr(req)) return res.status(403).json({ error: 'Manager access required' })
+    const { error } = await supabaseAdmin.from('staff_members').delete().eq('id', req.params.id).eq('dealership_id', req.dealershipId)
+    if (error) return res.status(500).json({ error: 'Delete failed' })
+    res.json({ ok: true })
+  })
 }

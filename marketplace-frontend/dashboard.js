@@ -457,12 +457,14 @@ async function initializeDashboardEcosystem() {
     // Wire up the sidebar nav — leaves navigate; some carry a CRM tab to open.
     document.querySelectorAll('#dashboard-nav .nav-item').forEach(btn => {
       btn.addEventListener('click', () => {
-        if (btn.dataset.tab) __crmTab = btn.dataset.tab;
+        const page = btn.dataset.page, tab = btn.dataset.tab;
+        if (page === 'crm' && tab) __crmTab = tab;
         // CRM contacts sub-links may carry a status filter (e.g. Sold Customers).
-        if (btn.dataset.page === 'crm' && btn.dataset.tab === 'contacts') {
+        if (page === 'crm' && tab === 'contacts') {
           __crmStatusFilter = btn.dataset.filter === 'sold' ? 'sold,fni,delivered' : '';
         }
-        switchPage(btn.dataset.page);
+        if (page === 'profile' && tab) __settingsTab = tab;
+        switchPage(page);
       });
     });
     setupMobileMoreMenu();
@@ -566,7 +568,7 @@ function switchPage(pageId) {
   runPageInit(pageId);
 
   if (pageId === 'vin-sticker') loadVinStickerPage();
-  if (pageId === 'profile') { loadProfileBranding(); loadCrmAdfSetting(); }
+  if (pageId === 'profile') { loadProfileBranding(); loadCrmAdfSetting(); settingsTab(__settingsTab); }
   if (pageId === 'inv-intel' && typeof window._invIntelPageHook === 'function') window._invIntelPageHook();
   if (pageId === 'ai-vision') loadAiVisionPage();
   if (pageId === 'reports') loadReports();
@@ -3270,6 +3272,115 @@ function openDeskForContact(contactId) { __deskContactId = contactId; switchPage
 window.loadDeskDeal = loadDeskDeal;
 window.deskSaveDeal = deskSaveDeal;
 window.openDeskForContact = openDeskForContact;
+
+// ── Settings hub: tab-filter the profile page into named sections ────────────
+let __settingsTab = 'account';
+const SETTINGS_TAB_SECTIONS = {
+  team: ['settings-team'],
+  account: ['profile-form'],
+  branding: ['prof-branding-section'],
+  language: ['settings-language-card'],
+  billing: ['billing-section'],
+  aiboost: ['ai-boost-section', 'inv-intel-section'],
+  group: ['groups-settings-section'],
+  dealermgmt: ['crm-dms-card', 'guardrail-settings-section'],
+  security: ['security-section'],
+};
+function settingsTab(tab) {
+  if (!SETTINGS_TAB_SECTIONS[tab]) tab = 'account';
+  __settingsTab = tab;
+  const active = new Set(SETTINGS_TAB_SECTIONS[tab]);
+  // Show only the active tab's cards; role-hidden ones keep their own `hidden`.
+  Object.values(SETTINGS_TAB_SECTIONS).flat().forEach(id => {
+    document.getElementById(id)?.classList.toggle('stab-hide', !active.has(id));
+  });
+  document.querySelectorAll('#settings-tabs .stab-btn').forEach(b => {
+    const on = b.dataset.stab === tab;
+    b.classList.toggle('border-indigo-500', on);
+    b.classList.toggle('text-indigo-600', on);
+    b.classList.toggle('dark:text-indigo-400', on);
+    b.classList.toggle('border-transparent', !on);
+    b.classList.toggle('text-slate-500', !on);
+  });
+  if (tab === 'team') loadSettingsTeam(document.getElementById('team-picker')?.value || 'sales');
+}
+window.settingsTab = settingsTab;
+
+// ── Team roster (Settings › Team) ────────────────────────────────────────────
+let __teamCurrent = 'sales';
+async function loadSettingsTeam(team) {
+  __teamCurrent = team || 'sales';
+  const root = document.getElementById('team-roster');
+  if (!root) return;
+  root.innerHTML = '<div class="py-10 text-center text-sm text-slate-400 italic">Loading…</div>';
+  let d;
+  try { d = await apiGetJson(`/team/roster?team=${encodeURIComponent(__teamCurrent)}`, { retries: 1 }); }
+  catch { root.innerHTML = '<div class="py-8 text-center text-sm text-rose-500">Could not load the roster.</div>'; return; }
+  const members = d?.members || [];
+  const roleBadge = (r) => ({ OWNER: 'Owner', DEALER_ADMIN: 'Admin', MANAGER: 'Manager', SALES_REP: 'Sales' }[r] || r || '');
+  if (d.login) {
+    const rows = members.length ? members.map(m => `
+      <div class="flex items-center gap-3 px-4 py-3 border-b border-slate-100 dark:border-slate-800/60 last:border-0">
+        <div class="w-9 h-9 rounded-full bg-indigo-100 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-300 flex items-center justify-center text-xs font-black flex-shrink-0 overflow-hidden">${m.avatar_url ? `<img src="${esc(m.avatar_url)}" class="w-full h-full object-cover">` : esc((m.name || '?').slice(0, 1).toUpperCase())}</div>
+        <div class="flex-1 min-w-0"><div class="font-bold text-slate-900 dark:text-white truncate">${esc(m.name)}</div></div>
+        <span class="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400">${esc(roleBadge(m.role))}</span>
+      </div>`).join('') : '<div class="py-8 text-center text-sm text-slate-400 italic">No one on this team yet.</div>';
+    root.innerHTML = `
+      <div class="border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden">${rows}</div>
+      <div class="flex items-center justify-between mt-3 gap-2 flex-wrap">
+        <span class="text-[11px] text-slate-400">${members.length} member${members.length === 1 ? '' : 's'} · they sign in to MarketSync</span>
+        <button onclick="switchPage('sales-team')" class="text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:underline">Manage logins &amp; roles →</button>
+      </div>`;
+  } else {
+    const rows = members.length ? members.map(m => `
+      <div class="flex items-center gap-3 px-4 py-3 border-b border-slate-100 dark:border-slate-800/60 last:border-0">
+        <div class="flex-1 min-w-0">
+          <div class="font-bold text-slate-900 dark:text-white truncate">${esc(m.name)}</div>
+          <div class="text-xs text-slate-500 dark:text-slate-400 truncate">${[m.phone, m.email].filter(Boolean).map(esc).join(' · ') || '—'}</div>
+        </div>
+        <button onclick="teamDeleteStaff('${m.id}')" class="text-slate-400 hover:text-rose-500 p-1" title="Remove" aria-label="Remove">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 7h12M9 7V5a1 1 0 011-1h4a1 1 0 011 1v2m1 0l-.5 12a1 1 0 01-1 1H8.5a1 1 0 01-1-1L7 7"/></svg>
+        </button>
+      </div>`).join('') : '<div class="py-8 text-center text-sm text-slate-400 italic">No one on this team yet — add your first below.</div>';
+    root.innerHTML = `
+      <div class="border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden mb-4">${rows}</div>
+      <div class="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-4">
+        <div class="text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">Add to ${esc(__teamCurrent)} team</div>
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
+          <input id="team-add-name" placeholder="Name" class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm">
+          <input id="team-add-phone" placeholder="Phone (optional)" class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm">
+          <input id="team-add-email" placeholder="Email (optional)" class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm">
+        </div>
+        <button id="team-add-btn" onclick="teamAddStaff()" class="mt-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-bold px-4 py-2 rounded-lg transition">Add member</button>
+      </div>`;
+  }
+}
+window.loadSettingsTeam = loadSettingsTeam;
+
+async function teamAddStaff() {
+  const name = document.getElementById('team-add-name')?.value.trim();
+  if (!name) { showToast('Enter a name', 'error'); return; }
+  const btn = document.getElementById('team-add-btn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Adding…'; }
+  try {
+    const res = await fetch(`${API}/team/staff`, {
+      method: 'POST', headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ team: __teamCurrent, name, phone: document.getElementById('team-add-phone')?.value.trim(), email: document.getElementById('team-add-email')?.value.trim() }),
+    });
+    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Add failed');
+    await loadSettingsTeam(__teamCurrent);
+  } catch (e) { if (btn) { btn.disabled = false; btn.textContent = 'Add member'; } showToast(e.message || 'Could not add', 'error'); }
+}
+async function teamDeleteStaff(id) {
+  if (!confirm('Remove this team member?')) return;
+  try {
+    const res = await fetch(`${API}/team/staff/${id}`, { method: 'DELETE', headers: { 'Authorization': `Bearer ${token}` } });
+    if (!res.ok) throw new Error('Delete failed');
+    await loadSettingsTeam(__teamCurrent);
+  } catch (e) { showToast(e.message || 'Could not remove', 'error'); }
+}
+window.teamAddStaff = teamAddStaff;
+window.teamDeleteStaff = teamDeleteStaff;
 
 // Reports page — stacks the three manager reports + the sold-per-rep report and
 // the custom report builder. Called from switchPage('reports').

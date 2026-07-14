@@ -34,6 +34,9 @@
 
     /* Mobile nav is a curated quick-row (Home / CRM / Stock / Reports / Menu);
        the full grouped sidebar (#nav-desktop) is desktop-only. */
+
+    /* Settings hub: each tab shows only its own section cards. */
+    .stab-hide { display: none !important; }
   </style>
   <style id="ms-font-bump">html{font-size:17px}@media (max-width:640px){html{font-size:16px}}</style>
   <style>.chip{display:inline-flex;align-items:center;font-size:0.7rem;padding:1px 7px;border-radius:999px;background:rgb(241 245 249);color:rgb(71 85 105);border:1px solid rgb(226 232 240);white-space:nowrap}.dark .chip{background:rgb(30 41 59);color:rgb(148 163 184);border-color:rgb(51 65 85)}.scrollbar-none{-ms-overflow-style:none;scrollbar-width:none}.scrollbar-none::-webkit-scrollbar{display:none}</style>
@@ -115,7 +118,7 @@
     <section class="flex flex-col shrink-0 md:col-span-1 md:h-full md:min-h-0 md:overflow-y-auto">
 
       <div id="profile-card" class="hidden">
-        <div class="mb-4">
+        <div class="mb-4 hidden">
           <h2 class="text-lg font-bold text-slate-900 dark:text-white">Profile &amp; Settings</h2>
           <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Update your identity, password, billing &amp; account security.</p>
         </div>
@@ -521,11 +524,11 @@
           <!-- ─── Facebook (Marketplace posting) ─── -->
           <div class="nav-group" data-group="fb">
             <div class="flex items-center">
-              <button type="button" onclick="toggleNavGroup('fb')" class="flex-1 flex items-center gap-2.5 px-3 py-2 rounded font-bold text-slate-800 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition">
+              <button type="button" data-page="inventory" title="Facebook" class="nav-item flex-1 flex items-center gap-2.5 px-3 py-2 rounded font-bold text-slate-800 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition">
                 <svg class="w-4 h-4 flex-shrink-0 opacity-70" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
                 <span>Facebook</span>
-                <svg id="chev-fb" class="w-3.5 h-3.5 ml-auto opacity-50 transition-transform" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg>
               </button>
+              <button type="button" onclick="toggleNavGroup('fb')" aria-label="Toggle Facebook" class="px-2 py-2 rounded text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"><svg id="chev-fb" class="w-3.5 h-3.5 transition-transform" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg></button>
             </div>
             <div id="grp-fb" class="nav-group-body space-y-0.5 mt-0.5">
               <button type="button" data-page="inventory" title="Marketplace Posting" class="nav-item nav-sub w-full flex items-center gap-2 pl-9 pr-3 py-1.5 rounded text-[13px] font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition"><span class="w-1.5 h-1.5 rounded-full bg-slate-300 dark:bg-slate-600 flex-shrink-0"></span>Marketplace Posting</button>
@@ -621,17 +624,27 @@
             <span class="nav-paid hidden text-[9px] font-black uppercase tracking-wider bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300 px-1.5 py-0.5 rounded-full ml-auto" data-ent="pro">Paid</span>
           </button>
 
-          <!-- Sales Team (admin) -->
-          <button type="button" data-page="sales-team" data-admin-nav title="Sales Team" class="nav-item w-full flex items-center gap-2.5 px-3 py-2 rounded font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition">
-            <svg class="w-4 h-4 flex-shrink-0 opacity-60" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M17 20c0-2.21-2.239-4-5-4S7 17.79 7 20"/><circle cx="12" cy="8" r="3" stroke-linecap="round"/><path stroke-linecap="round" stroke-linejoin="round" d="M21 20c0-1.864-1.567-3.411-3.646-3.837M3 20c0-1.864 1.567-3.411 3.646-3.837"/><circle cx="19" cy="7" r="2.5" stroke-linecap="round"/><circle cx="5" cy="7" r="2.5" stroke-linecap="round"/></svg>
-            <span>Sales Team</span>
-          </button>
-
-          <!-- Settings (bottom) -->
-          <button type="button" data-page="profile" title="Settings" class="nav-item w-full flex items-center gap-2.5 px-3 py-2 rounded font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition md:mt-auto">
-            <svg class="w-4 h-4 flex-shrink-0 opacity-60" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path stroke-linecap="round" stroke-linejoin="round" d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
-            <span>Settings</span>
-          </button>
+          <!-- ─── Settings (bottom) — hub for team, account, branding, billing, add-ons ─── -->
+          <div class="nav-group md:mt-auto" data-group="set">
+            <div class="flex items-center">
+              <button type="button" data-page="profile" title="Settings" class="nav-item flex-1 flex items-center gap-2.5 px-3 py-2 rounded font-bold text-slate-800 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition">
+                <svg class="w-4 h-4 flex-shrink-0 opacity-70" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path stroke-linecap="round" stroke-linejoin="round" d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+                <span>Settings</span>
+              </button>
+              <button type="button" onclick="toggleNavGroup('set')" aria-label="Toggle Settings" class="px-2 py-2 rounded text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"><svg id="chev-set" class="w-3.5 h-3.5 transition-transform" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg></button>
+            </div>
+            <div id="grp-set" class="nav-group-body space-y-0.5 mt-0.5">
+              <button type="button" data-page="profile" data-tab="team" data-admin-nav title="Team" class="nav-item nav-sub w-full flex items-center gap-2 pl-9 pr-3 py-1.5 rounded text-[13px] font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition"><span class="w-1.5 h-1.5 rounded-full bg-slate-300 dark:bg-slate-600 flex-shrink-0"></span>Team</button>
+              <button type="button" data-page="profile" data-tab="account" title="Account" class="nav-item nav-sub w-full flex items-center gap-2 pl-9 pr-3 py-1.5 rounded text-[13px] font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition"><span class="w-1.5 h-1.5 rounded-full bg-slate-300 dark:bg-slate-600 flex-shrink-0"></span>Account</button>
+              <button type="button" data-page="profile" data-tab="branding" data-admin-nav title="Branding" class="nav-item nav-sub w-full flex items-center gap-2 pl-9 pr-3 py-1.5 rounded text-[13px] font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition"><span class="w-1.5 h-1.5 rounded-full bg-slate-300 dark:bg-slate-600 flex-shrink-0"></span>Branding</button>
+              <button type="button" data-page="profile" data-tab="language" title="Language" class="nav-item nav-sub w-full flex items-center gap-2 pl-9 pr-3 py-1.5 rounded text-[13px] font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition"><span class="w-1.5 h-1.5 rounded-full bg-slate-300 dark:bg-slate-600 flex-shrink-0"></span>Language</button>
+              <button type="button" data-page="profile" data-tab="billing" title="Billing" class="nav-item nav-sub w-full flex items-center gap-2 pl-9 pr-3 py-1.5 rounded text-[13px] font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition"><span class="w-1.5 h-1.5 rounded-full bg-slate-300 dark:bg-slate-600 flex-shrink-0"></span>Billing</button>
+              <button type="button" data-page="profile" data-tab="aiboost" data-admin-nav title="AI Boost" class="nav-item nav-sub w-full flex items-center gap-2 pl-9 pr-3 py-1.5 rounded text-[13px] font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition"><span class="w-1.5 h-1.5 rounded-full bg-slate-300 dark:bg-slate-600 flex-shrink-0"></span>AI Boost</button>
+              <button type="button" data-page="profile" data-tab="group" data-admin-nav title="Dealer Group" class="nav-item nav-sub w-full flex items-center gap-2 pl-9 pr-3 py-1.5 rounded text-[13px] font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition"><span class="w-1.5 h-1.5 rounded-full bg-slate-300 dark:bg-slate-600 flex-shrink-0"></span>Dealer Group</button>
+              <button type="button" data-page="profile" data-tab="dealermgmt" data-admin-nav title="Dealer Management" class="nav-item nav-sub w-full flex items-center gap-2 pl-9 pr-3 py-1.5 rounded text-[13px] font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition"><span class="w-1.5 h-1.5 rounded-full bg-slate-300 dark:bg-slate-600 flex-shrink-0"></span>Dealer Management</button>
+              <button type="button" data-page="profile" data-tab="security" title="Security" class="nav-item nav-sub w-full flex items-center gap-2 pl-9 pr-3 py-1.5 rounded text-[13px] font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition"><span class="w-1.5 h-1.5 rounded-full bg-slate-300 dark:bg-slate-600 flex-shrink-0"></span>Security</button>
+            </div>
+          </div>
 
         </div>
       </nav>
@@ -675,7 +688,43 @@
 
       <!-- ───────── PROFILE & SETTINGS PAGE ───────── -->
       <!-- #profile-card is authored in the sidebar then relocated here by dashboard.js. -->
-      <div data-page-content="profile" class="page-content hidden space-y-8">
+      <div data-page-content="profile" class="page-content hidden space-y-6">
+        <div>
+          <h1 class="text-2xl font-black text-slate-900 dark:text-white">Settings</h1>
+          <p class="text-sm text-slate-500 dark:text-slate-400">Your team, account, branding, billing and add-ons — all in one place.</p>
+        </div>
+        <!-- Settings sub-nav — each tab reveals only its own section(s). -->
+        <div id="settings-tabs" class="flex items-center gap-1 border-b border-slate-200 dark:border-slate-800 overflow-x-auto scrollbar-none -mx-1 px-1">
+          <button data-stab="team" data-admin-only onclick="settingsTab('team')" class="stab-btn whitespace-nowrap px-3.5 py-2 text-sm font-bold border-b-2 border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 transition">Team</button>
+          <button data-stab="account" onclick="settingsTab('account')" class="stab-btn whitespace-nowrap px-3.5 py-2 text-sm font-bold border-b-2 border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 transition">Account</button>
+          <button data-stab="branding" data-dealer-only onclick="settingsTab('branding')" class="stab-btn whitespace-nowrap px-3.5 py-2 text-sm font-bold border-b-2 border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 transition">Branding</button>
+          <button data-stab="language" onclick="settingsTab('language')" class="stab-btn whitespace-nowrap px-3.5 py-2 text-sm font-bold border-b-2 border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 transition">Language</button>
+          <button data-stab="billing" onclick="settingsTab('billing')" class="stab-btn whitespace-nowrap px-3.5 py-2 text-sm font-bold border-b-2 border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 transition">Billing</button>
+          <button data-stab="aiboost" data-admin-only onclick="settingsTab('aiboost')" class="stab-btn whitespace-nowrap px-3.5 py-2 text-sm font-bold border-b-2 border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 transition">AI Boost</button>
+          <button data-stab="group" data-admin-only onclick="settingsTab('group')" class="stab-btn whitespace-nowrap px-3.5 py-2 text-sm font-bold border-b-2 border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 transition">Dealer Group</button>
+          <button data-stab="dealermgmt" data-admin-only onclick="settingsTab('dealermgmt')" class="stab-btn whitespace-nowrap px-3.5 py-2 text-sm font-bold border-b-2 border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 transition">Dealer Management</button>
+          <button data-stab="security" onclick="settingsTab('security')" class="stab-btn whitespace-nowrap px-3.5 py-2 text-sm font-bold border-b-2 border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 transition">Security</button>
+        </div>
+
+        <!-- Team — Sales/Management are login users; Service/Admin/Cleanup/Lot are label rosters -->
+        <div id="settings-team" data-stab-panel="team" class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-5">
+          <div class="flex items-center justify-between gap-3 flex-wrap mb-4">
+            <div>
+              <h2 class="text-lg font-bold text-slate-900 dark:text-white">Team</h2>
+              <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Pick a team to see its members. Sales &amp; Management sign in; the rest are roster labels.</p>
+            </div>
+            <select id="team-picker" onchange="loadSettingsTeam(this.value)" class="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm font-semibold">
+              <option value="sales">Sales team</option>
+              <option value="management">Management team</option>
+              <option value="service">Service team</option>
+              <option value="admin">Admin team</option>
+              <option value="cleanup">Cleanup team</option>
+              <option value="lot">Lot team</option>
+            </select>
+          </div>
+          <div id="team-roster"><div class="py-10 text-center text-sm text-slate-400 italic">Loading…</div></div>
+        </div>
+
         <!-- CRM / DMS connection (ADF lead delivery) — moved here from the CRM Leads tab -->
         <div id="crm-dms-card" data-admin-only class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-5">
           <h2 class="text-lg font-bold text-slate-900 dark:text-white">CRM / DMS connection</h2>
@@ -687,7 +736,7 @@
           <p id="crm-adf-msg" class="hidden text-xs mt-2"></p>
         </div>
         <!-- Language: per-rep dashboard translation (Google Translate) + AI listing-copy language -->
-        <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-5 notranslate">
+        <div id="settings-language-card" class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-5 notranslate">
           <h2 class="text-lg font-bold text-slate-900 dark:text-white">Language</h2>
           <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5 mb-3">Translate your dashboard into any language — it's saved to your browser, just for you. Your choice also becomes the language for your AI-written Facebook listings.</p>
           <div id="google_translate_element"></div>
@@ -2559,7 +2608,7 @@
     </div>
   </div>
 
-  <script src="dashboard.js?v=20260714e"></script>
+  <script src="dashboard.js?v=20260714f"></script>
   <!-- Google Translate widget (per-rep dashboard translation) -->
   <script>
     window.googleTranslateElementInit = function () {
