@@ -106,8 +106,24 @@ export function registerPipeline(app) {
     const { data: rows, error } = await q
     if (error) return res.status(500).json({ error: error.message })
 
-    // Resolve rep names in one shot (same approach as /pipeline).
-    const repIds = [...new Set((rows || []).map(l => l.posted_by).filter(Boolean))]
+    // Appointments also get booked straight from a CRM contact (a crm_task of
+    // type 'appointment'). Pull those too so the calendar shows every booking,
+    // not just pipeline ones.
+    let taskQ = supabaseAdmin.from('crm_tasks')
+      .select('id, contact_id, assigned_to, title, due_at')
+      .eq('dealership_id', req.dealershipId).eq('type', 'appointment').not('due_at', 'is', null)
+      .order('due_at', { ascending: true }).limit(1000)
+    if (!isDealerLevel(req.profile)) taskQ = taskQ.eq('assigned_to', req.user.id)
+    const { data: apptTasks } = await taskQ
+    const taskContactIds = [...new Set((apptTasks || []).map(t => t.contact_id).filter(Boolean))]
+    let contactNames = {}
+    if (taskContactIds.length) {
+      const { data: cs } = await supabaseAdmin.from('contacts').select('id, full_name, first_name, last_name').in('id', taskContactIds)
+      contactNames = Object.fromEntries((cs || []).map(c => [c.id, c.full_name || [c.first_name, c.last_name].filter(Boolean).join(' ') || 'Customer']))
+    }
+
+    // Resolve rep names in one shot for both sources (same approach as /pipeline).
+    const repIds = [...new Set([...(rows || []).map(l => l.posted_by), ...(apptTasks || []).map(t => t.assigned_to)].filter(Boolean))]
     let repNames = {}
     if (repIds.length) {
       const { data: reps } = await supabaseAdmin
@@ -140,6 +156,23 @@ export function registerPipeline(app) {
         past: new Date(l.appointment_at).getTime() < now,
       }
     })
+    // CRM-contact appointments (no vehicle attached).
+    for (const t of (apptTasks || [])) {
+      appointments.push({
+        id: 'task:' + t.id,
+        contact_id: t.contact_id || null,
+        label: contactNames[t.contact_id] || t.title || 'Appointment',
+        customer: contactNames[t.contact_id] || null,
+        year: null, make: null, model: null, trim: null, price: null, mileage: null,
+        exterior_color: null, condition: null, stocknumber: null, image: null,
+        source_url: null, fb_listing_url: null,
+        rep: repNames[t.assigned_to] || null,
+        appointment_at: t.due_at,
+        appointment_note: null,
+        past: new Date(t.due_at).getTime() < now,
+      })
+    }
+    appointments.sort((a, b) => new Date(a.appointment_at) - new Date(b.appointment_at))
     res.json({ appointments, can_manage_all: isDealerLevel(req.profile) })
   })
 

@@ -2606,6 +2606,7 @@ function openApptDetail(a) {
         </div>
 
         <div class="flex flex-wrap gap-2 pt-1">
+          ${a.contact_id ? `<button onclick="document.getElementById('appt-detail-modal').classList.add('hidden'); switchPage('crm'); openCrmContact('${a.contact_id}')" class="text-xs font-bold px-3 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white transition">View customer →</button>` : ''}
           ${a.fb_listing_url ? `<a href="${esc(a.fb_listing_url)}" target="_blank" rel="noopener" class="text-xs font-bold px-3 py-2 rounded-lg bg-[#1877F2]/10 text-[#1877F2] hover:bg-[#1877F2]/20 transition">View on Facebook ↗</a>` : ''}
           ${a.source_url ? `<a href="${esc(a.source_url)}" target="_blank" rel="noopener" class="text-xs font-bold px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition">Vehicle page ↗</a>` : ''}
         </div>
