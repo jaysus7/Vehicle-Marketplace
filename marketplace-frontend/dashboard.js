@@ -1328,10 +1328,11 @@ async function crmEnsureLookups() {
 async function loadCrmPage() {
   const root = document.getElementById('crm-root');
   if (!root) return;
+  if (__crmTab === 'insights') __crmTab = 'contacts';   // insights moved to the Insights page
   const tab = (id, label) => `<button onclick="crmSetTab('${id}')" class="px-4 py-2 text-sm font-bold border-b-2 whitespace-nowrap transition ${__crmTab === id ? 'border-indigo-500 text-indigo-600 dark:text-indigo-400' : 'border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}">${label}</button>`;
   root.innerHTML = `
     <div class="flex items-center gap-1 border-b border-slate-200 dark:border-slate-800 mb-4 overflow-x-auto">
-      ${tab('contacts', 'Contacts')}${tab('leads', 'Leads')}${tab('appointments', 'Appointments')}${tab('tasks', 'Tasks')}${tab('insights', 'Insights')}
+      ${tab('contacts', 'Contacts')}${tab('leads', 'Leads')}${tab('appointments', 'Appointments')}${tab('tasks', 'Tasks')}
     </div>
     <div id="crm-body"></div>`;
   const body = document.getElementById('crm-body');
@@ -1572,7 +1573,7 @@ function crmDetailHtml(d) {
     <div id="crm-detail-form"></div>
     <div>
       <div class="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-2">Activity timeline</div>
-      ${(d.timeline || []).length ? `<div class="space-y-2.5">${d.timeline.map(crmTimelineItem).join('')}</div>`
+      ${(d.timeline || []).length ? `<div class="space-y-2.5">${d.timeline.map(t => crmTimelineItem(t, c.id)).join('')}</div>`
         : '<div class="text-sm text-slate-400 italic py-4">No activity yet.</div>'}
     </div>
   </div>`;
@@ -1605,14 +1606,18 @@ function crmTaskRow(t, contactId) {
     ${t.due_at ? `<span class="text-[11px] ${overdue && !t.done ? 'text-rose-500 font-bold' : 'text-slate-400'}">${esc(crmWhen(t.due_at))}</span>` : ''}
   </div>`;
 }
-function crmTimelineItem(t) {
+function crmTimelineItem(t, cid) {
   const icon = { comm: '💬', lead: '📥', appraisal: '🚗', sale: '✅' };
   const chIcon = { call: '📞', sms: '💬', email: '✉️', note: '📝' };
-  let head = '', bodyTxt = t.body || '';
+  let head = '', bodyTxt = t.body || '', reply = '';
   if (t.kind === 'comm') {
     const label = { call: 'Call', sms: 'Text', email: 'Email', note: 'Note', system: 'System' }[t.channel] || 'Note';
     const dir = t.direction === 'in' ? ' (inbound)' : t.direction === 'out' ? ' (outbound)' : '';
     head = `${chIcon[t.channel] || '📝'} ${label}${dir}${t.subject ? ` — ${esc(t.subject)}` : ''}`;
+    // Reply to an inbound customer message right from the timeline.
+    if (cid && t.direction === 'in' && ['sms', 'email', 'call'].includes(t.channel)) {
+      reply = `<button onclick="crmReplyForm('${cid}','${t.channel}',${JSON.stringify(t.subject || '').replace(/"/g, '&quot;')})" class="mt-1 text-[11px] font-bold text-indigo-600 dark:text-indigo-400 hover:underline">↩ Reply</button>`;
+    }
   } else if (t.kind === 'lead') {
     head = `📥 Lead${t.source ? ` · ${esc(t.source)}` : ''}${t.vehicle ? ` — ${esc(t.vehicle)}` : ''}`;
   } else if (t.kind === 'appraisal') {
@@ -1625,6 +1630,7 @@ function crmTimelineItem(t) {
       <div class="text-sm font-semibold text-slate-800 dark:text-slate-100">${head}</div>
       ${bodyTxt ? `<div class="text-sm text-slate-600 dark:text-slate-300 whitespace-pre-wrap mt-0.5">${esc(bodyTxt)}</div>` : ''}
       <div class="text-[11px] text-slate-400 mt-0.5">${esc(crmWhen(t.at))}${t.rep ? ` · ${esc(t.rep)}` : ''}</div>
+      ${reply}
     </div>
   </div>`;
 }
@@ -1650,6 +1656,40 @@ async function crmSaveLog(id) {
   try { await apiSendJson(`/crm/contacts/${id}/log`, 'POST', { channel, subject, body, direction: channel === 'note' ? 'internal' : 'out' }); showToast('Logged', 'success'); openCrmContact(id); }
   catch (e) { showToast(e.message, 'error'); }
 }
+// Reply to an inbound message from the timeline. Email actually sends; other
+// channels record an outbound touch (no SMS gateway wired here).
+function crmReplyForm(id, channel, subject) {
+  const isEmail = channel === 'email';
+  const re = subject && !/^re:/i.test(subject) ? `Re: ${subject}` : (subject || '');
+  crmDetailFormSlot(`<div class="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg p-3 space-y-2">
+    <div class="text-xs font-bold text-slate-600 dark:text-slate-300">Reply via ${isEmail ? 'email' : channel === 'sms' ? 'text' : 'call note'}</div>
+    ${isEmail ? `<input id="crm-reply-subject" value="${esc(re)}" placeholder="Subject" class="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-1.5 text-sm">` : ''}
+    <textarea id="crm-reply-body" rows="3" placeholder="${isEmail ? 'Type your reply…' : 'What you said / will say…'}" class="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm"></textarea>
+    <div class="flex gap-2 justify-end"><button onclick="crmDetailFormSlot('')" class="text-xs font-bold text-slate-500 px-3 py-1.5">Cancel</button>
+      <button id="crm-reply-send" onclick="crmSendReply('${id}','${channel}')" class="text-xs font-bold bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-1.5 rounded-lg">${isEmail ? 'Send email' : 'Log reply'}</button></div>
+  </div>`);
+}
+async function crmSendReply(id, channel) {
+  const body = (document.getElementById('crm-reply-body')?.value || '').trim();
+  if (!body) { showToast('Write a reply first', 'error'); return; }
+  const btn = document.getElementById('crm-reply-send');
+  if (btn) { btn.disabled = true; btn.textContent = 'Sending…'; }
+  try {
+    if (channel === 'email') {
+      const subject = (document.getElementById('crm-reply-subject')?.value || '').trim();
+      if (!subject) { showToast('Add a subject', 'error'); if (btn) { btn.disabled = false; btn.textContent = 'Send email'; } return; }
+      await apiSendJson(`/crm/contacts/${id}/email`, 'POST', { subject, body });
+      showToast('Email sent', 'success');
+    } else {
+      await apiSendJson(`/crm/contacts/${id}/log`, 'POST', { channel, subject: '', body, direction: 'out' });
+      showToast('Reply logged', 'success');
+    }
+    openCrmContact(id);
+  } catch (e) { if (btn) { btn.disabled = false; btn.textContent = channel === 'email' ? 'Send email' : 'Log reply'; } showToast(e.message, 'error'); }
+}
+window.crmReplyForm = crmReplyForm;
+window.crmSendReply = crmSendReply;
+
 async function crmQuickLog(id, channel) {
   // Fired when a rep taps Call/Text — auto-logs the touch so the timeline stays honest.
   try { await apiSendJson(`/crm/contacts/${id}/log`, 'POST', { channel, direction: 'out', body: channel === 'call' ? 'Called (tap-to-dial)' : 'Texted (tap-to-message)' }); } catch {}
