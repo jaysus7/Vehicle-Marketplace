@@ -157,13 +157,16 @@ export function registerRoutes(app) {
       patch.status = b.status
       if (b.status === 'available') patch.archived_at = null
     }
-    // Grab the prior price first so we can flag reps when it changes on a unit
-    // that's live on Facebook Marketplace (they need to update the listing).
+    // Grab the prior price + sold state first: price drives the Marketplace flag,
+    // and we stamp sold_at only on a real transition into 'sold' (so re-editing a
+    // sold unit doesn't reset its days-to-sell).
     let priorPrice = null
-    if (b.price !== undefined) {
+    if (b.price !== undefined || b.status !== undefined) {
       const { data: cur } = await supabaseAdmin.from('inventory')
-        .select('price').eq('id', req.params.id).eq('dealership_id', req.dealershipId).maybeSingle()
+        .select('price, status, sold_at').eq('id', req.params.id).eq('dealership_id', req.dealershipId).maybeSingle()
       priorPrice = cur ? cur.price : null
+      if (b.status === 'sold' && cur && cur.status !== 'sold' && !cur.sold_at) patch.sold_at = new Date().toISOString()
+      if (b.status === 'available') patch.sold_at = null   // relisted → clear
     }
     const { data, error } = await supabaseAdmin.from('inventory')
       .update(patch).eq('id', req.params.id).eq('dealership_id', req.dealershipId).select('*').maybeSingle()

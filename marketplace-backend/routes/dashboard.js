@@ -1002,4 +1002,73 @@ export function registerRoutes(app) {
       by_condition: groupBy(list, v => { const x = (v.condition || '').toLowerCase(); return x === 'new' ? 'New' : x === 'demo' ? 'Demo' : x === 'certified' ? 'Certified' : 'Used' }),
     })
   })
+
+  // ── Sales analysis (managers) — what actually sold, sliced by attribute ─────
+  // A "sale" is a unit that left the lot: status 'sold' (feed-flagged or manual) or
+  // 'archived' (dropped off the feed). Sale date = sold_at ?? archived_at, and
+  // days-to-sell = sale date − lot date. Grouped by colour, mileage band, make,
+  // condition, and price band — count + avg days-to-sell + total value each.
+  app.get('/dashboard/sales-analysis', requireAuth, async (req, res) => {
+    if (!req.dealershipId) return res.json({ ok: true, empty: true })
+    if (!['DEALER_ADMIN', 'OWNER', 'MANAGER'].includes(req.profile?.role)) return res.status(403).json({ error: 'Manager access required' })
+    const days = ({ '30': 30, '90': 90, '180': 180, '365': 365 }[String(req.query.range || '90')]) || 90
+    const startMs = Date.now() - days * 86400000
+    const { data: dealer } = await supabaseAdmin.from('dealerships').select('country').eq('id', req.dealershipId).maybeSingle()
+    const c = (dealer?.country || '').trim().toUpperCase()
+    const unit = (c === 'US' || c === 'USA' || c === 'UNITED STATES') ? 'mi' : 'km'
+
+    const { data: rows } = await supabaseAdmin.from('inventory')
+      .select('price, mileage, exterior_color, make, condition, lot_date, created_at, sold_at, archived_at, last_synced_at, status')
+      .eq('dealership_id', req.dealershipId).in('status', ['sold', 'archived']).limit(50000)
+    const num = (n) => { const x = Number(n); return Number.isFinite(x) ? x : null }
+    // Keep only units whose sale date falls in the window; compute days-to-sell.
+    const sold = []
+    for (const v of (rows || [])) {
+      const saleRef = v.sold_at || v.archived_at || v.last_synced_at
+      if (!saleRef) continue
+      const saleMs = new Date(saleRef).getTime()
+      if (!(saleMs >= startMs)) continue
+      const lotRef = v.lot_date || v.created_at
+      const dts = lotRef ? Math.max(0, Math.round((saleMs - new Date(lotRef).getTime()) / 86400000)) : null
+      sold.push({ ...v, _dts: dts })
+    }
+
+    const groupBy = (keyFn, order) => {
+      const m = {}
+      for (const v of sold) {
+        const k = keyFn(v); if (k == null) continue
+        const g = m[k] || (m[k] = { key: k, count: 0, value: 0, priced: 0, dtsSum: 0, dtsN: 0 })
+        g.count++; const p = num(v.price); if (p) { g.value += p; g.priced++ }
+        if (v._dts != null) { g.dtsSum += v._dts; g.dtsN++ }
+      }
+      let arr = Object.values(m).map(g => ({
+        key: g.key, count: g.count, value: Math.round(g.value),
+        avg_price: g.priced ? Math.round(g.value / g.priced) : null,
+        avg_days_to_sell: g.dtsN ? Math.round(g.dtsSum / g.dtsN) : null,
+      }))
+      if (order) arr.sort((a, b) => order.indexOf(a.key) - order.indexOf(b.key))
+      else arr.sort((a, b) => b.count - a.count)
+      return arr
+    }
+    const kmBucket = (v) => { const m = num(v.mileage); if (m == null) return 'Unknown'; return m < 50000 ? 'Under 50k' : m < 100000 ? '50–100k' : m < 150000 ? '100–150k' : '150k+' }
+    const dtsBucket = (v) => { const d = v._dts; if (d == null) return 'Unknown'; return d <= 30 ? '0–30' : d <= 60 ? '31–60' : d <= 90 ? '61–90' : '90+' }
+    const dtsAll = sold.map(v => v._dts).filter(x => x != null).sort((a, b) => a - b)
+    const medianDts = dtsAll.length ? dtsAll[Math.floor(dtsAll.length / 2)] : null
+    const totalValue = sold.reduce((s, v) => s + (num(v.price) || 0), 0)
+
+    res.json({
+      ok: true, range_days: days, distance_unit: unit,
+      summary: {
+        units_sold: sold.length,
+        total_value: Math.round(totalValue),
+        avg_days_to_sell: dtsAll.length ? Math.round(dtsAll.reduce((a, b) => a + b, 0) / dtsAll.length) : null,
+        median_days_to_sell: medianDts,
+      },
+      by_days_to_sell: groupBy(dtsBucket, ['0–30', '31–60', '61–90', '90+', 'Unknown']),
+      by_color: groupBy(v => (v.exterior_color || '').trim() || 'Unspecified').slice(0, 12),
+      by_mileage: groupBy(kmBucket, ['Under 50k', '50–100k', '100–150k', '150k+', 'Unknown']),
+      by_make: groupBy(v => (v.make || '').trim() || 'Unspecified').slice(0, 12),
+      by_condition: groupBy(v => { const x = (v.condition || '').toLowerCase(); return x === 'new' ? 'New' : x === 'demo' ? 'Demo' : x === 'certified' ? 'Certified' : 'Used' }),
+    })
+  })
 }

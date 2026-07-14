@@ -693,6 +693,14 @@ async function _runInventorySyncInner(dealershipId) {
     }
   }
 
+  // Stamp sold_at the first time a unit shows sold in the feed, so sales-by-attribute
+  // reports and real days-to-sell have a date to work from. Idempotent (only null ones).
+  try {
+    await supabaseAdmin.from('inventory')
+      .update({ sold_at: new Date().toISOString() })
+      .eq('dealership_id', dealershipId).eq('status', 'sold').is('sold_at', null)
+  } catch (e) { console.warn('[sync] sold_at stamp failed (non-fatal):', e.message) }
+
   // Feed marks a vehicle SOLD but keeps it listed (e.g. DealerPage) → if it was
   // posted to Facebook, queue a "mark sold" so the FB listing reflects it. Idempotent:
   // once the listing flips to 'sold' it no longer matches status='posted'.

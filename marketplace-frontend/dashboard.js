@@ -2702,9 +2702,77 @@ async function loadInventoryMix() {
     </div>`;
 }
 
+// ── Sales analysis (managers): what sold, sliced by attribute ────────────────
+let __salesAnalysisRange = '90';
+async function loadSalesAnalysis() {
+  const root = document.getElementById('sales-analysis');
+  if (!root) return;
+  const isMgr = ['DEALER_ADMIN', 'OWNER', 'MANAGER'].includes(profileContext?.role);
+  if (!isMgr) { root.innerHTML = ''; return; }
+  let d;
+  try { d = await apiGetJson(`/dashboard/sales-analysis?range=${encodeURIComponent(__salesAnalysisRange)}`, { retries: 1 }); }
+  catch { root.innerHTML = ''; return; }
+  if (!d || d.empty || !d.summary) { root.innerHTML = ''; return; }
+  const money = n => n != null ? '$' + Number(n).toLocaleString() : '—';
+  const compact = n => n >= 1e6 ? '$' + (n / 1e6).toFixed(1) + 'M' : n >= 1e3 ? '$' + Math.round(n / 1e3) + 'k' : '$' + (n || 0);
+
+  const rows = (items, accent) => {
+    const max = Math.max(1, ...items.map(i => i.count));
+    return items.map(i => `<div class="flex items-center gap-2 text-sm py-0.5">
+      <div class="w-24 shrink-0 truncate text-slate-600 dark:text-slate-300" title="${esc(i.key)}">${esc(i.key)}</div>
+      <div class="flex-1 bg-slate-100 dark:bg-slate-800 rounded-full h-2.5 overflow-hidden"><div class="h-full ${accent} rounded-full" style="width:${Math.round((i.count / max) * 100)}%"></div></div>
+      <div class="w-8 text-right font-bold tabular-nums text-slate-700 dark:text-slate-200">${i.count}</div>
+      <div class="w-20 text-right tabular-nums text-slate-400 text-xs hidden sm:block">${i.avg_price != null ? money(i.avg_price) : '—'}</div>
+      <div class="w-16 text-right tabular-nums text-slate-400 text-xs">${i.avg_days_to_sell != null ? i.avg_days_to_sell + 'd' : '—'}</div>
+    </div>`).join('') || '<div class="text-xs text-slate-400 italic">No sales in range.</div>';
+  };
+  const card = (title, body) => `<div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4">
+    <div class="flex items-center justify-between mb-2"><div class="text-sm font-bold text-slate-900 dark:text-white">${title}</div><div class="text-[10px] uppercase tracking-wider text-slate-400 hidden sm:flex gap-3"><span class="w-20 text-right">avg price</span><span class="w-16 text-right">avg days</span></div></div>${body}</div>`;
+  const stat = (label, value, sub) => `<div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4">
+    <div class="text-[11px] uppercase tracking-wider text-slate-400 font-bold">${label}</div>
+    <div class="text-2xl font-black text-slate-900 dark:text-white mt-1">${value}</div>${sub ? `<div class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">${sub}</div>` : ''}</div>`;
+  const rangeBtn = (v, label) => `<button onclick="salesAnalysisRange('${v}')" class="px-3 py-1.5 text-xs font-bold rounded-lg border ${__salesAnalysisRange === v ? 'bg-indigo-600 text-white border-indigo-600' : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800'}">${label}</button>`;
+
+  const dtsColors = { '0–30': 'bg-emerald-500', '31–60': 'bg-amber-500', '61–90': 'bg-orange-500', '90+': 'bg-rose-500', 'Unknown': 'bg-slate-400' };
+  const dtsMax = Math.max(1, ...d.by_days_to_sell.map(i => i.count));
+  const dtsHtml = d.by_days_to_sell.filter(i => i.count > 0).map(i => `<div class="flex items-center gap-2 text-sm py-0.5">
+    <div class="w-16 shrink-0 text-slate-600 dark:text-slate-300 font-semibold">${esc(i.key)}${i.key !== 'Unknown' ? 'd' : ''}</div>
+    <div class="flex-1 bg-slate-100 dark:bg-slate-800 rounded-full h-3 overflow-hidden"><div class="h-full ${dtsColors[i.key] || 'bg-slate-400'} rounded-full" style="width:${Math.round((i.count / dtsMax) * 100)}%"></div></div>
+    <div class="w-8 text-right font-bold tabular-nums text-slate-700 dark:text-slate-200">${i.count}</div>
+    <div class="w-24 text-right tabular-nums text-slate-400 text-xs">${compact(i.value)}</div>
+  </div>`).join('') || '<div class="text-xs text-slate-400 italic">No sales in range.</div>';
+
+  root.innerHTML = `
+    <div class="flex items-center justify-between gap-3 flex-wrap mb-4">
+      <div><h2 class="text-xl font-black text-slate-900 dark:text-white">Sales analysis</h2>
+        <p class="text-sm text-slate-500 dark:text-slate-400">What left the lot — last ${d.range_days} days.</p></div>
+      <div class="flex gap-1.5">${rangeBtn('30', '30d')}${rangeBtn('90', '90d')}${rangeBtn('180', '6mo')}${rangeBtn('365', '1y')}</div>
+    </div>
+    <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
+      ${stat('Units sold', d.summary.units_sold, '')}
+      ${stat('Gross value', compact(d.summary.total_value), 'sum of prices')}
+      ${stat('Avg days to sell', d.summary.avg_days_to_sell != null ? d.summary.avg_days_to_sell + 'd' : '—', '')}
+      ${stat('Median days to sell', d.summary.median_days_to_sell != null ? d.summary.median_days_to_sell + 'd' : '—', '')}
+    </div>
+    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4 mb-3">
+      <div class="flex items-center justify-between mb-2"><div class="text-sm font-bold text-slate-900 dark:text-white">Days to sell</div><div class="text-[10px] uppercase tracking-wider text-slate-400 w-24 text-right">value</div></div>
+      ${dtsHtml}
+    </div>
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-3">
+      ${card('Sold by colour', rows(d.by_color, 'bg-indigo-500'))}
+      ${card(`Sold by mileage (${d.distance_unit})`, rows(d.by_mileage, 'bg-sky-500'))}
+      ${card('Sold by make', rows(d.by_make, 'bg-violet-500'))}
+      ${card('Sold by condition', rows(d.by_condition, 'bg-teal-500'))}
+    </div>
+    <div class="text-[11px] text-slate-400 mt-2">A "sale" = a unit that left the lot (marked sold, or dropped off your feed). Days to sell = time from lot date to sale.</div>`;
+}
+function salesAnalysisRange(v) { __salesAnalysisRange = v; loadSalesAnalysis(); }
+window.salesAnalysisRange = salesAnalysisRange;
+
 async function loadInsights() {
   loadExecutiveRoi();
   loadInventoryMix();
+  loadSalesAnalysis();
   loadSyncHealth();
   try {
     const res = await fetch(`${API}/dashboard/insights?range=${insightsRange}`, { headers: { 'Authorization': `Bearer ${token}` } });
