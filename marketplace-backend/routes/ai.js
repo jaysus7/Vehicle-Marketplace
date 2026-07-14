@@ -130,15 +130,20 @@ function skipPriceComp(vehicle) {
 // A real dealer car is essentially never off by more than ~45% vs true market — a
 // deviation that large means the scraper matched the wrong listings (wrong model,
 // salvage titles, parts), so we treat it as unreliable and don't flag.
-function buildPriceFlag(price, marketMedian, source, compCount) {
+function buildPriceFlag(price, marketMedian, source, compCount, trimMatched = null) {
   if (!marketMedian || marketMedian <= 0) return null
   const pct_diff = ((Number(price) - marketMedian) / marketMedian) * 100
-  const reliable = (compCount == null || compCount >= 3) && Math.abs(pct_diff) <= 45
+  // Unreliable when: too few comps, beyond ±45% (bad match), or the comps weren't
+  // trim-matched and the deviation is large (pooled base trims read false).
+  const reliable = (compCount == null || compCount >= 3)
+    && Math.abs(pct_diff) <= 45
+    && !(trimMatched === false && Math.abs(pct_diff) > 15)
   return {
     flagged: reliable && Math.abs(pct_diff) > 15,
     median: marketMedian,
     pct_diff: Math.round(pct_diff * 10) / 10,
     comp_count: compCount ?? null,
+    trim_matched: trimMatched,
     source,
     reliable,
   }
@@ -423,7 +428,7 @@ export function registerAI(app) {
       const _isUS = countryRaw === 'US' || countryRaw === 'USA' || countryRaw === 'UNITED STATES'
       const _isOwner = (req.user.email || '').toLowerCase() === OWNER_EMAIL
       const mm = await marketMedianForScan({ vehicle, dealer, isUS: _isUS, dealershipId: req.dealershipId, isOwner: _isOwner })
-      if (mm) price_flag = buildPriceFlag(vehicle.price, mm.median, mm.source, mm.count)
+      if (mm) price_flag = buildPriceFlag(vehicle.price, mm.median, mm.source, mm.count, mm.matched_on ? !!mm.matched_on.trim : null)
     }
 
     // ── Generate AI copy via Anthropic ──
@@ -480,6 +485,8 @@ Write a compelling listing in under 280 words. Include the year/make/model/trim,
       price_flagged: !!(price_flag?.flagged),
       price_pct_diff: price_flag?.pct_diff ?? null,
       price_median: price_flag?.median ?? null,
+      comp_count: price_flag?.comp_count ?? null,
+      trim_matched: price_flag?.trim_matched ?? null,
       copy_generated: !!copy
     }).then(() => {}).catch(() => {}) // fire-and-forget
 
@@ -557,7 +564,7 @@ Write a compelling listing in under 280 words. Include the year/make/model/trim,
 
             if (!skipPriceComp(vehicle) && vehicle.price && vehicle.make && vehicle.model && vehicle.year) {
               const mm = await marketMedianForScan({ vehicle, dealer, isUS: _syncIsUS, dealershipId: req.dealershipId, isOwner, allowLive: true })
-              if (mm) price_flag = buildPriceFlag(vehicle.price, mm.median, mm.source, mm.count)
+              if (mm) price_flag = buildPriceFlag(vehicle.price, mm.median, mm.source, mm.count, mm.matched_on ? !!mm.matched_on.trim : null)
             }
           }
         } catch {
@@ -575,6 +582,8 @@ Write a compelling listing in under 280 words. Include the year/make/model/trim,
               price_flagged: !!(price_flag?.flagged),
               price_pct_diff: price_flag?.pct_diff ?? null,
               price_median: price_flag?.median ?? null,
+              comp_count: price_flag?.comp_count ?? null,
+              trim_matched: price_flag?.trim_matched ?? null,
               copy_generated: false
             })
           } catch {}
@@ -1522,17 +1531,21 @@ ACV / wholesale take-in (what the dealer buys it for): ${cur} $${suggestedOffer.
 
     const { data: acts } = await supabaseAdmin
       .from('ai_activity')
-      .select('inventory_id, price_median, created_at')
+      .select('inventory_id, price_median, comp_count, trim_matched, created_at')
       .eq('dealership_id', req.dealershipId)
       .not('price_median', 'is', null)
       .order('created_at', { ascending: false })
       .limit(3000)
-    // Keep the newest median per vehicle (rows come newest-first).
-    const positions = {}
+    // Keep the newest median per vehicle (rows come newest-first). `meta` carries the
+    // comp quality so the badge can show count + whether it was trim-matched.
+    const positions = {}, meta = {}
     for (const a of acts || []) {
-      if (a.inventory_id && positions[a.inventory_id] == null) positions[a.inventory_id] = a.price_median
+      if (a.inventory_id && positions[a.inventory_id] == null) {
+        positions[a.inventory_id] = a.price_median
+        meta[a.inventory_id] = { count: a.comp_count ?? null, trim_matched: a.trim_matched ?? null }
+      }
     }
-    res.json({ positions, active: true })
+    res.json({ positions, meta, active: true })
   })
 
   // GET /ai/lot-report — aggregate the whole lot against AutoTrader/CarGurus market
@@ -2047,6 +2060,8 @@ Respond with ONLY valid JSON (no markdown, no explanation, no trailing commas):
         price_flagged: true,
         price_pct_diff: Math.round(pct_diff * 10) / 10,
         price_median: med,
+        comp_count: medCount,
+        trim_matched: trimMatched,
         copy_generated: false
       }).then(() => {}).catch(() => {})
     }

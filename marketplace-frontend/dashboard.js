@@ -4304,6 +4304,7 @@ function showSyncStatus(text, kind) {
 // INVENTORY CATALOG: full vehicle browser
 let __catalogCache = [];
 let __marketPositions = {};   // inventory_id → market median (Inventory Intelligence)
+let __marketMeta = {};        // inventory_id → { count, trim_matched } comp quality
 
 // Carfax: open the dealer's embedded Carfax report for this VIN (scraped from the
 // vehicle's listing page + cached), falling back to a Carfax Canada VIN search.
@@ -6087,7 +6088,7 @@ async function loadInventoryCatalog() {
     if (__invIntelActive) {
       try {
         const pr = await fetch(`${API}/ai/market-positions`, { headers: { 'Authorization': `Bearer ${token}` } });
-        if (pr.ok) __marketPositions = (await pr.json()).positions || {};
+        if (pr.ok) { const pj = await pr.json(); __marketPositions = pj.positions || {}; __marketMeta = pj.meta || {}; }
       } catch {}
     }
     renderCatalog();
@@ -6230,10 +6231,20 @@ function renderCatalog() {
               const pct = Math.round((Number(v.price) / mktMedian) * 100)
               // Suppress implausible values (thin/noisy comps) — only show a sane band.
               if (pct >= 60 && pct <= 160) {
-                const cls = pct > 103 ? 'bg-red-500/15 text-red-700 dark:text-red-300 border-red-500/30'
+                const m = __marketMeta[v.id] || {};
+                const cnt = m.count != null ? Number(m.count) : null;
+                // A read that wasn't matched to this exact trim (or is thin) pools other
+                // trims and can read falsely over/under — show it greyed with a warning
+                // so nobody reprices off a bad comp set.
+                const shaky = m.trim_matched === false || (cnt != null && cnt < 5);
+                const cls = shaky ? 'bg-slate-400/15 text-slate-500 dark:text-slate-400 border-slate-400/30'
+                  : pct > 103 ? 'bg-red-500/15 text-red-700 dark:text-red-300 border-red-500/30'
                   : pct < 97 ? 'bg-sky-500/15 text-sky-700 dark:text-sky-300 border-sky-500/30'
-                  : 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/30'
-                marketBadge = `<span class="${gtag} ${cls}" title="Your price vs live market median $${Number(mktMedian).toLocaleString()}">${pct}% to market</span>`
+                  : 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/30';
+                const matchTxt = m.trim_matched === true ? 'trim-matched' : m.trim_matched === false ? 'matched on model, NOT trim — verify' : 'match basis unknown';
+                const cntTxt = cnt != null ? `${cnt} comp${cnt === 1 ? '' : 's'}` : 'comp count n/a';
+                const tip = `Your price vs live market median $${Number(mktMedian).toLocaleString()} · ${cntTxt} · ${matchTxt}`;
+                marketBadge = `<span class="${gtag} ${cls}" title="${tip}">${pct}% to market${cnt != null ? ` · ${cnt}` : ''}${shaky ? ' ⚠' : ''}</span>`;
               }
             }
             return hotColdTag + healthBadge + recallBadge + marketBadge
