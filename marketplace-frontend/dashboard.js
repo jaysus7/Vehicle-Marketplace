@@ -6388,7 +6388,7 @@ Object.assign(window, { loadWebsitePage, wsTab, wsSetTarget, addSection, moveSec
 // State: __autoCfg { campaigns[], settings{}, region{}, can_manage }; __autoHol = working holiday rows.
 let __autoCfg = { campaigns: [], settings: {}, region: {}, can_manage: false };
 let __autoHol = [];
-const AUTO_CATS = [['pipeline', 'Sales pipeline'], ['retention', 'Post-delivery retention'], ['reviews', 'Reviews'], ['referrals', 'Referrals'], ['equity', 'Lease pull-ahead'], ['calendar', 'Birthdays'], ['custom', 'Custom']];
+const AUTO_CATS = [['pipeline', 'Sales pipeline'], ['tasks', 'Sales-rep tasks'], ['retention', 'Post-delivery retention'], ['reviews', 'Reviews'], ['referrals', 'Referrals'], ['equity', 'Lease pull-ahead'], ['calendar', 'Birthdays'], ['custom', 'Custom']];
 const AUTO_TRIGGER_LABEL = { internet_lead: 'New internet lead', appointment_booked: 'Appointment booked', show_no_sale: 'Showed — no sale', delivered: 'Vehicle delivered', birthday: 'Birthday', holiday: 'Holiday' };
 const AUTO_VARS = ['customer.first_name', 'vehicle.ymm', 'vehicle.model', 'rep.first_name', 'dealership.name', 'review_url', 'referral_bonus', 'service_url'];
 function autoDelayLabel(c) {
@@ -6491,24 +6491,29 @@ function autoVarChips(cid) {
 }
 function autoCardHtml(c) {
   const ta = 'w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm';
+  const isTask = c.channel === 'task';
   const senderOpts = [['rep', 'Salesperson'], ['house', 'Dealership'], ['dynamic_smart_switch', 'Smart switch']].map(o => `<option value="${o[0]}" ${c.sender_identity === o[0] ? 'selected' : ''}>${o[1]}</option>`).join('');
+  const chBadge = c.channel === 'sms' ? 'bg-sky-100 text-sky-700 dark:bg-sky-950/40 dark:text-sky-300'
+    : isTask ? 'bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300'
+    : 'bg-violet-100 text-violet-700 dark:bg-violet-950/40 dark:text-violet-300';
   return `<div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4" data-cid="${c.id}">
     <div class="flex items-center gap-3 mb-2">
       <button onclick="autoToggleCard('${c.id}', ${!c.is_active})" title="${c.is_active ? 'On — click to pause' : 'Off — click to turn on'}" class="shrink-0 w-9 h-5 rounded-full transition ${c.is_active ? 'bg-emerald-500' : 'bg-slate-300 dark:bg-slate-700'} relative"><span class="absolute top-0.5 w-4 h-4 bg-white rounded-full transition" style="left:${c.is_active ? '18px' : '2px'}"></span></button>
       <div class="min-w-0 flex-1"><div class="font-bold text-sm text-slate-900 dark:text-white truncate">${esc(c.name)}</div>
         <div class="flex flex-wrap items-center gap-1.5 mt-0.5">
-          <span class="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded-full ${c.channel === 'sms' ? 'bg-sky-100 text-sky-700 dark:bg-sky-950/40 dark:text-sky-300' : 'bg-violet-100 text-violet-700 dark:bg-violet-950/40 dark:text-violet-300'}">${c.channel}</span>
+          <span class="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded-full ${chBadge}">${isTask ? 'rep task' : c.channel}</span>
           <span class="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300">${esc(autoDelayLabel(c))}</span>
         </div>
       </div>
-      <select onchange="autoCardField('${c.id}','sender_identity',this.value)" class="text-xs bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded px-1.5 py-1">${senderOpts}</select>
+      ${isTask ? '' : `<select onchange="autoCardField('${c.id}','sender_identity',this.value)" class="text-xs bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded px-1.5 py-1">${senderOpts}</select>`}
     </div>
+    ${isTask ? `<label class="block text-[11px] font-semibold text-slate-500 dark:text-slate-400 mb-1">Task note for the rep</label>` : ''}
     ${c.channel === 'email' ? `<input id="am-subj-${c.id}" value="${esc(c.subject_template || '')}" placeholder="Email subject" class="${ta} mb-2">` : ''}
-    <textarea id="am-body-${c.id}" rows="3" class="${ta}">${esc(c.message_body_template || '')}</textarea>
-    ${autoVarChips(c.id)}
+    <textarea id="am-body-${c.id}" rows="${isTask ? 2 : 3}" class="${ta}">${esc(c.message_body_template || '')}</textarea>
+    ${isTask ? `<div class="text-[11px] text-slate-400 mt-1">Creates a follow-up task for the lead's assigned salesperson ${esc(autoDelayLabel(c)).toLowerCase()} after the lead comes in.</div>` : autoVarChips(c.id)}
     <div class="flex flex-wrap items-center gap-2 mt-2">
-      <input id="am-ai-${c.id}" placeholder="✨ Tell AI how to rewrite (e.g. more casual, mention the $250 bonus)" class="flex-1 min-w-[200px] bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-1.5 text-xs">
-      <button onclick="autoAiCard('${c.id}',this)" class="text-xs font-bold bg-violet-600 hover:bg-violet-500 text-white px-3 py-1.5 rounded-lg">✨ Rewrite</button>
+      ${isTask ? '' : `<input id="am-ai-${c.id}" placeholder="✨ Tell AI how to rewrite (e.g. more casual, mention the $250 bonus)" class="flex-1 min-w-[200px] bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-1.5 text-xs">
+      <button onclick="autoAiCard('${c.id}',this)" class="text-xs font-bold bg-violet-600 hover:bg-violet-500 text-white px-3 py-1.5 rounded-lg">✨ Rewrite</button>`}
       <button onclick="autoSaveCard('${c.id}',this)" class="text-xs font-bold bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-1.5 rounded-lg">Save</button>
     </div>
   </div>`;

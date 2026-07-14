@@ -68,6 +68,15 @@ const DEFAULT_CAMPAIGNS = [
   { key: 'holiday', name: 'Holiday Greeting', category: 'calendar', trigger_event: 'holiday', channel: 'email', delay_minutes: 0, send_at_hour: 9, sender_identity: 'house', sort: 120,
     subject_template: `Happy {{holiday.name|Holidays}} from {{dealership.name}}`,
     message_body_template: `Wishing you and your family a wonderful {{holiday.name|holiday season}} from all of us at {{dealership.name}}. Please note our holiday service hours may vary — check {{service_url|our website}} before stopping by. Thank you for being part of our community!` },
+
+  // F. Sales-rep TASK cadences — instead of messaging the customer, drop a
+  //    follow-up task on the assigned rep's list. Off by default; toggle on.
+  { key: 'task_next_day', name: 'Next-Day Reach-Out', category: 'tasks', trigger_event: 'internet_lead', channel: 'task', delay_minutes: 1440, sender_identity: 'rep', is_active: false, sort: 130,
+    message_body_template: `Day-1 personal follow-up — call or text this lead.` },
+  { key: 'task_day30', name: '30-Day Follow-Up', category: 'tasks', trigger_event: 'internet_lead', channel: 'task', delay_minutes: 43200, sender_identity: 'rep', is_active: false, sort: 140,
+    message_body_template: `30-day check-in — still shopping? Re-engage.` },
+  { key: 'task_day90', name: '90-Day Follow-Up', category: 'tasks', trigger_event: 'internet_lead', channel: 'task', delay_minutes: 129600, sender_identity: 'rep', is_active: false, sort: 150,
+    message_body_template: `90-day check-in — long-term nurture touch.` },
 ]
 
 // Seed the default campaigns for a dealership the first time (idempotent).
@@ -363,6 +372,31 @@ async function dispatch(msg, campaign) {
 
 // ── Background worker ─────────────────────────────────────────────────────────
 // runDue: dispatch everything past its scheduled_at (verifying each first).
+// A "task" campaign creates a CRM follow-up task for the assigned rep.
+async function createRepTask(msg, campaign) {
+  try {
+    const { data: contact } = await supabaseAdmin.from('contacts')
+      .select('first_name, full_name, status').eq('id', msg.contact_id).maybeSingle()
+    if (!contact) {
+      await supabaseAdmin.from('scheduled_messages').update({ status: 'cancelled', cancel_reason: 'missing_contact', verified_at: nowIso() }).eq('id', msg.id)
+      return false
+    }
+    // Don't nag on closed/won records with a "still shopping?" task.
+    if (['sold', 'fni', 'delivered', 'lost', 'dead'].includes(contact.status)) {
+      await supabaseAdmin.from('scheduled_messages').update({ status: 'cancelled', cancel_reason: 'deal_closed', verified_at: nowIso() }).eq('id', msg.id)
+      return false
+    }
+    const who = contact.first_name || contact.full_name || 'lead'
+    const title = `${campaign.name || 'Follow-up'}: ${who}`
+    await supabaseAdmin.from('crm_tasks').insert({
+      dealership_id: msg.dealership_id, contact_id: msg.contact_id, assigned_to: msg.rep_id || null,
+      title, type: 'followup', due_at: nowIso(),
+    })
+    await supabaseAdmin.from('scheduled_messages').update({ status: 'sent', sent_at: nowIso(), verified_at: nowIso() }).eq('id', msg.id)
+    return true
+  } catch (e) { console.warn('[automation] rep task create failed:', e.message); return false }
+}
+
 export async function runDue(limit = 200) {
   const { data: due } = await supabaseAdmin.from('scheduled_messages')
     .select('*').eq('status', 'pending').lte('scheduled_at', nowIso()).order('scheduled_at').limit(limit)
@@ -370,6 +404,9 @@ export async function runDue(limit = 200) {
   for (const msg of (due || [])) {
     const { data: campaign } = await supabaseAdmin.from('automated_campaigns').select('*').eq('id', msg.campaign_id).maybeSingle()
     if (!campaign || !campaign.is_active) { await supabaseAdmin.from('scheduled_messages').update({ status: 'cancelled', cancel_reason: 'campaign_off', verified_at: nowIso() }).eq('id', msg.id); cancelled++; continue }
+    // Task cadences drop a follow-up on the rep instead of messaging the customer;
+    // consent/quiet-hours checks don't apply to an internal task.
+    if (campaign.channel === 'task') { if (await createRepTask(msg, campaign)) sent++; else cancelled++; continue }
     const v = await verify(msg, campaign)
     if (v.action === 'cancel') { await supabaseAdmin.from('scheduled_messages').update({ status: 'cancelled', cancel_reason: v.reason, verified_at: nowIso() }).eq('id', msg.id); cancelled++; continue }
     if (v.action === 'pause') { await supabaseAdmin.from('scheduled_messages').update({ status: 'paused', cancel_reason: v.reason, verified_at: nowIso() }).eq('id', msg.id); paused++; continue }
