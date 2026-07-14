@@ -7367,8 +7367,9 @@ function exportPriceReportPDF() {
   const fmt = n => n != null ? '$' + Number(n).toLocaleString() + ' ' + cl : '—';
   const fmtMi = n => n != null ? Number(n).toLocaleString() + ' ' + distUnit : '—';
 
+  const lowConf = !!estimate && estimate.reliable === false;   // comps not like-for-like
   const over = pct_diff != null && pct_diff > 0;
-  const diffColor = pct_diff == null ? '#94a3b8' : over ? '#ef4444' : '#7c3aed';
+  const diffColor = lowConf ? '#94a3b8' : (pct_diff == null ? '#94a3b8' : over ? '#ef4444' : '#7c3aed');
   const diffText = pct_diff != null ? (over ? '+' : '') + pct_diff + '%' : '—';
 
   const avgs = estimate?.marketplace_averages || [];
@@ -7377,7 +7378,7 @@ function exportPriceReportPDF() {
   const isNew = vehicle.condition === 'new' || Number(vehicle.year) >= new Date().getFullYear();
 
   const ptm = estimate?.price_to_market_pct;
-  const ptmColor = ptm == null ? '#94a3b8' : ptm > 105 ? '#ef4444' : ptm < 95 ? '#7c3aed' : '#0f172a';
+  const ptmColor = lowConf ? '#94a3b8' : (ptm == null ? '#94a3b8' : ptm > 105 ? '#ef4444' : ptm < 95 ? '#7c3aed' : '#0f172a');
   const dom = estimate?.days_on_market_estimate;
 
   const ratingColorMap = {
@@ -7468,6 +7469,7 @@ body{font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;color:#0f172a;font-
   </div>
 </div>
 
+${lowConf ? `<div style="background:#fffbeb;border:1px solid #fde68a;color:#92400e;border-radius:8px;padding:8px 12px;font-size:11px;margin-bottom:10px;line-height:1.5">⚠ <b>Low-confidence market read</b> — the comparable listings may not match this exact trim${estimate.comp_count != null ? ` (only ${estimate.comp_count} found)` : ''}, so the % to market is a rough guide, not a firm number. Verify against your book (Black Book / vAuto) before repricing.</div>` : ''}
 <div class="sl">Price Summary</div>
 <div class="strip5">
   <div class="tile"><div class="tl">Your Price</div><div class="tv">${fmt(vehicle.price)}</div></div>

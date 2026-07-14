@@ -174,7 +174,7 @@ async function marketMedianForScan({ vehicle, dealer, isUS, dealershipId, isOwne
         isUS,
       },
     })
-    if (mc?.median_price) return { median: mc.median_price, source: 'MarketCheck', count: mc.count }
+    if (mc?.median_price) return { median: mc.median_price, source: 'MarketCheck', count: mc.count, matched_on: mc.matched_on || null }
     return null
   } catch { return null }
 }
@@ -1707,6 +1707,14 @@ ACV / wholesale take-in (what the dealer buys it for): ${cur} $${suggestedOffer.
         const mid = mc.median_price
         const pct_diff = Math.round(((yourPrice - mid) / mid) * 1000) / 10
         const ptm = Math.round((yourPrice / mid) * 100)
+        // Reliability: a like-for-like read. MarketCheck relaxes to "any trim of the
+        // model" when a loaded trim has thin comps, which pools cheap base trims and
+        // reads falsely over/under. Beyond ±45% is almost always a mismatched set.
+        const _hasTrim = !!(vehicle.trim && String(vehicle.trim).trim())
+        const _trimMatched = mc.matched_on ? !!mc.matched_on.trim : null
+        const reliable = Math.abs(pct_diff) <= 45
+          && (mc.count == null || mc.count >= 3)
+          && !(_hasTrim && _trimMatched === false && Math.abs(pct_diff) > 15)
         // Mileage rating vs the MarketCheck market average mileage.
         let mileageRating = 'average', mileageImpact = 0
         if (mc.median_mileage && vehicleMileage) {
@@ -1720,8 +1728,11 @@ ACV / wholesale take-in (what the dealer buys it for): ${cur} $${suggestedOffer.
 
         // Short AI insight (best-effort — the numbers stand on their own if this fails).
         let note = `Based on ${mc.count.toLocaleString()} comparable ${marketLabel} listings, the market average for this ${vehicleLabel} is ${'$' + mid.toLocaleString()} ${currency}. Your price is ${Math.abs(pct_diff)}% ${pct_diff > 0 ? 'above' : pct_diff < 0 ? 'below' : 'in line with'} market.`
+        if (!reliable) {
+          note = `Low-confidence read: the ${mc.count.toLocaleString()} comparable listings we found ${_hasTrim && _trimMatched === false ? 'aren’t matched to this exact trim (they include other trims of the ' + (vehicle.model || 'model') + '), so the $' + mid.toLocaleString() + ' ' + currency + ' average likely understates a loaded trim' : 'give an average of $' + mid.toLocaleString() + ' ' + currency + ' that’s far from your price'}. Verify the trim against a book (Black Book/vAuto) before repricing — don’t treat the % to market as exact.`
+        }
         try {
-          if (process.env.ANTHROPIC_API_KEY) {
+          if (reliable && process.env.ANTHROPIC_API_KEY) {
             const anthropicN = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
             const msg = await anthropicN.messages.create({
               model: 'claude-sonnet-5', max_tokens: 300,
@@ -1737,7 +1748,10 @@ ACV / wholesale take-in (what the dealer buys it for): ${cur} $${suggestedOffer.
           low: mc.low_price, mid, high: mc.high_price, currency,
           price_to_market_pct: ptm,
           days_on_market_estimate: pct_diff > 15 ? 75 : pct_diff > 5 ? 55 : pct_diff < -5 ? 25 : 40,
-          confidence: mc.count >= 25 ? 'high' : mc.count >= 8 ? 'medium' : 'low',
+          confidence: !reliable ? 'low' : mc.count >= 25 ? 'high' : mc.count >= 8 ? 'medium' : 'low',
+          reliable,
+          trim_matched: _trimMatched,
+          comp_count: mc.count ?? null,
           note,
           marketplace_averages: [
             { name: 'MarketCheck (live market)', avg: mid, estimated_listings: `${mc.count.toLocaleString()} listings`, avg_mileage: mc.median_mileage || null },
@@ -1987,9 +2001,9 @@ Respond with ONLY valid JSON (no markdown, no explanation, no trailing commas):
       // report), so a unit priced above real market gets flagged even when it's in
       // line with the store's own copies. Fall back to the internal-inventory median
       // when no market data is available.
-      let med = null
+      let med = null, medCount = null, trimMatched = null
       const mm = await marketMedianForScan({ vehicle, dealer, isUS: _reIsUS, dealershipId: req.dealershipId, isOwner: (req.user.email || '').toLowerCase() === OWNER_EMAIL, allowLive: true })
-      if (mm?.median) med = mm.median
+      if (mm?.median) { med = mm.median; medCount = mm.count ?? null; trimMatched = mm.matched_on ? !!mm.matched_on.trim : null }
       if (!med) {
         const { data: comps } = await supabaseAdmin
           .from('inventory')
@@ -2003,12 +2017,20 @@ Respond with ONLY valid JSON (no markdown, no explanation, no trailing commas):
           .neq('id', vehicle.id)
           .not('price', 'is', null)
         const prices = (comps || []).map(c => Number(c.price)).filter(p => p > 0).sort((a, b) => a - b)
-        med = median(prices)
+        med = median(prices); medCount = prices.length; trimMatched = null   // internal fallback isn't trim-matched
       }
       if (!med) continue
 
       const pct_diff = ((Number(vehicle.price) - med) / med) * 100
       if (pct_diff <= overprice_threshold_pct) continue
+      // ── Don't cry wolf on a mismatched comp set (the "drop $21k when vAuto says
+      // 102%" bug). MarketCheck relaxes to "any trim of the model" when a loaded
+      // trim has thin local comps, which pools cheap base trims and reads falsely
+      // overpriced. Suppress the recommendation unless it's a like-for-like read:
+      const hasTrim = !!(vehicle.trim && String(vehicle.trim).trim())
+      if (pct_diff > 45) continue                                   // beyond ±45% = almost always bad comps
+      if (hasTrim && trimMatched === false) continue                // comps weren't matched to this trim
+      if (medCount != null && medCount < 5) continue                // too few comps to trust
 
       const suggestedPrice = Math.round(Number(vehicle.price) * (1 - price_drop_pct / 100))
       const label = [vehicle.year, vehicle.make, vehicle.model, vehicle.trim].filter(Boolean).join(' ')
