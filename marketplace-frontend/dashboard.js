@@ -421,9 +421,12 @@ async function initializeDashboardEcosystem() {
       document.getElementById('guardrail-settings-section')?.classList.remove('hidden');
       __pageInit.profile = () => loadGuardrailSettings();
     }
-    // Reports page (stacked manager reports + custom builder) — managers only.
+    // Reports page + Desk-a-deal (stacked manager reports, custom builder,
+    // deal desk) — managers only. Reveal both desktop and mobile entries.
     if (['DEALER_ADMIN', 'OWNER', 'MANAGER'].includes(role)) {
       document.getElementById('nav-reports')?.classList.remove('hidden');
+      document.getElementById('nav-reports-m')?.classList.remove('hidden');
+      document.getElementById('nav-desk')?.classList.remove('hidden');
     }
     // Hide team-only nav items (Leaderboard) for solo reps — nothing to rank
     if (isSolo || !inDealership) {
@@ -451,9 +454,12 @@ async function initializeDashboardEcosystem() {
     __canSeeTeamInsights = isAdmin;
     __canSeeSalesTeam = isAdmin;
 
-    // Wire up the sidebar nav
+    // Wire up the sidebar nav — leaves navigate; some carry a CRM tab to open.
     document.querySelectorAll('#dashboard-nav .nav-item').forEach(btn => {
-      btn.addEventListener('click', () => switchPage(btn.dataset.page));
+      btn.addEventListener('click', () => {
+        if (btn.dataset.tab) __crmTab = btn.dataset.tab;
+        switchPage(btn.dataset.page);
+      });
     });
     setupMobileMoreMenu();
     switchPage('insights');
@@ -505,6 +511,16 @@ async function initializeDashboardEcosystem() {
 
 // Sidebar nav page switcher. Each page shows only its own content — no panel
 // mirroring, so Insights stays clean and each nav item lands on a focused view.
+// Collapse/expand a nav group in the desktop sidebar.
+function toggleNavGroup(id) {
+  const body = document.getElementById('grp-' + id);
+  const chev = document.getElementById('chev-' + id);
+  if (!body) return;
+  const collapsed = body.classList.toggle('hidden');
+  chev?.classList.toggle('-rotate-90', collapsed);
+}
+window.toggleNavGroup = toggleNavGroup;
+
 function switchPage(pageId) {
   ensurePanelsInOriginalLocations();
 
@@ -532,6 +548,15 @@ function switchPage(pageId) {
     if (active) btn.setAttribute('aria-current', 'page'); else btn.removeAttribute('aria-current');
   });
 
+  // Keep the active leaf visible: expand its collapsible group if collapsed.
+  const activeLeaf = document.querySelector('#nav-desktop .nav-item[aria-current="page"]');
+  const body = activeLeaf?.closest('.nav-group-body');
+  if (body?.classList.contains('hidden')) {
+    body.classList.remove('hidden');
+    const g = body.id.replace('grp-', '');
+    document.getElementById('chev-' + g)?.classList.remove('-rotate-90');
+  }
+
   // Fire any one-time lazy loaders registered for this page (feeds, catalog,
   // leaderboard, guardrail settings, inventory-intelligence tags).
   runPageInit(pageId);
@@ -541,6 +566,7 @@ function switchPage(pageId) {
   if (pageId === 'inv-intel' && typeof window._invIntelPageHook === 'function') window._invIntelPageHook();
   if (pageId === 'ai-vision') loadAiVisionPage();
   if (pageId === 'reports') loadReports();
+  if (pageId === 'desk') loadDeskDeal();
   if (pageId === 'crm') loadCrmPage();
   if (pageId === 'website') loadWebsitePage();
   if (pageId === 'automation') loadAutomationPage();
@@ -1505,6 +1531,7 @@ function crmDetailHtml(d) {
       <button onclick="crmTaskForm('${c.id}')" class="flex items-center gap-1.5 text-xs font-bold bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 px-3 py-1.5 rounded-lg">Add task</button>
       <button onclick="crmOpenForm('${c.id}')" class="flex items-center gap-1.5 text-xs font-bold bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 px-3 py-1.5 rounded-lg">Edit</button>
       <button onclick="crmApptForm('${c.id}')" class="flex items-center gap-1.5 text-xs font-bold bg-violet-100 dark:bg-violet-950/40 text-violet-700 dark:text-violet-300 hover:bg-violet-200 px-3 py-1.5 rounded-lg"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M8 7V3m8 4V3M4 11h16M5 5h14a1 1 0 011 1v13a1 1 0 01-1 1H5a1 1 0 01-1-1V6a1 1 0 011-1z"/></svg>Book appointment</button>
+      ${['sold', 'fni', 'delivered'].includes(c.status) && ['DEALER_ADMIN', 'OWNER', 'MANAGER'].includes(profileContext?.role) ? `<button onclick="openDeskForContact('${c.id}')" class="flex items-center gap-1.5 text-xs font-bold bg-indigo-100 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-200 px-3 py-1.5 rounded-lg"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 17v-6m3 6V7m3 10v-4M4 4h16v16H4z"/></svg>Desk a deal</button>` : ''}
       ${c.status === 'delivered' && ['DEALER_ADMIN', 'OWNER', 'MANAGER'].includes(profileContext?.role) ? `<button onclick="crmLeaseForm('${c.id}')" class="flex items-center gap-1.5 text-xs font-bold bg-emerald-100 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-200 px-3 py-1.5 rounded-lg"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 6l9-3 9 3M4 10v10h16V10M9 21v-6h6v6"/></svg>Deal / equity</button>` : ''}
     </div>
     ${c.notes ? `<div class="text-xs bg-amber-50 dark:bg-amber-950/20 border border-amber-100 dark:border-amber-950/40 rounded-lg p-3 text-slate-700 dark:text-slate-300">${esc(c.notes)}</div>` : ''}
@@ -2106,20 +2133,39 @@ function setupMobileMoreMenu() {
 
   btn.addEventListener('click', () => {
     // Rebuild each open so it reflects the user's current role/add-on access.
-    // Include every nav button that isn't role-hidden (Tailwind `hidden` class).
-    const navBtns = [...document.querySelectorAll('#dashboard-nav button[title]')]
-      .filter(b => b.id !== 'nav-more' && !b.classList.contains('hidden'));
+    // Walk the desktop grouped sidebar so the mobile menu mirrors its structure.
     list.innerHTML = '';
-    navBtns.forEach(src => {
-      const label = src.getAttribute('title') || '';
+    const desktop = document.getElementById('nav-desktop');
+    const addLeaf = (src, sub) => {
+      if (!src || src.classList.contains('hidden')) return;
+      const label = src.getAttribute('title') || src.querySelector('span')?.textContent || '';
       const svg = src.querySelector('svg')?.outerHTML || '';
       const item = document.createElement('button');
       item.type = 'button';
-      item.className = 'flex items-center gap-2.5 px-3 py-3 rounded-lg text-sm font-medium text-slate-700 dark:text-slate-200 bg-slate-50 dark:bg-slate-800/60 hover:bg-slate-100 dark:hover:bg-slate-800 transition text-left';
-      item.innerHTML = `<span class="w-5 h-5 flex-shrink-0 opacity-70">${svg}</span><span class="truncate">${label}</span>`;
+      item.className = `flex items-center gap-2.5 px-3 py-3 rounded-lg text-sm font-medium text-slate-700 dark:text-slate-200 bg-slate-50 dark:bg-slate-800/60 hover:bg-slate-100 dark:hover:bg-slate-800 transition text-left ${sub ? 'pl-6 text-[13px]' : 'font-semibold'}`;
+      item.innerHTML = (sub ? '' : `<span class="w-5 h-5 flex-shrink-0 opacity-70">${svg}</span>`) + `<span class="truncate">${esc(label)}</span>`;
       item.addEventListener('click', () => { close(); src.click(); });
       list.appendChild(item);
-    });
+    };
+    const addLabel = (text) => {
+      const d = document.createElement('div');
+      d.className = 'px-3 pt-3 pb-1 text-[10px] font-black uppercase tracking-wider text-slate-400';
+      d.textContent = text;
+      list.appendChild(d);
+    };
+    if (desktop) {
+      [...desktop.children].forEach(node => {
+        if (node.classList.contains('nav-group')) {
+          if (node.classList.contains('hidden')) return;         // role-hidden group
+          const header = node.querySelector('.nav-item');         // a real destination?
+          if (header) addLeaf(header, false);
+          else addLabel(node.querySelector('button span')?.textContent || '');
+          node.querySelectorAll('.nav-group-body .nav-item').forEach(sub => addLeaf(sub, true));
+        } else if (node.matches('.nav-item')) {
+          addLeaf(node, false);
+        }
+      });
+    }
     menu.classList.remove('hidden');
   });
 
@@ -3024,14 +3070,12 @@ function rbExportCsv() {
 }
 window.loadReportBuilder = loadReportBuilder;
 
-// ── Deal desk-record modal (managers) — fills the F&I columns ────────────────
-async function rbOpenDeal(contactId) {
-  const r = (__rbData?.rows || []).find(x => x.contact_id === contactId);
-  const who = r ? [r.first_name, r.last_name].filter(Boolean).join(' ') || r.email || 'Customer' : 'Customer';
-  const veh = r ? [r.year, r.make, r.model, r.trim].filter(Boolean).join(' ') : '';
-  let deal = {};
-  try { const d = await apiGetJson(`/reports/deal?contact_id=${encodeURIComponent(contactId)}`, { retries: 1 }); deal = d?.deal || {}; } catch {}
+// ── Deal desk record — shared form (used by the Reports modal + Desk-a-deal page)
+const DEAL_TEXT_FIELDS = ['delivery_date', 'delivery_time', 'fni_manager', 'deposit_amount', 'deal_type', 'term', 'plates', 'fni_products', 'gm_survey_pct', 'split_with', 'vehicle_commission', 'fni_commission', 'notes'];
+const DEAL_BOOL_FIELDS = ['google_review', 'gm_survey', 'fni_gross_1500', 'split_deal'];
 
+// The grid of F&I fields, pre-filled from `deal`. Inputs keep their dl-<key> ids.
+function dealFormFieldsHtml(deal = {}) {
   const val = (k) => deal[k] != null ? String(deal[k]) : '';
   const chk = (k) => deal[k] === true ? 'checked' : '';
   const sel = (k, opts) => `<select id="dl-${k}" class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm">
@@ -3039,6 +3083,55 @@ async function rbOpenDeal(contactId) {
   const txt = (k, type = 'text', ph = '') => `<input id="dl-${k}" type="${type}" value="${esc(val(k))}" placeholder="${ph}" class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm">`;
   const cbx = (k, label) => `<label class="inline-flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-200 cursor-pointer"><input type="checkbox" id="dl-${k}" ${chk(k)} class="rounded"> ${label}</label>`;
   const field = (label, html) => `<div><label class="text-[11px] uppercase tracking-wider text-slate-400 font-bold block mb-1">${label}</label>${html}</div>`;
+  return `
+    ${field('Delivery date', txt('delivery_date', 'date'))}
+    ${field('Delivery time', txt('delivery_time', 'time'))}
+    ${field('F&amp;I manager', txt('fni_manager', 'text', 'Name'))}
+    ${field('Deposit amount', txt('deposit_amount', 'number', '0'))}
+    ${field('Deal type', sel('deal_type', ['Finance', 'Lease', 'Cash']))}
+    ${field('Term (months)', txt('term', 'number', '60'))}
+    ${field('Plates', sel('plates', ['New', 'Transfer']))}
+    ${field('GM survey %', txt('gm_survey_pct', 'number', '0'))}
+    <div class="sm:col-span-2">${field('F&amp;I products', txt('fni_products', 'text', 'Warranty, GAP, etc.'))}</div>
+    ${field('Split with', txt('split_with', 'text', 'Rep name'))}
+    ${field('Vehicle commission', txt('vehicle_commission', 'number', '0'))}
+    ${field('F&amp;I commission', txt('fni_commission', 'number', '0'))}
+    <div></div>
+    <div class="sm:col-span-2 grid grid-cols-2 gap-3 pt-1">
+      ${cbx('google_review', 'Google review')}
+      ${cbx('gm_survey', 'GM survey done')}
+      ${cbx('fni_gross_1500', '$1,500 F&I gross')}
+      ${cbx('split_deal', 'Split deal')}
+    </div>
+    <div class="sm:col-span-2">${field('Notes', `<textarea id="dl-notes" rows="2" class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm">${esc(val('notes'))}</textarea>`)}</div>`;
+}
+
+// Read the dl-* inputs into a POST payload for /reports/deal.
+function readDealPayload(contactId) {
+  const g = (k) => document.getElementById('dl-' + k);
+  const payload = { contact_id: contactId };
+  DEAL_TEXT_FIELDS.forEach(k => { const el = g(k); if (el) payload[k] = el.value; });
+  DEAL_BOOL_FIELDS.forEach(k => { const el = g(k); if (el) payload[k] = el.checked; });
+  return payload;
+}
+
+async function saveDealPayload(contactId) {
+  const res = await fetch(`${API}/reports/deal`, {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(readDealPayload(contactId)),
+  });
+  if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Save failed');
+  return (await res.json()).deal;
+}
+
+// Reports-table modal (quick edit inline on the report).
+async function rbOpenDeal(contactId) {
+  const r = (__rbData?.rows || []).find(x => x.contact_id === contactId);
+  const who = r ? [r.first_name, r.last_name].filter(Boolean).join(' ') || r.email || 'Customer' : 'Customer';
+  const veh = r ? [r.year, r.make, r.model, r.trim].filter(Boolean).join(' ') : '';
+  let deal = {};
+  try { const d = await apiGetJson(`/reports/deal?contact_id=${encodeURIComponent(contactId)}`, { retries: 1 }); deal = d?.deal || {}; } catch {}
 
   document.getElementById('rb-deal-modal')?.remove();
   const m = document.createElement('div');
@@ -3053,28 +3146,7 @@ async function rbOpenDeal(contactId) {
         </div>
         <button onclick="document.getElementById('rb-deal-modal').remove()" class="text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 text-2xl leading-none p-1">&times;</button>
       </div>
-      <div class="p-5 grid grid-cols-1 sm:grid-cols-2 gap-4">
-        ${field('Delivery date', txt('delivery_date', 'date'))}
-        ${field('Delivery time', txt('delivery_time', 'time'))}
-        ${field('F&amp;I manager', txt('fni_manager', 'text', 'Name'))}
-        ${field('Deposit amount', txt('deposit_amount', 'number', '0'))}
-        ${field('Deal type', sel('deal_type', ['Finance', 'Lease', 'Cash']))}
-        ${field('Term (months)', txt('term', 'number', '60'))}
-        ${field('Plates', sel('plates', ['New', 'Transfer']))}
-        ${field('GM survey %', txt('gm_survey_pct', 'number', '0'))}
-        <div class="sm:col-span-2">${field('F&amp;I products', txt('fni_products', 'text', 'Warranty, GAP, etc.'))}</div>
-        ${field('Split with', txt('split_with', 'text', 'Rep name'))}
-        ${field('Vehicle commission', txt('vehicle_commission', 'number', '0'))}
-        ${field('F&amp;I commission', txt('fni_commission', 'number', '0'))}
-        <div></div>
-        <div class="sm:col-span-2 grid grid-cols-2 gap-3 pt-1">
-          ${cbx('google_review', 'Google review')}
-          ${cbx('gm_survey', 'GM survey done')}
-          ${cbx('fni_gross_1500', '$1,500 F&I gross')}
-          ${cbx('split_deal', 'Split deal')}
-        </div>
-        <div class="sm:col-span-2">${field('Notes', `<textarea id="dl-notes" rows="2" class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm">${esc(val('notes'))}</textarea>`)}</div>
-      </div>
+      <div class="p-5 grid grid-cols-1 sm:grid-cols-2 gap-4">${dealFormFieldsHtml(deal)}</div>
       <div class="flex items-center justify-end gap-2 p-5 border-t border-slate-200 dark:border-slate-800">
         <button onclick="document.getElementById('rb-deal-modal').remove()" class="text-sm font-bold text-slate-600 dark:text-slate-300 px-4 py-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800">Cancel</button>
         <button id="dl-save" onclick="rbSaveDeal('${contactId}')" class="bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-bold px-5 py-2 rounded-lg transition">Save deal</button>
@@ -3085,20 +3157,10 @@ async function rbOpenDeal(contactId) {
 }
 
 async function rbSaveDeal(contactId) {
-  const g = (k) => document.getElementById('dl-' + k);
-  const payload = { contact_id: contactId };
-  ['delivery_date', 'delivery_time', 'fni_manager', 'deposit_amount', 'deal_type', 'term', 'plates', 'fni_products', 'gm_survey_pct', 'split_with', 'vehicle_commission', 'fni_commission', 'notes']
-    .forEach(k => { const el = g(k); if (el) payload[k] = el.value; });
-  ['google_review', 'gm_survey', 'fni_gross_1500', 'split_deal'].forEach(k => { const el = g(k); if (el) payload[k] = el.checked; });
   const btn = document.getElementById('dl-save');
   if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
   try {
-    const res = await fetch(`${API}/reports/deal`, {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
-    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Save failed');
+    await saveDealPayload(contactId);
     document.getElementById('rb-deal-modal')?.remove();
     showToast('Deal saved', 'success');
     await rbFetch();
@@ -3109,6 +3171,94 @@ async function rbSaveDeal(contactId) {
 }
 window.rbOpenDeal = rbOpenDeal;
 window.rbSaveDeal = rbSaveDeal;
+
+// ── Desk a Deal — full page (managers). Pick a sold/delivered customer, then
+// fill the F&I desk record on a dedicated screen (no cramped modal).
+let __deskContactId = null;   // set when opened from a CRM customer row
+let __deskCustomers = [];     // won-customer list for the picker
+
+async function loadDeskDeal() {
+  const root = document.getElementById('desk-root');
+  if (!root) return;
+  const isMgr = ['DEALER_ADMIN', 'OWNER', 'MANAGER'].includes(profileContext?.role);
+  if (!isMgr) { root.innerHTML = '<div class="text-sm text-slate-400 italic p-6">Manager access required.</div>'; return; }
+  root.innerHTML = '<div class="text-sm text-slate-400 italic p-6">Loading…</div>';
+  // Pull the won-customer roster for the picker.
+  try {
+    const d = await apiGetJson('/reports/sold-deals?range=all&rep=all', { retries: 1 });
+    __deskCustomers = (d?.rows || []).map(r => ({
+      id: r.contact_id,
+      name: [r.first_name, r.last_name].filter(Boolean).join(' ') || r.email || 'Customer',
+      vehicle: [r.year, r.make, r.model, r.trim].filter(Boolean).join(' '),
+      sold_date: r.sold_date, has_deal: r.has_deal, status: r.status,
+    }));
+  } catch { __deskCustomers = []; }
+
+  const opts = __deskCustomers.map(c => `<option value="${c.id}">${esc(c.name)}${c.vehicle ? ' — ' + esc(c.vehicle) : ''}${c.has_deal ? ' ✓' : ''}</option>`).join('');
+  root.innerHTML = `
+    <div class="mb-5">
+      <h1 class="text-2xl font-black text-slate-900 dark:text-white">Desk a deal</h1>
+      <p class="text-sm text-slate-500 dark:text-slate-400">Pick a sold or delivered customer, then complete the F&amp;I desk record. A ✓ marks customers that already have one.</p>
+    </div>
+    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4 sm:p-5 mb-4">
+      <label class="text-[11px] uppercase tracking-wider text-slate-400 font-bold block mb-1">Customer</label>
+      <select id="desk-picker" class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm">
+        <option value="">Select a customer…</option>${opts}
+      </select>
+      ${__deskCustomers.length ? '' : '<p class="text-xs text-slate-400 italic mt-2">No sold, F&I, or delivered customers yet. Mark a customer sold in CRM and they\'ll appear here.</p>'}
+    </div>
+    <div id="desk-form"></div>`;
+  const picker = document.getElementById('desk-picker');
+  picker.addEventListener('change', () => deskRenderForm(picker.value));
+  if (__deskContactId && __deskCustomers.some(c => c.id === __deskContactId)) {
+    picker.value = __deskContactId;
+    deskRenderForm(__deskContactId);
+  }
+  __deskContactId = null; // consume the deep-link once
+}
+
+async function deskRenderForm(contactId) {
+  const wrap = document.getElementById('desk-form');
+  if (!wrap) return;
+  if (!contactId) { wrap.innerHTML = ''; return; }
+  const c = __deskCustomers.find(x => x.id === contactId) || {};
+  wrap.innerHTML = '<div class="text-sm text-slate-400 italic p-4">Loading deal…</div>';
+  let deal = {};
+  try { const d = await apiGetJson(`/reports/deal?contact_id=${encodeURIComponent(contactId)}`, { retries: 1 }); deal = d?.deal || {}; } catch {}
+  wrap.innerHTML = `
+    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden">
+      <div class="px-5 py-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between gap-3 flex-wrap">
+        <div>
+          <div class="text-lg font-black text-slate-900 dark:text-white">${esc(c.name || 'Customer')}</div>
+          <div class="text-sm text-slate-500 dark:text-slate-400">${c.vehicle ? esc(c.vehicle) + ' · ' : ''}${c.status || ''}${c.sold_date ? ' · sold ' + rbFmt(c.sold_date, 'date') : ''}</div>
+        </div>
+        <span class="text-[11px] font-black uppercase tracking-wider px-2 py-1 rounded-full ${deal && deal.id ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300' : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400'}">${deal && deal.id ? 'On file' : 'New'}</span>
+      </div>
+      <div class="p-5 grid grid-cols-1 sm:grid-cols-2 gap-4">${dealFormFieldsHtml(deal)}</div>
+      <div class="flex items-center justify-end gap-2 p-5 border-t border-slate-200 dark:border-slate-800">
+        <button id="desk-save" onclick="deskSaveDeal('${contactId}')" class="bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-bold px-6 py-2.5 rounded-lg transition">Save deal</button>
+      </div>
+    </div>`;
+}
+
+async function deskSaveDeal(contactId) {
+  const btn = document.getElementById('desk-save');
+  if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
+  try {
+    await saveDealPayload(contactId);
+    showToast('Deal saved', 'success');
+    const c = __deskCustomers.find(x => x.id === contactId); if (c) c.has_deal = true;
+    if (btn) { btn.disabled = false; btn.textContent = 'Saved ✓'; setTimeout(() => { if (btn) btn.textContent = 'Save deal'; }, 1500); }
+  } catch (e) {
+    if (btn) { btn.disabled = false; btn.textContent = 'Save deal'; }
+    showToast(e.message || 'Could not save the deal', 'error');
+  }
+}
+// Open the Desk-a-deal page focused on one customer (from a CRM row).
+function openDeskForContact(contactId) { __deskContactId = contactId; switchPage('desk'); }
+window.loadDeskDeal = loadDeskDeal;
+window.deskSaveDeal = deskSaveDeal;
+window.openDeskForContact = openDeskForContact;
 
 // Reports page — stacks the three manager reports + the sold-per-rep report and
 // the custom report builder. Called from switchPage('reports').
