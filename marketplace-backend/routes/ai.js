@@ -125,6 +125,13 @@ function skipPriceComp(vehicle) {
   return Number.isFinite(yr) && yr >= new Date().getFullYear()
 }
 
+// Minimum comparable listings before a "% to market" read is actionable. Below
+// this the sample is too thin to trust — common on rare/premium trims (e.g. a
+// Terrain AT4) where MarketCheck returns a handful of loosely-matched listings and
+// the average reads far too low. Tunable via env. Informational reads can still
+// show the number; they just won't assert "overpriced" or recommend a drop.
+const PRICE_MIN_COMPS = Number(process.env.PRICE_MIN_COMPS || 8)
+
 // Build a price-comp flag from a scraped market median, with sanity guards so a
 // bad/mismatched comp set never surfaces an absurd number like "233% overpriced".
 // A real dealer car is essentially never off by more than ~45% vs true market — a
@@ -135,7 +142,7 @@ function buildPriceFlag(price, marketMedian, source, compCount, trimMatched = nu
   const pct_diff = ((Number(price) - marketMedian) / marketMedian) * 100
   // Unreliable when: too few comps, beyond ±45% (bad match), or the comps weren't
   // trim-matched and the deviation is large (pooled base trims read false).
-  const reliable = (compCount == null || compCount >= 3)
+  const reliable = (compCount == null || compCount >= PRICE_MIN_COMPS)
     && Math.abs(pct_diff) <= 45
     && !(trimMatched === false && Math.abs(pct_diff) > 15)
   return {
@@ -1726,7 +1733,7 @@ ACV / wholesale take-in (what the dealer buys it for): ${cur} $${suggestedOffer.
         const _hasTrim = !!(vehicle.trim && String(vehicle.trim).trim())
         const _trimMatched = mc.matched_on ? !!mc.matched_on.trim : null
         const reliable = Math.abs(pct_diff) <= 45
-          && (mc.count == null || mc.count >= 3)
+          && (mc.count == null || mc.count >= PRICE_MIN_COMPS)
           && !(_hasTrim && _trimMatched === false && Math.abs(pct_diff) > 15)
         // Mileage rating vs the MarketCheck market average mileage.
         let mileageRating = 'average', mileageImpact = 0
@@ -1742,7 +1749,12 @@ ACV / wholesale take-in (what the dealer buys it for): ${cur} $${suggestedOffer.
         // Short AI insight (best-effort — the numbers stand on their own if this fails).
         let note = `Based on ${mc.count.toLocaleString()} comparable ${marketLabel} listings, the market average for this ${vehicleLabel} is ${'$' + mid.toLocaleString()} ${currency}. Your price is ${Math.abs(pct_diff)}% ${pct_diff > 0 ? 'above' : pct_diff < 0 ? 'below' : 'in line with'} market.`
         if (!reliable) {
-          note = `Low-confidence read: the ${mc.count.toLocaleString()} comparable listings we found ${_hasTrim && _trimMatched === false ? 'aren’t matched to this exact trim (they include other trims of the ' + (vehicle.model || 'model') + '), so the $' + mid.toLocaleString() + ' ' + currency + ' average likely understates a loaded trim' : 'give an average of $' + mid.toLocaleString() + ' ' + currency + ' that’s far from your price'}. Verify the trim against a book (Black Book/vAuto) before repricing — don’t treat the % to market as exact.`
+          const reason = (_hasTrim && _trimMatched === false)
+            ? 'aren’t matched to this exact trim (they include other trims of the ' + (vehicle.model || 'model') + '), so the $' + mid.toLocaleString() + ' ' + currency + ' average likely understates a loaded trim'
+            : (mc.count != null && mc.count < PRICE_MIN_COMPS)
+              ? 'are too thin a sample (' + mc.count.toLocaleString() + ' listing' + (mc.count === 1 ? '' : 's') + ') to trust for a rare or premium trim — the $' + mid.toLocaleString() + ' ' + currency + ' average can be well off'
+              : 'give an average of $' + mid.toLocaleString() + ' ' + currency + ' that’s far from your price'
+          note = `Low-confidence read: the ${mc.count.toLocaleString()} comparable listings we found ${reason}. Verify the trim against a book (Black Book/vAuto) before repricing — don’t treat the % to market as exact.`
         }
         try {
           if (reliable && process.env.ANTHROPIC_API_KEY) {
@@ -2043,7 +2055,7 @@ Respond with ONLY valid JSON (no markdown, no explanation, no trailing commas):
       const hasTrim = !!(vehicle.trim && String(vehicle.trim).trim())
       if (pct_diff > 45) continue                                   // beyond ±45% = almost always bad comps
       if (hasTrim && trimMatched === false) continue                // comps weren't matched to this trim
-      if (medCount != null && medCount < 5) continue                // too few comps to trust
+      if (medCount != null && medCount < PRICE_MIN_COMPS) continue  // too thin a sample to trust
 
       const suggestedPrice = Math.round(Number(vehicle.price) * (1 - price_drop_pct / 100))
       const label = [vehicle.year, vehicle.make, vehicle.model, vehicle.trim].filter(Boolean).join(' ')

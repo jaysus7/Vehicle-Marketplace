@@ -6236,7 +6236,7 @@ function renderCatalog() {
                 // A read that wasn't matched to this exact trim (or is thin) pools other
                 // trims and can read falsely over/under — show it greyed with a warning
                 // so nobody reprices off a bad comp set.
-                const shaky = m.trim_matched === false || (cnt != null && cnt < 5);
+                const shaky = m.trim_matched === false || (cnt != null && cnt < 8);
                 const cls = shaky ? 'bg-slate-400/15 text-slate-500 dark:text-slate-400 border-slate-400/30'
                   : pct > 103 ? 'bg-red-500/15 text-red-700 dark:text-red-300 border-red-500/30'
                   : pct < 97 ? 'bg-sky-500/15 text-sky-700 dark:text-sky-300 border-sky-500/30'
