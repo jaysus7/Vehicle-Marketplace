@@ -7399,7 +7399,7 @@ function exportPriceReportPDF() {
   const mileageImpact = ma?.mileage_price_impact != null ? Number(ma.mileage_price_impact) : null;
   const mileageImpactColor = mileageImpact == null ? '#94a3b8' : mileageImpact > 0 ? '#7c3aed' : '#ef4444';
   const mileageImpactText = mileageImpact != null
-    ? (mileageImpact >= 0 ? '+' : '') + '$' + Math.abs(mileageImpact).toLocaleString() + ' ' + cl
+    ? (mileageImpact > 0 ? '+' : mileageImpact < 0 ? '−' : '') + '$' + Math.abs(mileageImpact).toLocaleString() + ' ' + cl
     : '—';
 
   const canvas = document.getElementById('pr-chart');
