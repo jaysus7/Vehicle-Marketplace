@@ -334,7 +334,7 @@
       const s=DATA.site, g=sec.settings||{};
       switch(sec.type){
         case 'hero': {
-          const h={sm:'py-12',md:'py-20',lg:'py-32'}[g.height||'md'];
+          const h={sm:'py-12',md:'py-20',lg:'py-32',screen:'min-h-[88vh] flex flex-col justify-center py-20'}[g.height||'md'];
           const ov=Math.max(0,Math.min(90,g.overlay==null?45:g.overlay))/100;
           const bgLayer = g.image ? `<img src="${esc(g.image)}" class="w-full h-full object-cover">` : heroArt(g.bg);
           return `<section class="relative brand2-bg text-white"><div class="absolute inset-0">${bgLayer}<div class="absolute inset-0" style="background:rgba(15,23,42,${g.image?ov:Math.min(ov,0.35)})"></div></div>
@@ -354,6 +354,20 @@
             <div class="order-2 md:order-1">${img?`<img src="${esc(img)}" class="w-full rounded-2xl cshadow object-cover">`:`<div class="w-full aspect-[4/3] rounded-2xl brand2-bg flex items-center justify-center text-white/40">${s.logo_url?`<img src="${esc(s.logo_url)}" class="max-h-16 opacity-80">`:'<span class="text-sm">Add an image in the section settings</span>'}</div>`}</div>
             <div class="order-1 md:order-2"><h2 class="text-3xl font-black mb-3 text-slate-900">${esc(g.headline||'Drive more, spend less')}</h2><p class="text-slate-600 leading-relaxed">${esc(g.body||'')}</p>${g.button_label?`<button ${ctaTarget(g.button_target)} class="mt-5 brand-bg text-white font-bold px-5 py-2.5 rounded-lg">${esc(g.button_label)}</button>`:''}</div>
           </div></section>`;
+        }
+        case 'two_col': {
+          const wrap=g.full?'w-full px-4 sm:px-8':'max-w-6xl mx-auto px-4';
+          const col=(t,b,img)=>`<div>${img?`<img src="${esc(img)}" class="w-full rounded-2xl cshadow object-cover mb-4">`:''}${t?`<h3 class="text-2xl font-black mb-2 text-slate-900">${esc(t)}</h3>`:''}${b?`<p class="text-slate-600 leading-relaxed" style="white-space:pre-line">${esc(b)}</p>`:''}</div>`;
+          if(!g.left_title&&!g.left_body&&!g.right_title&&!g.right_body&&!g.left_image&&!g.right_image) return '';
+          return `<section class="${wrap} py-14"><div class="grid md:grid-cols-2 gap-8 items-start">${col(g.left_title,g.left_body,g.left_image)}${col(g.right_title,g.right_body,g.right_image)}</div></section>`;
+        }
+        case 'cards': {
+          const items=Array.isArray(g.items)?g.items:[];
+          if(!items.length&&!g.title) return '';
+          const cols={'2':'sm:grid-cols-2','3':'sm:grid-cols-2 lg:grid-cols-3','4':'sm:grid-cols-2 lg:grid-cols-4'}[String(g.columns||'3')]||'sm:grid-cols-2 lg:grid-cols-3';
+          const wrap=g.full?'w-full px-4 sm:px-8':'max-w-6xl mx-auto px-4';
+          const card=(c)=>`<div class="bg-white rounded-2xl cshadow p-5 border border-slate-100"><div class="font-black text-lg text-slate-900 mb-1">${esc(c.title||'')}</div><div class="text-sm text-slate-600 leading-relaxed" style="white-space:pre-line">${esc(c.text||'')}</div></div>`;
+          return `<section class="${wrap} py-14">${g.title?`<h2 class="text-2xl font-black mb-6 text-slate-900">${esc(g.title)}</h2>`:''}<div class="grid grid-cols-1 ${cols} gap-4">${items.map(card).join('')||'<div class="text-sm text-slate-400">Add cards in the section settings.</div>'}</div></section>`;
         }
         case 'body_style': {
           const map={}; for(const v of (DATA.vehicles||[])){ const b=(v.body_style||'').trim(); if(!b) continue; (map[b]=map[b]||{n:0,min:Infinity}); map[b].n++; if(v.price) map[b].min=Math.min(map[b].min,Number(v.price)); }
