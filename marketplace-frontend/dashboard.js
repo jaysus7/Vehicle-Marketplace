@@ -3337,19 +3337,41 @@ async function loadDeskDeal() {
   const isMgr = ['DEALER_ADMIN', 'OWNER', 'MANAGER'].includes(profileContext?.role);
   if (!isMgr) { root.innerHTML = '<div class="text-sm text-slate-400 italic p-6">Manager access required.</div>'; return; }
   root.innerHTML = '<div class="text-sm text-slate-400 italic p-6">Loading…</div>';
-  // Dealer letterhead + jurisdiction (for the documents and the default tax rate).
+  // Dealer letterhead + legal identifiers + jurisdiction (documents + default tax).
   if (!__deskDealer) {
     try {
       const cfg = await apiGetJson('/ai/config', { retries: 1 });
-      __deskDealer = { name: profileContext?.dealership?.name || 'Dealership', city: cfg.city, province: cfg.province, postal: cfg.postal_code, country: cfg.country, logo: null };
+      __deskDealer = {
+        name: cfg.legal_name || profileContext?.dealership?.name || 'Dealership',
+        city: cfg.city, province: cfg.province, postal: cfg.postal_code, country: cfg.country,
+        street: cfg.street_address || null, phone: cfg.phone || null, fax: cfg.fax || null,
+        hst: cfg.hst_number || null, omvic: cfg.omvic_reg || null, logo: null,
+      };
     } catch { __deskDealer = { name: profileContext?.dealership?.name || 'Dealership' }; }
     try { const b = await apiGetJson('/branding', { retries: 1 }); __deskDealer.logo = b?.branding?.logo_url || null; } catch {}
   }
+  const isAdmin = ['DEALER_ADMIN', 'OWNER'].includes(profileContext?.role);
+  const needsSetup = !(__deskDealer.hst && __deskDealer.omvic && __deskDealer.street);
   root.innerHTML = `
     <div class="mb-5">
       <h1 class="text-2xl font-black text-slate-900 dark:text-white">Desk a deal</h1>
       <p class="text-sm text-slate-500 dark:text-slate-400">Search any customer, structure the full deal, and print an estimate or bill of sale. Everything is stored on the customer's record. Financing figures are estimates only — not a lender commitment.</p>
     </div>
+    ${isAdmin ? `
+    <details class="bg-white dark:bg-slate-900 border ${needsSetup ? 'border-amber-300 dark:border-amber-800' : 'border-slate-200 dark:border-slate-800'} rounded-xl mb-4" ${needsSetup ? 'open' : ''}>
+      <summary class="px-4 sm:px-5 py-3 cursor-pointer text-sm font-black text-slate-900 dark:text-white flex items-center gap-2">
+        Dealer details for documents ${needsSetup ? '<span class="text-[10px] font-bold uppercase tracking-wider bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300 px-2 py-0.5 rounded-full">Setup needed</span>' : '<span class="text-xs font-normal text-slate-400">— appears on the bill of sale</span>'}
+      </summary>
+      <div class="p-4 sm:p-5 pt-0 grid grid-cols-2 sm:grid-cols-3 gap-3">
+        <div class="col-span-2 sm:col-span-3"><label class="text-[11px] uppercase tracking-wider text-slate-400 font-bold block mb-1">Legal / trade name</label><input id="dlr-legal_name" value="${esc(__deskDealer.name || '')}" class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm"></div>
+        <div class="col-span-2 sm:col-span-3"><label class="text-[11px] uppercase tracking-wider text-slate-400 font-bold block mb-1">Street address</label><input id="dlr-street_address" value="${esc(__deskDealer.street || '')}" placeholder="915 Niagara St" class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm"></div>
+        <div><label class="text-[11px] uppercase tracking-wider text-slate-400 font-bold block mb-1">Phone</label><input id="dlr-phone" value="${esc(__deskDealer.phone || '')}" class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm"></div>
+        <div><label class="text-[11px] uppercase tracking-wider text-slate-400 font-bold block mb-1">Fax</label><input id="dlr-fax" value="${esc(__deskDealer.fax || '')}" class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm"></div>
+        <div><label class="text-[11px] uppercase tracking-wider text-slate-400 font-bold block mb-1">HST #</label><input id="dlr-hst_number" value="${esc(__deskDealer.hst || '')}" placeholder="R715748679" class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm"></div>
+        <div><label class="text-[11px] uppercase tracking-wider text-slate-400 font-bold block mb-1">OMVIC / dealer reg #</label><input id="dlr-omvic_reg" value="${esc(__deskDealer.omvic || '')}" placeholder="5686852" class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm"></div>
+        <div class="col-span-2 sm:col-span-3"><button onclick="deskSaveDealer(this)" class="bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-bold px-5 py-2 rounded-lg transition">Save dealer details</button></div>
+      </div>
+    </details>` : ''}
     <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4 sm:p-5 mb-4">
       <label class="text-[11px] uppercase tracking-wider text-slate-400 font-bold block mb-1">Customer</label>
       <div class="relative">
@@ -3485,6 +3507,8 @@ function deskRenderForm(contactId) {
 
         ${card('Finance terms', `<div class="grid grid-cols-2 sm:grid-cols-3 gap-3">
             ${fld('Deal type', `<select id="dk-deal_type" class="${iCls}">${['Finance', 'Lease', 'Cash'].map(o => `<option ${d.deal_type === o ? 'selected' : ''}>${o}</option>`).join('')}</select>`)}
+            ${fld('Lender', txt('dk-finance_company', d.finance_company, 'e.g. TD Auto Finance'))}
+            ${fld('1st payment date', txt('dk-first_payment_date', d.first_payment_date, '', 'date'))}
             ${fld('APR %', `<input id="dk-apr" type="number" step="0.01" value="${apr}" oninput="deskRenderSummary()" class="${iCls}">`)}
             ${fld('Term (months)', `<input id="dk-term" type="number" value="${d.term == null ? 60 : d.term}" oninput="deskRenderSummary()" class="${iCls}">`)}
             ${fld('Payment frequency', `<select id="dk-payment_freq" onchange="deskRenderSummary()" class="${iCls}">${[['monthly', 'Monthly'], ['biweekly', 'Bi-weekly'], ['weekly', 'Weekly']].map(([v, l]) => `<option value="${v}" ${((d.payment_freq || 'monthly') === v) ? 'selected' : ''}>${l}</option>`).join('')}</select>`)}
@@ -3599,6 +3623,7 @@ function deskCollect(contactId) {
     trade_value: num('dk-trade_value'), trade_payoff: num('dk-trade_payoff'), trade_desc: val('dk-trade_desc'), trade_vin: val('dk-trade_vin'),
     down_payment: num('dk-down_payment'), deposit_amount: num('dk-deposit_amount'), rebate: num('dk-rebate'),
     apr: num('dk-apr'), term: num('dk-term'), payment_freq: val('dk-payment_freq'), deal_type: val('dk-deal_type'),
+    finance_company: val('dk-finance_company'), first_payment_date: val('dk-first_payment_date'),
     tax_rate: num('dk-tax_rate'), tax_on_difference: chk('dk-tax_on_difference'),
     addons: clean(__deskAddons, 'price'), fni_items: clean(__deskFni, 'price'), fees,
     insurance: { company: val('dk-ins-company'), policy: val('dk-ins-policy'), agent: val('dk-ins-agent'), phone: val('dk-ins-phone'), expiry: val('dk-ins-expiry') },
@@ -3692,7 +3717,21 @@ async function deskSave(contactId) {
   }
 }
 
-// ── Printed documents: Estimate + Bill of Sale ───────────────────────────────
+// Save the dealer legal details used on the documents (admins only).
+async function deskSaveDealer(btn) {
+  const g = (id) => (document.getElementById(id)?.value || '').trim();
+  const payload = { legal_name: g('dlr-legal_name'), street_address: g('dlr-street_address'), phone: g('dlr-phone'), fax: g('dlr-fax'), hst_number: g('dlr-hst_number'), omvic_reg: g('dlr-omvic_reg') };
+  if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
+  try {
+    const res = await fetch(`${API}/ai/config`, { method: 'PUT', headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Save failed');
+    __deskDealer = { ...__deskDealer, name: payload.legal_name || __deskDealer.name, street: payload.street_address || null, phone: payload.phone || null, fax: payload.fax || null, hst: payload.hst_number || null, omvic: payload.omvic_reg || null };
+    showToast('Dealer details saved', 'success');
+    if (btn) { btn.disabled = false; btn.textContent = 'Saved ✓'; setTimeout(() => { if (btn) btn.textContent = 'Save dealer details'; }, 1500); }
+  } catch (e) { if (btn) { btn.disabled = false; btn.textContent = 'Save dealer details'; } showToast(e.message || 'Could not save', 'error'); }
+}
+
+// ── Printed documents: Estimate + OMVIC-style Bill of Sale ───────────────────
 function deskPrint(kind) {
   const d = deskCollect(null);
   const c = deskCompute(d);
@@ -3700,79 +3739,193 @@ function deskPrint(kind) {
   const dealer = __deskDealer || {};
   const b = __deskBuyer || {};
   const veh = d.vehicle || {};
-  const today = new Date().toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' });
-  const title = kind === 'bill' ? 'Bill of Sale' : 'Purchase Estimate';
-  const dealerAddr = [dealer.city, dealer.province, dealer.postal].filter(Boolean).join(', ');
-  const header = (typeof apprBrandedHeader === 'function')
-    ? apprBrandedHeader(title, kind === 'bill' ? 'Motor vehicle bill of sale' : 'Working estimate — not a contract', dealer.name || 'Dealership', dealerAddr, dealer.logo || null, today)
-    : `<div class="head"><div><h1>${esc(dealer.name || 'Dealership')}</h1><div class="muted">${esc(dealerAddr)}</div></div><div style="text-align:right"><h1>${title}</h1><div class="muted">${today}</div></div></div>`;
-  const buyerName = b.full_name || [b.first_name, b.last_name].filter(Boolean).join(' ') || 'Customer';
-  const line = (l, v) => v ? `<tr><td>${l}</td><td>${esc(v)}</td></tr>` : '';
-  const money = (n) => deskM(n);
-  const vlabel = [veh.year, veh.make, veh.model, veh.trim].filter(Boolean).join(' ') || '—';
-
-  const itemRows = [];
-  itemRows.push(`<tr><td>${esc(vlabel)}</td><td style="text-align:right">${money(c.sellingPrice)}</td></tr>`);
-  (d.addons || []).forEach(a => itemRows.push(`<tr><td>Add-on — ${esc(a.name)}</td><td style="text-align:right">${money(a.price)}</td></tr>`));
-  (d.fni_items || []).forEach(a => itemRows.push(`<tr><td>F&amp;I — ${esc(a.name)}</td><td style="text-align:right">${money(a.price)}</td></tr>`));
-  (d.fees || []).forEach(f => itemRows.push(`<tr><td>${esc(f.name)}${f.taxable === false ? ' <span class="muted">(no tax)</span>' : ''}</td><td style="text-align:right">${money(f.amount)}</td></tr>`));
-
-  const totalsRows = `
-    ${c.tradeValue ? `<tr><td>Less trade allowance</td><td style="text-align:right">−${money(c.tradeValue)}</td></tr>` : ''}
-    <tr><td>Taxable amount</td><td style="text-align:right">${money(c.taxableBase)}</td></tr>
-    <tr><td>HST (${c.rate}%)</td><td style="text-align:right">${money(c.taxAmount)}</td></tr>
-    <tr style="font-weight:800;border-top:1px solid #cbd5e1"><td>Total</td><td style="text-align:right">${money(c.total)}</td></tr>
-    ${c.tradePayoff ? `<tr><td>Trade lien payoff</td><td style="text-align:right">${money(c.tradePayoff)}</td></tr>` : ''}
-    ${c.down ? `<tr><td>Cash down</td><td style="text-align:right">−${money(c.down)}</td></tr>` : ''}
-    ${c.deposit ? `<tr><td>Deposit</td><td style="text-align:right">−${money(c.deposit)}</td></tr>` : ''}
-    ${c.rebate ? `<tr><td>Rebate / incentive</td><td style="text-align:right">−${money(c.rebate)}</td></tr>` : ''}
-    <tr style="font-weight:800;border-top:1px solid #cbd5e1"><td>${d.deal_type === 'Cash' ? 'Balance due' : 'Amount financed'}</td><td style="text-align:right">${money(c.amountFinanced)}</td></tr>`;
-
-  const financeBlock = d.deal_type === 'Cash' ? '' : `
-    <h2>Finance estimate</h2>
-    <div class="offer"><div class="muted" style="color:#c7d2fe">Estimated ${c.freq} payment</div><div class="n">${money(c.payment)}</div>
-      <div style="font-size:12px;color:#e0e7ff">${c.apr}% APR · ${c.nPer} payments · ${d.deal_type || 'Finance'} · cost of borrowing ${money(Math.max(0, c.costOfBorrowing))}</div></div>
-    <p class="muted" style="margin-top:8px">Financing is arranged through a third-party lender. Payment, rate and term are estimates on approved credit and are not a commitment to lend. Final terms are set by the lender and the signed finance contract.</p>`;
-
   const ins = d.insurance || {};
-  const insBlock = (ins.company || ins.policy) ? `<h2>Insurance</h2><table class="kv">${line('Company', ins.company)}${line('Policy #', ins.policy)}${line('Agent / broker', ins.agent)}${line('Agent phone', ins.phone)}${line('Binder / expiry', ins.expiry)}</table>` : '';
+  const money = (n) => deskM(n);
+  const today = new Date().toLocaleDateString('en-CA', { year: 'numeric', month: 'short', day: 'numeric' });
+  const buyerName = b.full_name || [b.first_name, b.last_name].filter(Boolean).join(' ') || 'Customer';
+  const vlabel = [veh.year, veh.make, veh.model, veh.trim].filter(Boolean).join(' ') || '—';
+  const isNew = String(veh.year) === String(new Date().getFullYear() + 1) || String(veh.year) === String(new Date().getFullYear());
+  const condLabel = isNew ? 'New' : 'Used';
+  const dealerLine = [dealer.street, dealer.city, dealer.province, dealer.postal].filter(Boolean).join(', ') + (dealer.phone ? ` · Tel: ${dealer.phone}` : '') + (dealer.fax ? ` · Fax: ${dealer.fax}` : '');
+  const km = (v) => v != null && v !== '' ? Number(v).toLocaleString() + ' km' : '';
+  const dealNo = (__deskDeal.id ? String(__deskDeal.id).replace(/-/g, '').slice(0, 8).toUpperCase() : '—');
 
-  const legal = kind === 'bill'
-    ? `<p class="muted" style="margin-top:14px">The seller certifies the above vehicle is sold to the buyer for the total price shown. Odometer reading: <b>${veh.mileage != null ? Number(veh.mileage).toLocaleString() + ' km' : '____________'}</b>. All-in price includes all fees and charges required to be disclosed, excluding HST and licensing, in accordance with the Ontario Motor Vehicle Dealers Act. This document becomes a binding bill of sale once signed by both parties.</p>`
-    : `<p class="muted" style="margin-top:14px">This is a working estimate prepared for the customer's convenience and is <b>not a contract or an offer to sell</b>. Prices, taxes, fees, rates and availability are subject to change and to final verification. Figures assume approved credit.</p>`;
+  // A boxed field (label above value) — the OMVIC face-sheet look.
+  const F = (label, val) => `<div class="fx"><div class="fl">${label}</div><div class="fv">${val != null && val !== '' ? esc(String(val)) : '&nbsp;'}</div></div>`;
+  const priceRow = (l, v, opts = {}) => `<tr${opts.strong ? ' style="font-weight:800"' : ''}${opts.top ? ' class="ptop"' : ''}><td>${l}</td><td style="text-align:right">${v}</td></tr>`;
 
-  const inner = `
-    ${header}
-    <div class="grid2" style="margin-top:14px">
-      <div><h2>Buyer</h2><table class="kv">
-        ${line('Name', buyerName)}
-        ${line('Address', [b.address, [b.city, b.province, b.postal_code].filter(Boolean).join(', ')].filter(Boolean).join(' · '))}
-        ${line('Phone', b.phone || b.phone_mobile)}
-        ${line('Email', b.email)}
-        ${line('Driver’s licence', b.dl_number)}
-      </table></div>
-      <div><h2>Vehicle</h2><table class="kv">
-        ${line('Vehicle', vlabel)}
-        ${line('VIN', veh.vin)}
-        ${line('Odometer', veh.mileage != null ? Number(veh.mileage).toLocaleString() + ' km' : '')}
-        ${line('Colour', veh.color)}
-        ${line('Stock #', veh.stock)}
-        ${d.trade_desc || d.trade_value ? `<tr><td>Trade-in</td><td>${esc(d.trade_desc || 'Trade')}${d.trade_value ? ' — ' + money(d.trade_value) : ''}</td></tr>` : ''}
-      </table></div>
+  // ── Price information (matches a dealer bill of sale ordering) ──────────────
+  const taxRows = [];
+  taxRows.push(priceRow('Total vehicle price', money(c.sellingPrice)));
+  (d.addons || []).forEach(a => taxRows.push(priceRow(esc(a.name || 'Add-on'), money(a.price))));
+  (d.fni_items || []).forEach(a => taxRows.push(priceRow(esc(a.name || 'F&I product'), money(a.price))));
+  (d.fees || []).filter(f => f.taxable !== false).forEach(f => taxRows.push(priceRow(esc(f.name), money(f.amount))));
+  if (c.tradeValue) taxRows.push(priceRow('Less trade-in allowance', '−' + money(c.tradeValue)));
+  const nonTaxFees = (d.fees || []).filter(f => f.taxable === false);
+
+  const priceInfo = `
+    <table class="ptbl"><tbody>
+      ${taxRows.join('')}
+      ${priceRow('Subtotal (taxable)', money(c.taxableBase), { top: true })}
+      ${priceRow(`HST (${c.rate}%)`, money(c.taxAmount))}
+      ${priceRow('Subtotal', money(c.taxableBase + c.taxAmount), { top: true })}
+      ${nonTaxFees.map(f => priceRow(esc(f.name) + ' <span class="mut">(no tax)</span>', money(f.amount))).join('')}
+      ${priceRow('Total', money(c.total), { strong: true, top: true })}
+      ${c.tradePayoff ? priceRow('Trade-in lien payoff', money(c.tradePayoff)) : ''}
+      ${c.down ? priceRow('Cash down', '−' + money(c.down)) : ''}
+      ${c.deposit ? priceRow('Deposit', '−' + money(c.deposit)) : ''}
+      ${c.rebate ? priceRow('Rebate / incentive', '−' + money(c.rebate)) : ''}
+      ${priceRow(d.deal_type === 'Cash' ? 'Balance due' : 'Amount financed', money(c.amountFinanced), { strong: true, top: true })}
+    </tbody></table>`;
+
+  const financeTerms = (d.deal_type === 'Cash') ? '' : `
+    <div class="sec"><div class="sech">Finance terms — estimate</div>
+      <div class="fgrid">
+        ${F('Lender', d.finance_company || '')}${F('APR', (c.apr || 0) + '%')}${F('Amortization', (c.term || 0) + ' mo')}
+        ${F('Frequency', c.freq === 'weekly' ? 'Weekly' : c.freq === 'biweekly' ? 'Bi-weekly' : 'Monthly')}${F('# Payments', c.nPer)}${F('Payment', money(c.payment))}
+        ${F('Cost of borrowing', money(Math.max(0, c.costOfBorrowing)))}${F('Total of payments', money(c.payment * c.nPer))}${F('1st payment', d.first_payment_date || '')}
+      </div>
+      <p class="mut" style="margin-top:6px">Financing is arranged through a third-party lender. Payment, rate and term are estimates on approved credit and are not a commitment to lend; final terms are set by the lender and the signed finance contract.</p>
+    </div>`;
+
+  const tradeBlock = (d.trade_desc || d.trade_value) ? `
+    <div class="sec"><div class="sech">Trade-in vehicle</div>
+      <div class="fgrid">
+        ${F('Description', d.trade_desc || '')}${F('VIN', d.trade_vin || '')}${F('Allowance', d.trade_value ? money(d.trade_value) : '')}
+        ${F('Lien / payoff', d.trade_payoff ? money(d.trade_payoff) : '')}
+      </div>
+    </div>` : '';
+
+  // ── Estimate: single clean page, non-binding ───────────────────────────────
+  if (kind !== 'bill') {
+    const header = (typeof apprBrandedHeader === 'function')
+      ? apprBrandedHeader('Purchase Estimate', 'Working estimate — not a contract', dealer.name || 'Dealership', [dealer.city, dealer.province, dealer.postal].filter(Boolean).join(', '), dealer.logo || null, today)
+      : `<div class="head"><div><h1>${esc(dealer.name || 'Dealership')}</h1></div><div style="text-align:right"><h1>Purchase Estimate</h1><div class="mut">${today}</div></div></div>`;
+    const inner = `<style>${DESK_DOC_CSS}</style>${header}
+      <div class="grid2" style="margin-top:12px">
+        <div class="sec"><div class="sech">Buyer</div><div class="fgrid">${F('Name', buyerName)}${F('Phone', b.phone || b.phone_mobile)}${F('Email', b.email)}</div></div>
+        <div class="sec"><div class="sech">Vehicle</div><div class="fgrid">${F('Vehicle', vlabel)}${F('VIN', veh.vin)}${F('Odometer', km(veh.mileage))}</div></div>
+      </div>
+      <div class="sec"><div class="sech">Price information</div>${priceInfo}</div>
+      ${financeTerms}
+      <p class="mut" style="margin-top:12px">This is a working estimate prepared for the customer's convenience and is <b>not a contract or an offer to sell</b>. Prices, taxes, fees, rates and availability are subject to change and to final verification. Figures assume approved credit.</p>`;
+    if (typeof apprPrintWindow === 'function') apprPrintWindow('Purchase Estimate', inner);
+    return;
+  }
+
+  // ── Bill of Sale: OMVIC-style multi-page agreement ─────────────────────────
+  const idBand = `
+    <div class="band">
+      <div class="bandtitle">${condLabel.toUpperCase()} MOTOR VEHICLE PURCHASE AGREEMENT</div>
+      <div class="idline">${[dealer.hst ? 'HST# ' + esc(dealer.hst) : '', dealer.omvic ? 'Dealer Reg# ' + esc(dealer.omvic) : '', 'Deal# ' + dealNo, veh.stock ? 'Stock# ' + esc(veh.stock) : ''].filter(Boolean).join(' &nbsp;|&nbsp; ')}</div>
+      <div class="idline"><b>${esc(dealer.name || 'Dealership')}</b> — ${esc(dealerLine)}</div>
+      ${d.fni_manager ? `<div class="idline">F&amp;I Manager: <b>${esc(d.fni_manager)}</b></div>` : ''}
+    </div>`;
+
+  const face = `
+    ${idBand}
+    <div class="grid2" style="margin-top:10px">
+      <div class="sec"><div class="sech">Buyer</div><div class="fgrid">
+        ${F('Name', buyerName)}${F('Phone', b.phone || b.phone_mobile)}${F('Driver’s licence', b.dl_number)}
+        ${F('Address', [b.address, [b.city, b.province, b.postal_code].filter(Boolean).join(', ')].filter(Boolean).join(', '))}${F('Email', b.email)}${F('Date of sale', today)}
+      </div>
+      <div class="fgrid" style="margin-top:6px">${F('Insurance company', ins.company)}${F('Policy no.', ins.policy)}${F('Expiry', ins.expiry)}</div></div>
+      <div class="sec"><div class="sech">Vehicle</div><div class="fgrid">
+        ${F('Year', veh.year)}${F('Type', condLabel)}${F('Make', veh.make)}
+        ${F('Model', veh.model)}${F('Trim', veh.trim)}${F('Ext. colour', veh.color)}
+        ${F('VIN', veh.vin)}${F('Odometer', km(veh.mileage))}${F('Delivery date', d.delivery_date || today)}
+      </div></div>
     </div>
-    <h2>Itemized price</h2>
-    <table style="border-collapse:collapse"><tbody>
-      ${itemRows.join('')}
-      ${totalsRows}
-    </tbody></table>
-    ${financeBlock}
-    ${insBlock}
-    ${legal}
-    ${kind === 'bill' ? `<div class="sig"><div>Buyer signature &amp; date</div><div>For ${esc(dealer.name || 'Dealership')} — date</div></div>` : ''}`;
 
-  if (typeof apprPrintWindow === 'function') apprPrintWindow(title, inner);
-  else { const w = window.open('', '_blank'); if (w) { w.document.write(`<html><head><title>${title}</title></head><body>${inner}</body></html>`); w.document.close(); } }
+    <p class="ack">I, the purchaser, <b>${esc(buyerName)}</b>, agree to purchase the following vehicle from the dealer on the terms set out in this agreement, including the vehicle information document which forms part of this agreement.</p>
+
+    <div class="grid2">
+      <div class="sec"><div class="sech">Price information</div>${priceInfo}
+        <p class="mut" style="margin-top:6px">All-in price includes all fees and charges required to be disclosed, excluding HST and licensing, per the Ontario Motor Vehicle Dealers Act, 2002. Vehicle to be registered in Canada only.</p>
+      </div>
+      <div>
+        <div class="initbox"><b>Sales final.</b> Please review the entire contract, including all attached statements, before signing. This contract is final and binding once you have signed it unless the dealer has failed to comply with certain legal obligations. <span class="init">Initials ______</span></div>
+        <div class="initbox">Privacy: by signing you consent to the dealer contacting you and to sharing information with associated businesses so they may provide information about their services. You may withdraw consent in writing at any time. <span class="init">Initials ______</span></div>
+        <div class="initbox">Incentive: the dealership may receive a fee from the institution providing financing. <span class="init">Initials ______</span></div>
+        <div class="initbox">I have received the vehicle information required under the Motor Vehicle Dealers Act, 2002, and the initial disclosure statement required under the Consumer Protection Act, 2002. <span class="init">Initials ______</span></div>
+      </div>
+    </div>
+
+    ${tradeBlock}
+    ${financeTerms}
+
+    <div class="sig">
+      <div>${esc(buyerName)} — buyer signature &amp; date</div>
+      <div>For ${esc(dealer.name || 'Dealership')}${d.fni_manager ? ' — ' + esc(d.fni_manager) : ''} — date</div>
+    </div>`;
+
+  // Standard Ontario disclosure checklist (unchecked boxes for manual completion).
+  const box = '<span class="ck">☐</span>';
+  const disclosure = (heading) => `
+    <div class="sech">${heading}</div>
+    <p class="dis"><b>1. Odometer.</b> The vehicle is used and has been driven approximately ______ km. ${box} We cannot determine the total distance driven prior to a date. ${box} We do not know the total distance driven. ${box} The odometer is broken/faulty. ${box} The odometer has been replaced. ${box} The odometer has been rolled back. ${box} The odometer accurately records the true distance travelled.</p>
+    <p class="dis"><b>2. Prior use.</b> ${box} Previously a daily rental. ${box} Previously a police/emergency vehicle. ${box} Previously a taxi or limousine.</p>
+    <p class="dis"><b>3. Prior damage.</b> ${box} Fire damage. ${box} Immersion/flood to the interior floorboards. ${box} Structural damage. ${box} Structural repairs/alterations. ${box} Requires repair to engine, transmission/powertrain, subframe/suspension, computer, electrical, fuel or A/C. ${box} Total repair cost from accident/incident exceeds $3,000 (if known: ______). ${box} Anti-lock brakes not operational. ${box} Airbags missing/not operational. ${box} Two or more adjacent non-bumper panels replaced. ${box} Current/prior model-year panels repainted. ${box} Declared a total loss by an insurer. ${box} Badge relates to a different model. ${box} Manufacturer's warranty cancelled. ${box} Classified irreparable/salvage/rebuilt. ${box} Recovered after being reported stolen. ${box} Previously registered/traded outside Ontario. ${box} Subject to a prior Repair and Storage lien. ${box} Materially different from advertised specifications. ${box} To the best of the seller's knowledge, none of the statements in this Part 3 apply.</p>`;
+
+  const legalPages = `
+    <div class="pb"></div>
+    <div class="sech">Safety Standards Certificate</div>
+    <p class="dis">A Safety Standards Certificate is only an indication that the motor vehicle met certain basic standards of vehicle safety on the date of inspection. It is not a warranty as to the condition of the vehicle.</p>
+    <div class="sech">Vehicle sold “as-is” (if applicable)</div>
+    <p class="dis">If indicated on the face of this agreement, the motor vehicle is being sold “as-is” and is not represented as being in road-worthy condition, mechanically sound or maintained at any guaranteed level of quality. The vehicle may not be fit for use as a means of transportation and may require substantial repairs at the buyer's expense. It may not be possible to register the vehicle to be driven in its current condition.</p>
+    <div class="sech">Ontario Motor Vehicle Industry Council (OMVIC)</div>
+    <p class="dis">In case of any concerns with this sale, first contact your motor vehicle dealer. If concerns persist you may contact OMVIC, the administrative authority for the Motor Vehicle Dealers Act, 2002. You may be eligible for compensation from the Motor Vehicle Dealers Compensation Fund if you suffer a financial loss from this trade and your dealer is unable or unwilling to make good on the loss. You may have additional rights at law. Tel: 1-800-943-6002 · www.omvic.on.ca</p>
+    <div class="sech">Canadian Motor Vehicle Arbitration Plan (CAMVAP)</div>
+    <p class="dis">CAMVAP allows consumers to resolve disputes with participating manufacturers about possible defects in a vehicle's assembly or materials, or how the manufacturer applies its new-vehicle warranty. Contact CAMVAP to see if your vehicle qualifies.</p>
+
+    <div class="pb"></div>
+    <div class="sech">Disclosures — vehicle being purchased${veh.vin ? ' (VIN ' + esc(veh.vin) + ')' : ''}</div>
+    ${disclosure('Used vehicle disclosure')}
+    ${(d.trade_desc || d.trade_vin) ? `<div class="pb"></div>${disclosure('Trade-in vehicle disclosure' + (d.trade_desc ? ' — ' + esc(d.trade_desc) : ''))}` : ''}
+
+    <div class="pb"></div>
+    <div class="sech">Terms and conditions</div>
+    <p class="dis"><b>1. Privacy.</b> Personal information collected on this form and related documents is collected under applicable privacy legislation and the dealer's privacy policy, and is used to sell or lease the vehicle, provide related products and services, assist with financing or lease, service or repair the vehicle, and provide other information, products and services.</p>
+    <p class="dis"><b>2. Definition of the vehicle.</b> The vehicle includes all accessories and additional equipment attached or installed before or after the date of this agreement, and any proceeds arising from dealings in the vehicle.</p>
+    <p class="dis"><b>3. Distance travelled.</b> The dealer confirms that, to the best of its knowledge, the distance shown on the face of this agreement will be the odometer reading on delivery. For a trade-in, the buyer confirms the distance shown is accurate and agrees to indemnify the dealer against any inaccuracy.</p>
+    <p class="dis"><b>4. Title.</b> Title to the vehicle remains with the dealer until the unpaid cash balance stated on the face of this agreement is paid in full. The dealer may repossess and resell the vehicle upon default.</p>
+    <p class="dis"><b>5. Transfer documents.</b> The buyer authorizes the dealer to make all applications and obtain all permits required to transfer the vehicle.</p>
+    <p class="dis"><b>6. Safety Standards Certificate.</b> The buyer acknowledges the permit cannot be transferred unless a Safety Standards Certificate is obtained; if not requested, the vehicle is delivered with an Unfit Motor Vehicle permit.</p>
+    <p class="dis"><b>7. Financing &amp; payment.</b> This is an agreement to purchase the vehicle. If there is an unpaid balance, the dealer's obligation to sell is conditional on financing for the unpaid balance; the buyer has two business days from the date of this agreement to obtain financing.</p>
+    <p class="dis"><b>8. Trade-in re-appraisal.</b> If a trade-in is not delivered before execution of this agreement, or if there is a material change in its condition before delivery, the dealer may re-appraise it and the buyer shall pay the difference or may cancel subject to the dealer's reasonable costs.</p>
+    <p class="dis"><b>9. Entire agreement.</b> This agreement, including all attached statements and disclosures, constitutes the entire agreement between the parties. If any provision is invalid or unenforceable, the remaining provisions are not affected.</p>
+    <p class="mut" style="margin-top:10px">This document is generated by MarketSync from the figures entered by the dealer. The dealer is responsible for compliance with the Motor Vehicle Dealers Act, 2002, the Consumer Protection Act, 2002, and for legal review of these terms.</p>`;
+
+  const inner = `<style>${DESK_DOC_CSS}</style>${face}${legalPages}`;
+  if (typeof apprPrintWindow === 'function') apprPrintWindow(condLabel + ' Motor Vehicle Purchase Agreement', inner);
+  else { const w = window.open('', '_blank'); if (w) { w.document.write(`<html><head><title>Bill of Sale</title></head><body>${inner}</body></html>`); w.document.close(); } }
 }
+
+// Print styles for the deal documents (injected into the print window).
+const DESK_DOC_CSS = `
+  .band{border:2px solid #0f172a;border-radius:6px;padding:8px 12px;margin-top:6px}
+  .bandtitle{font-size:15px;font-weight:900;letter-spacing:.02em}
+  .idline{font-size:11px;color:#334155;margin-top:2px}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .sec{border:1px solid #cbd5e1;border-radius:6px;padding:8px 10px;margin-top:10px}
+  .sech{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:#475569;border-bottom:1px solid #e2e8f0;padding-bottom:4px;margin-bottom:6px}
+  .fgrid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px 10px}
+  .fx{border-bottom:1px solid #f1f5f9;min-height:30px}
+  .fl{font-size:8.5px;text-transform:uppercase;letter-spacing:.04em;color:#94a3b8}
+  .fv{font-size:12px;font-weight:600;color:#0f172a}
+  .ack{font-size:11px;margin:10px 0 4px;line-height:1.4}
+  .ptbl{width:100%;border-collapse:collapse;font-size:12px}
+  .ptbl td{padding:3px 0}
+  .ptbl tr.ptop td{border-top:1px solid #cbd5e1;font-weight:600}
+  .mut{font-size:10px;color:#94a3b8}
+  .initbox{border:1px solid #e2e8f0;border-radius:6px;padding:7px 9px;margin-top:10px;font-size:10.5px;line-height:1.35;color:#334155}
+  .init{display:block;margin-top:4px;font-weight:700;color:#0f172a}
+  .dis{font-size:10px;line-height:1.45;color:#334155;margin:6px 0}
+  .ck{font-size:12px;margin-right:1px}
+  .sig{display:grid;grid-template-columns:1fr 1fr;gap:30px;margin-top:34px}
+  .sig div{border-top:1px solid #94a3b8;padding-top:4px;font-size:10px;color:#64748b}
+  .pb{page-break-before:always;height:0}
+`;
 
 // Open the Desk-a-deal page focused on one customer (from a CRM row).
 function openDeskForContact(contactId) { __deskContactId = contactId; switchPage('desk'); }
@@ -3785,6 +3938,7 @@ window.deskVehSearch = deskVehSearch;
 window.deskPickVehicle = deskPickVehicle;
 window.deskRenderSummary = deskRenderSummary;
 window.deskSave = deskSave;
+window.deskSaveDealer = deskSaveDealer;
 window.deskPrint = deskPrint;
 window.openDeskForContact = openDeskForContact;
 

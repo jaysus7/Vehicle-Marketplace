@@ -307,7 +307,7 @@ export function registerAI(app) {
     if (!req.dealershipId) return res.status(400).json({ error: 'No dealership associated' })
     const { data, error } = await supabaseAdmin
       .from('dealerships')
-      .select('ai_boost_active, ai_tone, ai_required_fields, ai_manager_email, vin_sticker_active, inv_intel_active, ai_vision_active, ai_boost_paid, inv_intel_paid, full_access_until, photo_background_url, country, province, city, postal_code, daily_digest_enabled')
+      .select('ai_boost_active, ai_tone, ai_required_fields, ai_manager_email, vin_sticker_active, inv_intel_active, ai_vision_active, ai_boost_paid, inv_intel_paid, full_access_until, photo_background_url, country, province, city, postal_code, daily_digest_enabled, legal_name, street_address, phone, fax, hst_number, omvic_reg')
       .eq('id', req.dealershipId)
       .single()
     if (error) return res.status(500).json({ error: error.message })
@@ -357,7 +357,8 @@ export function registerAI(app) {
   // PUT /ai/config — update dealership AI config (DEALER_ADMIN only)
   app.put('/ai/config', requireAuth, requireDealerAdmin, async (req, res) => {
     if (!req.dealershipId) return res.status(400).json({ error: 'No dealership associated' })
-    const { ai_tone, ai_required_fields, ai_manager_email, ai_boost_active, country, province, city, postal_code, daily_digest_enabled } = req.body
+    const { ai_tone, ai_required_fields, ai_manager_email, ai_boost_active, country, province, city, postal_code, daily_digest_enabled,
+      legal_name, street_address, phone, fax, hst_number, omvic_reg } = req.body
     const update = {}
     if (ai_tone !== undefined) update.ai_tone = ai_tone
     if (ai_required_fields !== undefined) update.ai_required_fields = ai_required_fields
@@ -369,12 +370,19 @@ export function registerAI(app) {
     if (province !== undefined) update.province = (province || '').trim() || null
     if (city !== undefined) update.city = (city || '').trim() || null
     if (postal_code !== undefined) update.postal_code = (postal_code || '').trim() || null
+    // Legal identifiers + full contact for the OMVIC deal documents.
+    if (legal_name !== undefined) update.legal_name = (legal_name || '').trim() || null
+    if (street_address !== undefined) update.street_address = (street_address || '').trim() || null
+    if (phone !== undefined) update.phone = (phone || '').trim() || null
+    if (fax !== undefined) update.fax = (fax || '').trim() || null
+    if (hst_number !== undefined) update.hst_number = (hst_number || '').trim() || null
+    if (omvic_reg !== undefined) update.omvic_reg = (omvic_reg || '').trim() || null
 
     const { data, error } = await supabaseAdmin
       .from('dealerships')
       .update(update)
       .eq('id', req.dealershipId)
-      .select('ai_boost_active, ai_tone, ai_required_fields, ai_manager_email, country, province, city, postal_code, daily_digest_enabled')
+      .select('ai_boost_active, ai_tone, ai_required_fields, ai_manager_email, country, province, city, postal_code, daily_digest_enabled, legal_name, street_address, phone, fax, hst_number, omvic_reg')
       .single()
     if (error) return res.status(500).json({ error: error.message })
     res.json(data)
