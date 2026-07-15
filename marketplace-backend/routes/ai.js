@@ -186,7 +186,21 @@ async function marketMedianForScan({ vehicle, dealer, isUS, dealershipId, isOwne
         isUS,
       },
     })
-    if (mc?.median_price) return { median: mc.median_price, source: 'MarketCheck', count: mc.count, matched_on: mc.matched_on || null }
+    if (mc?.median_price) {
+      // Normalise the comp median to THIS car's mileage so the "% to market" read
+      // reflects like-for-like value, not the km gap between it and the comp set.
+      const raw = mc.median_price
+      const compMiles = mc.median_mileage ?? mc.avg_mileage ?? null
+      const subjectMiles = vehicle.mileage ? Number(vehicle.mileage) : null
+      const adjusted = mileageAdjustedMedian(raw, compMiles, subjectMiles, isUS) ?? raw
+      return {
+        median: adjusted,               // mileage-adjusted fair value for this vehicle
+        raw_median: raw,                // unadjusted comp median (transparency)
+        median_mileage: compMiles,
+        mileage_adjusted: adjusted !== raw,
+        source: 'MarketCheck', count: mc.count, matched_on: mc.matched_on || null,
+      }
+    }
     return null
   } catch { return null }
 }
@@ -207,6 +221,27 @@ function median(sorted) {
   return sorted.length % 2 !== 0
     ? sorted[mid]
     : (sorted[mid - 1] + sorted[mid]) / 2
+}
+
+// Adjust a comp-set median to THIS vehicle's odometer. The comps are already
+// matched on make/model/year/trim/drivetrain/engine (see marketcheckMarket), so
+// mileage is the dominant remaining driver of value — an unadjusted median is why
+// a low-km clean car reads "20% overpriced" against higher-km comps. Same model the
+// appraisal sheet uses: value-proportional (scales with the car's tier instead of a
+// flat $/km) and capped at ±30% so a bad odometer reading can't swing it wildly.
+// Returns the comp median unchanged when we don't have mileage on both sides.
+function mileageAdjustedMedian(compMedian, compMiles, subjectMiles, isUS) {
+  const med = Number(compMedian)
+  if (!(med > 0)) return null
+  const cm = Number(compMiles), sm = Number(subjectMiles)
+  if (!(cm > 0) || !(sm > 0)) return med
+  const REF_DIST = isUS ? 125000 : 200000                 // useful-life window (mi / km)
+  const SENS = Number(process.env.APPRAISE_MILEAGE_SENS || 0.5)
+  const ratePerDist = (med * SENS) / REF_DIST
+  let adj = Math.round((cm - sm) * ratePerDist)           // fewer km than comps → +value
+  const cap = Math.round(med * 0.30)
+  adj = Math.max(-cap, Math.min(cap, adj))
+  return med + adj
 }
 
 // Compute the "today's briefing" digest for a dealership — the action items on
@@ -2066,7 +2101,8 @@ Respond with ONLY valid JSON (no markdown, no explanation, no trailing commas):
 
       const suggestedPrice = Math.round(Number(vehicle.price) * (1 - price_drop_pct / 100))
       const label = [vehicle.year, vehicle.make, vehicle.model, vehicle.trim].filter(Boolean).join(' ')
-      const note = `${daysOnLot} days on lot — suggest reducing price by ${price_drop_pct}% to $${suggestedPrice.toLocaleString()} (currently ${Math.round(pct_diff)}% above median $${Math.round(med).toLocaleString()})`
+      const marketBasis = mm?.mileage_adjusted ? 'mileage-adjusted market value' : 'market median'
+      const note = `${daysOnLot} days on lot — suggest reducing price by ${price_drop_pct}% to $${suggestedPrice.toLocaleString()} (currently ${Math.round(pct_diff)}% above ${marketBasis} $${Math.round(med).toLocaleString()})`
 
       suggestions.push({ inventory_id: vehicle.id, vehicle_label: label, note, days_on_lot: daysOnLot, suggested_price: suggestedPrice })
 

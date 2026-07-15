@@ -7158,7 +7158,7 @@ function renderCatalog() {
                   : 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/30';
                 const matchTxt = m.trim_matched === true ? 'trim-matched' : m.trim_matched === false ? 'matched on model, NOT trim — verify' : 'match basis unknown';
                 const cntTxt = cnt != null ? `${cnt} comp${cnt === 1 ? '' : 's'}` : 'comp count n/a';
-                const tip = `Your price vs live market median $${Number(mktMedian).toLocaleString()} · ${cntTxt} · ${matchTxt}`;
+                const tip = `Your price vs mileage-adjusted market value $${Number(mktMedian).toLocaleString()} (comps matched on make/model/year/trim, normalised to this car's km) · ${cntTxt} · ${matchTxt}`;
                 marketBadge = `<span class="${gtag} ${cls}" title="${tip}">${pct}% to market${cnt != null ? ` · ${cnt}` : ''}${shaky ? ' ⚠' : ''}</span>`;
               }
             }
