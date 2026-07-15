@@ -13,6 +13,26 @@ function esc(s) {
   ));
 }
 
+// Inline SVG icon set — replaces emoji for a cleaner, professional look. Paths are
+// standard Heroicons outlines (render on currentColor). Add names as pages migrate.
+const MS_ICONS = {
+  chat: 'M8 10h.01M12 10h.01M16 10h.01M21 12c0 4.418-4.03 8-9 8a9.7 9.7 0 01-4-.85L3 21l1.85-4.5A8 8 0 013 12c0-4.418 4.03-8 9-8s9 3.582 9 8z',
+  inbox: 'M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0l-2 3h-4l-1 2H9l-1-2H4m16 0v3a2 2 0 01-2 2H6a2 2 0 01-2-2v-3',
+  car: 'M8 17a2 2 0 11-4 0 2 2 0 014 0zm12 0a2 2 0 11-4 0 2 2 0 014 0zM3 13h18l-1.5-5.5A2 2 0 0017.6 6H6.4a2 2 0 00-1.9 1.5L3 13zm0 0v3h1m16-3v3h-1',
+  check: 'M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z',
+  phone: 'M3 5a2 2 0 012-2h1.6a1 1 0 01.95.68l1 3a1 1 0 01-.27 1.06l-1.2 1.2a12 12 0 005.7 5.7l1.2-1.2a1 1 0 011.06-.27l3 1a1 1 0 01.68.95V19a2 2 0 01-2 2A16 16 0 013 5z',
+  mail: 'M3 8l9 6 9-6M4 6h16a1 1 0 011 1v10a1 1 0 01-1 1H4a1 1 0 01-1-1V7a1 1 0 011-1z',
+  note: 'M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.4-9.4a2 2 0 112.8 2.8L11.8 15H9v-2.8l8.6-8.6z',
+  calendar: 'M8 7V3m8 4V3M4 11h16M5 5h14a1 1 0 011 1v13a1 1 0 01-1 1H5a1 1 0 01-1-1V6a1 1 0 011-1z',
+  download: 'M12 4v12m0 0l-4-4m4 4l4-4M4 20h16',
+  reply: 'M3 10h10a5 5 0 015 5v2M3 10l6-6M3 10l6 6',
+  trophy: 'M8 21h8m-4-4v4M7 4h10v4a5 5 0 01-10 0V4zM7 6H4v1a3 3 0 003 3m10-4h3v1a3 3 0 01-3 3',
+};
+function msIco(name, cls) {
+  const d = MS_ICONS[name]; if (!d) return '';
+  return `<svg class="${cls || 'w-4 h-4'} inline-block flex-shrink-0" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="${d}"/></svg>`;
+}
+
 // GET a JSON endpoint with a cold-start-friendly retry. The backend runs on a
 // tier that spins down when idle, so the first request after a lull can hang or
 // return a 502/503/504 for ~30–60s while it wakes. We retry those (and network
@@ -1632,25 +1652,27 @@ function crmTaskRow(t, contactId) {
   </div>`;
 }
 function crmTimelineItem(t, cid) {
-  const icon = { comm: '💬', lead: '📥', appraisal: '🚗', sale: '✅' };
-  const chIcon = { call: '📞', sms: '💬', email: '✉️', note: '📝' };
-  let head = '', bodyTxt = t.body || '', reply = '';
+  const chIco = { call: 'phone', sms: 'chat', email: 'mail', note: 'note' };
+  let head = '', bodyTxt = t.body || '', reply = '', iconName = 'note';
   if (t.kind === 'comm') {
+    iconName = chIco[t.channel] || 'note';
     const label = { call: 'Call', sms: 'Text', email: 'Email', note: 'Note', system: 'System' }[t.channel] || 'Note';
     const dir = t.direction === 'in' ? ' (inbound)' : t.direction === 'out' ? ' (outbound)' : '';
-    head = `${chIcon[t.channel] || '📝'} ${label}${dir}${t.subject ? ` — ${esc(t.subject)}` : ''}`;
+    head = `${label}${dir}${t.subject ? ` — ${esc(t.subject)}` : ''}`;
     // Reply to an inbound customer message right from the timeline.
     if (cid && t.direction === 'in' && ['sms', 'email', 'call'].includes(t.channel)) {
-      reply = `<button onclick="crmReplyForm('${cid}','${t.channel}',${JSON.stringify(t.subject || '').replace(/"/g, '&quot;')})" class="mt-1 text-[11px] font-bold text-indigo-600 dark:text-indigo-400 hover:underline">↩ Reply</button>`;
+      reply = `<button onclick="crmReplyForm('${cid}','${t.channel}',${JSON.stringify(t.subject || '').replace(/"/g, '&quot;')})" class="mt-1 inline-flex items-center gap-1 text-[11px] font-bold text-indigo-600 dark:text-indigo-400 hover:underline">${msIco('reply', 'w-3 h-3')} Reply</button>`;
     }
   } else if (t.kind === 'lead') {
-    head = `📥 Lead${t.source ? ` · ${esc(t.source)}` : ''}${t.vehicle ? ` — ${esc(t.vehicle)}` : ''}`;
+    iconName = 'inbox';
+    head = `Lead${t.source ? ` · ${esc(t.source)}` : ''}${t.vehicle ? ` — ${esc(t.vehicle)}` : ''}`;
   } else if (t.kind === 'appraisal') {
-    head = `🚗 Appraisal — ${esc(t.vehicle || 'vehicle')}${t.offer != null ? ` · offer ${crmMoney(t.offer, t.currency)}` : ''}`;
+    iconName = 'car';
+    head = `Appraisal — ${esc(t.vehicle || 'vehicle')}${t.offer != null ? ` · offer ${crmMoney(t.offer, t.currency)}` : ''}`;
     bodyTxt = '';
-  }
+  } else if (t.kind === 'sale') { iconName = 'check'; }
   return `<div class="flex gap-2.5">
-    <div class="w-7 flex-shrink-0 text-center text-sm pt-0.5">${(t.kind === 'comm' ? '' : icon[t.kind]) || ''}</div>
+    <div class="w-7 flex-shrink-0 flex justify-center pt-0.5 text-slate-400">${msIco(iconName, 'w-4 h-4')}</div>
     <div class="min-w-0 flex-1 border-l-2 border-slate-100 dark:border-slate-800 pl-3 pb-1">
       <div class="text-sm font-semibold text-slate-800 dark:text-slate-100">${head}</div>
       ${bodyTxt ? `<div class="text-sm text-slate-600 dark:text-slate-300 whitespace-pre-wrap mt-0.5">${esc(bodyTxt)}</div>` : ''}
@@ -1835,9 +1857,9 @@ async function crmSaveAppt(id) {
       <div class="text-sm font-bold text-slate-800 dark:text-slate-100">Appointment booked for ${esc(new Date(startIso).toLocaleString())}</div>
       <div class="text-xs text-slate-500">Add it to your calendar:</div>
       <div class="flex flex-wrap gap-2">
-        <a href="${g}" target="_blank" class="text-xs font-bold bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 px-3 py-1.5 rounded-lg">📅 Google Calendar</a>
-        <a href="${o}" target="_blank" class="text-xs font-bold bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 px-3 py-1.5 rounded-lg">📅 Outlook</a>
-        <a href="${ics}" download="appointment.ics" class="text-xs font-bold bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 px-3 py-1.5 rounded-lg">⬇ .ics file</a>
+        <a href="${g}" target="_blank" class="inline-flex items-center gap-1.5 text-xs font-bold bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 px-3 py-1.5 rounded-lg">${msIco('calendar', 'w-3.5 h-3.5')} Google Calendar</a>
+        <a href="${o}" target="_blank" class="inline-flex items-center gap-1.5 text-xs font-bold bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 px-3 py-1.5 rounded-lg">${msIco('calendar', 'w-3.5 h-3.5')} Outlook</a>
+        <a href="${ics}" download="appointment.ics" class="inline-flex items-center gap-1.5 text-xs font-bold bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 px-3 py-1.5 rounded-lg">${msIco('download', 'w-3.5 h-3.5')} .ics file</a>
       </div>
       <button onclick="openCrmContact('${id}')" class="text-xs font-bold text-indigo-500">Done</button>
     </div>`);
@@ -2313,7 +2335,7 @@ function plCard(c) {
   const meta = [c.stocknumber ? '#' + esc(c.stocknumber) : '', c.mileage ? plKm(c.mileage) : ''].filter(Boolean).join(' · ');
   const thumb = c.image
     ? `<img src="${esc(c.image)}" alt="" loading="lazy" class="w-full h-24 object-cover rounded-md bg-slate-100 dark:bg-slate-800">`
-    : `<div class="w-full h-24 rounded-md bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-300 text-2xl">🚗</div>`;
+    : `<div class="w-full h-24 rounded-md bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-300">${msIco('car', 'w-7 h-7')}</div>`;
   const postedTag = `<span class="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300">Posted</span>`;
   const collapsed = PL_COLLAPSED.has(c.id);
   const chevron = `<button data-collapse="${c.id}" class="flex-shrink-0 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition p-0.5" title="${collapsed ? 'Expand' : 'Collapse'}"><svg class="w-4 h-4 transition-transform ${collapsed ? '' : 'rotate-90'}" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg></button>`;
@@ -2339,7 +2361,7 @@ function plCard(c) {
       <div class="text-[11px] text-slate-400 mt-0.5">${c.posted_at ? 'Posted ' + plPosted(c.posted_at) : ''}${rep}</div>
       ${c.stage === 'appointment_set' && c.appointment_at ? `
         <div class="mt-2 flex items-center justify-between gap-2 text-xs bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800 rounded px-2 py-1.5">
-          <span class="font-semibold text-indigo-700 dark:text-indigo-300">📅 ${esc(plAppt(c.appointment_at))}</span>
+          <span class="inline-flex items-center gap-1.5 font-semibold text-indigo-700 dark:text-indigo-300">${msIco('calendar', 'w-3.5 h-3.5')} ${esc(plAppt(c.appointment_at))}</span>
           <button data-appt-edit="${c.id}" data-label="${esc(c.label)}" data-at="${esc(c.appointment_at)}" data-note="${esc(c.appointment_note || '')}" class="text-indigo-500 hover:text-indigo-400 font-bold">Edit</button>
         </div>${c.appointment_note ? `<div class="text-[11px] text-slate-400 mt-1">${esc(c.appointment_note)}</div>` : ''}` : ''}
       ${c.stage === 'need_relisting' ? `<button data-relist="${c.id}" class="mt-2 w-full text-xs font-bold bg-amber-500 hover:bg-amber-400 text-white rounded px-2 py-1.5 transition">↻ Relist on Facebook</button>` : ''}
@@ -6003,7 +6025,7 @@ const SEC_META = {
   cards:              { label: 'Cards', fields: [['title','Section heading (optional)','text'],['items','Cards — one per line: Title :: Description','cards'],['columns','Columns','cardcols'],['full','Full-width (edge to edge)','bool']] },
   body_style:         { label: 'Browse by body style', fields: [['title','Title','text']] },
   payment_calc:       { label: 'Payment calculator', fields: [['title','Title','text'],['rate','Default rate %','number'],['term','Default term (months)','number']] },
-  ad_banner:          { label: 'Specials / promo ad', fields: [['tag','Tag (e.g. Limited time)','text'],['headline','Headline','text'],['subtitle','Subtitle','text'],['button_label','Button label','text'],['button_target','Button goes to','target'],['button_link','Custom link','text'],['image','Image (optional)','image']] },
+  ad_banner:          { label: 'Specials / promo ad', fields: [['template','Template','adtpl'],['tag','Tag (e.g. Limited time)','text'],['headline','Headline','text'],['subtitle','Subtitle','text'],['button_label','Button label','text'],['button_target','Button goes to','target'],['button_link','Custom link','text'],['image','Image','image']] },
   trade_cta:          { label: 'Trade-in banner', fields: [['title','Title','text'],['subtitle','Subtitle','text'],['button_label','Button label','text']] },
   finance_cta:        { label: 'Finance banner', fields: [['title','Title','text'],['subtitle','Subtitle','text'],['button_label','Button label','text']] },
   service_cta:        { label: 'Service banner', fields: [['title','Title','text'],['subtitle','Subtitle','text'],['button_label','Button label','text'],['button_target','Button goes to','target'],['button_link','Custom link','text']] },
@@ -6163,6 +6185,7 @@ function wsField(i, sec, [key, label, type]) {
   else if (type === 'reviews') { const lines = (Array.isArray(v) ? v : []).map(it => `${it.author || ''} :: ${it.rating || 5} :: ${it.text || ''}`).join('\n'); input = `<textarea rows="4" oninput="setSecReviews(${i},'${key}',this.value)" placeholder="Jane D. :: 5 :: Best dealership experience I've had." class="${cls} text-xs">${esc(lines)}</textarea>`; }
   else if (type === 'cards') { const lines = (Array.isArray(v) ? v : []).map(it => `${it.title || ''} :: ${it.text || ''}`).join('\n'); input = `<textarea rows="4" oninput="setSecCards(${i},'${key}',this.value)" placeholder="Free delivery :: We bring the car to your door." class="${cls} text-xs">${esc(lines)}</textarea>`; }
   else if (type === 'cardcols') input = `<select onchange="setSec(${i},'${key}',this.value)" class="${cls}">${[['2','2 across'],['3','3 across'],['4','4 across']].map(o => `<option value="${o[0]}" ${String(v || '3') === o[0] ? 'selected' : ''}>${o[1]}</option>`).join('')}</select>`;
+  else if (type === 'adtpl') input = `<select onchange="setSec(${i},'${key}',this.value)" class="${cls}">${[['classic','Classic — text left, image right'],['imgleft','Image left, text right'],['overlay','Full-bleed image with overlay'],['spotlight','Spotlight card — image on top']].map(o => `<option value="${o[0]}" ${(v || 'classic') === o[0] ? 'selected' : ''}>${o[1]}</option>`).join('')}</select>`;
   else if (type === 'bool') input = `<label class="inline-flex items-center gap-2 text-sm"><input type="checkbox" ${v ? 'checked' : ''} onchange="setSec(${i},'${key}',this.checked)" class="rounded"> Yes</label>`;
   else input = `<input value="${esc(v || '')}" oninput="setSec(${i},'${key}',this.value)" class="${cls}">`;
   return `<div class="${wide}">${lbl}${input}</div>`;

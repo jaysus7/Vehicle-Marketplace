@@ -431,16 +431,31 @@
           </div></section>`;
         }
         case 'ad_banner': {
-          const btn=g.button_label?`<button ${ctaTarget(g.button_target,g.button_link)} class="mt-4 bg-white text-slate-900 font-black px-6 py-3 rounded-lg hover:bg-slate-100 self-start">${esc(g.button_label)}</button>`:'';
-          const img=g.image?`<div class="sm:w-2/5 shrink-0"><img src="${esc(g.image)}" class="w-full h-40 sm:h-full object-cover"></div>`:'';
-          return `<section class="max-w-6xl mx-auto px-4 py-6"><div class="brand-bg text-white rounded-2xl overflow-hidden cshadow flex flex-col sm:flex-row">
-            <div class="flex-1 p-6 sm:p-8 flex flex-col justify-center">
-              ${g.tag?`<span class="self-start text-[11px] font-black uppercase tracking-widest bg-white/20 px-2.5 py-1 rounded-full mb-2">${esc(g.tag)}</span>`:''}
-              <h2 class="text-2xl sm:text-3xl font-black">${esc(g.headline||'This month’s special')}</h2>
-              ${g.subtitle?`<p class="mt-2 text-white/85 max-w-lg">${esc(g.subtitle)}</p>`:''}
-              ${btn}
-            </div>${img}
-          </div></section>`;
+          const tpl=g.template||'classic';
+          const head=esc(g.headline||'This month’s special');
+          const tag=g.tag?`<span class="self-start text-[11px] font-black uppercase tracking-widest bg-white/20 px-2.5 py-1 rounded-full mb-2">${esc(g.tag)}</span>`:'';
+          const tagDark=g.tag?`<span class="self-start text-[11px] font-black uppercase tracking-widest brand-bg text-white px-2.5 py-1 rounded-full mb-2">${esc(g.tag)}</span>`:'';
+          const sub=g.subtitle?`<p class="mt-2 text-white/85 max-w-lg">${esc(g.subtitle)}</p>`:'';
+          const subDark=g.subtitle?`<p class="mt-2 text-slate-600 max-w-lg">${esc(g.subtitle)}</p>`:'';
+          const btnW=g.button_label?`<button ${ctaTarget(g.button_target,g.button_link)} class="mt-4 bg-white text-slate-900 font-black px-6 py-3 rounded-lg hover:bg-slate-100 self-start">${esc(g.button_label)}</button>`:'';
+          const btnB=g.button_label?`<button ${ctaTarget(g.button_target,g.button_link)} class="mt-4 brand-bg text-white font-black px-6 py-3 rounded-lg hover:opacity-90 self-start">${esc(g.button_label)}</button>`:'';
+          const imgTag=g.image?`<img src="${esc(g.image)}" class="w-full h-full object-cover">`:`<div class="w-full h-full brand2-bg flex items-center justify-center text-white/40 text-sm">Add an image</div>`;
+          const wrap=(inner)=>`<section class="max-w-6xl mx-auto px-4 py-6">${inner}</section>`;
+          if(tpl==='overlay'){
+            return wrap(`<div class="relative rounded-2xl overflow-hidden cshadow min-h-[280px] flex items-center">
+              <div class="absolute inset-0">${imgTag}<div class="absolute inset-0" style="background:rgba(15,23,42,.55)"></div></div>
+              <div class="relative text-white p-8 sm:p-12 flex flex-col max-w-2xl">${tag}<h2 class="text-3xl sm:text-4xl font-black">${head}</h2>${sub}${btnW}</div>
+            </div>`);
+          }
+          if(tpl==='spotlight'){
+            return wrap(`<div class="bg-white rounded-2xl overflow-hidden cshadow border border-slate-100">
+              <div class="h-48 sm:h-64">${imgTag}</div>
+              <div class="p-6 sm:p-8 flex flex-col">${tagDark}<h2 class="text-2xl sm:text-3xl font-black text-slate-900">${head}</h2>${subDark}${btnB}</div>
+            </div>`);
+          }
+          const content=`<div class="flex-1 p-6 sm:p-8 flex flex-col justify-center">${tag}<h2 class="text-2xl sm:text-3xl font-black">${head}</h2>${sub}${btnW}</div>`;
+          const imgSide=`<div class="sm:w-2/5 shrink-0 min-h-[160px]">${imgTag}</div>`;
+          return wrap(`<div class="brand-bg text-white rounded-2xl overflow-hidden cshadow flex flex-col ${tpl==='imgleft'?'sm:flex-row-reverse':'sm:flex-row'}">${content}${imgSide}</div>`);
         }
         case 'html': return `<section class="max-w-6xl mx-auto px-4 py-8"><div class="prose max-w-none">${g.html||''}</div></section>`;
         default: return '';
