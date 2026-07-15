@@ -4035,7 +4035,19 @@ function settingsTab(tab) {
     b.classList.toggle('border-transparent', !on);
     b.classList.toggle('text-slate-500', !on);
   });
-  if (tab === 'team') loadSettingsTeam(document.getElementById('team-picker')?.value || 'sales');
+  if (tab === 'team') {
+    loadSettingsTeam(document.getElementById('team-picker')?.value || 'sales');
+    // Bring the full login/role management + lead-routing setup into Settings →
+    // Team so it's all in one place (they used to live on a separate page). The
+    // nodes are moved (not cloned), so their existing IDs + wiring keep working.
+    const host = document.getElementById('settings-team');
+    const dv = document.getElementById('dealer-view-panel');
+    const lr = document.getElementById('lead-routing-card');
+    const isAdmin = ['DEALER_ADMIN', 'OWNER', 'MANAGER'].includes(profileContext?.role);
+    if (host && dv && isAdmin) { dv.classList.remove('hidden'); if (dv.parentElement !== host) host.appendChild(dv); }
+    if (host && lr && isAdmin && lr.parentElement !== host) host.appendChild(lr);
+    if (isAdmin) loadDealerManagementMatrix();
+  }
   if (tab === 'dealermgmt') loadDealerFeatures();
 }
 window.settingsTab = settingsTab;
@@ -4094,8 +4106,7 @@ async function loadSettingsTeam(team) {
     root.innerHTML = `
       <div class="border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden">${rows}</div>
       <div class="flex items-center justify-between mt-3 gap-2 flex-wrap">
-        <span class="text-[11px] text-slate-400">${members.length} member${members.length === 1 ? '' : 's'} · they sign in to MarketSync</span>
-        <button onclick="switchPage('sales-team')" class="text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:underline">Manage logins &amp; roles →</button>
+        <span class="text-[11px] text-slate-400">${members.length} member${members.length === 1 ? '' : 's'} · they sign in to MarketSync — manage logins, roles &amp; lead routing below.</span>
       </div>`;
   } else {
     const rows = members.length ? members.map(m => `
