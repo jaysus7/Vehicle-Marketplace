@@ -247,6 +247,7 @@
 
         <nav class="hidden md:flex items-center space-x-8 text-sm font-medium text-slate-600 dark:text-gray-400" aria-label="Primary">
             <a href="#what-is-it" class="hover:text-indigo-600 dark:hover:text-white transition">What is it?</a>
+            <a href="#deep-dive" class="hover:text-indigo-600 dark:hover:text-white transition">Platform</a>
             <a href="#how-it-works" class="hover:text-indigo-600 dark:hover:text-white transition">How it works</a>
             <a href="https://marketsync.link/features.html" class="hover:text-indigo-600 dark:hover:text-white transition">Features</a>
             <a href="https://marketsync.link/compare.html" class="hover:text-indigo-600 dark:hover:text-white transition">Compare</a>
@@ -273,6 +274,7 @@
 
       <nav id="ms-mobile-menu" class="md:hidden hidden border-t border-slate-200/60 dark:border-gray-800/60 bg-slate-50 dark:bg-[#0B0F19] px-6 py-4 space-y-1 text-sm font-medium text-slate-600 dark:text-gray-400" aria-label="Mobile">
         <a href="#what-is-it" class="block py-2.5 hover:text-indigo-600 dark:hover:text-white transition" onclick="msToggleMenu()">What is it?</a>
+        <a href="#deep-dive" class="block py-2.5 hover:text-indigo-600 dark:hover:text-white transition" onclick="msToggleMenu()">Platform</a>
         <a href="#how-it-works" class="block py-2.5 hover:text-indigo-600 dark:hover:text-white transition" onclick="msToggleMenu()">How it works</a>
         <a href="https://marketsync.link/features.html" class="block py-2.5 hover:text-indigo-600 dark:hover:text-white transition">Features</a>
         <a href="https://marketsync.link/compare.html" class="block py-2.5 hover:text-indigo-600 dark:hover:text-white transition">Compare</a>
@@ -341,7 +343,7 @@
 
         <div class="flex flex-col sm:flex-row items-center justify-center gap-4 mb-4">
             <a href="https://marketsync.link/register.html" class="w-full sm:w-auto px-8 py-4 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl glow-btn transition text-center">
-                Start 7-Day Free Trial <i class="fa-solid fa-arrow-right ml-2 text-sm"></i>
+                Start 30-Day Free Trial <i class="fa-solid fa-arrow-right ml-2 text-sm"></i>
             </a>
             <a href="#products" class="w-full sm:w-auto px-8 py-4 bg-slate-800 hover:bg-slate-700 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-100 text-white font-bold rounded-xl shadow-lg transition text-center">
                 <i class="fa-solid fa-grip mr-2"></i> See the platform
@@ -510,6 +512,148 @@
         </div>
     </section>
 
+    <!-- ── Deep dive: every pillar, and how we make it happen for the dealer ──── -->
+    <section id="deep-dive" class="max-w-6xl mx-auto px-6 py-20">
+        <div class="text-center mb-16">
+            <span class="inline-block text-xs font-bold uppercase tracking-wider text-indigo-600 dark:text-indigo-400 mb-3">A closer look</span>
+            <h2 class="text-3xl sm:text-4xl font-black tracking-tight text-slate-900 dark:text-white mb-4">Everything under the hood</h2>
+            <p class="text-slate-500 dark:text-gray-400 max-w-2xl mx-auto">Facebook Marketplace is one feature — not the product. Here's the whole platform, and exactly how we make each part happen for your store.</p>
+        </div>
+
+        <div class="space-y-14">
+
+            <!-- Website builder -->
+            <div id="dd-website" class="grid lg:grid-cols-2 gap-8 items-center">
+                <div>
+                    <div class="flex items-center gap-3 mb-3"><div class="w-11 h-11 rounded-xl bg-indigo-600 text-white flex items-center justify-center"><i class="fa-solid fa-globe"></i></div><span class="text-xs font-bold uppercase tracking-wider text-indigo-600 dark:text-indigo-400">Dealer website</span></div>
+                    <h3 class="text-2xl font-black text-slate-900 dark:text-white mb-3">A dealer website you actually control</h3>
+                    <p class="text-slate-600 dark:text-gray-400 leading-relaxed mb-4">Most dealers rent their website from a vendor and wait days for a copy change. We give you a drag-and-drop builder: pick a template, drop in sections (hero, inventory grids, model pages, finance &amp; trade CTAs, staff, reviews, FAQ), set your brand colours and fonts, and publish to your own domain in minutes. Your live inventory and VIN pages build themselves from the same database everything else uses.</p>
+                    <ul class="grid sm:grid-cols-2 gap-x-6 gap-y-2 text-sm text-slate-700 dark:text-gray-300">
+                        <li class="flex items-start gap-2"><i class="fa-solid fa-check text-emerald-500 mt-1"></i> Drag-and-drop sections &amp; per-page brand colours</li>
+                        <li class="flex items-start gap-2"><i class="fa-solid fa-check text-emerald-500 mt-1"></i> Live inventory, VIN pages, model &amp; offer pages</li>
+                        <li class="flex items-start gap-2"><i class="fa-solid fa-check text-emerald-500 mt-1"></i> Custom domain + Cloudflare security &amp; SSL</li>
+                        <li class="flex items-start gap-2"><i class="fa-solid fa-check text-emerald-500 mt-1"></i> Per-page SEO titles &amp; meta, written by AI</li>
+                        <li class="flex items-start gap-2"><i class="fa-solid fa-check text-emerald-500 mt-1"></i> Built-in lead forms wired straight to your CRM</li>
+                        <li class="flex items-start gap-2"><i class="fa-solid fa-check text-emerald-500 mt-1"></i> An AI sales concierge chat on every page</li>
+                    </ul>
+                </div>
+                <div class="bg-white dark:bg-gray-900/70 border border-slate-200 dark:border-gray-800 rounded-2xl p-6">
+                    <div class="text-[11px] uppercase font-bold tracking-wider text-slate-400 mb-3">How we make it happen</div>
+                    <ol class="space-y-3 text-sm text-slate-600 dark:text-gray-300">
+                        <li class="flex gap-3"><span class="w-6 h-6 shrink-0 rounded-full bg-indigo-100 dark:bg-indigo-500/20 text-indigo-600 dark:text-indigo-300 text-xs font-black flex items-center justify-center">1</span> Point us at your existing site — we read the inventory feed automatically, no integration.</li>
+                        <li class="flex gap-3"><span class="w-6 h-6 shrink-0 rounded-full bg-indigo-100 dark:bg-indigo-500/20 text-indigo-600 dark:text-indigo-300 text-xs font-black flex items-center justify-center">2</span> Pick a template, drag your sections, set brand colours &amp; fonts.</li>
+                        <li class="flex gap-3"><span class="w-6 h-6 shrink-0 rounded-full bg-indigo-100 dark:bg-indigo-500/20 text-indigo-600 dark:text-indigo-300 text-xs font-black flex items-center justify-center">3</span> Connect your domain and publish. Edits are live the moment you hit save.</li>
+                    </ol>
+                </div>
+            </div>
+
+            <!-- AI Boost -->
+            <div id="dd-ai" class="grid lg:grid-cols-2 gap-8 items-center">
+                <div class="lg:order-2">
+                    <div class="flex items-center gap-3 mb-3"><div class="w-11 h-11 rounded-xl bg-violet-600 text-white flex items-center justify-center"><i class="fa-solid fa-wand-magic-sparkles"></i></div><span class="text-xs font-bold uppercase tracking-wider text-violet-600 dark:text-violet-400">AI Boost</span></div>
+                    <h3 class="text-2xl font-black text-slate-900 dark:text-white mb-3">AI that writes, prices and sees</h3>
+                    <p class="text-slate-600 dark:text-gray-400 leading-relaxed mb-4">AI Boost runs across the whole platform, not one screen. It writes listing copy, sales pitches and every word on your website — boost what's there, rewrite it fresh, make it shorter or longer, or turn it into current-year SEO with click-worthy titles and real internal &amp; external links. It scores your photos, drafts replies to leads, and answers plain-English questions about your lot.</p>
+                    <ul class="grid sm:grid-cols-2 gap-x-6 gap-y-2 text-sm text-slate-700 dark:text-gray-300">
+                        <li class="flex items-start gap-2"><i class="fa-solid fa-check text-emerald-500 mt-1"></i> One-click SEO / short / long / fresh / boost on any copy</li>
+                        <li class="flex items-start gap-2"><i class="fa-solid fa-check text-emerald-500 mt-1"></i> AI listing descriptions &amp; per-vehicle sales pitches</li>
+                        <li class="flex items-start gap-2"><i class="fa-solid fa-check text-emerald-500 mt-1"></i> AI Vision photo scoring &amp; best-hero selection</li>
+                        <li class="flex items-start gap-2"><i class="fa-solid fa-check text-emerald-500 mt-1"></i> AI lead-reply drafts &amp; a lot assistant you can ask anything</li>
+                    </ul>
+                </div>
+                <div class="lg:order-1 bg-white dark:bg-gray-900/70 border border-slate-200 dark:border-gray-800 rounded-2xl p-6">
+                    <div class="text-[11px] uppercase font-bold tracking-wider text-slate-400 mb-3">How we make it happen</div>
+                    <ol class="space-y-3 text-sm text-slate-600 dark:text-gray-300">
+                        <li class="flex gap-3"><span class="w-6 h-6 shrink-0 rounded-full bg-violet-100 dark:bg-violet-500/20 text-violet-600 dark:text-violet-300 text-xs font-black flex items-center justify-center">1</span> Every content field has an ✨ AI button — pick a mode and it writes in your dealership's voice.</li>
+                        <li class="flex gap-3"><span class="w-6 h-6 shrink-0 rounded-full bg-violet-100 dark:bg-violet-500/20 text-violet-600 dark:text-violet-300 text-xs font-black flex items-center justify-center">2</span> It pulls real context — your brands, city and inventory — so nothing reads generic.</li>
+                        <li class="flex gap-3"><span class="w-6 h-6 shrink-0 rounded-full bg-violet-100 dark:bg-violet-500/20 text-violet-600 dark:text-violet-300 text-xs font-black flex items-center justify-center">3</span> Review, tweak, save. You're always in control of the final words.</li>
+                    </ol>
+                </div>
+            </div>
+
+            <!-- Inventory Intelligence -->
+            <div id="dd-intel" class="grid lg:grid-cols-2 gap-8 items-center">
+                <div>
+                    <div class="flex items-center gap-3 mb-3"><div class="w-11 h-11 rounded-xl bg-sky-600 text-white flex items-center justify-center"><i class="fa-solid fa-chart-line"></i></div><span class="text-xs font-bold uppercase tracking-wider text-sky-600 dark:text-sky-400">Inventory Intelligence</span></div>
+                    <h3 class="text-2xl font-black text-slate-900 dark:text-white mb-3">Know what to price, promote and cut</h3>
+                    <p class="text-slate-600 dark:text-gray-400 leading-relaxed mb-4">We benchmark every unit against the live market — mileage-adjusted, so a read of "100% of market" actually means it. You get price-to-market on each car, comparable listings, health scores, turn-rate and aging buckets, competitor and price monitoring, hot/cold demand, and concrete repricing recommendations. Scan your whole lot in one click and see exactly which cars are costing you money.</p>
+                    <ul class="grid sm:grid-cols-2 gap-x-6 gap-y-2 text-sm text-slate-700 dark:text-gray-300">
+                        <li class="flex items-start gap-2"><i class="fa-solid fa-check text-emerald-500 mt-1"></i> Mileage-adjusted price-to-market + comparable listings</li>
+                        <li class="flex items-start gap-2"><i class="fa-solid fa-check text-emerald-500 mt-1"></i> Aging (0-30-60-90) &amp; inventory-mix reports</li>
+                        <li class="flex items-start gap-2"><i class="fa-solid fa-check text-emerald-500 mt-1"></i> Competitor &amp; price-drop monitoring</li>
+                        <li class="flex items-start gap-2"><i class="fa-solid fa-check text-emerald-500 mt-1"></i> One-click repricing recommendations</li>
+                    </ul>
+                </div>
+                <div class="bg-white dark:bg-gray-900/70 border border-slate-200 dark:border-gray-800 rounded-2xl p-6">
+                    <div class="text-[11px] uppercase font-bold tracking-wider text-slate-400 mb-3">How we make it happen</div>
+                    <ol class="space-y-3 text-sm text-slate-600 dark:text-gray-300">
+                        <li class="flex gap-3"><span class="w-6 h-6 shrink-0 rounded-full bg-sky-100 dark:bg-sky-500/20 text-sky-600 dark:text-sky-300 text-xs font-black flex items-center justify-center">1</span> We pull live market comps for each VIN and adjust for mileage, trim and condition.</li>
+                        <li class="flex gap-3"><span class="w-6 h-6 shrink-0 rounded-full bg-sky-100 dark:bg-sky-500/20 text-sky-600 dark:text-sky-300 text-xs font-black flex items-center justify-center">2</span> "Scan all inventory" scores every car and flags the ones off market.</li>
+                        <li class="flex gap-3"><span class="w-6 h-6 shrink-0 rounded-full bg-sky-100 dark:bg-sky-500/20 text-sky-600 dark:text-sky-300 text-xs font-black flex items-center justify-center">3</span> You get a ranked worklist: reprice this, promote that, cut the other.</li>
+                    </ol>
+                </div>
+            </div>
+
+            <!-- CRM + Leads (paired) -->
+            <div class="grid lg:grid-cols-2 gap-8">
+                <div id="dd-crm" class="bg-white dark:bg-gray-900/70 border border-slate-200 dark:border-gray-800 rounded-2xl p-7">
+                    <div class="flex items-center gap-3 mb-3"><div class="w-11 h-11 rounded-xl bg-emerald-600 text-white flex items-center justify-center"><i class="fa-solid fa-users"></i></div><span class="text-xs font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">Sales CRM</span></div>
+                    <h3 class="text-xl font-black text-slate-900 dark:text-white mb-2">A CRM your reps will actually use</h3>
+                    <p class="text-sm text-slate-600 dark:text-gray-400 leading-relaxed mb-3">A clean pipeline, tasks that sync with follow-ups, email &amp; SMS from professional dealership addresses, an appointment calendar, and 10+ ready-made automation sequences for new leads, deliveries and holidays. Managers get per-rep insights and a leaderboard; solo reps get just what they need.</p>
+                    <ul class="space-y-1.5 text-sm text-slate-700 dark:text-gray-300">
+                        <li class="flex items-start gap-2"><i class="fa-solid fa-check text-emerald-500 mt-1"></i> Pipeline, tasks, calendar, roles &amp; logins</li>
+                        <li class="flex items-start gap-2"><i class="fa-solid fa-check text-emerald-500 mt-1"></i> Email/SMS automation tracked back to tasks</li>
+                        <li class="flex items-start gap-2"><i class="fa-solid fa-check text-emerald-500 mt-1"></i> A deal desk that prints an estimate &amp; bill of sale</li>
+                    </ul>
+                </div>
+                <div id="dd-leads" class="bg-white dark:bg-gray-900/70 border border-slate-200 dark:border-gray-800 rounded-2xl p-7">
+                    <div class="flex items-center gap-3 mb-3"><div class="w-11 h-11 rounded-xl bg-teal-600 text-white flex items-center justify-center"><i class="fa-solid fa-inbox"></i></div><span class="text-xs font-bold uppercase tracking-wider text-teal-600 dark:text-teal-400">Leads</span></div>
+                    <h3 class="text-xl font-black text-slate-900 dark:text-white mb-2">Every lead caught, routed and worked</h3>
+                    <p class="text-sm text-slate-600 dark:text-gray-400 leading-relaxed mb-3">Leads from your website, Marketplace and forms land in one inbox, get auto-assigned to the right rep (round-robin or by rule), and kick off instant follow-up. Each lead shows its source and assigned salesperson, and AI can draft the first reply. Import/export by CSV any time.</p>
+                    <ul class="space-y-1.5 text-sm text-slate-700 dark:text-gray-300">
+                        <li class="flex items-start gap-2"><i class="fa-solid fa-check text-emerald-500 mt-1"></i> Auto lead routing + assigned-rep visibility</li>
+                        <li class="flex items-start gap-2"><i class="fa-solid fa-check text-emerald-500 mt-1"></i> Source presets &amp; per-source insights</li>
+                        <li class="flex items-start gap-2"><i class="fa-solid fa-check text-emerald-500 mt-1"></i> AI-drafted replies &amp; instant follow-up</li>
+                    </ul>
+                </div>
+            </div>
+
+            <!-- Appraisals + Equity + Reports (trio) -->
+            <div class="grid md:grid-cols-3 gap-6">
+                <div id="dd-appraisals" class="bg-white dark:bg-gray-900/70 border border-slate-200 dark:border-gray-800 rounded-2xl p-6">
+                    <div class="w-11 h-11 rounded-xl bg-amber-500 text-white flex items-center justify-center mb-3"><i class="fa-solid fa-scale-balanced"></i></div>
+                    <h3 class="text-lg font-black text-slate-900 dark:text-white mb-2">Appraisals</h3>
+                    <p class="text-sm text-slate-600 dark:text-gray-400 leading-relaxed mb-3">Appraise a trade off live, mileage-adjusted comps. Reps see an internal range; the customer gets a clean summary PDF plus the legal disclosure. Take possession and the unit pushes straight to your website — and pulls into the deal desk as a trade.</p>
+                    <ul class="space-y-1.5 text-xs text-slate-600 dark:text-gray-300">
+                        <li class="flex items-start gap-2"><i class="fa-solid fa-check text-emerald-500 mt-0.5"></i> Live-market trade values</li>
+                        <li class="flex items-start gap-2"><i class="fa-solid fa-check text-emerald-500 mt-0.5"></i> Disclosure &amp; customer PDFs</li>
+                        <li class="flex items-start gap-2"><i class="fa-solid fa-check text-emerald-500 mt-0.5"></i> One-click to website on possession</li>
+                    </ul>
+                </div>
+                <div id="dd-equity" class="bg-white dark:bg-gray-900/70 border border-slate-200 dark:border-gray-800 rounded-2xl p-6">
+                    <div class="w-11 h-11 rounded-xl bg-rose-500 text-white flex items-center justify-center mb-3"><i class="fa-solid fa-gem"></i></div>
+                    <h3 class="text-lg font-black text-slate-900 dark:text-white mb-2">Equity mining</h3>
+                    <p class="text-sm text-slate-600 dark:text-gray-400 leading-relaxed mb-3">Your sold customers are your next deals. Equity Radar watches payoffs against live values and lease pull-ahead windows, then surfaces who's in a position to trade up for a similar payment — so your team calls with a reason, not a hunch.</p>
+                    <ul class="space-y-1.5 text-xs text-slate-600 dark:text-gray-300">
+                        <li class="flex items-start gap-2"><i class="fa-solid fa-check text-emerald-500 mt-0.5"></i> Equity &amp; lease pull-ahead radar</li>
+                        <li class="flex items-start gap-2"><i class="fa-solid fa-check text-emerald-500 mt-0.5"></i> Trade-up candidates ranked</li>
+                        <li class="flex items-start gap-2"><i class="fa-solid fa-check text-emerald-500 mt-0.5"></i> Ties straight into the CRM</li>
+                    </ul>
+                </div>
+                <div id="dd-reports" class="bg-white dark:bg-gray-900/70 border border-slate-200 dark:border-gray-800 rounded-2xl p-6">
+                    <div class="w-11 h-11 rounded-xl bg-slate-700 dark:bg-slate-600 text-white flex items-center justify-center mb-3"><i class="fa-solid fa-file-lines"></i></div>
+                    <h3 class="text-lg font-black text-slate-900 dark:text-white mb-2">Reports</h3>
+                    <p class="text-sm text-slate-600 dark:text-gray-400 leading-relaxed mb-3">An executive dashboard and manager reports that tie it all together: sales by rep, lead source ROI, sell-through and time-to-sell, inventory mix and aging, invoice &amp; front-gross, and custom reports that populate from each desked deal.</p>
+                    <ul class="space-y-1.5 text-xs text-slate-600 dark:text-gray-300">
+                        <li class="flex items-start gap-2"><i class="fa-solid fa-check text-emerald-500 mt-0.5"></i> Executive ROI dashboard</li>
+                        <li class="flex items-start gap-2"><i class="fa-solid fa-check text-emerald-500 mt-0.5"></i> Per-rep &amp; per-source breakdowns</li>
+                        <li class="flex items-start gap-2"><i class="fa-solid fa-check text-emerald-500 mt-0.5"></i> Profit &amp; aging reports</li>
+                    </ul>
+                </div>
+            </div>
+
+        </div>
+    </section>
+
     <!-- ── Touch the car once ────────────────────────────────────────────────── -->
     <section id="touch-once" class="max-w-5xl mx-auto px-6 py-20">
         <div class="text-center mb-12">
@@ -538,7 +682,7 @@
 
     <section id="how-it-works" class="max-w-6xl mx-auto px-6 py-20">
         <h2 class="text-3xl sm:text-4xl font-black tracking-tight text-slate-900 dark:text-white text-center mb-4">How It Works in 4 Steps</h2>
-        <p class="text-center text-slate-500 dark:text-gray-400 max-w-2xl mx-auto mb-14">From signup to your first posted car in less than 10 minutes.</p>
+        <p class="text-center text-slate-500 dark:text-gray-400 max-w-2xl mx-auto mb-14">From signup to a live store — website, priced inventory and lead capture — in under 10 minutes.</p>
 
         <div class="grid md:grid-cols-2 gap-6">
             <div class="bg-white dark:bg-gray-900/70 border border-slate-200 dark:border-gray-800 rounded-2xl p-8">
@@ -560,17 +704,17 @@
             <div class="bg-white dark:bg-gray-900/70 border border-slate-200 dark:border-gray-800 rounded-2xl p-8">
                 <div class="flex items-center gap-3 mb-4">
                     <div class="w-10 h-10 rounded-lg bg-indigo-600 text-white font-black flex items-center justify-center">3</div>
-                    <h3 class="text-xl font-bold text-slate-900 dark:text-white">Install the Chrome Extension</h3>
+                    <h3 class="text-xl font-bold text-slate-900 dark:text-white">Your store goes live</h3>
                 </div>
-                <p class="text-slate-600 dark:text-gray-400 leading-relaxed">Click <strong>Install Extension</strong>. It is a small free app that lives inside the Chrome browser. It only wakes up when you visit Facebook Marketplace.</p>
+                <p class="text-slate-600 dark:text-gray-400 leading-relaxed">Publish your website, and every vehicle prices itself to the live market, builds its own inventory &amp; VIN page, and gets AI listing copy. Lead forms are wired to your CRM from the first minute — no code, no waiting on a vendor.</p>
             </div>
 
             <div class="bg-white dark:bg-gray-900/70 border border-slate-200 dark:border-gray-800 rounded-2xl p-8">
                 <div class="flex items-center gap-3 mb-4">
                     <div class="w-10 h-10 rounded-lg bg-indigo-600 text-white font-black flex items-center justify-center">4</div>
-                    <h3 class="text-xl font-bold text-slate-900 dark:text-white">Click Post</h3>
+                    <h3 class="text-xl font-bold text-slate-900 dark:text-white">Market it &amp; work the leads</h3>
                 </div>
-                <p class="text-slate-600 dark:text-gray-400 leading-relaxed">Open Facebook Marketplace. Click the MarketSync icon. Pick the car you want to post. Watch the title, price, photos, and description fill themselves in. Click <strong>Post</strong>. Done.</p>
+                <p class="text-slate-600 dark:text-gray-400 leading-relaxed">Push units to Facebook Marketplace in one click with the free Chrome helper, then let the CRM route every lead to the right rep and start automated follow-up. Appraise trades, desk deals, and watch it all on your reports.</p>
             </div>
         </div>
     </section>
