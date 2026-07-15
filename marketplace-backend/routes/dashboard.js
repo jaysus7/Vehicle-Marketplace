@@ -1289,6 +1289,19 @@ export function registerRoutes(app) {
     res.json({ ok: true, contact: c, vehicle })
   })
 
+  // Saved trade appraisals for this customer — to pull into the desk's trade section.
+  app.get('/deals/trades', requireAuth, async (req, res) => {
+    if (!req.dealershipId) return res.json({ ok: true, rows: [] })
+    if (!['DEALER_ADMIN', 'OWNER', 'MANAGER'].includes(req.profile?.role)) return res.status(403).json({ error: 'Manager access required' })
+    const contactId = String(req.query.contact_id || '')
+    if (!contactId) return res.json({ ok: true, rows: [] })
+    const { data } = await supabaseAdmin.from('trade_appraisals')
+      .select('id, year, make, model, trim, vin, mileage, color, suggested_offer, retail_median, created_at')
+      .eq('dealership_id', req.dealershipId).eq('contact_id', contactId)
+      .order('created_at', { ascending: false }).limit(10)
+    res.json({ ok: true, rows: data || [] })
+  })
+
   // Search this dealer's inventory for the vehicle section (VIN / stock / name).
   app.get('/deals/vehicles', requireAuth, async (req, res) => {
     if (!req.dealershipId) return res.json({ ok: true, rows: [] })

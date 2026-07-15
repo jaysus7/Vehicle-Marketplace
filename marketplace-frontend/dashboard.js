@@ -3481,12 +3481,15 @@ function deskRenderForm(contactId) {
             ${fld('Selling price', money('dk-selling_price', d.selling_price))}
           </div>`)}
 
-        ${card('Trade-in', `<div class="grid grid-cols-2 gap-3">
+        ${card('Trade-in', `
+          <div class="flex items-center gap-2 mb-3"><button type="button" onclick="deskPullTrade()" class="text-xs font-bold bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 px-3 py-1.5 rounded-lg">↓ Pull saved appraisal</button><span id="desk-trade-hint" class="text-xs text-slate-400"></span></div>
+          <div id="desk-trade-picker" class="mb-3 hidden"></div>
+          <div class="grid grid-cols-2 gap-3">
             ${fld('Trade description', txt('dk-trade_desc', d.trade_desc, 'Year / make / model'))}
             ${fld('Trade VIN', txt('dk-trade_vin', d.trade_vin, ''))}
             ${fld('Trade allowance', money('dk-trade_value', d.trade_value))}
             ${fld('Lien / payoff', money('dk-trade_payoff', d.trade_payoff))}
-          </div>`, 'HST is charged on the price after the trade allowance (Ontario tax-on-the-difference).')}
+          </div>`, 'HST is charged on the price after the trade allowance (Ontario tax-on-the-difference). Pull the customer\'s saved appraisal to fill this in.')}
 
         ${card('Add-ons', `<div id="desk-addons"></div>
           <button type="button" onclick="deskAddLine('addon')" class="mt-2 text-xs font-bold text-indigo-600 dark:text-indigo-400">＋ Add an add-on</button>`, 'Accessories, protection packages, etc. Taxable.')}
@@ -3606,6 +3609,42 @@ function deskPickVehicle(json) {
   set('dk-veh-mileage', v.mileage); set('dk-veh-color', v.color); set('dk-veh-vin', v.vin); set('dk-veh-stock', v.stock);
   if (v.price != null) set('dk-selling_price', v.price);
   const vs = document.getElementById('desk-veh-search'); if (vs) vs.value = '';
+  deskRenderSummary();
+}
+
+// Pull the customer's saved trade appraisal(s) into the trade-in section.
+async function deskPullTrade() {
+  const cid = __deskDeal?.contact_id || __deskBuyer?.id;
+  const hint = document.getElementById('desk-trade-hint');
+  const picker = document.getElementById('desk-trade-picker');
+  if (!cid) { if (hint) hint.textContent = 'Select a customer first.'; return; }
+  if (hint) hint.textContent = 'Loading…';
+  try {
+    const d = await apiGetJson(`/deals/trades?contact_id=${encodeURIComponent(cid)}`, { retries: 1 });
+    const rows = d?.rows || [];
+    if (!rows.length) { if (hint) hint.textContent = 'No saved appraisals for this customer.'; if (picker) picker.classList.add('hidden'); return; }
+    if (rows.length === 1) { deskApplyTrade(rows[0]); if (hint) hint.textContent = 'Pulled from saved appraisal.'; return; }
+    // Multiple → let the manager pick which one.
+    if (hint) hint.textContent = 'Pick an appraisal:';
+    if (picker) {
+      picker.classList.remove('hidden');
+      picker.innerHTML = rows.map(r => {
+        const label = [r.year, r.make, r.model, r.trim].filter(Boolean).join(' ') || 'Trade';
+        const j = encodeURIComponent(JSON.stringify(r));
+        return `<button type="button" onclick="deskApplyTrade(JSON.parse(decodeURIComponent('${j}')))" class="w-full text-left px-3 py-2 text-sm hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg mb-1">${esc(label)}${r.suggested_offer ? ' — ' + deskM(r.suggested_offer) : ''}<span class="text-xs text-slate-400"> · ${new Date(r.created_at).toLocaleDateString()}</span></button>`;
+      }).join('');
+    }
+  } catch (e) { if (hint) hint.textContent = 'Could not load appraisals.'; }
+}
+function deskApplyTrade(r) {
+  if (!r) return;
+  const set = (id, v) => { const el = document.getElementById(id); if (el && v != null && v !== '') el.value = v; };
+  const desc = [r.year, r.make, r.model, r.trim].filter(Boolean).join(' ');
+  set('dk-trade_desc', desc);
+  set('dk-trade_vin', r.vin);
+  if (r.suggested_offer != null) set('dk-trade_value', r.suggested_offer);
+  const picker = document.getElementById('desk-trade-picker'); if (picker) picker.classList.add('hidden');
+  const hint = document.getElementById('desk-trade-hint'); if (hint) hint.textContent = 'Pulled from saved appraisal.';
   deskRenderSummary();
 }
 
@@ -3936,6 +3975,8 @@ window.deskDelLine = deskDelLine;
 window.deskLineEdit = deskLineEdit;
 window.deskVehSearch = deskVehSearch;
 window.deskPickVehicle = deskPickVehicle;
+window.deskPullTrade = deskPullTrade;
+window.deskApplyTrade = deskApplyTrade;
 window.deskRenderSummary = deskRenderSummary;
 window.deskSave = deskSave;
 window.deskSaveDealer = deskSaveDealer;
