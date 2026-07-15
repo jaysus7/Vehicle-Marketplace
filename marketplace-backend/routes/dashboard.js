@@ -86,18 +86,20 @@ export function registerRoutes(app) {
       .from('profiles').select('id, full_name, role').eq('dealership_id', req.dealershipId)
     if (!members?.length) return res.json({ ranking: [], total_members: 0 })
 
+    try {
     // Real closed sales (desked deals) and trade appraisals so the board rewards
     // the whole job, not just Facebook activity. A "sale" of record is a won CRM
     // contact (status sold/fni/delivered) attributed to its assigned rep; each
     // appraisal is credited to whoever created it. Both are pulled ONCE for the
     // dealership and tallied in memory (bounded), then merged into each rep's row.
+    // Each is independently guarded — a failure in one must never blank the board.
     const WON = ['sold', 'fni', 'delivered']
     const [{ data: wonContacts }, { data: apprRows }] = await Promise.all([
       supabaseAdmin.from('contacts')
         .select('assigned_rep, status').eq('dealership_id', req.dealershipId)
-        .in('status', WON).limit(50000),
+        .in('status', WON).limit(50000).then(r => ({ data: r.data || [] }), () => ({ data: [] })),
       supabaseAdmin.from('trade_appraisals')
-        .select('created_by').eq('dealership_id', req.dealershipId).limit(50000),
+        .select('created_by').eq('dealership_id', req.dealershipId).limit(50000).then(r => ({ data: r.data || [] }), () => ({ data: [] })),
     ])
     const dealsByRep = new Map(), apprByRep = new Map()
     for (const c of (wonContacts || [])) if (c.assigned_rep) dealsByRep.set(c.assigned_rep, (dealsByRep.get(c.assigned_rep) || 0) + 1)
@@ -161,6 +163,10 @@ export function registerRoutes(app) {
         ? Math.round((totalSold / totalListings) * 100)
         : 0
     })
+    } catch (e) {
+      console.error('[dealership/leaderboard] failed:', e.message)
+      res.json({ ranking: [], total_members: members.length })
+    }
   })
 
   app.get('/dealership/activity', requireAuth, async (req, res) => {
