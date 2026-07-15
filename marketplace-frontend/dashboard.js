@@ -1893,6 +1893,16 @@ async function saveCrmAdfEmail(btn) {
   finally { btn.disabled = false; btn.textContent = orig; }
 }
 window.saveCrmAdfEmail = saveCrmAdfEmail;
+// Preset lead sources for the New/Edit contact form (with a write-your-own option).
+const CRM_SOURCES = ['Walk-in', 'Website', 'Facebook Marketplace', 'AutoTrader', 'Kijiji', 'CarGurus', 'Referral', 'Phone-up', 'Google', 'Repeat customer', 'Service drive'];
+// Toggle the custom-source input when "Other" is picked; otherwise mirror the preset.
+function crmSourceOther(val) {
+  const inp = document.getElementById('crm-f-source');
+  if (!inp) return;
+  if (val === '__other') { inp.classList.remove('hidden'); if (CRM_SOURCES.includes(inp.value)) inp.value = ''; inp.focus(); }
+  else { inp.value = val; inp.classList.add('hidden'); }
+}
+window.crmSourceOther = crmSourceOther;
 function openCrmContactModal() { crmOpenForm(null); }
 let __crmTradeDecoded = null;   // decoded trade vehicle held while the form is open
 
@@ -1987,7 +1997,17 @@ async function crmOpenForm(id) {
     </div>
     ${sect('Source & assignment')}
     <div class="grid grid-cols-3 gap-2">
-      <div>${lbl('Source')}${inp('crm-f-source', c.source, 'e.g. Walk-in, Web', 'w-full')}</div>
+      <div>${lbl('Source')}${(() => {
+        const cur = c.source || '';
+        const match = CRM_SOURCES.find(p => p.toLowerCase() === cur.toLowerCase());
+        const sel = match || (cur ? '__other' : '');
+        return `<select id="crm-f-source-sel" onchange="crmSourceOther(this.value)" class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm">
+          <option value="">— Where did they come from? —</option>
+          ${CRM_SOURCES.map(o => `<option value="${esc(o)}" ${sel === o ? 'selected' : ''}>${esc(o)}</option>`).join('')}
+          <option value="__other" ${sel === '__other' ? 'selected' : ''}>Other (type your own)…</option>
+        </select>
+        <input id="crm-f-source" value="${esc(cur)}" placeholder="Type the source" class="w-full mt-1 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm ${sel === '__other' ? '' : 'hidden'}">`;
+      })()}</div>
       <div>${lbl('Salesperson')}<select id="crm-f-rep" class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm">${repOpts}</select></div>
       <div>${lbl('Status')}<select id="crm-f-status" class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm">${statusOpts}</select></div>
     </div>
@@ -6706,7 +6726,7 @@ function renderWebsitePage() {
         <button onclick="saveWebsite(this)" class="text-sm font-bold bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg">Save</button>
       </div>
     </div>
-    <div class="flex items-center gap-1 border-b border-slate-200 dark:border-slate-800 flex-wrap">${tab('builder', 'Builder')}${tab('design', 'Design')}${tab('pages', 'Pages')}${tab('team', 'Team')}</div>
+    <div class="flex items-center gap-1 border-b border-slate-200 dark:border-slate-800 flex-wrap">${tab('builder', 'Builder')}${tab('design', 'Design')}${tab('pages', 'Pages')}</div>
     <div id="ws-body"></div>`;
   renderWsBody();
 }

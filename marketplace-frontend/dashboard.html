@@ -735,7 +735,7 @@
       <!-- ───────── REPORTS PAGE (managers) ───────── -->
       <!-- The three manager reports are stacked here, plus the Sold-per-rep report
            and a custom report builder. Manager-gated (nav revealed in JS). -->
-      <div data-page-content="reports" class="page-content hidden space-y-6">
+      <div data-page-content="reports" class="page-content hidden space-y-10">
         <div>
           <h1 class="text-2xl font-black text-slate-900 dark:text-white">Reports</h1>
           <p class="text-sm text-slate-500 dark:text-slate-400">Your store's numbers — pull a stock report or build your own.</p>
@@ -747,9 +747,9 @@
         <!-- Executive ROI dashboard (managers) — injected by loadExecutiveRoi() -->
         <div id="exec-roi"></div>
         <!-- Inventory mix & aging report (managers) — injected by loadInventoryMix() -->
-        <div id="inv-mix" class="mt-6"></div>
+        <div id="inv-mix"></div>
         <!-- Sales analysis report (managers) — injected by loadSalesAnalysis() -->
-        <div id="sales-analysis" class="mt-6"></div>
+        <div id="sales-analysis"></div>
       </div>
 
       <!-- ───────── DESK A DEAL PAGE (managers) ───────── -->
@@ -2671,7 +2671,7 @@
     </div>
   </div>
 
-  <script src="dashboard.js?v=20260714w"></script>
+  <script src="dashboard.js?v=20260714x"></script>
   <!-- Google Translate widget (per-rep dashboard translation) -->
   <script>
     window.googleTranslateElementInit = function () {
