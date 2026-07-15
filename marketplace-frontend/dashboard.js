@@ -7283,10 +7283,86 @@ function renderAutoBucket(rootId, bucket, title, desc) {
   const cards = (__autoCfg.campaigns || []).filter(c => autoBucketOf(c) === bucket);
   const byCat = {}; for (const c of cards) (byCat[c.category] = byCat[c.category] || []).push(c);
   root.innerHTML = `
-    <div><h2 class="text-xl font-bold text-slate-900 dark:text-white">${title}</h2>
-      <p class="text-sm text-slate-500 dark:text-slate-400 mt-1">${desc}</p></div>
+    <div class="flex items-start justify-between gap-3 flex-wrap">
+      <div><h2 class="text-xl font-bold text-slate-900 dark:text-white">${title}</h2>
+        <p class="text-sm text-slate-500 dark:text-slate-400 mt-1">${desc}</p></div>
+      <button onclick="autoOpenTemplates('${bucket}')" class="flex-shrink-0 flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-bold px-4 py-2 rounded-lg transition"><svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>Add more</button>
+    </div>
     ${cards.length ? AUTO_CATS.filter(([k]) => byCat[k]?.length).map(([k, label]) => `<div><div class="text-xs font-black uppercase tracking-wider text-slate-400 mb-2 mt-4">${label}</div><div class="space-y-2">${byCat[k].map(autoCardHtml).join('')}</div></div>`).join('')
-      : '<div class="py-12 text-center text-sm text-slate-400 italic">No campaigns here yet.</div>'}`;
+      : '<div class="py-12 text-center text-sm text-slate-400 italic">No campaigns here yet — hit <b>Add more</b> to pick from ready-made email templates.</div>'}`;
+}
+
+// Ready-made email templates the dealer can add with one click. {{tags}} render
+// live at send time (customer/vehicle/rep/dealership + review_url, service_url…).
+const AUTO_TEMPLATES = {
+  leads: [
+    { name: 'Instant thank-you', trigger_event: 'internet_lead', delay_minutes: 5, subject_template: 'Thanks for reaching out, {{customer.first_name|there}}', message_body_template: `Hi {{customer.first_name|there}},\n\nThanks for your interest in the {{vehicle.ymm|vehicle}} at {{dealership.name}}! I'd love to help you with the next step — whether that's more photos, a payment estimate, or booking a test drive.\n\nWhat's the best number to reach you at?\n\n{{rep.first_name|Your sales team}}\n{{dealership.name}}` },
+    { name: 'Day 1 — still available', trigger_event: 'internet_lead', delay_minutes: 1440, subject_template: 'The {{vehicle.model|vehicle}} is still here', message_body_template: `Hi {{customer.first_name|there}},\n\nJust a quick note that the {{vehicle.ymm|vehicle}} you were looking at is still available. These move quickly — want me to hold it for you or set up a time to see it?\n\n{{rep.first_name|Your sales team}}` },
+    { name: 'Get pre-approved', trigger_event: 'internet_lead', delay_minutes: 2880, subject_template: 'Know your payment before you visit', message_body_template: `Hi {{customer.first_name|there}},\n\nWant to know your exact payment before you come in? Getting pre-approved takes about two minutes and doesn't affect your credit score. Reply here and I'll send you a secure link.\n\n{{rep.first_name|Your team}} at {{dealership.name}}` },
+    { name: 'What is your trade worth', trigger_event: 'internet_lead', delay_minutes: 4320, subject_template: 'Your trade could lower your payment', message_body_template: `Hi {{customer.first_name|there}},\n\nHave a vehicle to trade? We're paying strong numbers right now, and it could bring your payment on the {{vehicle.model|new one}} down more than you'd expect. Send me the year, make, model and mileage and I'll get you a real range.\n\n{{rep.first_name|Your team}}` },
+    { name: 'Book a test drive', trigger_event: 'internet_lead', delay_minutes: 2880, subject_template: 'Want to take the {{vehicle.model|vehicle}} for a spin?', message_body_template: `Hi {{customer.first_name|there}},\n\nNothing beats getting behind the wheel. I can have the {{vehicle.ymm|vehicle}} cleaned up and ready whenever works for you — mornings, evenings or weekends. What day suits you best?\n\n{{rep.first_name|Your team}} at {{dealership.name}}` },
+    { name: 'New pricing / incentive', trigger_event: 'internet_lead', delay_minutes: 7200, subject_template: 'Good news on the {{vehicle.model|vehicle}}', message_body_template: `Hi {{customer.first_name|there}},\n\nThere's been an update to the pricing and incentives on the {{vehicle.ymm|vehicle}} — it's worth a fresh look. Want me to put the new numbers together for you?\n\n{{rep.first_name|Your sales team}}` },
+    { name: 'Help you compare', trigger_event: 'internet_lead', delay_minutes: 5760, subject_template: 'Still deciding? Happy to help', message_body_template: `Hi {{customer.first_name|there}},\n\nPicking the right vehicle is a big decision. If you're weighing the {{vehicle.model|vehicle}} against other options, I'm glad to walk you through the differences honestly — no pressure. Just reply with what matters most to you.\n\n{{rep.first_name|Your team}}` },
+    { name: 'Day 7 check-in', trigger_event: 'internet_lead', delay_minutes: 10080, subject_template: 'Checking in, {{customer.first_name|there}}', message_body_template: `Hi {{customer.first_name|there}},\n\nJust circling back on the {{vehicle.model|vehicle}}. Did you find what you were after, or are you still shopping? Either way I'm here to help whenever you're ready.\n\n{{rep.first_name|Your team}} at {{dealership.name}}` },
+    { name: 'Day 14 — we miss you', trigger_event: 'internet_lead', delay_minutes: 20160, subject_template: 'Still thinking about the {{vehicle.model|vehicle}}?', message_body_template: `Hi {{customer.first_name|there}},\n\nI don't want you to miss out. If the timing wasn't right before, let's find a way to make it work now — flexible appointments, home delivery, and straightforward numbers. Want to pick it back up?\n\n{{rep.first_name|Your team}}` },
+    { name: 'After a visit — no deal', trigger_event: 'show_no_sale', delay_minutes: 480, send_at_hour: 9, subject_template: 'Thanks for coming in, {{customer.first_name|there}}', message_body_template: `Hi {{customer.first_name|there}},\n\nThanks for taking the time to visit {{dealership.name}}. I spoke with my manager about sharpening the numbers on the {{vehicle.ymm|vehicle}} and your trade — I think we can get closer than where we left off. Can I give you a quick call?\n\n{{rep.first_name|Your sales team}}` },
+  ],
+  delivery: [
+    { name: 'Congrats & welcome', trigger_event: 'delivered', delay_minutes: 60, subject_template: 'Congrats on your {{vehicle.model|new vehicle}}!', message_body_template: `Hi {{customer.first_name|there}},\n\nCongratulations from all of us at {{dealership.name}}! We hope you love the {{vehicle.ymm|vehicle}}. If any questions come up as you settle in, reply here anytime — we're always happy to help.\n\n{{rep.first_name|Your team}}` },
+    { name: 'Getting to know your vehicle', trigger_event: 'delivered', delay_minutes: 2880, subject_template: 'A few tips for your {{vehicle.model|vehicle}}', message_body_template: `Hi {{customer.first_name|there}},\n\nNow that you've had a couple of days with the {{vehicle.ymm|vehicle}}, want a hand pairing your phone, setting up driver profiles, or getting the most out of the tech? Reply and I'll walk you through it.\n\n{{rep.first_name|Your team}} at {{dealership.name}}` },
+    { name: '30-day check-in', trigger_event: 'delivered', delay_minutes: 43200, send_at_hour: 10, subject_template: "One month in — how's it going?", message_body_template: `Hi {{customer.first_name|there}},\n\nHard to believe it's been a month with your {{vehicle.ymm|vehicle}}! How's everything going? If it's about time for that first maintenance, our service team makes it easy — book online at {{service_url|our website}}.\n\nThanks for being part of the {{dealership.name}} family.` },
+    { name: 'First service reminder', trigger_event: 'delivered', delay_minutes: 129600, send_at_hour: 10, subject_template: 'Time for your first service', message_body_template: `Hi {{customer.first_name|there}},\n\nKeeping up with routine maintenance protects your warranty and your resale value. Your {{vehicle.model|vehicle}} is coming due — book a convenient time at {{service_url|our website}} and we'll take great care of it.\n\n{{dealership.name}} Service` },
+    { name: '48-hour review request', trigger_event: 'delivered', delay_minutes: 2880, send_at_hour: 12, subject_template: 'How did we do?', message_body_template: `Hi {{customer.first_name|there}},\n\nThank you again for choosing {{dealership.name}}! If you have 30 seconds, a quick Google review would mean the world to our team: {{review_url|our review page}}.\n\nWe truly appreciate you.` },
+    { name: 'Referral pitch', trigger_event: 'delivered', delay_minutes: 20160, send_at_hour: 11, subject_template: 'Know anyone car shopping?', message_body_template: `Hi {{customer.first_name|there}},\n\nHope you're loving the {{vehicle.model|new ride}}! Quick one — we pay {{referral_bonus|a referral bonus}} for anyone you send our way who buys. Know a friend or family member in the market? Just send them to me directly.\n\n{{rep.first_name|Your team}} at {{dealership.name}}` },
+    { name: 'Accessories & add-ons', trigger_event: 'delivered', delay_minutes: 10080, subject_template: 'Make your {{vehicle.model|vehicle}} yours', message_body_template: `Hi {{customer.first_name|there}},\n\nWant to personalize your {{vehicle.ymm|vehicle}}? From all-weather mats and cargo liners to remote start and protection packages, our parts team can set you up. Reply and I'll send options that fit your vehicle.\n\n{{dealership.name}}` },
+    { name: 'Seasonal prep', trigger_event: 'delivered', delay_minutes: 129600, subject_template: 'Is your {{vehicle.model|vehicle}} season-ready?', message_body_template: `Hi {{customer.first_name|there}},\n\nWith the season changing, it's a good time for a quick check — tires, battery, fluids and wipers. Book a seasonal inspection at {{service_url|our website}} and drive with confidence.\n\n{{dealership.name}} Service` },
+    { name: 'Warranty reminder', trigger_event: 'delivered', delay_minutes: 259200, subject_template: 'A note about your coverage', message_body_template: `Hi {{customer.first_name|there}},\n\nJust a friendly reminder to keep your service records up to date — it keeps your {{vehicle.model|vehicle}}'s warranty in good standing and helps at trade-in time. Any questions about your coverage, just reply.\n\n{{dealership.name}}` },
+    { name: 'Anniversary & trade-up', trigger_event: 'delivered', delay_minutes: 525600, send_at_hour: 10, subject_template: 'Happy one year with your {{vehicle.model|vehicle}}!', message_body_template: `Hi {{customer.first_name|there}},\n\nIt's been a year with your {{vehicle.ymm|vehicle}} — thank you for being a loyal customer! Values are strong right now, so you may be in a great equity position to upgrade for a similar payment. Want me to run the numbers, no obligation?\n\n{{rep.first_name|Your team}} at {{dealership.name}}` },
+  ],
+};
+function autoOpenTemplates(bucket) {
+  const list = AUTO_TEMPLATES[bucket] || [];
+  const rows = list.map((t, i) => `
+    <div class="border border-slate-200 dark:border-slate-800 rounded-xl p-3">
+      <div class="flex items-start justify-between gap-2">
+        <div class="min-w-0">
+          <div class="font-bold text-sm text-slate-900 dark:text-white">${esc(t.name)}</div>
+          <div class="text-[11px] text-slate-400">${esc(AUTO_TRIGGER_LABEL[t.trigger_event] || t.trigger_event)} · ${autoDelayText(t.delay_minutes)} · email</div>
+        </div>
+        <button onclick="autoAddTemplate('${bucket}',${i},this)" class="flex-shrink-0 text-xs font-bold bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-1.5 rounded-lg">Add</button>
+      </div>
+      <div class="text-xs text-slate-600 dark:text-slate-300 mt-1.5 line-clamp-3">${esc(t.subject_template ? t.subject_template + ' — ' : '')}${esc(t.message_body_template.replace(/\n+/g, ' ').slice(0, 160))}…</div>
+    </div>`).join('');
+  crmOverlay(`<div class="p-5">
+    <div class="flex items-center justify-between mb-1">
+      <div class="text-lg font-black text-slate-900 dark:text-white">Add an email automation</div>
+      <button onclick="this.closest('.fixed').remove()" class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"><svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" d="M6 6l12 12M18 6L6 18"/></svg></button>
+    </div>
+    <p class="text-sm text-slate-500 dark:text-slate-400 mb-3">Pick a ready-made template — it's added switched on, and you can edit the wording or timing after.</p>
+    <div class="space-y-2 max-h-[60vh] overflow-y-auto pr-1">${rows}</div>
+  </div>`, 'max-w-2xl');
+}
+function autoDelayText(mins) {
+  const m = Number(mins) || 0;
+  if (m < 60) return m <= 5 ? 'right away' : `${m} min`;
+  if (m < 1440) return `${Math.round(m / 60)} hr`;
+  return `${Math.round(m / 1440)} day${Math.round(m / 1440) === 1 ? '' : 's'}`;
+}
+async function autoAddTemplate(bucket, i, btn) {
+  const t = (AUTO_TEMPLATES[bucket] || [])[i]; if (!t) return;
+  const cat = bucket === 'delivery' ? 'retention' : 'pipeline';
+  const orig = btn.textContent; btn.disabled = true; btn.textContent = 'Adding…';
+  try {
+    const d = await apiSendJson('/automation/campaigns', 'POST', {
+      name: t.name, category: cat, trigger_event: t.trigger_event, channel: 'email',
+      subject_template: t.subject_template || '', message_body_template: t.message_body_template,
+      delay_minutes: t.delay_minutes || 0, send_at_hour: t.send_at_hour ?? null, sender_identity: 'house', is_active: true,
+    });
+    if (d.campaign) { __autoCfg.campaigns = [...(__autoCfg.campaigns || []), d.campaign]; }
+    btn.textContent = 'Added ✓';
+    showToast('Automation added', 'success');
+    autoRerenderCurrent();   // reflect it on the page behind the modal
+  } catch (e) { btn.disabled = false; btn.textContent = orig; showToast(e.message, 'error'); }
 }
 function autoInitHolidays() {
   const saved = Array.isArray(__autoCfg.settings.holidays) ? __autoCfg.settings.holidays : [];
@@ -7407,6 +7483,7 @@ function autoCardHtml(c) {
         </div>
       </div>
       ${isTask ? '' : `<select onchange="autoCardField('${c.id}','sender_identity',this.value)" class="text-xs bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded px-1.5 py-1">${senderOpts}</select>`}
+      ${String(c.key || '').startsWith('custom_') ? `<button onclick="autoDeleteCard('${c.id}',this)" title="Delete this automation" class="shrink-0 text-slate-400 hover:text-red-500 p-1"><svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg></button>` : ''}
     </div>
     ${isTask ? `<label class="block text-[11px] font-semibold text-slate-500 dark:text-slate-400 mb-1">Task note for the rep</label>` : ''}
     ${c.channel === 'email' ? `<input id="am-subj-${c.id}" value="${esc(c.subject_template || '')}" placeholder="Email subject" class="${ta} mb-2">` : ''}
@@ -7437,6 +7514,16 @@ async function autoSaveCard(cid, btn) {
   try { const d = await apiSendJson(`/automation/campaigns/${cid}`, 'PUT', body); Object.assign(c, d.campaign || body); showToast('Saved', 'success'); }
   catch (e) { showToast(e.message, 'error'); }
   finally { btn.disabled = false; btn.textContent = 'Save'; }
+}
+async function autoDeleteCard(cid, btn) {
+  const c = __autoCfg.campaigns.find(x => x.id === cid); if (!c) return;
+  if (!confirm(`Delete "${c.name}"? This automation will stop sending.`)) return;
+  btn.disabled = true;
+  try {
+    await apiSendJson(`/automation/campaigns/${cid}`, 'DELETE');
+    __autoCfg.campaigns = __autoCfg.campaigns.filter(x => x.id !== cid);
+    autoRerenderCurrent(); showToast('Deleted', 'success');
+  } catch (e) { btn.disabled = false; showToast(e.message, 'error'); }
 }
 async function autoAiCard(cid, btn) {
   const c = __autoCfg.campaigns.find(x => x.id === cid); if (!c) return;
@@ -7496,7 +7583,7 @@ async function autoSaveGlobals(btn) {
   catch (e) { if (msg) { msg.textContent = e.message; msg.className = 'text-xs ml-2 text-red-500'; msg.classList.remove('hidden'); } }
   finally { btn.disabled = false; btn.textContent = orig; }
 }
-Object.assign(window, { loadAutomationPage, loadAutoHolidays, loadAutoLeads, loadAutoDelivery, autoToggleEngine, autoToggleCard, autoCardField, autoInsertVar, autoSaveCard, autoAiCard, autoHolToggle, autoHolAi, autoAddHolidayRow, autoSaveHolidays, autoSaveGlobals, autoSaveEmail });
+Object.assign(window, { loadAutomationPage, loadAutoHolidays, loadAutoLeads, loadAutoDelivery, autoToggleEngine, autoToggleCard, autoCardField, autoInsertVar, autoSaveCard, autoAiCard, autoHolToggle, autoHolAi, autoAddHolidayRow, autoSaveHolidays, autoSaveGlobals, autoSaveEmail, autoOpenTemplates, autoAddTemplate, autoDeleteCard });
 
 // ══ Equity Radar — lease pull-ahead / equity mining (managers) ═══════════════
 let __equity = { radar: [], leases: [], settings: {}, tab: 'radar' };

@@ -570,6 +570,42 @@ export function registerAutomation(app) {
     if (!data) return res.status(404).json({ error: 'Campaign not found' })
     res.json({ ok: true, campaign: data })
   })
+  // Create a new campaign — used by the "Add more" template library on the
+  // Lead / Delivery / Holiday automation pages.
+  app.post('/automation/campaigns', requireAuth, async (req, res) => {
+    if (!isDealerLevel(req)) return res.status(403).json({ error: 'Manager access required' })
+    const b = req.body || {}
+    const TRIGGERS = ['internet_lead', 'appointment_booked', 'show_no_sale', 'delivered', 'birthday', 'holiday']
+    const trigger = TRIGGERS.includes(b.trigger_event) ? b.trigger_event : 'internet_lead'
+    const channel = ['sms', 'email', 'task'].includes(b.channel) ? b.channel : 'email'
+    const category = ['pipeline', 'retention', 'reviews', 'referrals', 'equity', 'calendar', 'tasks', 'custom'].includes(b.category) ? b.category : 'custom'
+    if (!b.message_body_template) return res.status(400).json({ error: 'message_body_template required' })
+    // Highest current sort + 10, so new ones land at the bottom of their group.
+    const { data: maxRow } = await supabaseAdmin.from('automated_campaigns').select('sort').eq('dealership_id', req.dealershipId).order('sort', { ascending: false }).limit(1).maybeSingle()
+    const row = {
+      dealership_id: req.dealershipId,
+      key: 'custom_' + Math.random().toString(36).slice(2, 10),
+      name: String(b.name || 'New automation').slice(0, 120),
+      category, trigger_event: trigger, channel,
+      subject_template: channel === 'email' ? (String(b.subject_template || '').slice(0, 300) || null) : null,
+      message_body_template: String(b.message_body_template).slice(0, 4000),
+      delay_minutes: Math.max(0, parseInt(b.delay_minutes) || 0),
+      send_at_hour: b.send_at_hour == null ? null : Math.max(0, Math.min(23, parseInt(b.send_at_hour) || 0)),
+      sender_identity: ['house', 'rep', 'dynamic_smart_switch'].includes(b.sender_identity) ? b.sender_identity : (channel === 'email' ? 'house' : 'rep'),
+      is_active: b.is_active === false ? false : true,
+      sort: ((maxRow?.sort ?? 900) + 10),
+    }
+    const { data, error } = await supabaseAdmin.from('automated_campaigns').insert(row).select('*').single()
+    if (error) return res.status(500).json({ error: error.message })
+    res.json({ ok: true, campaign: data })
+  })
+  // Delete a (custom) campaign.
+  app.delete('/automation/campaigns/:id', requireAuth, async (req, res) => {
+    if (!isDealerLevel(req)) return res.status(403).json({ error: 'Manager access required' })
+    const { error } = await supabaseAdmin.from('automated_campaigns').delete().eq('id', req.params.id).eq('dealership_id', req.dealershipId)
+    if (error) return res.status(500).json({ error: error.message })
+    res.json({ ok: true })
+  })
   app.post('/automation/campaigns/reset', requireAuth, async (req, res) => {
     if (!isDealerLevel(req)) return res.status(403).json({ error: 'Manager access required' })
     await supabaseAdmin.from('automated_campaigns').delete().eq('dealership_id', req.dealershipId)
