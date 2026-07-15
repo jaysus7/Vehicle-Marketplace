@@ -10392,7 +10392,9 @@ function renderInvIntelNav() {
 
   if (!btn._clickWired) {
     btn._clickWired = true;
-    btn.addEventListener('click', () => switchPage('inv-intel'));
+    // Group header: the name only expands/collapses the dropdown now — the
+    // "Pricing & Acquisition" sub-item is what navigates to the page.
+    btn.addEventListener('click', () => toggleNavGroup('ii'));
   }
 }
 
