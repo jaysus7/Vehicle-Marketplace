@@ -5889,10 +5889,14 @@ function openVehicleForm(vehicle) {
       <div>${lbl('Trim')}${inp('veh-trim', v.trim, 'Trim', 'w-full')}</div>
     </div>
     <div class="grid grid-cols-4 gap-2">
-      <div>${lbl('Price ($)')}${inp('veh-price', v.price, '', 'w-full')}</div>
+      <div>${lbl('Price ($)')}<input id="veh-price" value="${v.price == null ? '' : v.price}" oninput="vehUpdateGross()" class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm"></div>
       <div>${lbl('Mileage (km)')}${inp('veh-mileage', v.mileage, '', 'w-full')}</div>
       <div>${lbl('Condition')}<select id="veh-condition" class="${selCls}">${opts(v.condition || 'used', [['used', 'Used'], ['new', 'New'], ['demo', 'Demo'], ['certified', 'Certified (CPO)']])}</select></div>
       <div>${lbl('Stock #')}${inp('veh-stock', v.stocknumber, '', 'w-full')}</div>
+    </div>
+    <div class="grid grid-cols-4 gap-2 items-end">
+      <div>${lbl('Invoice / cost ($)')}<input id="veh-invoice" type="number" step="0.01" value="${v.invoice_amount == null ? '' : v.invoice_amount}" placeholder="Dealer cost" oninput="vehUpdateGross()" class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm"></div>
+      <div class="col-span-3"><div class="text-[11px] text-slate-400 leading-snug pb-1.5">Front-end gross <span id="veh-gross" class="font-bold text-slate-700 dark:text-slate-200"></span> — internal only; never shown to reps, customers or your website.</div></div>
     </div>
     <div class="grid grid-cols-4 gap-2">
       <div>${lbl('Ext. colour')}${inp('veh-ext', v.exterior_color, '', 'w-full')}</div>
@@ -5955,7 +5959,19 @@ function openVehicleForm(vehicle) {
     </div>
   </div>`, 'max-w-2xl');
   renderVehPhotos();
+  vehUpdateGross();
 }
+// Live front-end gross in the vehicle form: price − invoice (managers only).
+function vehUpdateGross() {
+  const el = document.getElementById('veh-gross'); if (!el) return;
+  const price = Number(document.getElementById('veh-price')?.value) || 0;
+  const inv = document.getElementById('veh-invoice')?.value;
+  if (inv === '' || inv == null || !(Number(inv) > 0) || !(price > 0)) { el.textContent = ''; return; }
+  const gross = price - Number(inv);
+  el.textContent = `${gross >= 0 ? '+' : '−'}$${Math.abs(gross).toLocaleString()}`;
+  el.className = 'font-bold ' + (gross >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400');
+}
+window.vehUpdateGross = vehUpdateGross;
 function renderVehPhotos() {
   const box = document.getElementById('veh-photos');
   if (!box) return;
@@ -5986,7 +6002,7 @@ async function vehSave(btn, id) {
   const val = (i) => (document.getElementById(i)?.value || '').trim();
   const body = {
     vin: val('veh-vin'), year: val('veh-year'), make: val('veh-make'), model: val('veh-model'), trim: val('veh-trim'),
-    price: val('veh-price'), mileage: val('veh-mileage'), condition: document.getElementById('veh-condition')?.value || 'used',
+    price: val('veh-price'), invoice_amount: val('veh-invoice'), mileage: val('veh-mileage'), condition: document.getElementById('veh-condition')?.value || 'used',
     stocknumber: val('veh-stock'), exterior_color: val('veh-ext'), interior_color: val('veh-int'),
     drivetrain: document.getElementById('veh-drive')?.value || '', doors: val('veh-doors'),
     transmission: val('veh-trans'), fuel_type: val('veh-fuel'), engine: val('veh-engine'), body_style: val('veh-body'),
@@ -7812,6 +7828,7 @@ function renderCatalog() {
   filtered = [...filtered].sort((a, b) => catalogSortRank(a) - catalogSortRank(b));
 
   if (!filtered.length) {
+    document.getElementById('catalog-value-summary')?.classList.add('hidden');
     list.innerHTML = '<div class="text-xs text-slate-500 italic col-span-full">No vehicles match.</div>';
     return;
   }
@@ -7836,6 +7853,25 @@ function renderCatalog() {
         : 'bg-orange-500/15 text-orange-700 dark:text-orange-300 border-orange-500/30';
     return `<span class="${TAG} ${cls}">${c}</span>`;
   };
+
+  // Manager value summary (internal): retail, cost & potential gross on the live lot.
+  (() => {
+    const sum = document.getElementById('catalog-value-summary'); if (!sum) return;
+    const isMgr = ['DEALER_ADMIN', 'OWNER', 'MANAGER'].includes(profileContext?.role);
+    const avail = filtered.filter(v => v.status !== 'sold');
+    const withCost = avail.filter(v => v.invoice_amount != null && v.price);
+    if (!isMgr || !withCost.length) { sum.className = 'hidden'; return; }
+    const totRetail = avail.reduce((s, v) => s + (Number(v.price) || 0), 0);
+    const totCost = withCost.reduce((s, v) => s + (Number(v.invoice_amount) || 0), 0);
+    const totGross = withCost.reduce((s, v) => s + ((Number(v.price) || 0) - (Number(v.invoice_amount) || 0)), 0);
+    const m = (n) => '$' + Math.round(n).toLocaleString();
+    const tile = (label, val, cls = 'text-slate-900 dark:text-white') => `<div class="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg px-3 py-2"><div class="text-[10px] uppercase tracking-wider text-slate-400 font-bold">${label}</div><div class="text-base font-black ${cls}">${val}</div></div>`;
+    sum.className = 'grid grid-cols-2 sm:grid-cols-4 gap-2 mb-3';
+    sum.innerHTML = tile('Units (live)', avail.length)
+      + tile('Retail value', m(totRetail))
+      + tile('Cost in stock', m(totCost))
+      + tile('Potential gross', (totGross >= 0 ? '' : '−') + m(Math.abs(totGross)), totGross >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400');
+  })();
 
   list.innerHTML = filtered.map(v => {
     const img = v.image_urls?.[0]
@@ -7926,6 +7962,10 @@ function renderCatalog() {
           ${v.stocknumber ? `<span class="font-mono text-slate-400 dark:text-slate-500">#${v.stocknumber}</span>` : ''}
           <span class="text-slate-500">${mileage}</span>
         </div>
+        ${(['DEALER_ADMIN', 'OWNER', 'MANAGER'].includes(profileContext?.role) && v.invoice_amount != null && v.price) ? (() => {
+          const g = Number(v.price) - Number(v.invoice_amount);
+          return `<div class="flex items-center justify-between text-[11px] -mt-0.5" title="Internal — not shown to reps, customers or your website"><span class="text-slate-400">Cost $${Number(v.invoice_amount).toLocaleString()}</span><span class="font-bold ${g >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}">${g >= 0 ? '+' : '−'}$${Math.abs(g).toLocaleString()} gross</span></div>`;
+        })() : ''}
         ${__vinStickerActive ? (() => {
           // Recall status + VIN/sticker/brochure actions live on the card for
           // Inventory Intelligence dealers (no separate page).

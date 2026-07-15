@@ -122,7 +122,8 @@ export function registerRoutes(app) {
       dealership_id: req.dealershipId, source: 'manual', status: 'available',
       vin: b.vin ? String(b.vin).trim().toUpperCase().slice(0, 17) : null,
       year: parseInt(b.year) || null, make, model, trim: (b.trim || '').trim() || null,
-      price: numOrNull(b.price), mileage: mileage != null ? Math.round(mileage) : null,
+      price: numOrNull(b.price), invoice_amount: numOrNull(b.invoice_amount),
+      mileage: mileage != null ? Math.round(mileage) : null,
       condition: b.condition || 'used', stocknumber: (b.stocknumber || '').trim() || null,
       exterior_color: b.exterior_color || null, interior_color: b.interior_color || null,
       transmission: b.transmission || null, fuel_type: b.fuel_type || null,
@@ -149,6 +150,7 @@ export function registerRoutes(app) {
     if (b.vin !== undefined) patch.vin = b.vin ? String(b.vin).trim().toUpperCase().slice(0, 17) : null
     if (b.year !== undefined) patch.year = parseInt(b.year) || null
     if (b.price !== undefined) patch.price = numOrNull(b.price)
+    if (b.invoice_amount !== undefined) patch.invoice_amount = numOrNull(b.invoice_amount)
     if (b.mileage !== undefined) { const m = numOrNull(b.mileage); patch.mileage = m != null ? Math.round(m) : null }
     if (b.doors !== undefined) patch.doors = numOrNull(b.doors)
     if (b.specs_manual !== undefined) patch.specs_manual = cleanSpecs(b.specs_manual)
@@ -336,7 +338,7 @@ export function registerRoutes(app) {
     const cutoff = new Date(Date.now() - 14 * 86400000).toISOString()
     const { data, error } = await supabaseAdmin
       .from('inventory')
-      .select('id, vin, year, make, model, trim, price, mileage, condition, exterior_color, interior_color, body_style, fuel_type, drivetrain, transmission, engine, doors, status, archived_at, image_urls, source_url, source, description, stocknumber, last_synced_at, window_sticker_url, window_sticker_oem_url, window_sticker_gen_url, brochure_url, brochure_oem_url, brochure_gen_url, recalls, recalls_checked_at, vin_data, sales_pitch, sales_pitch_at, specs_manual, awaiting_possession, source_appraisal_id')
+      .select('id, vin, year, make, model, trim, price, invoice_amount, mileage, condition, exterior_color, interior_color, body_style, fuel_type, drivetrain, transmission, engine, doors, status, archived_at, image_urls, source_url, source, description, stocknumber, last_synced_at, window_sticker_url, window_sticker_oem_url, window_sticker_gen_url, brochure_url, brochure_oem_url, brochure_gen_url, recalls, recalls_checked_at, vin_data, sales_pitch, sales_pitch_at, specs_manual, awaiting_possession, source_appraisal_id')
       .eq('dealership_id', req.dealershipId)
       // Live units (archived_at IS NULL) OR anything archived within the last 2 weeks.
       .or(`archived_at.is.null,archived_at.gte.${cutoff}`)
