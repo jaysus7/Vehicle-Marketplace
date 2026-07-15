@@ -653,7 +653,9 @@ function switchPage(pageId) {
   if (pageId === 'leads') loadLeadsPage();
   if (pageId === 'appointments') loadAppointmentsPage();
   if (pageId === 'tasks') crmLoadTasks();
+  if (pageId === 'market') loadMarketPage();
   if (pageId === 'website') loadWebsitePage();
+  if (pageId === 'website-settings') loadWebsiteSettings();
   if (pageId === 'automation') loadAutomationPage();
   if (pageId === 'equity') loadEquityPage();
   if (pageId === 'appraisal') { initAppraisal(); loadApprList(); apprEnsureBranding(); }
@@ -6053,6 +6055,19 @@ async function loadWebsitePage() {
   __wsTarget = 'home'; __siteSections = __homeSections;
   renderWebsitePage();
 }
+// Website Settings — its own page (domain/SEO/widgets), reusing the builder's config + fields.
+async function loadWebsiteSettings() {
+  const root = document.getElementById('website-settings-root');
+  if (!root) return;
+  if (!__siteCfg) {
+    root.innerHTML = '<div class="py-16 text-center text-sm text-slate-400 italic">Loading…</div>';
+    try { __siteCfg = await apiGetJson('/dealership/site'); }
+    catch (e) { root.innerHTML = `<div class="py-16 text-center text-sm text-slate-500">Couldn't load: ${esc(e.message)}</div>`; return; }
+  }
+  root.innerHTML = wsSettings();
+  __siteWidgets = Array.isArray(__siteCfg?.content?.widgets) ? __siteCfg.content.widgets.slice() : [];
+  renderSiteWidgets();
+}
 // Move the active buffer back onto its source (home or a page) before switching/saving.
 function wsFlushTarget() {
   if (__wsTarget === 'home') __homeSections = __siteSections;
@@ -6080,11 +6095,11 @@ function renderWebsitePage() {
       <div class="flex items-center gap-2 flex-wrap">
         ${url ? `<a href="${url}" target="_blank" class="text-xs font-bold bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 px-3 py-2 rounded-lg">View site ↗</a>` : ''}
         <label class="flex items-center gap-1.5 text-sm font-bold"><input id="ws-pub" type="checkbox" ${__siteCfg.site_published ? 'checked' : ''} class="accent-indigo-600 w-4 h-4">Published</label>
-        <button onclick="wsTab('settings')" class="text-xs font-bold bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 px-3 py-2 rounded-lg">Settings</button>
+        <button onclick="switchPage('website-settings')" class="text-xs font-bold bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 px-3 py-2 rounded-lg">Settings</button>
         <button onclick="saveWebsite(this)" class="text-sm font-bold bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg">Save</button>
       </div>
     </div>
-    <div class="flex items-center gap-1 border-b border-slate-200 dark:border-slate-800 flex-wrap">${tab('builder', 'Builder')}${tab('design', 'Design')}${tab('pages', 'Pages')}${tab('team', 'Team')}${tab('settings', 'Settings')}</div>
+    <div class="flex items-center gap-1 border-b border-slate-200 dark:border-slate-800 flex-wrap">${tab('builder', 'Builder')}${tab('design', 'Design')}${tab('pages', 'Pages')}${tab('team', 'Team')}</div>
     <div id="ws-body"></div>`;
   renderWsBody();
 }
@@ -9624,6 +9639,24 @@ function renderInvIntelSidebar(cfg) {
     badge.classList.add('hidden');
     inactive.classList.remove('hidden');
     activeEl.classList.add('hidden');
+  }
+}
+
+// Market & Competitors — its own page (was a section inside Inventory Intelligence).
+// Gated the same way: show the upsell unless the dealer has Inventory Intelligence.
+function loadMarketPage() {
+  const upsell = document.getElementById('market-upsell');
+  const content = document.getElementById('market-content');
+  if (!upsell || !content) return;
+  if (__invIntelActive) {
+    upsell.classList.add('hidden');
+    content.classList.remove('hidden');
+    loadCompetitors();   // nearby-lot list + comparison
+    loadLotOverview();   // "Your lot" mini-stats for side-by-side
+    loadMarketcheckStatus?.();
+  } else {
+    upsell.classList.remove('hidden');
+    content.classList.add('hidden');
   }
 }
 
