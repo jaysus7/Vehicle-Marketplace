@@ -43,6 +43,45 @@ function addonsInSub(sub) {
     .filter(Boolean)
 }
 
+// ── Bundled packages (Starter / Growth / Pro) ────────────────────────────────
+// Sold to smaller dealers at $999 / $1,499 / $1,999 a month, in the buyer's own
+// currency (CAD in Canada, USD in the US). Each package has one Stripe price per
+// currency; a package flips a fixed set of entitlements via the same webhook the
+// à-la-carte add-ons use. Facebook posting stays its own product and is comped at
+// the Pro tier. Prices are the display amounts (same headline number per currency).
+const PACKAGES = {
+  starter: { label: 'Starter', amount: 999,  priceCad: process.env.STRIPE_PKG_STARTER_CAD || '', priceUsd: process.env.STRIPE_PKG_STARTER_USD || '' },
+  growth:  { label: 'Growth',  amount: 1499, priceCad: process.env.STRIPE_PKG_GROWTH_CAD  || '', priceUsd: process.env.STRIPE_PKG_GROWTH_USD  || '' },
+  pro:     { label: 'Pro',     amount: 1999, priceCad: process.env.STRIPE_PKG_PRO_CAD     || '', priceUsd: process.env.STRIPE_PKG_PRO_USD     || '' },
+}
+function packageKeyForPrice(priceId) {
+  for (const [key, p] of Object.entries(PACKAGES)) {
+    if (priceId && (priceId === p.priceCad || priceId === p.priceUsd)) return key
+  }
+  return null
+}
+function packageInSub(sub) {
+  for (const item of (sub.items?.data || [])) {
+    const k = packageKeyForPrice(item.price.id)
+    if (k) return k
+  }
+  return null
+}
+// Entitlement columns for a package. Growth & Pro unlock the AI Boost and
+// Inventory Intelligence bundles (which cascade to Vision/docs/VIN/appraisals);
+// `plan` gates the Pro-only layer (equity mining + executive dashboard). When a
+// subscription ends we clear everything so downgrades are deterministic.
+function colsForPackage(pkg, active) {
+  if (!active) return { plan: null, ai_boost_active: false, ai_boost_paid: false, inv_intel_active: false, inv_intel_paid: false }
+  const ai = pkg === 'growth' || pkg === 'pro'
+  return {
+    plan: pkg,
+    ai_boost_active: ai, ai_boost_paid: ai,
+    inv_intel_active: ai, inv_intel_paid: ai,
+    vin_sticker_active: ai, ai_vision_active: ai,
+  }
+}
+
 // Fetch the dealership record for a Stripe customer (for email lookups)
 async function dealerForCustomer(customerId) {
   const { data } = await supabaseAdmin
@@ -89,9 +128,11 @@ export function registerRoutes(app) {
 
           const sub = await stripe.subscriptions.retrieve(session.subscription)
           const addons = addonsInSub(sub)
+          const pkg = packageInSub(sub)
 
-          // Activate each add-on
+          // Activate the package (if any) then each à-la-carte add-on.
           const updates = {}
+          if (pkg) Object.assign(updates, colsForPackage(pkg, true))
           for (const key of addons) Object.assign(updates, colsForAddon(key, true))
           if (session.customer) updates.stripe_customer_id = session.customer
           if (Object.keys(updates).length) {
@@ -133,7 +174,9 @@ export function registerRoutes(app) {
             break
           }
           const addons = addonsInSub(sub)
+          const pkg = packageInSub(sub)
           const updates = {}
+          if (pkg) Object.assign(updates, colsForPackage(pkg, isActive))
           for (const key of addons) Object.assign(updates, colsForAddon(key, isActive))
           if (Object.keys(updates).length) {
             await supabaseAdmin.from('dealerships').update(updates).eq('stripe_customer_id', sub.customer)
@@ -148,7 +191,9 @@ export function registerRoutes(app) {
             break
           }
           const addons = addonsInSub(sub)
+          const pkg = packageInSub(sub)
           const updates = {}
+          if (pkg) Object.assign(updates, colsForPackage(pkg, false))
           for (const key of addons) Object.assign(updates, colsForAddon(key, false))
           if (Object.keys(updates).length) {
             await supabaseAdmin.from('dealerships').update(updates).eq('stripe_customer_id', sub.customer)
@@ -341,6 +386,78 @@ export function registerRoutes(app) {
   const retired = (req, res) => res.status(410).json({ error: 'This add-on has moved into AI Boost.', redirect: 'ai_boost' })
   app.post('/billing/subscribe-vin-sticker', requireAuth, retired)
   app.post('/billing/subscribe-ai-vision',   requireAuth, retired)
+
+  // ── Bundled package subscription (Starter / Growth / Pro) ─────────────────
+  // Currency follows the dealer's country (US → USD, else CAD); the client may
+  // override with { currency }. 30-day free trial, no card required up front.
+  async function createPackageCheckout(req, res) {
+    if (req.profile?.role !== 'DEALER_ADMIN' && req.profile?.role !== 'OWNER') {
+      return res.status(403).json({ error: 'Admin role required' })
+    }
+    if (!req.dealershipId) return res.status(400).json({ error: 'No dealership associated' })
+    const pkgKey = String(req.body?.package || '').toLowerCase()
+    const pkg = PACKAGES[pkgKey]
+    if (!pkg) return res.status(400).json({ error: 'Unknown package' })
+
+    let currency = String(req.body?.currency || '').toUpperCase()
+    if (currency !== 'USD' && currency !== 'CAD') {
+      const { data: dl } = await supabaseAdmin.from('dealerships').select('country').eq('id', req.dealershipId).maybeSingle()
+      currency = String(dl?.country || '').toUpperCase() === 'US' ? 'USD' : 'CAD'
+    }
+    const priceId = currency === 'USD' ? pkg.priceUsd : pkg.priceCad
+    if (!priceId) return res.status(500).json({ error: `Price for ${pkg.label} (${currency}) is not configured` })
+
+    const existingCustomerId = req.profile.dealerships?.stripe_customer_id
+    try {
+      const sessionParams = {
+        payment_method_collection: 'if_required',
+        line_items: [{ price: priceId, quantity: 1 }],
+        mode: 'subscription',
+        metadata: { type: 'package', package: pkgKey, currency, dealership_id: req.dealershipId },
+        subscription_data: { trial_period_days: 30, metadata: { type: 'package', package: pkgKey, dealership_id: req.dealershipId } },
+        success_url: `${FRONTEND_URL}/dashboard.html?package_session={CHECKOUT_SESSION_ID}`,
+        cancel_url: `${FRONTEND_URL}/dashboard.html`,
+      }
+      if (existingCustomerId) sessionParams.customer = existingCustomerId
+      const session = await stripe.checkout.sessions.create(sessionParams)
+      res.json({ url: session.url })
+    } catch (err) { res.status(500).json({ error: err.message }) }
+  }
+  app.post('/billing/subscribe-package', requireAuth, createPackageCheckout)
+
+  app.get('/billing/package-verify', requireAuth, async (req, res) => {
+    const { session_id } = req.query
+    if (!session_id) return res.status(400).json({ error: 'session_id required' })
+    if (!req.dealershipId) return res.status(400).json({ error: 'No dealership associated' })
+    try {
+      const session = await stripe.checkout.sessions.retrieve(session_id)
+      const meta = session.metadata || {}
+      if (meta.type !== 'package' || meta.dealership_id !== req.dealershipId) {
+        return res.status(403).json({ error: 'Session does not belong to this dealership' })
+      }
+      if (session.status !== 'complete') return res.status(400).json({ error: 'Session not complete', status: session.status })
+      const updates = colsForPackage(meta.package, true)
+      if (session.customer) updates.stripe_customer_id = session.customer
+      await supabaseAdmin.from('dealerships').update(updates).eq('id', req.dealershipId)
+      res.json({ success: true, plan: meta.package })
+    } catch (err) { res.status(500).json({ error: err.message }) }
+  })
+
+  // Public pricing for the marketing page. Currency from ?currency=, else a geo
+  // header (CDN/proxy), else CAD. Amounts are the same headline number per currency.
+  app.get('/billing/packages', (req, res) => {
+    let currency = String(req.query.currency || '').toUpperCase()
+    if (currency !== 'USD' && currency !== 'CAD') {
+      const country = String(req.headers['cf-ipcountry'] || req.headers['x-vercel-ip-country'] || req.headers['x-geo-country'] || '').toUpperCase()
+      currency = country === 'US' ? 'USD' : 'CAD'
+    }
+    const symbol = '$'
+    const rows = Object.entries(PACKAGES).map(([key, p]) => ({
+      key, label: p.label, amount: p.amount, currency, symbol,
+      configured: !!(currency === 'USD' ? p.priceUsd : p.priceCad),
+    }))
+    res.json({ currency, packages: rows })
+  })
 
   app.get('/billing/ai-boost-verify',    requireAuth, (req, res) => verifyAddonSession(req, res, 'ai_boost'))
   app.get('/billing/vin-sticker-verify', requireAuth, (req, res) => verifyAddonSession(req, res, 'vin_sticker'))
