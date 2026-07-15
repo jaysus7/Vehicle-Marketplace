@@ -4770,10 +4770,11 @@ function updateTierChip(ranking) {
   if (!chip) return;
   const me = (ranking || []).find(r => r.id === user.id);
   if (!me || !me.tier) { chip.classList.add('hidden'); return; }
-  chip.className = `inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold border transition hover:brightness-110 whitespace-nowrap ${me.tier.cls}`;
-  chip.classList.remove('hidden');
+  // Hidden on the crowded mobile header; shows from sm up (badges live on the
+  // leaderboard for phones). Icon-only until md, full tier + rank on md+.
+  chip.className = `hidden sm:inline-flex items-center gap-1.5 px-2 md:px-2.5 py-1 rounded-full text-xs font-bold border transition hover:brightness-110 whitespace-nowrap ${me.tier.cls}`;
   const rankTxt = me.rank ? `#${me.rank}` : '';
-  chip.innerHTML = `<span>${me.tier.icon}</span><span>${me.tier.name}</span>${rankTxt ? `<span class="opacity-70 font-mono">${rankTxt}</span>` : ''}`;
+  chip.innerHTML = `<span>${me.tier.icon}</span><span class="hidden md:inline">${me.tier.name}</span>${rankTxt ? `<span class="opacity-70 font-mono">${rankTxt}</span>` : ''}`;
 }
 async function loadMyTierChip() {
   const chip = document.getElementById('ui-tier-chip');
