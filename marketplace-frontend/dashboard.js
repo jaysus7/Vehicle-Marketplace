@@ -473,11 +473,8 @@ async function initializeDashboardEcosystem() {
     document.querySelectorAll('#dashboard-nav .nav-item').forEach(btn => {
       btn.addEventListener('click', () => {
         const page = btn.dataset.page, tab = btn.dataset.tab;
-        if (page === 'crm' && tab) __crmTab = tab;
-        // CRM contacts sub-links may carry a status filter (e.g. Sold Customers).
-        if (page === 'crm' && tab === 'contacts') {
-          __crmStatusFilter = btn.dataset.filter === 'sold' ? 'sold,fni,delivered' : '';
-        }
+        // The Customers page can be pre-filtered (e.g. Sold Customers).
+        if (page === 'crm') __crmStatusFilter = btn.dataset.filter === 'sold' ? 'sold,fni,delivered' : '';
         if (page === 'profile' && tab) __settingsTab = tab;
         switchPage(page);
       });
@@ -590,10 +587,8 @@ window.toggleNavGroup = toggleNavGroup;
 function switchPage(pageId) {
   ensurePanelsInOriginalLocations();
 
-  // Pipeline is retired and Leads moved into the CRM — redirect any old deep link
-  // (nav, notification link_page) to the right CRM tab.
-  if (pageId === 'leads') { __crmTab = 'leads'; pageId = 'crm'; }
-  else if (pageId === 'pipeline') { __crmTab = 'contacts'; pageId = 'crm'; }
+  // Pipeline is retired — old deep links land on the Customers page.
+  if (pageId === 'pipeline') pageId = 'crm';
 
   document.querySelectorAll('[data-page-content]').forEach(el => {
     el.classList.toggle('hidden', el.dataset.pageContent !== pageId);
@@ -635,6 +630,9 @@ function switchPage(pageId) {
   if (pageId === 'reports') loadReports();
   if (pageId === 'desk') loadDeskDeal();
   if (pageId === 'crm') loadCrmPage();
+  if (pageId === 'leads') loadLeadsPage();
+  if (pageId === 'appointments') loadAppointmentsPage();
+  if (pageId === 'tasks') crmLoadTasks();
   if (pageId === 'website') loadWebsitePage();
   if (pageId === 'automation') loadAutomationPage();
   if (pageId === 'equity') loadEquityPage();
@@ -1335,7 +1333,6 @@ document.addEventListener('DOMContentLoaded', () => {
 // ══ Built-in CRM ═════════════════════════════════════════════════════════════
 // Unified customer records + activity timeline + follow-up tasks. Every lead,
 // appraisal and sale lands on one contact. One tool, one place.
-let __crmTab = 'contacts';
 let __crmSearchTimer = null;
 const crmMoney = (n, cur) => n != null ? (cur === 'USD' ? 'US$' : '$') + Number(n).toLocaleString() : '—';
 const crmWhen = (s) => {
@@ -1370,32 +1367,15 @@ async function crmEnsureLookups() {
   }
 }
 
+// CRM is now split into separate pages (Customers / Leads / Appointments /
+// Tasks). This page renders just the Customers (contacts) view.
 async function loadCrmPage() {
-  const root = document.getElementById('crm-root');
-  if (!root) return;
-  if (__crmTab === 'insights') __crmTab = 'contacts';   // insights moved to the Insights page
-  const tab = (id, label) => `<button onclick="crmSetTab('${id}')" class="px-4 py-2 text-sm font-bold border-b-2 whitespace-nowrap transition ${__crmTab === id ? 'border-indigo-500 text-indigo-600 dark:text-indigo-400' : 'border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}">${label}</button>`;
-  root.innerHTML = `
-    <div class="flex items-center gap-1 border-b border-slate-200 dark:border-slate-800 mb-4 overflow-x-auto">
-      ${tab('contacts', 'Contacts')}${tab('leads', 'Leads')}${tab('appointments', 'Appointments')}${tab('tasks', 'Tasks')}
-    </div>
-    <div id="crm-body"></div>`;
-  const body = document.getElementById('crm-body');
-  if (__crmTab === 'contacts') crmLoadContacts();
-  else if (__crmTab === 'tasks') crmLoadTasks();
-  else if (__crmTab === 'leads') {
-    // Leads (incl. Facebook Marketplace) + the DMS/CRM (ADF) connection live here now.
-    body.innerHTML = `<div id="leads-root"><div class="py-16 text-center text-sm text-slate-400 italic">Loading leads…</div></div>`;
-    loadLeadsPage();
-  } else if (__crmTab === 'appointments') {
-    body.innerHTML = `<div id="appointments-root"><div class="py-16 text-center text-sm text-slate-400 italic">Loading appointments…</div></div>`;
-    loadAppointmentsPage();
-  } else if (__crmTab === 'insights') {
-    body.innerHTML = `<div id="crm-insights-root"><div class="py-16 text-center text-sm text-slate-400 italic">Loading insights…</div></div>`;
-    loadCrmInsights();
-  }
+  if (!document.getElementById('crm-body')) return;
+  crmLoadContacts();
 }
-function crmSetTab(t) { __crmTab = t; loadCrmPage(); }
+// Legacy shim: old callers that flipped a CRM tab now navigate to that page.
+function crmSetTab(t) { switchPage(t === 'contacts' ? 'crm' : t); }
+window.crmSetTab = crmSetTab;
 
 // ── CRM + Lead insights + sales-lead reports (#21, #22) ─────────────────────
 let __crmInsightsRange = '30';
@@ -2046,7 +2026,7 @@ async function crmSaveContact(btn, id) {
     const d = id ? await apiSendJson(`/crm/contacts/${id}`, 'PUT', body) : await apiSendJson('/crm/contacts', 'POST', body);
     btn.closest('.fixed').remove();
     showToast(id ? 'Saved' : 'Contact created', 'success');
-    if (__crmTab === 'contacts') crmLoadContacts();
+    if (document.getElementById('crm-body')) crmLoadContacts();   // refresh the list if we're on it
     const cid = id || d.contact?.id;
     if (cid) openCrmContact(cid);
   } catch (e) { showToast(e.message, 'error'); }
@@ -2054,7 +2034,7 @@ async function crmSaveContact(btn, id) {
 
 // ── Tasks tab ────────────────────────────────────────────────────────────────
 async function crmLoadTasks() {
-  const body = document.getElementById('crm-body');
+  const body = document.getElementById('tasks-root');
   if (!body) return;
   body.innerHTML = `<div id="crm-tasklist" class="py-10 text-center text-sm text-slate-400 italic">Loading tasks…</div>`;
   try {

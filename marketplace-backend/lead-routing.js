@@ -72,7 +72,7 @@ export async function routeAndNotifyLead(dealershipId, { contactId, vehicleId, n
     const title = `New ${label}${name ? ': ' + name : ''}`
     const assignedName = assignee ? (assignee.display_name || assignee.full_name || 'a rep') : null
     const body = assignedName ? `Assigned to ${assignedName}.${source ? ' Source: ' + source : ''}` : (source ? `Source: ${source}` : 'New lead in the CRM.')
-    const rows = [...recips].map(uid => ({ dealership_id: dealershipId, type: 'new_lead', title, body, link_page: 'crm', target_user_id: uid, read: false }))
+    const rows = [...recips].map(uid => ({ dealership_id: dealershipId, type: 'new_lead', title, body, link_page: 'leads', target_user_id: uid, read: false }))
     if (rows.length) await createNotifications(rows)
 
     // 7. Drop a speed-to-lead task so the lead is actionable, not just a ping.
