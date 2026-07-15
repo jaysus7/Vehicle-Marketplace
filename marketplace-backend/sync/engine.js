@@ -12,6 +12,7 @@ import { brandDealershipPhotos } from '../utils/photoOverlay.js'
 import { autoFetchOemStickers } from './oemStickers.js'
 import { getMarketData } from '../usage.js'
 import { marketcheckEnabled } from '../marketcheck.js'
+import { createNotification } from '../notifications.js'
 
 // Per-dealership in-flight sync tracking. Prevents the boot sync, the post-add
 // auto-sync, and a manual Sync Now click from all running for the same dealership
@@ -706,16 +707,62 @@ async function _runInventorySyncInner(dealershipId) {
   // once the listing flips to 'sold' it no longer matches status='posted'.
   try {
     const { data: soldRows } = await supabaseAdmin
-      .from('inventory').select('id')
+      .from('inventory').select('id, year, make, model, trim')
       .eq('dealership_id', dealershipId).eq('status', 'sold')
-    const soldIds = (soldRows || []).map(r => r.id)
+    const soldById = Object.fromEntries((soldRows || []).map(r => [r.id, r]))
+    const soldIds = Object.keys(soldById)
     for (let i = 0; i < soldIds.length; i += 100) {
       const slice = soldIds.slice(i, i + 100)
+      // Notify the posting rep BEFORE the listing flips out of 'posted' (so we
+      // only alert on the transition, not every sync). The extension marks the FB
+      // listing sold automatically; the rep still gets a heads-up.
+      const { data: postedListings } = await supabaseAdmin.from('listings')
+        .select('id, inventory_id, posted_by, vehicle_label')
+        .in('inventory_id', slice).eq('status', 'posted').not('fb_listing_url', 'is', null)
+      for (const l of (postedListings || [])) {
+        if (!l.posted_by) continue
+        const v = soldById[l.inventory_id] || {}
+        const label = l.vehicle_label || [v.year, v.make, v.model, v.trim].filter(Boolean).join(' ') || 'A vehicle'
+        await createNotification({
+          dealershipId, type: 'fb_sold', targetUserId: l.posted_by, linkPage: 'inventory',
+          title: 'Sold — Facebook listing closing', body: `${label} sold. Its Facebook Marketplace listing is being marked sold.`,
+        })
+      }
       await supabaseAdmin.from('listings')
         .update({ status: 'sold', deleted_at: new Date().toISOString(), fb_sync_action: 'sold', fb_synced_at: null })
         .in('inventory_id', slice).eq('status', 'posted').not('fb_listing_url', 'is', null)
     }
   } catch (e) { console.warn('[sync] sold→FB queue failed (non-fatal):', e.message) }
+
+  // Feed/website price changed on a vehicle that's live on Facebook → notify the
+  // posting rep to update the Marketplace price (FB has no price API, so it's a
+  // manual edit). posted_price tracks the price last reflected on FB; we alert on
+  // the change, then advance posted_price so we only notify once per change.
+  try {
+    const { data: invRows } = await supabaseAdmin.from('inventory')
+      .select('id, price, year, make, model, trim')
+      .eq('dealership_id', dealershipId).eq('status', 'available')
+    const invById = Object.fromEntries((invRows || []).map(r => [r.id, r]))
+    const invIds = Object.keys(invById)
+    for (let i = 0; i < invIds.length; i += 100) {
+      const slice = invIds.slice(i, i + 100)
+      const { data: posted } = await supabaseAdmin.from('listings')
+        .select('id, inventory_id, posted_by, posted_price, vehicle_label')
+        .in('inventory_id', slice).eq('status', 'posted').not('fb_listing_url', 'is', null)
+      for (const l of (posted || [])) {
+        const inv = invById[l.inventory_id]; if (!inv) continue
+        const newP = Number(inv.price), oldP = Number(l.posted_price)
+        if (!newP || !oldP || newP === oldP) { if (l.posted_price == null && newP) await supabaseAdmin.from('listings').update({ posted_price: newP }).eq('id', l.id); continue }
+        const label = l.vehicle_label || [inv.year, inv.make, inv.model, inv.trim].filter(Boolean).join(' ') || 'A vehicle'
+        const dir = newP > oldP ? 'up' : 'down'
+        if (l.posted_by) await createNotification({
+          dealershipId, type: 'fb_price_change', targetUserId: l.posted_by, linkPage: 'inventory', linkFilter: label,
+          title: 'Price changed — update Facebook', body: `${label} price moved ${dir} from $${oldP.toLocaleString()} to $${newP.toLocaleString()}. Update the price on your Facebook Marketplace listing.`,
+        })
+        await supabaseAdmin.from('listings').update({ posted_price: newP }).eq('id', l.id)
+      }
+    }
+  } catch (e) { console.warn('[sync] price-change notify failed (non-fatal):', e.message) }
 
   setSyncProgress(dealershipId, { phase: 'finalizing', pct: 99, message: 'Finalizing…' })
 

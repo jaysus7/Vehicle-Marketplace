@@ -11692,6 +11692,8 @@ document.addEventListener('DOMContentLoaded', () => {
     appointment:  { icon: NI.calendar, color: 'text-indigo-500' },
     new_lead:     { icon: NI.user, color: 'text-emerald-500' },
     appraisal:    { icon: NI.clipboard, color: 'text-violet-500' },
+    fb_sold:      { icon: NI.car, color: 'text-emerald-500' },
+    fb_price_change: { icon: NI.dollar, color: 'text-amber-500' },
   }
 
   function timeAgo(iso) {

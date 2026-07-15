@@ -144,7 +144,7 @@ export function registerRoutes(app) {
     // Verify the inventory row belongs to the caller's own dealership before
     // creating/matching a listing against it (prevents cross-tenant IDOR).
     const { data: inv, error: invErr } = await supabaseAdmin
-      .from('inventory').select('id, dealership_id').eq('id', inventory_id).single()
+      .from('inventory').select('id, dealership_id, price').eq('id', inventory_id).single()
     if (invErr || !inv) return res.status(404).json({ error: 'Inventory item not found' })
     if (inv.dealership_id !== req.dealershipId) return res.status(403).json({ error: 'Not your dealership' })
 
@@ -161,7 +161,7 @@ export function registerRoutes(app) {
     // vehicle. Reuse an existing 'posted' listing and backfill its URL/id instead of
     // inserting a duplicate (manual marks it posted first, auto-detect fills the URL).
     const { data: existingRows } = await supabaseAdmin
-      .from('listings').select('id, fb_listing_url, fb_listing_id')
+      .from('listings').select('id, fb_listing_url, fb_listing_id, posted_price')
       .eq('inventory_id', inventory_id).eq('posted_by', req.user.id).eq('status', 'posted')
       .order('posted_at', { ascending: false }).limit(1)
     const existing = existingRows?.[0]
@@ -170,6 +170,7 @@ export function registerRoutes(app) {
       const patch = {}
       if (fb_listing_url && !existing.fb_listing_url) patch.fb_listing_url = fb_listing_url
       if (fb_listing_id && !existing.fb_listing_id) patch.fb_listing_id = fb_listing_id
+      if (inv.price != null && existing.posted_price == null) patch.posted_price = inv.price
       if (!Object.keys(patch).length) return res.json(existing)
       const { data, error } = await supabaseAdmin
         .from('listings').update(patch).eq('id', existing.id).select().single()
@@ -185,6 +186,7 @@ export function registerRoutes(app) {
         fb_listing_id: fb_listing_id || null,
         fb_listing_url,
         status: 'posted',
+        posted_price: inv.price ?? null,
         posted_at: new Date().toISOString()
       })
       .select()
@@ -360,6 +362,25 @@ export function registerRoutes(app) {
     const { error } = await supabaseAdmin.from('listings').update(update).eq('id', req.params.id)
     if (error) return res.status(500).json({ error: error.message })
     res.json({ success: true })
+  })
+
+  // FB alerts for the browser extension: recent unread "sold" / "price changed"
+  // notifications for the signed-in rep, so the extension can raise a desktop
+  // notification prompting them to update/close their Facebook listing. Mark them
+  // read via the existing POST /notifications/:id/read once shown.
+  app.get('/listings/fb-alerts', requireAuth, async (req, res) => {
+    const since = new Date(Date.now() - 7 * 86400000).toISOString()
+    const { data, error } = await supabaseAdmin
+      .from('notifications')
+      .select('id, type, title, body, link_url, link_filter, created_at')
+      .eq('target_user_id', req.user.id)
+      .in('type', ['fb_sold', 'fb_price_change'])
+      .eq('read', false)
+      .gte('created_at', since)
+      .order('created_at', { ascending: false })
+      .limit(25)
+    if (error) return res.status(500).json({ error: error.message })
+    res.json(data || [])
   })
 
   app.post('/listings/sync-fb-sold', requireAuth, async (req, res) => {
