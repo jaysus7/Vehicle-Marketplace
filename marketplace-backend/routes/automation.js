@@ -85,7 +85,18 @@ async function ensureCampaigns(dealershipId) {
   const { data: existing } = await supabaseAdmin.from('automated_campaigns').select('key').eq('dealership_id', dealershipId)
   const have = new Set((existing || []).map(c => c.key))
   const missing = DEFAULT_CAMPAIGNS.filter(c => !have.has(c.key)).map(c => ({ ...c, dealership_id: dealershipId }))
-  if (missing.length) await supabaseAdmin.from('automated_campaigns').insert(missing)
+  if (!missing.length) return
+  // Batch insert first; if it fails (e.g. one row trips a CHECK constraint, which
+  // used to atomically wipe the ENTIRE seed and leave the dealer with no campaigns),
+  // fall back to inserting row-by-row so one bad row never blocks the rest.
+  const { error } = await supabaseAdmin.from('automated_campaigns').insert(missing)
+  if (error) {
+    console.error('[ensureCampaigns] batch insert failed, retrying per-row:', error.message)
+    for (const row of missing) {
+      const { error: e1 } = await supabaseAdmin.from('automated_campaigns').insert(row)
+      if (e1) console.error(`[ensureCampaigns] skipped "${row.key}" (${row.channel}/${row.trigger_event}): ${e1.message}`)
+    }
+  }
 }
 
 // ── Time helpers ─────────────────────────────────────────────────────────────

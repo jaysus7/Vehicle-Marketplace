@@ -7385,8 +7385,8 @@ const AUTO_LEAD_CATS = ['pipeline', 'tasks'];
 const AUTO_LEAD_TRIGGERS = ['internet_lead', 'appointment_booked', 'show_no_sale'];
 const AUTO_DELIVERY_CATS = ['retention', 'reviews', 'referrals'];
 function autoBucketOf(c) {
-  if (AUTO_LEAD_CATS.includes(c.category) || AUTO_LEAD_TRIGGERS.includes(c.trigger_type)) return 'leads';
-  if (AUTO_DELIVERY_CATS.includes(c.category) || c.trigger_type === 'delivered') return 'delivery';
+  if (AUTO_LEAD_CATS.includes(c.category) || AUTO_LEAD_TRIGGERS.includes(c.trigger_event)) return 'leads';
+  if (AUTO_DELIVERY_CATS.includes(c.category) || c.trigger_event === 'delivered') return 'delivery';
   return 'other';
 }
 // Load the shared automation config once; render into the given root on failure.
