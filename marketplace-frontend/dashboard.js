@@ -3294,7 +3294,42 @@ window.rbSaveDeal = rbSaveDeal;
 // ── Desk a Deal — full page (managers). Pick a sold/delivered customer, then
 // fill the F&I desk record on a dedicated screen (no cramped modal).
 let __deskContactId = null;   // set when opened from a CRM customer row
-let __deskCustomers = [];     // won-customer list for the picker
+let __deskDealer = null;      // { name, city, province, postal, country, logo } — letterhead + tax
+let __deskBuyer = null;       // full contact block for the bill of sale
+let __deskDeal = {};          // loaded/working deal record
+let __deskAddons = [], __deskFni = [], __deskFees = [];
+let __deskSearchTimer = null, __deskVehTimer = null;
+
+const DESK_DEFAULT_APR = 9.99;   // auto-filled rate (editable); financing is stored, not submitted
+const deskM = (n) => '$' + (Number(n) || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+// Combined sales-tax rate for the dealer's jurisdiction. Canada = HST/GST by
+// province (Ontario 13%); US left at 0 for manual entry. Always editable per deal.
+function deskTaxRate(prov, country) {
+  if (String(country || '').toUpperCase() === 'US') return 0;
+  const p = String(prov || '').trim().toLowerCase();
+  const m = {
+    on: 13, ontario: 13, ontaro: 13,
+    nb: 15, 'new brunswick': 15, ns: 15, 'nova scotia': 15, pe: 15, pei: 15, 'prince edward island': 15,
+    nl: 15, newfoundland: 15, 'newfoundland and labrador': 15,
+    bc: 12, 'british columbia': 12, mb: 12, manitoba: 12, qc: 14.975, quebec: 14.975, 'québec': 14.975,
+    sk: 11, saskatchewan: 11, ab: 5, alberta: 5, nt: 5, 'northwest territories': 5,
+    nu: 5, nunavut: 5, yt: 5, yukon: 5,
+  };
+  if (m[p] != null) return m[p];
+  if (/ontar/.test(p)) return 13;
+  return 13;   // sensible Canadian default; editable
+}
+// Ontario fee lines, prefilled and editable. Licensing/registration is a government
+// passthrough (not taxable); doc fee, OMVIC and the tire levy are taxable.
+function deskDefaultFees() {
+  return [
+    { name: 'Documentation / admin fee', amount: 699, taxable: true },
+    { name: 'Licensing & registration', amount: 60, taxable: false },
+    { name: 'OMVIC fee', amount: 10, taxable: true },
+    { name: 'Tire / enviro levy', amount: 24.75, taxable: true },
+  ];
+}
 
 async function loadDeskDeal() {
   const root = document.getElementById('desk-root');
@@ -3302,81 +3337,455 @@ async function loadDeskDeal() {
   const isMgr = ['DEALER_ADMIN', 'OWNER', 'MANAGER'].includes(profileContext?.role);
   if (!isMgr) { root.innerHTML = '<div class="text-sm text-slate-400 italic p-6">Manager access required.</div>'; return; }
   root.innerHTML = '<div class="text-sm text-slate-400 italic p-6">Loading…</div>';
-  // Pull the won-customer roster for the picker.
-  try {
-    const d = await apiGetJson('/reports/sold-deals?range=all&rep=all', { retries: 1 });
-    __deskCustomers = (d?.rows || []).map(r => ({
-      id: r.contact_id,
-      name: [r.first_name, r.last_name].filter(Boolean).join(' ') || r.email || 'Customer',
-      vehicle: [r.year, r.make, r.model, r.trim].filter(Boolean).join(' '),
-      sold_date: r.sold_date, has_deal: r.has_deal, status: r.status,
-    }));
-  } catch { __deskCustomers = []; }
-
-  const opts = __deskCustomers.map(c => `<option value="${c.id}">${esc(c.name)}${c.vehicle ? ' — ' + esc(c.vehicle) : ''}${c.has_deal ? ' ✓' : ''}</option>`).join('');
+  // Dealer letterhead + jurisdiction (for the documents and the default tax rate).
+  if (!__deskDealer) {
+    try {
+      const cfg = await apiGetJson('/ai/config', { retries: 1 });
+      __deskDealer = { name: profileContext?.dealership?.name || 'Dealership', city: cfg.city, province: cfg.province, postal: cfg.postal_code, country: cfg.country, logo: null };
+    } catch { __deskDealer = { name: profileContext?.dealership?.name || 'Dealership' }; }
+    try { const b = await apiGetJson('/branding', { retries: 1 }); __deskDealer.logo = b?.branding?.logo_url || null; } catch {}
+  }
   root.innerHTML = `
     <div class="mb-5">
       <h1 class="text-2xl font-black text-slate-900 dark:text-white">Desk a deal</h1>
-      <p class="text-sm text-slate-500 dark:text-slate-400">Pick a sold or delivered customer, then complete the F&amp;I desk record. A ✓ marks customers that already have one.</p>
+      <p class="text-sm text-slate-500 dark:text-slate-400">Search any customer, structure the full deal, and print an estimate or bill of sale. Everything is stored on the customer's record. Financing figures are estimates only — not a lender commitment.</p>
     </div>
     <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4 sm:p-5 mb-4">
       <label class="text-[11px] uppercase tracking-wider text-slate-400 font-bold block mb-1">Customer</label>
-      <select id="desk-picker" class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm">
-        <option value="">Select a customer…</option>${opts}
-      </select>
-      ${__deskCustomers.length ? '' : '<p class="text-xs text-slate-400 italic mt-2">No sold, F&I, or delivered customers yet. Mark a customer sold in CRM and they\'ll appear here.</p>'}
+      <div class="relative">
+        <input id="desk-search" type="text" autocomplete="off" placeholder="Search by name, email or phone…" class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm">
+        <div id="desk-results" class="absolute z-20 left-0 right-0 mt-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg shadow-lg overflow-hidden hidden max-h-72 overflow-y-auto"></div>
+      </div>
     </div>
     <div id="desk-form"></div>`;
-  const picker = document.getElementById('desk-picker');
-  picker.addEventListener('change', () => deskRenderForm(picker.value));
-  if (__deskContactId && __deskCustomers.some(c => c.id === __deskContactId)) {
-    picker.value = __deskContactId;
-    deskRenderForm(__deskContactId);
-  }
-  __deskContactId = null; // consume the deep-link once
+  const search = document.getElementById('desk-search');
+  search.addEventListener('input', () => {
+    clearTimeout(__deskSearchTimer);
+    __deskSearchTimer = setTimeout(() => deskCustomerSearch(search.value.trim()), 220);
+  });
+  search.addEventListener('focus', () => { if (!search.value.trim()) deskCustomerSearch(''); });
+  document.addEventListener('click', (e) => {
+    const box = document.getElementById('desk-results');
+    if (box && !box.contains(e.target) && e.target !== search) box.classList.add('hidden');
+  });
+  if (__deskContactId) { deskPickCustomer(__deskContactId); __deskContactId = null; }
 }
 
-async function deskRenderForm(contactId) {
+async function deskCustomerSearch(q) {
+  const box = document.getElementById('desk-results');
+  if (!box) return;
+  try {
+    const d = await apiGetJson(`/deals/customers?q=${encodeURIComponent(q)}`, { retries: 1 });
+    const rows = d?.rows || [];
+    if (!rows.length) { box.innerHTML = '<div class="px-3 py-2 text-xs text-slate-400 italic">No customers found. Add them in CRM first.</div>'; box.classList.remove('hidden'); return; }
+    box.innerHTML = rows.map(r => `
+      <button type="button" onclick="deskPickCustomer('${r.id}')" class="w-full text-left px-3 py-2 hover:bg-slate-100 dark:hover:bg-slate-800 transition border-b border-slate-100 dark:border-slate-800 last:border-0">
+        <div class="text-sm font-bold text-slate-900 dark:text-white">${esc(r.name)}</div>
+        <div class="text-xs text-slate-500 dark:text-slate-400">${[r.email, r.phone, [r.city, r.province].filter(Boolean).join(', ')].filter(Boolean).map(esc).join(' · ')}</div>
+      </button>`).join('');
+    box.classList.remove('hidden');
+  } catch { box.classList.add('hidden'); }
+}
+
+async function deskPickCustomer(id) {
+  document.getElementById('desk-results')?.classList.add('hidden');
+  const wrap = document.getElementById('desk-form');
+  if (wrap) wrap.innerHTML = '<div class="text-sm text-slate-400 italic p-4">Loading deal…</div>';
+  __deskBuyer = null; __deskDeal = {};
+  try { const d = await apiGetJson(`/deals/customer?id=${encodeURIComponent(id)}`, { retries: 1 }); __deskBuyer = d?.contact || null; __deskDeal.__vehicleOfInterest = d?.vehicle || null; } catch {}
+  try { const d = await apiGetJson(`/reports/deal?contact_id=${encodeURIComponent(id)}`, { retries: 1 }); __deskDeal = { ...__deskDeal, ...(d?.deal || {}) }; } catch {}
+  const s = document.getElementById('desk-search');
+  if (s && __deskBuyer) s.value = __deskBuyer.full_name || [__deskBuyer.first_name, __deskBuyer.last_name].filter(Boolean).join(' ') || '';
+  // Seed line-item arrays: saved deal first, else Ontario defaults on a fresh deal.
+  const deal = __deskDeal;
+  __deskAddons = Array.isArray(deal.addons) ? deal.addons.slice() : [];
+  __deskFni = Array.isArray(deal.fni_items) ? deal.fni_items.slice() : [];
+  __deskFees = Array.isArray(deal.fees) ? deal.fees.slice() : (deal.id ? [] : deskDefaultFees());
+  // Prefill the vehicle block from a saved snapshot, else the customer's vehicle of interest.
+  if (!deal.vehicle && deal.__vehicleOfInterest) {
+    const v = deal.__vehicleOfInterest;
+    deal.vehicle = { year: v.year, make: v.make, model: v.model, trim: v.trim, vin: v.vin, mileage: v.mileage, color: v.exterior_color, stock: v.stocknumber };
+    if (deal.selling_price == null && v.price) deal.selling_price = v.price;
+    if (!deal.inventory_id && v.id) deal.inventory_id = v.id;
+  }
+  deskRenderForm(id);
+}
+
+function deskRenderForm(contactId) {
   const wrap = document.getElementById('desk-form');
   if (!wrap) return;
-  if (!contactId) { wrap.innerHTML = ''; return; }
-  const c = __deskCustomers.find(x => x.id === contactId) || {};
-  wrap.innerHTML = '<div class="text-sm text-slate-400 italic p-4">Loading deal…</div>';
-  let deal = {};
-  try { const d = await apiGetJson(`/reports/deal?contact_id=${encodeURIComponent(contactId)}`, { retries: 1 }); deal = d?.deal || {}; } catch {}
+  const d = __deskDeal || {};
+  const b = __deskBuyer || {};
+  const veh = d.vehicle || {};
+  const ins = d.insurance || {};
+  const onFile = !!d.id;
+  const buyerName = b.full_name || [b.first_name, b.last_name].filter(Boolean).join(' ') || 'Customer';
+  const rate = d.tax_rate != null ? d.tax_rate : deskTaxRate(__deskDealer?.province, __deskDealer?.country);
+  const apr = d.apr != null ? d.apr : DESK_DEFAULT_APR;
+  const taxOnDiff = d.tax_on_difference !== false;   // default ON = tax on the difference
+  const iCls = 'w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm';
+  const fld = (label, html) => `<div><label class="text-[11px] uppercase tracking-wider text-slate-400 font-bold block mb-1">${label}</label>${html}</div>`;
+  const txt = (id, v, ph = '', type = 'text', extra = '') => `<input id="${id}" type="${type}" value="${esc(v == null ? '' : String(v))}" placeholder="${ph}" ${extra} class="${iCls}">`;
+  const money = (id, v, ph = '0.00') => `<input id="${id}" type="number" step="0.01" value="${v == null ? '' : v}" placeholder="${ph}" oninput="deskRenderSummary()" class="${iCls}">`;
+  const card = (title, body, sub = '') => `<div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden mb-4">
+    <div class="px-5 py-3 border-b border-slate-200 dark:border-slate-800"><h3 class="text-sm font-black text-slate-900 dark:text-white">${title}</h3>${sub ? `<p class="text-xs text-slate-400 mt-0.5">${sub}</p>` : ''}</div>
+    <div class="p-5">${body}</div></div>`;
+
   wrap.innerHTML = `
-    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden">
-      <div class="px-5 py-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between gap-3 flex-wrap">
-        <div>
-          <div class="text-lg font-black text-slate-900 dark:text-white">${esc(c.name || 'Customer')}</div>
-          <div class="text-sm text-slate-500 dark:text-slate-400">${c.vehicle ? esc(c.vehicle) + ' · ' : ''}${c.status || ''}${c.sold_date ? ' · sold ' + rbFmt(c.sold_date, 'date') : ''}</div>
-        </div>
-        <span class="text-[11px] font-black uppercase tracking-wider px-2 py-1 rounded-full ${deal && deal.id ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300' : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400'}">${deal && deal.id ? 'On file' : 'New'}</span>
+    <div class="flex items-center justify-between gap-3 flex-wrap mb-4">
+      <div>
+        <div class="text-lg font-black text-slate-900 dark:text-white">${esc(buyerName)}</div>
+        <div class="text-sm text-slate-500 dark:text-slate-400">${[b.email, b.phone || b.phone_mobile, [b.city, b.province].filter(Boolean).join(', ')].filter(Boolean).map(esc).join(' · ') || 'No contact details on file'}</div>
       </div>
-      <div class="p-5 grid grid-cols-1 sm:grid-cols-2 gap-4">${dealFormFieldsHtml(deal)}</div>
-      <div class="flex items-center justify-end gap-2 p-5 border-t border-slate-200 dark:border-slate-800">
-        <button id="desk-save" onclick="deskSaveDeal('${contactId}')" class="bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-bold px-6 py-2.5 rounded-lg transition">Save deal</button>
+      <span class="text-[11px] font-black uppercase tracking-wider px-2 py-1 rounded-full ${onFile ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300' : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400'}">${onFile ? 'On file' : 'New deal'}</span>
+    </div>
+
+    <div class="grid lg:grid-cols-[minmax(0,1fr)_320px] gap-4 items-start">
+      <div>
+        ${card('Vehicle', `
+          <div class="relative mb-3">
+            <input id="desk-veh-search" type="text" autocomplete="off" placeholder="Search inventory by VIN, stock # or name…" class="${iCls}">
+            <div id="desk-veh-results" class="absolute z-20 left-0 right-0 mt-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg shadow-lg overflow-hidden hidden max-h-64 overflow-y-auto"></div>
+          </div>
+          <div class="grid grid-cols-2 sm:grid-cols-3 gap-3">
+            ${fld('Year', txt('dk-veh-year', veh.year, '2022'))}
+            ${fld('Make', txt('dk-veh-make', veh.make, 'Chevrolet'))}
+            ${fld('Model', txt('dk-veh-model', veh.model, 'Silverado'))}
+            ${fld('Trim', txt('dk-veh-trim', veh.trim, 'LT'))}
+            ${fld('Mileage', txt('dk-veh-mileage', veh.mileage, 'km', 'number'))}
+            ${fld('Colour', txt('dk-veh-color', veh.color, ''))}
+            ${fld('VIN', txt('dk-veh-vin', veh.vin, '17-digit VIN'))}
+            ${fld('Stock #', txt('dk-veh-stock', veh.stock, ''))}
+            ${fld('Selling price', money('dk-selling_price', d.selling_price))}
+          </div>`)}
+
+        ${card('Trade-in', `<div class="grid grid-cols-2 gap-3">
+            ${fld('Trade description', txt('dk-trade_desc', d.trade_desc, 'Year / make / model'))}
+            ${fld('Trade VIN', txt('dk-trade_vin', d.trade_vin, ''))}
+            ${fld('Trade allowance', money('dk-trade_value', d.trade_value))}
+            ${fld('Lien / payoff', money('dk-trade_payoff', d.trade_payoff))}
+          </div>`, 'HST is charged on the price after the trade allowance (Ontario tax-on-the-difference).')}
+
+        ${card('Add-ons', `<div id="desk-addons"></div>
+          <button type="button" onclick="deskAddLine('addon')" class="mt-2 text-xs font-bold text-indigo-600 dark:text-indigo-400">＋ Add an add-on</button>`, 'Accessories, protection packages, etc. Taxable.')}
+
+        ${card('F&amp;I products', `<div id="desk-fni"></div>
+          <button type="button" onclick="deskAddLine('fni')" class="mt-2 text-xs font-bold text-indigo-600 dark:text-indigo-400">＋ Add an F&amp;I product</button>`, 'Warranty, GAP, appearance protection, etc. Taxable. Financing is arranged through your lender program.')}
+
+        ${card('Fees', `<div id="desk-fees"></div>
+          <button type="button" onclick="deskAddLine('fee')" class="mt-2 text-xs font-bold text-indigo-600 dark:text-indigo-400">＋ Add a fee</button>`, 'Uncheck “taxable” for government passthroughs like licensing.')}
+
+        ${card('Insurance', `<div class="grid grid-cols-2 gap-3">
+            ${fld('Company', txt('dk-ins-company', ins.company, ''))}
+            ${fld('Policy #', txt('dk-ins-policy', ins.policy, ''))}
+            ${fld('Agent / broker', txt('dk-ins-agent', ins.agent, ''))}
+            ${fld('Agent phone', txt('dk-ins-phone', ins.phone, '', 'tel'))}
+            ${fld('Binder / expiry', txt('dk-ins-expiry', ins.expiry, '', 'date'))}
+          </div>`)}
+
+        ${card('Finance terms', `<div class="grid grid-cols-2 sm:grid-cols-3 gap-3">
+            ${fld('Deal type', `<select id="dk-deal_type" class="${iCls}">${['Finance', 'Lease', 'Cash'].map(o => `<option ${d.deal_type === o ? 'selected' : ''}>${o}</option>`).join('')}</select>`)}
+            ${fld('APR %', `<input id="dk-apr" type="number" step="0.01" value="${apr}" oninput="deskRenderSummary()" class="${iCls}">`)}
+            ${fld('Term (months)', `<input id="dk-term" type="number" value="${d.term == null ? 60 : d.term}" oninput="deskRenderSummary()" class="${iCls}">`)}
+            ${fld('Payment frequency', `<select id="dk-payment_freq" onchange="deskRenderSummary()" class="${iCls}">${[['monthly', 'Monthly'], ['biweekly', 'Bi-weekly'], ['weekly', 'Weekly']].map(([v, l]) => `<option value="${v}" ${((d.payment_freq || 'monthly') === v) ? 'selected' : ''}>${l}</option>`).join('')}</select>`)}
+            ${fld('Cash down', money('dk-down_payment', d.down_payment))}
+            ${fld('Deposit', money('dk-deposit_amount', d.deposit_amount))}
+            ${fld('Rebate / incentive', money('dk-rebate', d.rebate))}
+            ${fld('Tax rate %', `<input id="dk-tax_rate" type="number" step="0.001" value="${rate}" oninput="deskRenderSummary()" class="${iCls}">`)}
+            <div class="flex items-end pb-2"><label class="inline-flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-200 cursor-pointer"><input type="checkbox" id="dk-tax_on_difference" ${taxOnDiff ? 'checked' : ''} onchange="deskRenderSummary()" class="rounded"> Tax on the difference</label></div>
+          </div>`)}
+
+        <details class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden mb-4">
+          <summary class="px-5 py-3 cursor-pointer text-sm font-black text-slate-900 dark:text-white">Internal — F&amp;I tracking &amp; delivery</summary>
+          <div class="p-5 grid grid-cols-2 gap-3">
+            ${fld('F&amp;I manager', txt('dk-fni_manager', d.fni_manager, 'Name'))}
+            ${fld('Delivery date', txt('dk-delivery_date', d.delivery_date, '', 'date'))}
+            ${fld('Delivery time', txt('dk-delivery_time', d.delivery_time, '', 'time'))}
+            ${fld('Plates', `<select id="dk-plates" class="${iCls}"><option value="">—</option>${['New', 'Transfer'].map(o => `<option ${d.plates === o ? 'selected' : ''}>${o}</option>`).join('')}</select>`)}
+            ${fld('Vehicle commission', txt('dk-vehicle_commission', d.vehicle_commission, '0', 'number'))}
+            ${fld('F&amp;I commission', txt('dk-fni_commission', d.fni_commission, '0', 'number'))}
+            ${fld('Split with', txt('dk-split_with', d.split_with, 'Rep name'))}
+            <div class="col-span-2 grid grid-cols-2 gap-2 pt-1">
+              <label class="inline-flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-200"><input type="checkbox" id="dk-google_review" ${d.google_review ? 'checked' : ''} class="rounded"> Google review</label>
+              <label class="inline-flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-200"><input type="checkbox" id="dk-gm_survey" ${d.gm_survey ? 'checked' : ''} class="rounded"> GM survey done</label>
+              <label class="inline-flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-200"><input type="checkbox" id="dk-fni_gross_1500" ${d.fni_gross_1500 ? 'checked' : ''} class="rounded"> $1,500 F&amp;I gross</label>
+              <label class="inline-flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-200"><input type="checkbox" id="dk-split_deal" ${d.split_deal ? 'checked' : ''} class="rounded"> Split deal</label>
+            </div>
+            <div class="col-span-2">${fld('Notes', `<textarea id="dk-notes" rows="2" class="${iCls}">${esc(d.notes || '')}</textarea>`)}</div>
+          </div>
+        </details>
+      </div>
+
+      <div class="lg:sticky lg:top-4">
+        <div id="desk-summary" class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-5"></div>
+        <div class="flex flex-col gap-2 mt-3">
+          <button id="desk-save" onclick="deskSave('${contactId}')" class="bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-bold px-6 py-2.5 rounded-lg transition">Save deal</button>
+          <div class="grid grid-cols-2 gap-2">
+            <button onclick="deskPrint('estimate')" class="bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-200 text-sm font-bold px-3 py-2.5 rounded-lg transition">Print estimate</button>
+            <button onclick="deskPrint('bill')" class="bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-200 text-sm font-bold px-3 py-2.5 rounded-lg transition">Bill of sale</button>
+          </div>
+        </div>
       </div>
     </div>`;
+
+  // Wire inventory search for the vehicle block.
+  const vs = document.getElementById('desk-veh-search');
+  vs?.addEventListener('input', () => { clearTimeout(__deskVehTimer); __deskVehTimer = setTimeout(() => deskVehSearch(vs.value.trim()), 220); });
+  deskRenderLines();
+  deskRenderSummary();
 }
 
-async function deskSaveDeal(contactId) {
+// ── Line items (add-ons / F&I / fees) ────────────────────────────────────────
+function deskLinesFor(kind) { return kind === 'addon' ? __deskAddons : kind === 'fni' ? __deskFni : __deskFees; }
+function deskAddLine(kind) { deskLinesFor(kind).push(kind === 'fee' ? { name: '', amount: null, taxable: true } : { name: '', price: null }); deskRenderLines(); deskRenderSummary(); }
+function deskDelLine(kind, i) { deskLinesFor(kind).splice(i, 1); deskRenderLines(); deskRenderSummary(); }
+function deskLineEdit(kind, i, field, val) { const r = deskLinesFor(kind)[i]; if (!r) return; if (field === 'taxable') r[field] = val; else if (field === 'name') r[field] = val; else r[field] = (val === '' ? null : Number(val)); deskRenderSummary(); }
+function deskRenderLines() {
+  const iCls = 'bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm';
+  const rowHtml = (kind, r, i, amtKey) => `
+    <div class="flex items-center gap-2 mb-2">
+      <input value="${esc(r.name || '')}" oninput="deskLineEdit('${kind}',${i},'name',this.value)" placeholder="Description" class="${iCls} flex-1">
+      <input value="${r[amtKey] == null ? '' : r[amtKey]}" oninput="deskLineEdit('${kind}',${i},'${amtKey}',this.value)" type="number" step="0.01" placeholder="0.00" class="${iCls} w-28 text-right">
+      ${kind === 'fee' ? `<label class="inline-flex items-center gap-1 text-[11px] font-bold text-slate-500 whitespace-nowrap"><input type="checkbox" ${r.taxable !== false ? 'checked' : ''} onchange="deskLineEdit('fee',${i},'taxable',this.checked)" class="rounded"> tax</label>` : ''}
+      <button type="button" onclick="deskDelLine('${kind}',${i})" class="text-rose-500 hover:text-rose-600 px-1" title="Remove">✕</button>
+    </div>`;
+  const a = document.getElementById('desk-addons'); if (a) a.innerHTML = __deskAddons.map((r, i) => rowHtml('addon', r, i, 'price')).join('') || '<div class="text-xs text-slate-400 italic">None.</div>';
+  const f = document.getElementById('desk-fni'); if (f) f.innerHTML = __deskFni.map((r, i) => rowHtml('fni', r, i, 'price')).join('') || '<div class="text-xs text-slate-400 italic">None.</div>';
+  const e = document.getElementById('desk-fees'); if (e) e.innerHTML = __deskFees.map((r, i) => rowHtml('fee', r, i, 'amount')).join('') || '<div class="text-xs text-slate-400 italic">None.</div>';
+}
+
+// ── Inventory search for the vehicle block ───────────────────────────────────
+async function deskVehSearch(q) {
+  const box = document.getElementById('desk-veh-results');
+  if (!box) return;
+  try {
+    const d = await apiGetJson(`/deals/vehicles?q=${encodeURIComponent(q)}`, { retries: 1 });
+    const rows = d?.rows || [];
+    if (!rows.length) { box.classList.add('hidden'); return; }
+    box.innerHTML = rows.map(v => {
+      const label = [v.year, v.make, v.model, v.trim].filter(Boolean).join(' ');
+      const j = encodeURIComponent(JSON.stringify({ id: v.id, year: v.year, make: v.make, model: v.model, trim: v.trim, vin: v.vin, mileage: v.mileage, color: v.exterior_color, stock: v.stocknumber, price: v.price }));
+      return `<button type="button" onclick="deskPickVehicle('${j}')" class="w-full text-left px-3 py-2 hover:bg-slate-100 dark:hover:bg-slate-800 border-b border-slate-100 dark:border-slate-800 last:border-0">
+        <div class="text-sm font-bold text-slate-900 dark:text-white">${esc(label)} ${v.status && v.status !== 'available' ? `<span class="text-[10px] text-amber-600">(${esc(v.status)})</span>` : ''}</div>
+        <div class="text-xs text-slate-500 dark:text-slate-400">${[v.stocknumber ? '#' + v.stocknumber : '', v.vin, v.price ? deskM(v.price) : ''].filter(Boolean).map(esc).join(' · ')}</div>
+      </button>`;
+    }).join('');
+    box.classList.remove('hidden');
+  } catch { box.classList.add('hidden'); }
+}
+function deskPickVehicle(json) {
+  let v; try { v = JSON.parse(decodeURIComponent(json)); } catch { return; }
+  document.getElementById('desk-veh-results')?.classList.add('hidden');
+  __deskDeal.inventory_id = v.id || null;
+  const set = (id, val) => { const el = document.getElementById(id); if (el && val != null) el.value = val; };
+  set('dk-veh-year', v.year); set('dk-veh-make', v.make); set('dk-veh-model', v.model); set('dk-veh-trim', v.trim);
+  set('dk-veh-mileage', v.mileage); set('dk-veh-color', v.color); set('dk-veh-vin', v.vin); set('dk-veh-stock', v.stock);
+  if (v.price != null) set('dk-selling_price', v.price);
+  const vs = document.getElementById('desk-veh-search'); if (vs) vs.value = '';
+  deskRenderSummary();
+}
+
+// ── Collect + compute ────────────────────────────────────────────────────────
+function deskCollect(contactId) {
+  const g = (id) => document.getElementById(id);
+  const num = (id) => { const el = g(id); const n = el ? Number(el.value) : NaN; return Number.isFinite(n) && el.value !== '' ? n : null; };
+  const val = (id) => { const el = g(id); return el ? (el.value.trim() || null) : null; };
+  const chk = (id) => { const el = g(id); return !!(el && el.checked); };
+  const clean = (arr, amtKey) => arr.map(r => ({ name: (r.name || '').trim(), [amtKey]: Number(r[amtKey]) || 0 })).filter(r => r.name || r[amtKey]);
+  const fees = __deskFees.map(r => ({ name: (r.name || '').trim(), amount: Number(r.amount) || 0, taxable: r.taxable !== false })).filter(r => r.name || r.amount);
+  const d = {
+    contact_id: contactId, deal_status: 'working', inventory_id: __deskDeal.inventory_id || null,
+    selling_price: num('dk-selling_price'),
+    trade_value: num('dk-trade_value'), trade_payoff: num('dk-trade_payoff'), trade_desc: val('dk-trade_desc'), trade_vin: val('dk-trade_vin'),
+    down_payment: num('dk-down_payment'), deposit_amount: num('dk-deposit_amount'), rebate: num('dk-rebate'),
+    apr: num('dk-apr'), term: num('dk-term'), payment_freq: val('dk-payment_freq'), deal_type: val('dk-deal_type'),
+    tax_rate: num('dk-tax_rate'), tax_on_difference: chk('dk-tax_on_difference'),
+    addons: clean(__deskAddons, 'price'), fni_items: clean(__deskFni, 'price'), fees,
+    insurance: { company: val('dk-ins-company'), policy: val('dk-ins-policy'), agent: val('dk-ins-agent'), phone: val('dk-ins-phone'), expiry: val('dk-ins-expiry') },
+    vehicle: { year: val('dk-veh-year'), make: val('dk-veh-make'), model: val('dk-veh-model'), trim: val('dk-veh-trim'), vin: val('dk-veh-vin'), mileage: num('dk-veh-mileage'), color: val('dk-veh-color'), stock: val('dk-veh-stock') },
+    // F&I tracking
+    fni_manager: val('dk-fni_manager'), delivery_date: val('dk-delivery_date'), delivery_time: val('dk-delivery_time'), plates: val('dk-plates'),
+    vehicle_commission: num('dk-vehicle_commission'), fni_commission: num('dk-fni_commission'), split_with: val('dk-split_with'), notes: val('dk-notes'),
+    google_review: chk('dk-google_review'), gm_survey: chk('dk-gm_survey'), fni_gross_1500: chk('dk-fni_gross_1500'), split_deal: chk('dk-split_deal'),
+  };
+  return d;
+}
+function deskCompute(d) {
+  const n = (v) => Number(v) || 0;
+  const sellingPrice = n(d.selling_price);
+  const addonsTotal = (d.addons || []).reduce((s, a) => s + n(a.price), 0);
+  const fniTotal = (d.fni_items || []).reduce((s, a) => s + n(a.price), 0);
+  const taxableFees = (d.fees || []).filter(f => f.taxable !== false).reduce((s, f) => s + n(f.amount), 0);
+  const feesTotal = (d.fees || []).reduce((s, f) => s + n(f.amount), 0);
+  const tradeValue = n(d.trade_value), tradePayoff = n(d.trade_payoff);
+  const rate = n(d.tax_rate);
+  let taxableBase = sellingPrice + addonsTotal + fniTotal + taxableFees;
+  if (d.tax_on_difference) taxableBase = Math.max(0, taxableBase - tradeValue);
+  const taxAmount = taxableBase * rate / 100;
+  const cashPrice = sellingPrice + addonsTotal + fniTotal + feesTotal;
+  const total = cashPrice + taxAmount;
+  const down = n(d.down_payment), deposit = n(d.deposit_amount), rebate = n(d.rebate);
+  const tradeEquity = tradeValue - tradePayoff;
+  const amountFinanced = Math.max(0, total - down - deposit - rebate - tradeEquity);
+  const apr = n(d.apr), term = n(d.term), freq = d.payment_freq || 'monthly';
+  const perYear = freq === 'weekly' ? 52 : freq === 'biweekly' ? 26 : 12;
+  const nPer = freq === 'monthly' ? term : Math.round(term / 12 * perYear);
+  const r = apr / 100 / perYear;
+  let payment = 0;
+  if (amountFinanced > 0 && nPer > 0) payment = r > 0 ? (r * amountFinanced) / (1 - Math.pow(1 + r, -nPer)) : amountFinanced / nPer;
+  const costOfBorrowing = payment * nPer - amountFinanced;
+  return { sellingPrice, addonsTotal, fniTotal, taxableFees, feesTotal, taxableBase, taxAmount, cashPrice, total, tradeValue, tradePayoff, tradeEquity, down, deposit, rebate, amountFinanced, apr, term, freq, perYear, nPer, payment, costOfBorrowing, rate };
+}
+function deskRenderSummary() {
+  const box = document.getElementById('desk-summary');
+  if (!box) return;
+  const d = deskCollect(null);
+  const c = deskCompute(d);
+  const freqLabel = c.freq === 'weekly' ? '/wk' : c.freq === 'biweekly' ? '/2wk' : '/mo';
+  const row = (l, v, strong) => `<div class="flex justify-between ${strong ? 'font-black text-slate-900 dark:text-white' : 'text-slate-600 dark:text-slate-300'}"><span>${l}</span><span>${v}</span></div>`;
+  box.innerHTML = `
+    <div class="text-[11px] uppercase tracking-wider text-slate-400 font-bold mb-3">Deal summary</div>
+    <div class="space-y-1.5 text-sm">
+      ${row('Selling price', deskM(c.sellingPrice))}
+      ${c.addonsTotal ? row('Add-ons', deskM(c.addonsTotal)) : ''}
+      ${c.fniTotal ? row('F&I products', deskM(c.fniTotal)) : ''}
+      ${c.feesTotal ? row('Fees', deskM(c.feesTotal)) : ''}
+      ${c.tradeValue ? row('Trade allowance', '−' + deskM(c.tradeValue)) : ''}
+      <div class="border-t border-slate-200 dark:border-slate-800 my-1.5"></div>
+      ${row(`Taxable amount`, deskM(c.taxableBase))}
+      ${row(`HST (${c.rate}%)`, deskM(c.taxAmount))}
+      ${row('Total', deskM(c.total), true)}
+      <div class="border-t border-slate-200 dark:border-slate-800 my-1.5"></div>
+      ${c.down ? row('Cash down', '−' + deskM(c.down)) : ''}
+      ${c.deposit ? row('Deposit', '−' + deskM(c.deposit)) : ''}
+      ${c.rebate ? row('Rebate', '−' + deskM(c.rebate)) : ''}
+      ${c.tradeEquity ? row('Trade equity', (c.tradeEquity >= 0 ? '−' : '+') + deskM(Math.abs(c.tradeEquity))) : ''}
+      ${row('Amount financed', deskM(c.amountFinanced), true)}
+    </div>
+    <div class="mt-3 bg-indigo-600 text-white rounded-lg px-4 py-3">
+      <div class="text-[11px] uppercase tracking-wider opacity-80">Estimated payment</div>
+      <div class="text-2xl font-black">${deskM(c.payment)}<span class="text-sm font-bold opacity-80">${freqLabel}</span></div>
+      <div class="text-[11px] opacity-80 mt-0.5">${c.apr}% APR · ${c.nPer} payments · cost of borrowing ${deskM(Math.max(0, c.costOfBorrowing))}</div>
+    </div>
+    <p class="text-[10px] text-slate-400 mt-2 leading-snug">Estimate only, on approved credit. Rate is an example, not a lender commitment. Taxes/fees per Ontario; verify before contract.</p>`;
+}
+
+async function deskSave(contactId) {
   const btn = document.getElementById('desk-save');
   if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
   try {
-    await saveDealPayload(contactId);
+    const d = deskCollect(contactId);
+    const c = deskCompute(d);
+    d.tax_amount = Math.round(c.taxAmount * 100) / 100;
+    d.total_price = Math.round(c.total * 100) / 100;
+    d.amount_financed = Math.round(c.amountFinanced * 100) / 100;
+    d.payment = Math.round(c.payment * 100) / 100;
+    const res = await fetch(`${API}/reports/deal`, { method: 'POST', headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify(d) });
+    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Save failed');
+    const saved = (await res.json()).deal;
+    __deskDeal = { ...__deskDeal, ...(saved || {}) };
     showToast('Deal saved', 'success');
-    const c = __deskCustomers.find(x => x.id === contactId); if (c) c.has_deal = true;
     if (btn) { btn.disabled = false; btn.textContent = 'Saved ✓'; setTimeout(() => { if (btn) btn.textContent = 'Save deal'; }, 1500); }
   } catch (e) {
     if (btn) { btn.disabled = false; btn.textContent = 'Save deal'; }
     showToast(e.message || 'Could not save the deal', 'error');
   }
 }
+
+// ── Printed documents: Estimate + Bill of Sale ───────────────────────────────
+function deskPrint(kind) {
+  const d = deskCollect(null);
+  const c = deskCompute(d);
+  if (!(c.sellingPrice > 0)) { showToast('Enter a selling price first', 'error'); return; }
+  const dealer = __deskDealer || {};
+  const b = __deskBuyer || {};
+  const veh = d.vehicle || {};
+  const today = new Date().toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' });
+  const title = kind === 'bill' ? 'Bill of Sale' : 'Purchase Estimate';
+  const dealerAddr = [dealer.city, dealer.province, dealer.postal].filter(Boolean).join(', ');
+  const header = (typeof apprBrandedHeader === 'function')
+    ? apprBrandedHeader(title, kind === 'bill' ? 'Motor vehicle bill of sale' : 'Working estimate — not a contract', dealer.name || 'Dealership', dealerAddr, dealer.logo || null, today)
+    : `<div class="head"><div><h1>${esc(dealer.name || 'Dealership')}</h1><div class="muted">${esc(dealerAddr)}</div></div><div style="text-align:right"><h1>${title}</h1><div class="muted">${today}</div></div></div>`;
+  const buyerName = b.full_name || [b.first_name, b.last_name].filter(Boolean).join(' ') || 'Customer';
+  const line = (l, v) => v ? `<tr><td>${l}</td><td>${esc(v)}</td></tr>` : '';
+  const money = (n) => deskM(n);
+  const vlabel = [veh.year, veh.make, veh.model, veh.trim].filter(Boolean).join(' ') || '—';
+
+  const itemRows = [];
+  itemRows.push(`<tr><td>${esc(vlabel)}</td><td style="text-align:right">${money(c.sellingPrice)}</td></tr>`);
+  (d.addons || []).forEach(a => itemRows.push(`<tr><td>Add-on — ${esc(a.name)}</td><td style="text-align:right">${money(a.price)}</td></tr>`));
+  (d.fni_items || []).forEach(a => itemRows.push(`<tr><td>F&amp;I — ${esc(a.name)}</td><td style="text-align:right">${money(a.price)}</td></tr>`));
+  (d.fees || []).forEach(f => itemRows.push(`<tr><td>${esc(f.name)}${f.taxable === false ? ' <span class="muted">(no tax)</span>' : ''}</td><td style="text-align:right">${money(f.amount)}</td></tr>`));
+
+  const totalsRows = `
+    ${c.tradeValue ? `<tr><td>Less trade allowance</td><td style="text-align:right">−${money(c.tradeValue)}</td></tr>` : ''}
+    <tr><td>Taxable amount</td><td style="text-align:right">${money(c.taxableBase)}</td></tr>
+    <tr><td>HST (${c.rate}%)</td><td style="text-align:right">${money(c.taxAmount)}</td></tr>
+    <tr style="font-weight:800;border-top:1px solid #cbd5e1"><td>Total</td><td style="text-align:right">${money(c.total)}</td></tr>
+    ${c.tradePayoff ? `<tr><td>Trade lien payoff</td><td style="text-align:right">${money(c.tradePayoff)}</td></tr>` : ''}
+    ${c.down ? `<tr><td>Cash down</td><td style="text-align:right">−${money(c.down)}</td></tr>` : ''}
+    ${c.deposit ? `<tr><td>Deposit</td><td style="text-align:right">−${money(c.deposit)}</td></tr>` : ''}
+    ${c.rebate ? `<tr><td>Rebate / incentive</td><td style="text-align:right">−${money(c.rebate)}</td></tr>` : ''}
+    <tr style="font-weight:800;border-top:1px solid #cbd5e1"><td>${d.deal_type === 'Cash' ? 'Balance due' : 'Amount financed'}</td><td style="text-align:right">${money(c.amountFinanced)}</td></tr>`;
+
+  const financeBlock = d.deal_type === 'Cash' ? '' : `
+    <h2>Finance estimate</h2>
+    <div class="offer"><div class="muted" style="color:#c7d2fe">Estimated ${c.freq} payment</div><div class="n">${money(c.payment)}</div>
+      <div style="font-size:12px;color:#e0e7ff">${c.apr}% APR · ${c.nPer} payments · ${d.deal_type || 'Finance'} · cost of borrowing ${money(Math.max(0, c.costOfBorrowing))}</div></div>
+    <p class="muted" style="margin-top:8px">Financing is arranged through a third-party lender. Payment, rate and term are estimates on approved credit and are not a commitment to lend. Final terms are set by the lender and the signed finance contract.</p>`;
+
+  const ins = d.insurance || {};
+  const insBlock = (ins.company || ins.policy) ? `<h2>Insurance</h2><table class="kv">${line('Company', ins.company)}${line('Policy #', ins.policy)}${line('Agent / broker', ins.agent)}${line('Agent phone', ins.phone)}${line('Binder / expiry', ins.expiry)}</table>` : '';
+
+  const legal = kind === 'bill'
+    ? `<p class="muted" style="margin-top:14px">The seller certifies the above vehicle is sold to the buyer for the total price shown. Odometer reading: <b>${veh.mileage != null ? Number(veh.mileage).toLocaleString() + ' km' : '____________'}</b>. All-in price includes all fees and charges required to be disclosed, excluding HST and licensing, in accordance with the Ontario Motor Vehicle Dealers Act. This document becomes a binding bill of sale once signed by both parties.</p>`
+    : `<p class="muted" style="margin-top:14px">This is a working estimate prepared for the customer's convenience and is <b>not a contract or an offer to sell</b>. Prices, taxes, fees, rates and availability are subject to change and to final verification. Figures assume approved credit.</p>`;
+
+  const inner = `
+    ${header}
+    <div class="grid2" style="margin-top:14px">
+      <div><h2>Buyer</h2><table class="kv">
+        ${line('Name', buyerName)}
+        ${line('Address', [b.address, [b.city, b.province, b.postal_code].filter(Boolean).join(', ')].filter(Boolean).join(' · '))}
+        ${line('Phone', b.phone || b.phone_mobile)}
+        ${line('Email', b.email)}
+        ${line('Driver’s licence', b.dl_number)}
+      </table></div>
+      <div><h2>Vehicle</h2><table class="kv">
+        ${line('Vehicle', vlabel)}
+        ${line('VIN', veh.vin)}
+        ${line('Odometer', veh.mileage != null ? Number(veh.mileage).toLocaleString() + ' km' : '')}
+        ${line('Colour', veh.color)}
+        ${line('Stock #', veh.stock)}
+        ${d.trade_desc || d.trade_value ? `<tr><td>Trade-in</td><td>${esc(d.trade_desc || 'Trade')}${d.trade_value ? ' — ' + money(d.trade_value) : ''}</td></tr>` : ''}
+      </table></div>
+    </div>
+    <h2>Itemized price</h2>
+    <table style="border-collapse:collapse"><tbody>
+      ${itemRows.join('')}
+      ${totalsRows}
+    </tbody></table>
+    ${financeBlock}
+    ${insBlock}
+    ${legal}
+    ${kind === 'bill' ? `<div class="sig"><div>Buyer signature &amp; date</div><div>For ${esc(dealer.name || 'Dealership')} — date</div></div>` : ''}`;
+
+  if (typeof apprPrintWindow === 'function') apprPrintWindow(title, inner);
+  else { const w = window.open('', '_blank'); if (w) { w.document.write(`<html><head><title>${title}</title></head><body>${inner}</body></html>`); w.document.close(); } }
+}
+
 // Open the Desk-a-deal page focused on one customer (from a CRM row).
 function openDeskForContact(contactId) { __deskContactId = contactId; switchPage('desk'); }
 window.loadDeskDeal = loadDeskDeal;
-window.deskSaveDeal = deskSaveDeal;
+window.deskPickCustomer = deskPickCustomer;
+window.deskAddLine = deskAddLine;
+window.deskDelLine = deskDelLine;
+window.deskLineEdit = deskLineEdit;
+window.deskVehSearch = deskVehSearch;
+window.deskPickVehicle = deskPickVehicle;
+window.deskRenderSummary = deskRenderSummary;
+window.deskSave = deskSave;
+window.deskPrint = deskPrint;
 window.openDeskForContact = openDeskForContact;
 
 // ── Settings hub: tab-filter the profile page into named sections ────────────

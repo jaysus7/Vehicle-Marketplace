@@ -1198,7 +1198,15 @@ export function registerRoutes(app) {
 
   // Desk / F&I record for a sold deal — managers enter the fields MarketSync
   // doesn't otherwise capture. Keyed one-per-contact; upserted on contact_id.
-  const DEAL_FIELDS = ['inventory_id', 'delivery_date', 'delivery_time', 'fni_manager', 'deposit_amount', 'deal_type', 'term', 'plates', 'fni_products', 'google_review', 'gm_survey', 'gm_survey_pct', 'fni_gross_1500', 'split_deal', 'split_with', 'vehicle_commission', 'fni_commission', 'notes']
+  // Numeric money/rate fields (stored denormalised for reporting + the printed docs).
+  const DEAL_NUM_FIELDS = ['deposit_amount', 'gm_survey_pct', 'vehicle_commission', 'fni_commission', 'term',
+    'selling_price', 'trade_value', 'trade_payoff', 'down_payment', 'rebate', 'apr',
+    'amount_financed', 'payment', 'tax_rate', 'tax_amount', 'total_price']
+  const DEAL_BOOL_FIELDS = ['google_review', 'gm_survey', 'fni_gross_1500', 'split_deal', 'tax_on_difference']
+  const DEAL_TEXT_FIELDS = ['inventory_id', 'delivery_date', 'delivery_time', 'fni_manager', 'deal_type', 'plates',
+    'fni_products', 'split_with', 'notes', 'deal_status', 'payment_freq', 'trade_desc', 'trade_vin']
+  // JSONB line-item / block fields — the full deal detail for the estimate + bill of sale.
+  const DEAL_JSON_FIELDS = ['addons', 'fni_items', 'fees', 'insurance', 'vehicle']
 
   app.get('/reports/deal', requireAuth, async (req, res) => {
     if (!req.dealershipId) return res.status(400).json({ error: 'No dealership' })
@@ -1222,20 +1230,78 @@ export function registerRoutes(app) {
     const num = (v) => { if (v == null || v === '') return null; const n = Number(v); return Number.isFinite(n) ? n : null }
     const bool = (v) => v === true || v === 'true' || v === 'on' || v === 1 || v === '1'
     const str = (v) => { const s = (v == null ? '' : String(v)).trim(); return s || null }
+    // Accept a JSON block whether it arrived as an object/array or a stringified one.
+    const json = (v) => { if (v == null || v === '') return null; if (typeof v === 'string') { try { return JSON.parse(v) } catch { return null } } return v }
     const row = { dealership_id: req.dealershipId, contact_id: contactId, created_by: req.user?.id || null, updated_at: new Date().toISOString() }
-    for (const f of DEAL_FIELDS) {
-      if (!(f in (req.body || {}))) continue
-      const v = req.body[f]
-      if (['deposit_amount', 'gm_survey_pct', 'vehicle_commission', 'fni_commission'].includes(f)) row[f] = num(v)
-      else if (f === 'term') row[f] = num(v)
-      else if (['google_review', 'gm_survey', 'fni_gross_1500', 'split_deal'].includes(f)) row[f] = bool(v)
-      else if (f === 'inventory_id') row[f] = str(v)
-      else row[f] = str(v)
-    }
+    const body = req.body || {}
+    for (const f of DEAL_NUM_FIELDS)  if (f in body) row[f] = num(body[f])
+    for (const f of DEAL_BOOL_FIELDS) if (f in body) row[f] = bool(body[f])
+    for (const f of DEAL_TEXT_FIELDS) if (f in body) row[f] = str(body[f])
+    for (const f of DEAL_JSON_FIELDS) if (f in body) row[f] = json(body[f])
     const { data, error } = await supabaseAdmin.from('deals')
       .upsert(row, { onConflict: 'contact_id' }).select().maybeSingle()
     if (error) { console.error('deal upsert failed:', error.message); return res.status(500).json({ error: 'Save failed' }) }
     res.json({ ok: true, deal: data })
+  })
+
+  // ── Desk-a-deal helpers: search customers, prefill one, search inventory ──────
+  // Search ALL contacts (not just sold) so a deal can be started for anyone.
+  app.get('/deals/customers', requireAuth, async (req, res) => {
+    if (!req.dealershipId) return res.json({ ok: true, rows: [] })
+    if (!['DEALER_ADMIN', 'OWNER', 'MANAGER'].includes(req.profile?.role)) return res.status(403).json({ error: 'Manager access required' })
+    const q = String(req.query.q || '').trim()
+    let query = supabaseAdmin.from('contacts')
+      .select('id, first_name, last_name, full_name, email, phone, phone_mobile, city, province')
+      .eq('dealership_id', req.dealershipId).order('last_activity_at', { ascending: false, nullsFirst: false }).limit(25)
+    if (q) {
+      const like = `%${q.replace(/[%,]/g, ' ')}%`
+      query = query.or(`full_name.ilike.${like},first_name.ilike.${like},last_name.ilike.${like},email.ilike.${like},phone.ilike.${like},phone_mobile.ilike.${like}`)
+    }
+    const { data } = await query
+    const rows = (data || []).map(c => ({
+      id: c.id,
+      name: c.full_name || [c.first_name, c.last_name].filter(Boolean).join(' ') || c.email || 'Customer',
+      email: c.email || null, phone: c.phone || c.phone_mobile || null,
+      city: c.city || null, province: c.province || null,
+    }))
+    res.json({ ok: true, rows })
+  })
+
+  // Full buyer block for the bill of sale (address, DL, phones), plus any vehicle
+  // of interest so the desk can prefill the vehicle section.
+  app.get('/deals/customer', requireAuth, async (req, res) => {
+    if (!req.dealershipId) return res.status(400).json({ error: 'No dealership' })
+    if (!['DEALER_ADMIN', 'OWNER', 'MANAGER'].includes(req.profile?.role)) return res.status(403).json({ error: 'Manager access required' })
+    const id = String(req.query.id || '')
+    if (!id) return res.status(400).json({ error: 'id required' })
+    const { data: c } = await supabaseAdmin.from('contacts')
+      .select('id, first_name, last_name, full_name, email, phone, phone_mobile, phone_home, phone_work, address, city, province, postal_code, country, dl_number, dl_expiry, interest_inventory_id, interest_vehicle, trade_vehicle')
+      .eq('id', id).eq('dealership_id', req.dealershipId).maybeSingle()
+    if (!c) return res.status(404).json({ error: 'Contact not found' })
+    let vehicle = null
+    if (c.interest_inventory_id) {
+      const { data: v } = await supabaseAdmin.from('inventory')
+        .select('id, vin, year, make, model, trim, mileage, exterior_color, stocknumber, price')
+        .eq('id', c.interest_inventory_id).eq('dealership_id', req.dealershipId).maybeSingle()
+      if (v) vehicle = v
+    }
+    res.json({ ok: true, contact: c, vehicle })
+  })
+
+  // Search this dealer's inventory for the vehicle section (VIN / stock / name).
+  app.get('/deals/vehicles', requireAuth, async (req, res) => {
+    if (!req.dealershipId) return res.json({ ok: true, rows: [] })
+    if (!['DEALER_ADMIN', 'OWNER', 'MANAGER'].includes(req.profile?.role)) return res.status(403).json({ error: 'Manager access required' })
+    const q = String(req.query.q || '').trim()
+    let query = supabaseAdmin.from('inventory')
+      .select('id, vin, year, make, model, trim, mileage, exterior_color, stocknumber, price, status')
+      .eq('dealership_id', req.dealershipId).order('created_at', { ascending: false }).limit(25)
+    if (q) {
+      const like = `%${q.replace(/[%,]/g, ' ')}%`
+      query = query.or(`vin.ilike.${like},stocknumber.ilike.${like},make.ilike.${like},model.ilike.${like},trim.ilike.${like}`)
+    }
+    const { data } = await query
+    res.json({ ok: true, rows: data || [] })
   })
 
   // Inventory report — the "what" data source for the custom report builder.
