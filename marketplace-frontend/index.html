@@ -1027,108 +1027,126 @@
         </div>
     </section>
 
-    <section id="pricing" class="max-w-5xl mx-auto px-6 py-20">
-        <h2 class="text-3xl sm:text-4xl font-black tracking-tight text-slate-900 dark:text-white text-center mb-4">Simple Pricing</h2>
-        <p class="text-center text-slate-500 dark:text-gray-400 max-w-2xl mx-auto mb-12">Try everything free for 7 days. No credit card. Cancel before day 8 and you pay nothing.</p>
+    <section id="pricing" class="max-w-6xl mx-auto px-6 py-20">
+        <h2 class="text-3xl sm:text-4xl font-black tracking-tight text-slate-900 dark:text-white text-center mb-4">Pick your package</h2>
+        <p class="text-center text-slate-500 dark:text-gray-400 max-w-2xl mx-auto mb-6">The all-in dealership platform — CRM, website, deal desk, AI and market intelligence. Try everything free for 30 days. No credit card to start.</p>
 
-        <div class="grid md:grid-cols-2 gap-6 relative">
-            <div class="relative glass-panel bg-indigo-600/10 border-2 border-indigo-500 rounded-2xl p-8 flex flex-col justify-between shadow-xl shadow-indigo-500/10">
-                <div class="absolute top-4 right-4 bg-indigo-600 text-white text-[10px] font-black px-2.5 py-0.5 rounded-full uppercase tracking-wider">Best for Stores</div>
-                <div>
-                    <h3 class="text-xl font-bold text-slate-900 dark:text-white">Dealer Plan</h3>
-                    <p class="text-slate-500 dark:text-gray-400 text-xs mt-1">One subscription covers the whole dealership.</p>
-                    <div class="my-6">
-                        <span class="text-4xl font-black text-slate-900 dark:text-white">$499</span>
-                        <span class="text-slate-500 text-sm"> / month</span>
-                    </div>
-                    <ul class="space-y-2.5 text-sm text-slate-700 dark:text-gray-300 border-t border-slate-200 dark:border-gray-800 pt-6">
-                        <li class="flex items-center gap-2"><i class="fa-solid fa-check text-emerald-600 dark:text-emerald-400 text-xs"></i> Unlimited sales reps under one account</li>
-                        <li class="flex items-center gap-2"><i class="fa-solid fa-check text-emerald-600 dark:text-emerald-400 text-xs"></i> Auto-sync your dealer feed</li>
-                        <li class="flex items-center gap-2"><i class="fa-solid fa-check text-emerald-600 dark:text-emerald-400 text-xs"></i> Team leaderboard + insights</li>
-                        <li class="flex items-center gap-2"><i class="fa-solid fa-check text-emerald-600 dark:text-emerald-400 text-xs"></i> Sales rep management tools</li>
-                        <li class="flex items-center gap-2"><i class="fa-solid fa-check text-emerald-600 dark:text-emerald-400 text-xs"></i> Reps don't pay — the dealer pays once</li>
-                    </ul>
-                </div>
-                <a href="https://marketsync.link/register.html" class="mt-8 block w-full py-3 bg-indigo-600 hover:bg-indigo-500 text-center text-white font-bold rounded-xl transition">Start Free Trial</a>
-            </div>
-
-            <div class="glass-panel bg-white dark:bg-gray-900/70 border border-slate-200 dark:border-gray-800 rounded-2xl p-8 flex flex-col justify-between shadow-xl shadow-slate-200/30 dark:shadow-none">
-                <div class="absolute top-4 right-4 bg-slate-200 dark:bg-gray-800 text-slate-700 dark:text-gray-300 text-[10px] font-black px-2.5 py-0.5 rounded-full uppercase tracking-wider">Solo</div>
-                <div>
-                    <h3 class="text-xl font-bold text-slate-900 dark:text-white">Independent Sales Rep</h3>
-                    <p class="text-slate-500 dark:text-gray-400 text-xs mt-1">For a single rep whose dealership hasn't joined yet.</p>
-                    <div class="my-6">
-                        <span class="text-4xl font-black text-slate-900 dark:text-white">$79</span>
-                        <span class="text-slate-500 text-sm"> / month</span>
-                    </div>
-                    <ul class="space-y-2.5 text-sm text-slate-700 dark:text-gray-300 border-t border-slate-100 dark:border-gray-900 pt-6">
-                        <li class="flex items-center gap-2"><i class="fa-solid fa-check text-emerald-600 dark:text-emerald-400 text-xs"></i> Personal Chrome Extension license</li>
-                        <li class="flex items-center gap-2"><i class="fa-solid fa-check text-emerald-600 dark:text-emerald-400 text-xs"></i> 60-second posting automation</li>
-                        <li class="flex items-center gap-2"><i class="fa-solid fa-check text-emerald-600 dark:text-emerald-400 text-xs"></i> Your own dashboard and stats</li>
-                        <li class="flex items-center gap-2"><i class="fa-solid fa-check text-emerald-600 dark:text-emerald-400 text-xs"></i> Sold tracking with point scoring</li>
-                    </ul>
-                </div>
-                <a href="https://marketsync.link/register.html" class="mt-8 block w-full py-3 bg-slate-100 dark:bg-gray-900 hover:bg-slate-200 dark:hover:bg-gray-800 text-center text-slate-900 dark:text-white font-bold rounded-xl border border-slate-300 dark:border-gray-800 transition">Start Free Trial</a>
+        <!-- Currency toggle -->
+        <div class="flex justify-center mb-10">
+            <div class="inline-flex items-center bg-slate-100 dark:bg-gray-900 border border-slate-200 dark:border-gray-800 rounded-full p-1 text-sm font-bold">
+                <button type="button" data-cur="CAD" onclick="msSetCurrency('CAD')" class="ms-cur-btn px-4 py-1.5 rounded-full transition">CAD</button>
+                <button type="button" data-cur="USD" onclick="msSetCurrency('USD')" class="ms-cur-btn px-4 py-1.5 rounded-full transition">USD</button>
             </div>
         </div>
 
-        <!-- Optional Add-Ons -->
+        <div class="grid md:grid-cols-3 gap-6 relative items-stretch">
+            <!-- Starter -->
+            <div class="glass-panel bg-white dark:bg-gray-900/70 border border-slate-200 dark:border-gray-800 rounded-2xl p-8 flex flex-col shadow-xl shadow-slate-200/30 dark:shadow-none">
+                <h3 class="text-xl font-bold text-slate-900 dark:text-white">Starter</h3>
+                <p class="text-slate-500 dark:text-gray-400 text-xs mt-1">The operational core for a small store.</p>
+                <div class="my-6"><span class="text-4xl font-black text-slate-900 dark:text-white">$<span class="ms-price" data-cad="999" data-usd="999">999</span></span><span class="text-slate-500 text-sm"> / mo <span class="ms-cur-label">CAD</span></span></div>
+                <ul class="space-y-2.5 text-sm text-slate-700 dark:text-gray-300 border-t border-slate-100 dark:border-gray-800 pt-6 flex-1">
+                    <li class="flex items-start gap-2"><i class="fa-solid fa-check text-emerald-500 text-xs mt-1"></i> Full CRM — leads, appointments &amp; tasks</li>
+                    <li class="flex items-start gap-2"><i class="fa-solid fa-check text-emerald-500 text-xs mt-1"></i> Lead routing + automated follow-ups (SMS/email)</li>
+                    <li class="flex items-start gap-2"><i class="fa-solid fa-check text-emerald-500 text-xs mt-1"></i> Dealer website builder (SEO, reviews, AI chat)</li>
+                    <li class="flex items-start gap-2"><i class="fa-solid fa-check text-emerald-500 text-xs mt-1"></i> Deal desk — estimate &amp; OMVIC bill of sale</li>
+                    <li class="flex items-start gap-2"><i class="fa-solid fa-check text-emerald-500 text-xs mt-1"></i> Inventory sync + team dashboard</li>
+                </ul>
+                <a href="https://marketsync.link/register.html?plan=starter" class="mt-8 block w-full py-3 bg-slate-100 dark:bg-gray-900 hover:bg-slate-200 dark:hover:bg-gray-800 text-center text-slate-900 dark:text-white font-bold rounded-xl border border-slate-300 dark:border-gray-800 transition">Start Free Trial</a>
+            </div>
+
+            <!-- Growth (most popular) -->
+            <div class="relative glass-panel bg-indigo-600/10 border-2 border-indigo-500 rounded-2xl p-8 flex flex-col shadow-xl shadow-indigo-500/10 md:-mt-3">
+                <div class="absolute top-4 right-4 bg-indigo-600 text-white text-[10px] font-black px-2.5 py-0.5 rounded-full uppercase tracking-wider">Most popular</div>
+                <h3 class="text-xl font-bold text-slate-900 dark:text-white">Growth</h3>
+                <p class="text-slate-500 dark:text-gray-400 text-xs mt-1">Everything in Starter, plus AI &amp; market intelligence.</p>
+                <div class="my-6"><span class="text-4xl font-black text-slate-900 dark:text-white">$<span class="ms-price" data-cad="1499" data-usd="1499">1,499</span></span><span class="text-slate-500 text-sm"> / mo <span class="ms-cur-label">CAD</span></span></div>
+                <ul class="space-y-2.5 text-sm text-slate-700 dark:text-gray-300 border-t border-indigo-200 dark:border-indigo-500/30 pt-6 flex-1">
+                    <li class="flex items-start gap-2"><i class="fa-solid fa-check text-indigo-500 text-xs mt-1"></i> Everything in Starter</li>
+                    <li class="flex items-start gap-2"><i class="fa-solid fa-check text-indigo-500 text-xs mt-1"></i> AI Boost — listing copy, AI Vision, stickers &amp; brochures</li>
+                    <li class="flex items-start gap-2"><i class="fa-solid fa-check text-indigo-500 text-xs mt-1"></i> Inventory Intelligence — market pricing &amp; competitors</li>
+                    <li class="flex items-start gap-2"><i class="fa-solid fa-check text-indigo-500 text-xs mt-1"></i> Mileage-adjusted price-to-market on every unit</li>
+                    <li class="flex items-start gap-2"><i class="fa-solid fa-check text-indigo-500 text-xs mt-1"></i> Trade appraisal tool + VIN decoder &amp; OEM docs</li>
+                    <li class="flex items-start gap-2"><i class="fa-solid fa-check text-indigo-500 text-xs mt-1"></i> Manager reports (sold, price drift, aging)</li>
+                </ul>
+                <a href="https://marketsync.link/register.html?plan=growth" class="mt-8 block w-full py-3 bg-indigo-600 hover:bg-indigo-500 text-center text-white font-bold rounded-xl transition">Start Free Trial</a>
+            </div>
+
+            <!-- Pro -->
+            <div class="glass-panel bg-gradient-to-br from-violet-50 to-white dark:from-violet-950/40 dark:to-gray-900/70 border border-violet-300 dark:border-violet-500/40 rounded-2xl p-8 flex flex-col shadow-xl shadow-violet-200/20 dark:shadow-none">
+                <h3 class="text-xl font-bold text-slate-900 dark:text-white">Pro</h3>
+                <p class="text-slate-500 dark:text-gray-400 text-xs mt-1">The full growth engine for a serious store.</p>
+                <div class="my-6"><span class="text-4xl font-black text-slate-900 dark:text-white">$<span class="ms-price" data-cad="1999" data-usd="1999">1,999</span></span><span class="text-slate-500 text-sm"> / mo <span class="ms-cur-label">CAD</span></span></div>
+                <ul class="space-y-2.5 text-sm text-slate-700 dark:text-gray-300 border-t border-violet-100 dark:border-violet-500/20 pt-6 flex-1">
+                    <li class="flex items-start gap-2"><i class="fa-solid fa-check text-violet-500 text-xs mt-1"></i> Everything in Growth</li>
+                    <li class="flex items-start gap-2"><i class="fa-solid fa-check text-violet-500 text-xs mt-1"></i> Equity mining — payoff &amp; upgrade targeting</li>
+                    <li class="flex items-start gap-2"><i class="fa-solid fa-check text-violet-500 text-xs mt-1"></i> Executive ROI dashboard (per-rep, per-store)</li>
+                    <li class="flex items-start gap-2"><i class="fa-solid fa-check text-violet-500 text-xs mt-1"></i> Facebook Marketplace posting <span class="text-[10px] font-black uppercase bg-violet-100 text-violet-700 dark:bg-violet-950/60 dark:text-violet-300 px-1.5 py-0.5 rounded-full">Included</span></li>
+                    <li class="flex items-start gap-2"><i class="fa-solid fa-check text-violet-500 text-xs mt-1"></i> Priority support &amp; onboarding</li>
+                </ul>
+                <a href="https://marketsync.link/register.html?plan=pro" class="mt-8 block w-full py-3 bg-violet-600 hover:bg-violet-500 text-center text-white font-bold rounded-xl transition">Start Free Trial</a>
+            </div>
+        </div>
+
+        <!-- Facebook posting — sold separately -->
         <div class="mt-14">
-            <h3 class="text-center text-lg font-black text-slate-900 dark:text-white">Optional add-ons</h3>
-            <p class="text-center text-slate-500 dark:text-gray-400 text-sm mt-1 mb-8">Bolt on to any plan. Start each with a free trial — cancel anytime.</p>
-            <div class="grid md:grid-cols-2 gap-6">
-
-                <!-- Inventory Intelligence -->
-                <div class="glass-panel bg-white dark:bg-gray-900/70 border border-violet-300 dark:border-violet-500/40 rounded-2xl p-8 flex flex-col shadow-xl shadow-violet-200/20 dark:shadow-none">
-                    <div class="flex items-center justify-between gap-3 mb-1">
-                        <div class="flex items-center gap-2.5">
-                            <div class="w-10 h-10 rounded-xl bg-violet-600/10 text-violet-600 dark:text-violet-400 flex items-center justify-center"><i class="fa-solid fa-gauge-high"></i></div>
-                            <h4 class="text-xl font-bold text-slate-900 dark:text-white">Inventory Intelligence</h4>
-                        </div>
-                        <span class="text-[10px] font-black uppercase tracking-wider bg-violet-100 text-violet-700 dark:bg-violet-950/60 dark:text-violet-300 px-2 py-0.5 rounded-full">Add-On</span>
+            <h3 class="text-center text-lg font-black text-slate-900 dark:text-white">Facebook Marketplace posting — sold separately</h3>
+            <p class="text-center text-slate-500 dark:text-gray-400 text-sm mt-1 mb-8">Just want the 60-second posting tool? Buy it on its own, or add it to any package. <span class="text-slate-700 dark:text-gray-300 font-semibold">Included free with Pro.</span></p>
+            <div class="grid md:grid-cols-2 gap-6 max-w-3xl mx-auto">
+                <div class="glass-panel bg-white dark:bg-gray-900/70 border border-slate-200 dark:border-gray-800 rounded-2xl p-8 flex flex-col justify-between">
+                    <div>
+                        <div class="flex items-center justify-between gap-2"><h4 class="text-lg font-bold text-slate-900 dark:text-white">Dealer — Facebook posting</h4><span class="text-[10px] font-black uppercase tracking-wider bg-slate-200 dark:bg-gray-800 text-slate-600 dark:text-gray-300 px-2 py-0.5 rounded-full">Store</span></div>
+                        <div class="my-4"><span class="text-3xl font-black text-slate-900 dark:text-white">$<span class="ms-price" data-cad="499" data-usd="499">499</span></span><span class="text-slate-500 text-sm"> / mo <span class="ms-cur-label">CAD</span></span></div>
+                        <ul class="space-y-2 text-sm text-slate-700 dark:text-gray-300 border-t border-slate-100 dark:border-gray-800 pt-4">
+                            <li class="flex items-center gap-2"><i class="fa-solid fa-check text-emerald-500 text-xs"></i> Unlimited reps, one account</li>
+                            <li class="flex items-center gap-2"><i class="fa-solid fa-check text-emerald-500 text-xs"></i> 60-second posting automation</li>
+                            <li class="flex items-center gap-2"><i class="fa-solid fa-check text-emerald-500 text-xs"></i> Auto-sync your dealer feed</li>
+                        </ul>
                     </div>
-                    <div class="my-4"><span class="text-4xl font-black text-slate-900 dark:text-white">$299</span><span class="text-slate-500 text-sm"> / month</span></div>
-                    <p class="text-sm text-slate-500 dark:text-gray-400 mb-5">Know your lot cold — the analytics tier, plus the VIN decoder and factory window stickers.</p>
-                    <ul class="space-y-2.5 text-sm text-slate-700 dark:text-gray-300 border-t border-slate-100 dark:border-gray-800 pt-5 flex-1">
-                        <li class="flex items-start gap-2"><i class="fa-solid fa-check text-violet-500 text-xs mt-1"></i> Per-vehicle health scores (0–100)</li>
-                        <li class="flex items-start gap-2"><i class="fa-solid fa-check text-violet-500 text-xs mt-1"></i> Hot &amp; cold vehicle detection</li>
-                        <li class="flex items-start gap-2"><i class="fa-solid fa-check text-violet-500 text-xs mt-1"></i> Turn rate per vehicle</li>
-                        <li class="flex items-start gap-2"><i class="fa-solid fa-check text-violet-500 text-xs mt-1"></i> Months-of-supply by make &amp; model</li>
-                        <li class="flex items-start gap-2"><i class="fa-solid fa-check text-violet-500 text-xs mt-1"></i> Duplicate VIN detection across your lot</li>
-                        <li class="flex items-start gap-2"><i class="fa-solid fa-check text-violet-500 text-xs mt-1"></i> Weekly Monday-morning email digest</li>
-                        <li class="flex items-start gap-2"><i class="fa-solid fa-check text-violet-500 text-xs mt-1"></i> VIN decoder — full factory spec + open recalls</li>
-                        <li class="flex items-start gap-2"><i class="fa-solid fa-check text-violet-500 text-xs mt-1"></i> Factory (OEM) window sticker lookup by VIN</li>
-                    </ul>
-                    <a href="register.html" class="mt-6 block w-full py-3 bg-violet-600 hover:bg-violet-500 text-center text-white font-bold rounded-xl transition">Start Free Trial</a>
+                    <a href="https://marketsync.link/register.html" class="mt-6 block w-full py-3 bg-slate-100 dark:bg-gray-900 hover:bg-slate-200 dark:hover:bg-gray-800 text-center text-slate-900 dark:text-white font-bold rounded-xl border border-slate-300 dark:border-gray-800 transition">Start Free Trial</a>
                 </div>
-
-                <!-- AI Boost -->
-                <div class="relative glass-panel bg-gradient-to-br from-indigo-50 to-white dark:from-indigo-950/40 dark:to-gray-900/70 border-2 border-indigo-500 rounded-2xl p-8 flex flex-col shadow-xl shadow-indigo-500/10">
-                    <div class="flex items-center justify-between gap-3 mb-1">
-                        <div class="flex items-center gap-2.5">
-                            <div class="w-10 h-10 rounded-xl bg-indigo-600/10 text-indigo-600 dark:text-indigo-400 flex items-center justify-center"><i class="fa-solid fa-wand-magic-sparkles"></i></div>
-                            <h4 class="text-xl font-bold text-slate-900 dark:text-white">AI Boost</h4>
-                        </div>
-                        <span class="text-[10px] font-black uppercase tracking-wider bg-indigo-600 text-white px-2 py-0.5 rounded-full">Every AI feature</span>
+                <div class="glass-panel bg-white dark:bg-gray-900/70 border border-slate-200 dark:border-gray-800 rounded-2xl p-8 flex flex-col justify-between">
+                    <div>
+                        <div class="flex items-center justify-between gap-2"><h4 class="text-lg font-bold text-slate-900 dark:text-white">Solo rep</h4><span class="text-[10px] font-black uppercase tracking-wider bg-slate-200 dark:bg-gray-800 text-slate-600 dark:text-gray-300 px-2 py-0.5 rounded-full">Solo</span></div>
+                        <div class="my-4"><span class="text-3xl font-black text-slate-900 dark:text-white">$<span class="ms-price" data-cad="79" data-usd="79">79</span></span><span class="text-slate-500 text-sm"> / mo <span class="ms-cur-label">CAD</span></span></div>
+                        <ul class="space-y-2 text-sm text-slate-700 dark:text-gray-300 border-t border-slate-100 dark:border-gray-800 pt-4">
+                            <li class="flex items-center gap-2"><i class="fa-solid fa-check text-emerald-500 text-xs"></i> Personal posting license</li>
+                            <li class="flex items-center gap-2"><i class="fa-solid fa-check text-emerald-500 text-xs"></i> Your own dashboard &amp; stats</li>
+                            <li class="flex items-center gap-2"><i class="fa-solid fa-check text-emerald-500 text-xs"></i> Sold tracking with point scoring</li>
+                        </ul>
                     </div>
-                    <div class="my-4"><span class="text-4xl font-black text-slate-900 dark:text-white">$129</span><span class="text-slate-500 text-sm"> / month</span></div>
-                    <p class="text-sm text-slate-500 dark:text-gray-400 mb-5">One switch turns on all the smart stuff — no separate AI add-ons.</p>
-                    <ul class="space-y-2.5 text-sm text-slate-700 dark:text-gray-300 border-t border-slate-100 dark:border-gray-800 pt-5 flex-1">
-                        <li class="flex items-start gap-2"><i class="fa-solid fa-check text-indigo-500 text-xs mt-1"></i> AI-written listing copy per vehicle</li>
-                        <li class="flex items-start gap-2"><i class="fa-solid fa-check text-indigo-500 text-xs mt-1"></i> Missing photo &amp; price alerts before posting</li>
-                        <li class="flex items-start gap-2"><i class="fa-solid fa-check text-indigo-500 text-xs mt-1"></i> Live US &amp; Canada market price reports (PDF)</li>
-                        <li class="flex items-start gap-2"><i class="fa-solid fa-check text-indigo-500 text-xs mt-1"></i> Price intelligence flags across your lot</li>
-                        <li class="flex items-start gap-2"><i class="fa-solid fa-check text-indigo-500 text-xs mt-1"></i> AI Vision photo scoring (0–100)</li>
-                        <li class="flex items-start gap-2"><i class="fa-solid fa-check text-indigo-500 text-xs mt-1"></i> Branded window stickers &amp; AI dealer brochures</li>
-                        <li class="flex items-start gap-2"><i class="fa-solid fa-check text-indigo-500 text-xs mt-1"></i> Automated repricing rules</li>
-                        <li class="flex items-start gap-2"><i class="fa-solid fa-check text-indigo-500 text-xs mt-1"></i> Competitor lot monitoring</li>
-                        <li class="flex items-start gap-2"><i class="fa-solid fa-check text-indigo-500 text-xs mt-1"></i> AI lot narrative (with Inventory Intelligence)</li>
-                    </ul>
-                    <a href="register.html" class="mt-6 block w-full py-3 bg-indigo-600 hover:bg-indigo-500 text-center text-white font-bold rounded-xl transition">Start Free Trial</a>
+                    <a href="https://marketsync.link/register.html" class="mt-6 block w-full py-3 bg-slate-100 dark:bg-gray-900 hover:bg-slate-200 dark:hover:bg-gray-800 text-center text-slate-900 dark:text-white font-bold rounded-xl border border-slate-300 dark:border-gray-800 transition">Start Free Trial</a>
                 </div>
-
             </div>
         </div>
+
+        <script>
+          // Multi-currency display: CAD in Canada, USD in the US. Same headline
+          // number per currency; the toggle just relabels + guesses from locale/timezone.
+          function msSetCurrency(cur) {
+            cur = (cur === 'USD') ? 'USD' : 'CAD';
+            try { localStorage.setItem('ms_currency', cur); } catch (e) {}
+            document.querySelectorAll('.ms-price').forEach(function (el) {
+              var v = Number(el.getAttribute(cur === 'USD' ? 'data-usd' : 'data-cad')) || 0;
+              el.textContent = v.toLocaleString('en-US');
+            });
+            document.querySelectorAll('.ms-cur-label').forEach(function (el) { el.textContent = cur; });
+            document.querySelectorAll('.ms-cur-btn').forEach(function (b) {
+              var on = b.getAttribute('data-cur') === cur;
+              b.classList.toggle('bg-white', on); b.classList.toggle('dark:bg-gray-700', on);
+              b.classList.toggle('text-slate-900', on); b.classList.toggle('dark:text-white', on);
+              b.classList.toggle('shadow', on);
+              b.classList.toggle('text-slate-500', !on);
+            });
+          }
+          (function () {
+            var saved = null; try { saved = localStorage.getItem('ms_currency'); } catch (e) {}
+            var tz = ''; try { tz = Intl.DateTimeFormat().resolvedOptions().timeZone || ''; } catch (e) {}
+            var lang = (navigator.language || '').toUpperCase();
+            var isUS = /New_York|Chicago|Denver|Los_Angeles|Phoenix|Anchorage|Honolulu|Detroit|Indiana|Kentucky|Boise|America\/(?!Toronto|Vancouver|Edmonton|Winnipeg|Halifax|St_Johns|Regina|Moncton)/.test(tz) || lang.endsWith('-US');
+            msSetCurrency(saved || (isUS ? 'USD' : 'CAD'));
+          })();
+        </script>
     </section>
 
     <section id="faq" class="max-w-3xl mx-auto px-6 py-20">
