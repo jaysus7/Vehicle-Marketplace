@@ -1731,6 +1731,7 @@ function crmDetailHtml(d) {
       <div class="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">Open tasks</div>
       <div class="space-y-1.5">${openTasks.map(t => crmTaskRow(t, c.id)).join('')}</div>
     </div>` : ''}
+    ${crmAttachmentsHtml(c, d)}
     <div id="crm-detail-form"></div>
     <div>
       <div class="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-2">Activity timeline</div>
@@ -1739,6 +1740,64 @@ function crmDetailHtml(d) {
     </div>
   </div>`;
 }
+// ── Attachments: photos, videos & files reps add to a customer ───────────────
+function crmFileSize(n) { if (!n) return ''; return n > 1048576 ? (n / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB'; }
+function crmAttachmentTile(a, contactId) {
+  const del = `<button onclick="event.stopPropagation();crmDeleteAttachment('${a.id}','${contactId}')" title="Remove" class="absolute top-1 right-1 z-10 bg-black/60 hover:bg-black/80 text-white rounded-full w-5 h-5 text-xs leading-none flex items-center justify-center">×</button>`;
+  if (a.kind === 'image') {
+    return `<div class="relative aspect-square rounded-lg overflow-hidden border border-slate-200 dark:border-slate-700">${del}<a href="${esc(a.url)}" target="_blank" rel="noopener"><img src="${esc(a.url)}" loading="lazy" class="w-full h-full object-cover"></a></div>`;
+  }
+  if (a.kind === 'video') {
+    return `<div class="relative aspect-square rounded-lg overflow-hidden border border-slate-200 dark:border-slate-700 bg-black">${del}<video src="${esc(a.url)}" controls preload="metadata" class="w-full h-full object-contain"></video></div>`;
+  }
+  return `<div class="relative aspect-square rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 flex flex-col items-center justify-center p-2 text-center">${del}
+    <a href="${esc(a.url)}" target="_blank" rel="noopener" class="flex flex-col items-center gap-1">
+      <svg class="w-7 h-7 text-slate-400" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 4H7a2 2 0 01-2-2V6a2 2 0 012-2h7l5 5v9a2 2 0 01-2 2z"/></svg>
+      <span class="text-[10px] font-semibold text-slate-600 dark:text-slate-300 truncate max-w-[80px]">${esc(a.filename || 'file')}</span>
+      ${a.size ? `<span class="text-[9px] text-slate-400">${crmFileSize(a.size)}</span>` : ''}
+    </a></div>`;
+}
+function crmAttachmentsHtml(c, d) {
+  const atts = d.attachments || [];
+  return `<div>
+    <div class="flex items-center justify-between mb-1.5">
+      <div class="text-[11px] font-bold uppercase tracking-wider text-slate-400">Attachments${atts.length ? ` · ${atts.length}` : ''}</div>
+    </div>
+    <input id="crm-att-file" type="file" accept="image/*,video/*,application/pdf,.doc,.docx,.xls,.xlsx,.csv,.txt" multiple class="hidden" onchange="crmUploadAttachments('${c.id}', this.files); this.value='';">
+    <input id="crm-att-photo" type="file" accept="image/*" capture="environment" class="hidden" onchange="crmUploadAttachments('${c.id}', this.files); this.value='';">
+    <input id="crm-att-video" type="file" accept="video/*" capture="environment" class="hidden" onchange="crmUploadAttachments('${c.id}', this.files); this.value='';">
+    <div class="flex flex-wrap gap-2 mb-2">
+      <button type="button" onclick="document.getElementById('crm-att-file').click()" class="flex items-center gap-1.5 text-xs font-bold bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 px-3 py-1.5 rounded-lg"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20 11"/></svg>Attach files</button>
+      <button type="button" onclick="document.getElementById('crm-att-photo').click()" class="flex items-center gap-1.5 text-xs font-bold bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 px-3 py-1.5 rounded-lg"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 10a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" d="M4 7h3l1.5-2h7L17 7h3a1 1 0 011 1v10a1 1 0 01-1 1H4a1 1 0 01-1-1V8a1 1 0 011-1z"/></svg>Take photo</button>
+      <button type="button" onclick="document.getElementById('crm-att-video').click()" class="flex items-center gap-1.5 text-xs font-bold bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 px-3 py-1.5 rounded-lg"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 6h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2z"/></svg>Record video</button>
+    </div>
+    <div id="crm-att-status" class="hidden text-xs text-slate-400 mb-2"></div>
+    ${atts.length ? `<div class="grid grid-cols-3 sm:grid-cols-4 gap-2">${atts.map(a => crmAttachmentTile(a, c.id)).join('')}</div>` : '<div class="text-xs text-slate-400 italic">No attachments yet — add photos of the trade, docs, or a walkaround video.</div>'}
+  </div>`;
+}
+async function crmUploadAttachments(contactId, fileList) {
+  const files = Array.from(fileList || []);
+  if (!files.length) return;
+  const status = document.getElementById('crm-att-status');
+  const big = files.find(f => f.size > 60 * 1024 * 1024);
+  if (big) { showToast(`"${big.name}" is over 60 MB — too large to attach.`, 'error'); return; }
+  if (status) { status.classList.remove('hidden'); status.textContent = `Uploading ${files.length} file${files.length > 1 ? 's' : ''}…`; }
+  try {
+    const fd = new FormData();
+    files.forEach(f => fd.append('files', f));
+    const r = await fetch(`${API}/crm/contacts/${contactId}/attachments`, { method: 'POST', headers: { 'Authorization': `Bearer ${token}` }, body: fd });
+    if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || 'Upload failed');
+    showToast('Attached', 'success');
+    openCrmContact(contactId);   // refresh the detail so the new items show
+  } catch (e) { if (status) status.classList.add('hidden'); showToast(e.message || 'Upload failed', 'error'); }
+}
+async function crmDeleteAttachment(id, contactId) {
+  if (!confirm('Remove this attachment?')) return;
+  try { await apiSendJson(`/crm/attachments/${id}`, 'DELETE'); showToast('Removed', 'success'); openCrmContact(contactId); }
+  catch (e) { showToast(e.message, 'error'); }
+}
+window.crmUploadAttachments = crmUploadAttachments; window.crmDeleteAttachment = crmDeleteAttachment;
+
 // Compact facts grid on the contact detail (address, DL, birthday, extra phones,
 // source/salesperson, trade + new-car-of-interest vehicles).
 function crmDetailFacts(c, d) {
@@ -7039,8 +7098,10 @@ async function openSiteManager() {
 // Website → Settings tab (same form, inline instead of a modal).
 function wsSettings() {
   if (!__siteCfg) return '<div class="mt-4 text-sm text-slate-400">Loading…</div>';
-  return `<div class="mt-4 max-w-2xl space-y-3">${siteSettingsFields(__siteCfg)}
-    <div class="flex justify-end pt-1"><button onclick="saveSite(this)" class="text-sm font-bold bg-indigo-600 hover:bg-indigo-500 text-white px-5 py-2 rounded-lg">Save settings</button></div>
+  // Two columns on wide screens — each settings block stays intact (break-inside-avoid).
+  return `<div class="mt-4 max-w-5xl">
+    <div class="gap-x-8 lg:columns-2 [&>*]:break-inside-avoid [&>*]:mb-4">${siteSettingsFields(__siteCfg)}</div>
+    <div class="flex justify-end pt-3 border-t border-slate-200 dark:border-slate-700 mt-2"><button onclick="saveSite(this)" class="text-sm font-bold bg-indigo-600 hover:bg-indigo-500 text-white px-5 py-2 rounded-lg">Save settings</button></div>
   </div>`;
 }
 // Upload an image (hero/page) → returns a public URL into the given input field.

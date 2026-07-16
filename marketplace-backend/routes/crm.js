@@ -1,6 +1,12 @@
 import { supabaseAdmin, resend, EMAIL_FROM } from '../shared.js'
 import { requireAuth } from '../middleware.js'
 import { enqueueForTrigger, markDelivered, freezeSequences } from './automation.js'
+import multer from 'multer'
+
+// CRM attachments: photos, videos and files reps attach to a customer. In-memory,
+// 60 MB/file (room for a short phone video), up to 10 at once.
+const attachUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 60 * 1024 * 1024, files: 10 } })
+const attachKind = (mime) => /^image\//.test(mime) ? 'image' : /^video\//.test(mime) ? 'video' : 'file'
 
 const DEALER_LEVEL = ['DEALER_ADMIN', 'OWNER', 'MANAGER']
 const isDealerLevel = (req) => DEALER_LEVEL.includes(req.profile?.role)
@@ -185,11 +191,12 @@ export function registerCrm(app) {
       .select('*').eq('id', req.params.id).eq('dealership_id', req.dealershipId).maybeSingle()
     if (!contact) return res.status(404).json({ error: 'Contact not found' })
 
-    const [{ data: comms }, { data: leads }, { data: appraisals }, { data: tasks }] = await Promise.all([
+    const [{ data: comms }, { data: leads }, { data: appraisals }, { data: tasks }, { data: attachments }] = await Promise.all([
       supabaseAdmin.from('communications').select('*').eq('contact_id', contact.id).order('occurred_at', { ascending: false }).limit(200),
       supabaseAdmin.from('leads').select('id, comments, source, status, inventory_id, created_by, created_at').eq('contact_id', contact.id).order('created_at', { ascending: false }),
       supabaseAdmin.from('trade_appraisals').select('id, year, make, model, trim, vin, suggested_offer, currency, created_by, created_at').eq('contact_id', contact.id).order('created_at', { ascending: false }),
       supabaseAdmin.from('crm_tasks').select('*').eq('contact_id', contact.id).order('due_at', { ascending: true, nullsFirst: false }),
+      supabaseAdmin.from('crm_attachments').select('id, url, filename, content_type, size, kind, uploaded_by, created_at').eq('contact_id', contact.id).order('created_at', { ascending: false }).then(r => r, () => ({ data: [] })),
     ])
 
     // Resolve vehicle labels for pinned leads.
@@ -235,8 +242,46 @@ export function registerCrm(app) {
       contact: { ...contact, rep_name: reps[contact.assigned_rep] || null, interest_vehicle_label },
       timeline,
       tasks: (tasks || []).map(t => ({ ...t, assignee_name: reps[t.assigned_to] || null })),
+      attachments: attachments || [],
       can_see_all: isDealerLevel(req),
     })
+  })
+
+  // ── Attachments: reps attach photos / videos / files to a customer ─────────
+  app.post('/crm/contacts/:id/attachments', requireAuth, attachUpload.array('files', 10), async (req, res) => {
+    if (!req.dealershipId) return res.status(400).json({ error: 'No dealership' })
+    const { data: contact } = await supabaseAdmin.from('contacts')
+      .select('id').eq('id', req.params.id).eq('dealership_id', req.dealershipId).maybeSingle()
+    if (!contact) return res.status(404).json({ error: 'Contact not found' })
+    const files = req.files || []
+    if (!files.length) return res.status(400).json({ error: 'No files uploaded' })
+    const saved = []
+    for (const f of files) {
+      const safe = (f.originalname || 'file').replace(/[^\w.\-]+/g, '_').slice(-80)
+      const path = `${req.dealershipId}/${contact.id}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}-${safe}`
+      const { error: upErr } = await supabaseAdmin.storage.from('crm-attachments')
+        .upload(path, f.buffer, { contentType: f.mimetype || 'application/octet-stream', upsert: false })
+      if (upErr) { console.warn('[crm-attach] upload failed:', upErr.message); continue }
+      const { data: { publicUrl } } = supabaseAdmin.storage.from('crm-attachments').getPublicUrl(path)
+      const { data: row } = await supabaseAdmin.from('crm_attachments').insert({
+        dealership_id: req.dealershipId, contact_id: contact.id, uploaded_by: req.user.id,
+        url: publicUrl, path, filename: f.originalname || safe, content_type: f.mimetype || null,
+        size: f.size || null, kind: attachKind(f.mimetype || ''),
+      }).select('id, url, filename, content_type, size, kind, uploaded_by, created_at').single()
+      if (row) saved.push(row)
+    }
+    if (!saved.length) return res.status(500).json({ error: 'Upload failed' })
+    res.json({ ok: true, attachments: saved })
+  })
+
+  app.delete('/crm/attachments/:id', requireAuth, async (req, res) => {
+    if (!req.dealershipId) return res.status(400).json({ error: 'No dealership' })
+    const { data: att } = await supabaseAdmin.from('crm_attachments')
+      .select('id, path').eq('id', req.params.id).eq('dealership_id', req.dealershipId).maybeSingle()
+    if (!att) return res.status(404).json({ error: 'Attachment not found' })
+    try { if (att.path) await supabaseAdmin.storage.from('crm-attachments').remove([att.path]) } catch (e) { console.warn('[crm-attach] remove failed:', e.message) }
+    await supabaseAdmin.from('crm_attachments').delete().eq('id', att.id).eq('dealership_id', req.dealershipId)
+    res.json({ ok: true })
   })
 
   // ── Update a contact ──────────────────────────────────────────────────────
