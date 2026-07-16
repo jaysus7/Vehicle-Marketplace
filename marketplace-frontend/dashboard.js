@@ -3682,6 +3682,11 @@ function deskRenderForm(contactId) {
       </div>
     </div>
 
+    <div class="mb-4">
+      <label class="text-[11px] uppercase tracking-wider text-slate-400 font-bold block mb-1">Co-buyer <span class="font-normal normal-case">(optional)</span></label>
+      <input id="dk-co_buyer" value="${esc(d.co_buyer || '')}" placeholder="Second buyer's full name" class="${iCls} max-w-md">
+    </div>
+
     <div class="grid lg:grid-cols-[minmax(0,1fr)_320px] gap-4 items-start">
       <div>
         ${card('Vehicle', `
@@ -3698,8 +3703,15 @@ function deskRenderForm(contactId) {
             ${fld('Colour', txt('dk-veh-color', veh.color, ''))}
             ${fld('VIN', txt('dk-veh-vin', veh.vin, '17-digit VIN'))}
             ${fld('Stock #', txt('dk-veh-stock', veh.stock, ''))}
+            ${fld('Sale type', `<select id="dk-sale_type" class="${iCls}">${['Retail', 'Wholesale', 'Fleet', 'Lease return'].map(o => `<option ${((d.sale_type || 'Retail') === o) ? 'selected' : ''}>${o}</option>`).join('')}</select>`)}
+          </div>
+          <div class="mt-3 pt-3 border-t border-slate-200 dark:border-slate-800 grid grid-cols-2 sm:grid-cols-4 gap-3">
+            ${fld('Retail / MSRP', `<input id="dk-retail" type="number" step="0.01" value="${d.retail == null ? '' : d.retail}" placeholder="0.00" oninput="deskPriceRecalc()" class="${iCls}">`)}
+            ${fld('Rebate (before tax)', `<input id="dk-rebate_before_tax" type="number" step="0.01" value="${d.rebate_before_tax == null ? '' : d.rebate_before_tax}" placeholder="0.00" oninput="deskPriceRecalc()" class="${iCls}">`)}
+            ${fld('Adjustment (+/−)', `<input id="dk-adjustment" type="number" step="0.01" value="${d.adjustment == null ? '' : d.adjustment}" placeholder="0.00" oninput="deskPriceRecalc()" class="${iCls}">`)}
             ${fld('Selling price', money('dk-selling_price', d.selling_price))}
-          </div>`)}
+          </div>
+          <p class="text-[11px] text-slate-400 mt-1.5">Enter a Retail/MSRP and the selling price fills in automatically (Retail − rebate + adjustment). Leave Retail blank to just type a selling price.</p>`)}
 
         ${card('Trade-in', `
           <div class="flex items-center gap-2 mb-3"><button type="button" onclick="deskPullTrade()" class="text-xs font-bold bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 px-3 py-1.5 rounded-lg">↓ Pull saved appraisal</button><span id="desk-trade-hint" class="text-xs text-slate-400"></span></div>
@@ -3731,13 +3743,16 @@ function deskRenderForm(contactId) {
         ${card('Finance terms', `<div class="grid grid-cols-2 sm:grid-cols-3 gap-3">
             ${fld('Deal type', `<select id="dk-deal_type" class="${iCls}">${['Finance', 'Lease', 'Cash'].map(o => `<option ${d.deal_type === o ? 'selected' : ''}>${o}</option>`).join('')}</select>`)}
             ${fld('Lender', txt('dk-finance_company', d.finance_company, 'e.g. TD Auto Finance'))}
-            ${fld('1st payment date', txt('dk-first_payment_date', d.first_payment_date, '', 'date'))}
+            ${fld('Program', txt('dk-program', d.program, 'e.g. Finance rates'))}
             ${fld('APR %', `<input id="dk-apr" type="number" step="0.01" value="${apr}" oninput="deskRenderSummary()" class="${iCls}">`)}
             ${fld('Term (months)', `<input id="dk-term" type="number" value="${d.term == null ? 60 : d.term}" oninput="deskRenderSummary()" class="${iCls}">`)}
             ${fld('Payment frequency', `<select id="dk-payment_freq" onchange="deskRenderSummary()" class="${iCls}">${[['monthly', 'Monthly'], ['biweekly', 'Bi-weekly'], ['weekly', 'Weekly']].map(([v, l]) => `<option value="${v}" ${((d.payment_freq || 'monthly') === v) ? 'selected' : ''}>${l}</option>`).join('')}</select>`)}
+            ${fld('1st payment date', txt('dk-first_payment_date', d.first_payment_date, '', 'date'))}
+            ${fld('No-interest deferral (days)', `<input id="dk-deferral_days" type="number" value="${d.deferral_days == null ? '' : d.deferral_days}" placeholder="0" oninput="deskRenderSummary()" class="${iCls}">`)}
+            ${fld('Balloon / residual', `<input id="dk-balloon" type="number" step="0.01" value="${d.balloon == null ? '' : d.balloon}" placeholder="0.00" oninput="deskRenderSummary()" class="${iCls}">`)}
             ${fld('Cash down', money('dk-down_payment', d.down_payment))}
             ${fld('Deposit', money('dk-deposit_amount', d.deposit_amount))}
-            ${fld('Rebate / incentive', money('dk-rebate', d.rebate))}
+            ${fld('Rebate (after tax)', money('dk-rebate', d.rebate))}
             ${fld('Tax rate %', `<input id="dk-tax_rate" type="number" step="0.001" value="${rate}" oninput="deskRenderSummary()" class="${iCls}">`)}
             <div class="flex items-end pb-2"><label class="inline-flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-200 cursor-pointer"><input type="checkbox" id="dk-tax_on_difference" ${taxOnDiff ? 'checked' : ''} onchange="deskRenderSummary()" class="rounded"> Tax on the difference</label></div>
           </div>`)}
@@ -3885,7 +3900,10 @@ function deskCollect(contactId) {
   const fees = __deskFees.map(r => ({ name: (r.name || '').trim(), amount: Number(r.amount) || 0, taxable: r.taxable !== false })).filter(r => r.name || r.amount);
   const d = {
     contact_id: contactId, deal_status: 'working', inventory_id: __deskDeal.inventory_id || null,
+    retail: num('dk-retail'), rebate_before_tax: num('dk-rebate_before_tax'), adjustment: num('dk-adjustment'),
     selling_price: num('dk-selling_price'),
+    sale_type: val('dk-sale_type'), program: val('dk-program'), co_buyer: val('dk-co_buyer'),
+    balloon: num('dk-balloon'), deferral_days: num('dk-deferral_days'),
     trade_value: num('dk-trade_value'), trade_payoff: num('dk-trade_payoff'), trade_desc: val('dk-trade_desc'), trade_vin: val('dk-trade_vin'),
     down_payment: num('dk-down_payment'), deposit_amount: num('dk-deposit_amount'), rebate: num('dk-rebate'),
     apr: num('dk-apr'), term: num('dk-term'), payment_freq: val('dk-payment_freq'), deal_type: val('dk-deal_type'),
@@ -3903,7 +3921,10 @@ function deskCollect(contactId) {
 }
 function deskCompute(d) {
   const n = (v) => Number(v) || 0;
-  const sellingPrice = n(d.selling_price);
+  // Selling price = Retail − rebate(before tax) + adjustment when a Retail/MSRP is
+  // entered; otherwise a directly-typed selling price. Mirrors a DMS deal screen.
+  const retail = n(d.retail), rebateBeforeTax = n(d.rebate_before_tax), adjustment = n(d.adjustment);
+  const sellingPrice = retail > 0 ? Math.max(0, retail - rebateBeforeTax + adjustment) : n(d.selling_price);
   const addonsTotal = (d.addons || []).reduce((s, a) => s + n(a.price), 0);
   const fniTotal = (d.fni_items || []).reduce((s, a) => s + n(a.price), 0);
   const taxableFees = (d.fees || []).filter(f => f.taxable !== false).reduce((s, f) => s + n(f.amount), 0);
@@ -3922,10 +3943,24 @@ function deskCompute(d) {
   const perYear = freq === 'weekly' ? 52 : freq === 'biweekly' ? 26 : 12;
   const nPer = freq === 'monthly' ? term : Math.round(term / 12 * perYear);
   const r = apr / 100 / perYear;
+  // Balloon / residual: a lump owed at the end of term. The regular payment amortises
+  // only the financed amount net of the discounted balloon, so payments come down.
+  const balloon = Math.min(n(d.balloon), amountFinanced);
   let payment = 0;
-  if (amountFinanced > 0 && nPer > 0) payment = r > 0 ? (r * amountFinanced) / (1 - Math.pow(1 + r, -nPer)) : amountFinanced / nPer;
-  const costOfBorrowing = payment * nPer - amountFinanced;
-  return { sellingPrice, addonsTotal, fniTotal, taxableFees, feesTotal, taxableBase, taxAmount, cashPrice, total, tradeValue, tradePayoff, tradeEquity, down, deposit, rebate, amountFinanced, apr, term, freq, perYear, nPer, payment, costOfBorrowing, rate };
+  if (amountFinanced > 0 && nPer > 0) {
+    if (r > 0) {
+      const pvBalloon = balloon / Math.pow(1 + r, nPer);
+      payment = (r * (amountFinanced - pvBalloon)) / (1 - Math.pow(1 + r, -nPer));
+    } else {
+      payment = (amountFinanced - balloon) / nPer;
+    }
+  }
+  const costOfBorrowing = payment * nPer + balloon - amountFinanced;
+  const totalPayment = payment * nPer;
+  // Cash the customer still brings at delivery = cash down not yet covered by the deposit.
+  const dueOnDelivery = Math.max(0, down - deposit);
+  const deferralDays = n(d.deferral_days);
+  return { sellingPrice, retail, rebateBeforeTax, adjustment, addonsTotal, fniTotal, taxableFees, feesTotal, taxableBase, taxAmount, cashPrice, total, tradeValue, tradePayoff, tradeEquity, down, deposit, rebate, balloon, amountFinanced, apr, term, freq, perYear, nPer, payment, costOfBorrowing, totalPayment, dueOnDelivery, deferralDays, rate };
 }
 function deskRenderSummary() {
   const box = document.getElementById('desk-summary');
@@ -3937,7 +3972,10 @@ function deskRenderSummary() {
   box.innerHTML = `
     <div class="text-[11px] uppercase tracking-wider text-slate-400 font-bold mb-3">Deal summary</div>
     <div class="space-y-1.5 text-sm">
-      ${row('Selling price', deskM(c.sellingPrice))}
+      ${c.retail ? row('Retail / MSRP', deskM(c.retail)) : ''}
+      ${c.rebateBeforeTax ? row('Rebate (before tax)', '−' + deskM(c.rebateBeforeTax)) : ''}
+      ${c.adjustment ? row('Adjustment', (c.adjustment >= 0 ? '+' : '−') + deskM(Math.abs(c.adjustment))) : ''}
+      ${row('Selling price', deskM(c.sellingPrice), true)}
       ${c.addonsTotal ? row('Add-ons', deskM(c.addonsTotal)) : ''}
       ${c.fniTotal ? row('F&I products', deskM(c.fniTotal)) : ''}
       ${c.feesTotal ? row('Fees', deskM(c.feesTotal)) : ''}
@@ -3948,18 +3986,32 @@ function deskRenderSummary() {
       ${row('Total', deskM(c.total), true)}
       <div class="border-t border-slate-200 dark:border-slate-800 my-1.5"></div>
       ${c.down ? row('Cash down', '−' + deskM(c.down)) : ''}
-      ${c.deposit ? row('Deposit', '−' + deskM(c.deposit)) : ''}
-      ${c.rebate ? row('Rebate', '−' + deskM(c.rebate)) : ''}
-      ${c.tradeEquity ? row('Trade equity', (c.tradeEquity >= 0 ? '−' : '+') + deskM(Math.abs(c.tradeEquity))) : ''}
+      ${c.rebate ? row('Rebate (after tax)', '−' + deskM(c.rebate)) : ''}
+      ${(c.tradeValue || c.tradePayoff) ? row('Net trade', (c.tradeEquity >= 0 ? '−' : '+') + deskM(Math.abs(c.tradeEquity))) : ''}
       ${row('Amount financed', deskM(c.amountFinanced), true)}
+      ${c.balloon ? row('Balloon / residual', deskM(c.balloon)) : ''}
     </div>
     <div class="mt-3 bg-indigo-600 text-white rounded-lg px-4 py-3">
       <div class="text-[11px] uppercase tracking-wider opacity-80">Estimated payment</div>
       <div class="text-2xl font-black">${deskM(c.payment)}<span class="text-sm font-bold opacity-80">${freqLabel}</span></div>
-      <div class="text-[11px] opacity-80 mt-0.5">${c.apr}% APR · ${c.nPer} payments · cost of borrowing ${deskM(Math.max(0, c.costOfBorrowing))}</div>
+      <div class="text-[11px] opacity-80 mt-0.5">${c.apr}% APR · ${c.nPer} payments · total ${deskM(c.totalPayment)} · cost of borrowing ${deskM(Math.max(0, c.costOfBorrowing))}${c.deferralDays ? ` · ${c.deferralDays}-day deferral` : ''}</div>
+    </div>
+    <div class="mt-2 grid grid-cols-2 gap-2 text-sm">
+      <div class="bg-slate-50 dark:bg-slate-800/60 rounded-lg px-3 py-2"><div class="text-[10px] uppercase tracking-wider text-slate-400 font-bold">Deposit</div><div class="font-black text-slate-900 dark:text-white">${deskM(c.deposit)}</div></div>
+      <div class="bg-emerald-50 dark:bg-emerald-950/30 rounded-lg px-3 py-2"><div class="text-[10px] uppercase tracking-wider text-emerald-600 dark:text-emerald-400 font-bold">Due on delivery</div><div class="font-black text-emerald-700 dark:text-emerald-300">${deskM(c.dueOnDelivery)}</div></div>
     </div>
     <p class="text-[10px] text-slate-400 mt-2 leading-snug">Estimate only, on approved credit. Rate is an example, not a lender commitment. Taxes/fees per Ontario; verify before contract.</p>`;
 }
+// Retail/MSRP → Selling price: keep the selling-price input in sync as the manager
+// types Retail, before-tax rebate or adjustment (matches a DMS deal screen).
+function deskPriceRecalc() {
+  const n = (id) => { const el = document.getElementById(id); const v = el ? Number(el.value) : NaN; return Number.isFinite(v) ? v : 0; };
+  const retail = n('dk-retail');
+  const sp = document.getElementById('dk-selling_price');
+  if (sp && retail > 0) sp.value = Math.max(0, retail - n('dk-rebate_before_tax') + n('dk-adjustment')).toFixed(2);
+  deskRenderSummary();
+}
+window.deskPriceRecalc = deskPriceRecalc;
 
 // Persist the current form to the deal record (no toast / re-render) — shared by
 // Save deal and the status actions so a status change always saves the latest edits.
@@ -4080,6 +4132,7 @@ function deskPrint(kind) {
   const money = (n) => deskM(n);
   const today = new Date().toLocaleDateString('en-CA', { year: 'numeric', month: 'short', day: 'numeric' });
   const buyerName = b.full_name || [b.first_name, b.last_name].filter(Boolean).join(' ') || 'Customer';
+  const coBuyer = (d.co_buyer || '').trim();
   const vlabel = [veh.year, veh.make, veh.model, veh.trim].filter(Boolean).join(' ') || '—';
   const isNew = String(veh.year) === String(new Date().getFullYear() + 1) || String(veh.year) === String(new Date().getFullYear());
   const condLabel = isNew ? 'New' : 'Used';
@@ -4142,7 +4195,7 @@ function deskPrint(kind) {
       : `<div class="head"><div><h1>${esc(dealer.name || 'Dealership')}</h1></div><div style="text-align:right"><h1>Purchase Estimate</h1><div class="mut">${today}</div></div></div>`;
     const inner = `<style>${DESK_DOC_CSS}</style>${header}
       <div class="grid2" style="margin-top:12px">
-        <div class="sec"><div class="sech">Buyer</div><div class="fgrid">${F('Name', buyerName)}${F('Phone', b.phone || b.phone_mobile)}${F('Email', b.email)}</div></div>
+        <div class="sec"><div class="sech">Buyer</div><div class="fgrid">${F('Name', buyerName)}${coBuyer ? F('Co-buyer', coBuyer) : ''}${F('Phone', b.phone || b.phone_mobile)}${F('Email', b.email)}</div></div>
         <div class="sec"><div class="sech">Vehicle</div><div class="fgrid">${F('Vehicle', vlabel)}${F('VIN', veh.vin)}${F('Odometer', km(veh.mileage))}</div></div>
       </div>
       <div class="sec"><div class="sech">Price information</div>${priceInfo}</div>
@@ -4165,7 +4218,7 @@ function deskPrint(kind) {
     ${idBand}
     <div class="grid2" style="margin-top:10px">
       <div class="sec"><div class="sech">Buyer</div><div class="fgrid">
-        ${F('Name', buyerName)}${F('Phone', b.phone || b.phone_mobile)}${F('Driver’s licence', b.dl_number)}
+        ${F('Name', buyerName)}${coBuyer ? F('Co-buyer', coBuyer) : ''}${F('Phone', b.phone || b.phone_mobile)}${F('Driver’s licence', b.dl_number)}
         ${F('Address', [b.address, [b.city, b.province, b.postal_code].filter(Boolean).join(', ')].filter(Boolean).join(', '))}${F('Email', b.email)}${F('Date of sale', today)}
       </div>
       <div class="fgrid" style="margin-top:6px">${F('Insurance company', ins.company)}${F('Policy no.', ins.policy)}${F('Expiry', ins.expiry)}</div></div>
@@ -4199,6 +4252,7 @@ function deskPrint(kind) {
     <p class="dis">Please review the entire contract, including all attached statements, before signing. This contract is final and binding once you have signed it unless the motor vehicle dealer has failed to comply with certain legal obligations.</p>
     <div class="sig">
       <div>${esc(buyerName)} — Purchaser Signature &amp; date</div>
+      ${coBuyer ? `<div>${esc(coBuyer)} — Co-Purchaser Signature &amp; date</div>` : ''}
       <div>${esc(sp.name || '')}${sp.registration_id ? ' &nbsp; Prov License #' + esc(sp.registration_id) : ''} — Authorized Rep, signature &amp; date</div>
     </div>`;
 
