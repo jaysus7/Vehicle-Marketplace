@@ -13,6 +13,48 @@ function esc(s) {
   ));
 }
 
+// ── Auto-format number inputs: thousands commas + up to 2 decimals ───────────
+// Give an input `data-money` (with type="text" inputmode="decimal") and it formats
+// live as the user types — e.g. 26626 → 26,626. Read the value back through msNum(),
+// which strips the commas so Number parsing stays correct. msFmtMoney formats a value.
+function msNum(v) {
+  if (v && typeof v === 'object' && 'value' in v) v = v.value;
+  const n = Number(String(v == null ? '' : v).replace(/,/g, '').trim());
+  return Number.isFinite(n) ? n : NaN;
+}
+function msFmtMoney(raw) {
+  let s = String(raw == null ? '' : raw).replace(/[^\d.\-]/g, '');
+  if (s === '' || s === '-' || s === '.') return s;
+  const neg = s[0] === '-';
+  s = s.replace(/-/g, '');
+  const firstDot = s.indexOf('.');
+  let intPart = firstDot >= 0 ? s.slice(0, firstDot) : s;
+  const decPart = firstDot >= 0 ? s.slice(firstDot + 1).replace(/\./g, '').slice(0, 2) : null;
+  intPart = intPart.replace(/^0+(?=\d)/, '');
+  const grouped = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  return (neg ? '-' : '') + (grouped || (decPart !== null ? '0' : '')) + (decPart !== null ? '.' + decPart : '');
+}
+// Live formatter — runs on any data-money input, keeping the caret a stable distance
+// from the end so inserted commas don't jump the cursor.
+document.addEventListener('input', (e) => {
+  const el = e.target;
+  if (!el || el.tagName !== 'INPUT' || !el.hasAttribute('data-money')) return;
+  const before = el.value;
+  const caretFromEnd = before.length - (el.selectionStart ?? before.length);
+  const after = msFmtMoney(before);
+  if (after !== before) {
+    el.value = after;
+    const pos = Math.max(0, after.length - caretFromEnd);
+    try { el.setSelectionRange(pos, pos); } catch {}
+  }
+}, true);
+// Format pre-filled data-money inputs inside a freshly-rendered container.
+function msFormatMoneyInputs(root) {
+  (root || document).querySelectorAll?.('input[data-money]')?.forEach(el => {
+    if (el.value !== '') el.value = msFmtMoney(el.value);
+  });
+}
+
 // Inline SVG icon set — replaces emoji for a cleaner, professional look. Paths are
 // standard Heroicons outlines (render on currentColor). Add names as pages migrate.
 const MS_ICONS = {
@@ -3664,7 +3706,7 @@ function deskRenderForm(contactId) {
   const iCls = 'w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm';
   const fld = (label, html) => `<div><label class="text-[11px] uppercase tracking-wider text-slate-400 font-bold block mb-1">${label}</label>${html}</div>`;
   const txt = (id, v, ph = '', type = 'text', extra = '') => `<input id="${id}" type="${type}" value="${esc(v == null ? '' : String(v))}" placeholder="${ph}" ${extra} class="${iCls}">`;
-  const money = (id, v, ph = '0.00') => `<input id="${id}" type="number" step="0.01" value="${v == null ? '' : v}" placeholder="${ph}" oninput="deskRenderSummary()" class="${iCls}">`;
+  const money = (id, v, ph = '0.00') => `<input id="${id}" type="text" inputmode="decimal" data-money value="${v == null ? '' : msFmtMoney(v)}" placeholder="${ph}" oninput="deskRenderSummary()" class="${iCls}">`;
   const card = (title, body, sub = '') => `<div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden mb-4">
     <div class="px-5 py-3 border-b border-slate-200 dark:border-slate-800"><h3 class="text-sm font-black text-slate-900 dark:text-white">${title}</h3>${sub ? `<p class="text-xs text-slate-400 mt-0.5">${sub}</p>` : ''}</div>
     <div class="p-5">${body}</div></div>`;
@@ -3706,9 +3748,9 @@ function deskRenderForm(contactId) {
             ${fld('Sale type', `<select id="dk-sale_type" class="${iCls}">${['Retail', 'Wholesale', 'Fleet', 'Lease return'].map(o => `<option ${((d.sale_type || 'Retail') === o) ? 'selected' : ''}>${o}</option>`).join('')}</select>`)}
           </div>
           <div class="mt-3 pt-3 border-t border-slate-200 dark:border-slate-800 grid grid-cols-2 sm:grid-cols-4 gap-3">
-            ${fld('Retail / MSRP', `<input id="dk-retail" type="number" step="0.01" value="${d.retail == null ? '' : d.retail}" placeholder="0.00" oninput="deskPriceRecalc()" class="${iCls}">`)}
-            ${fld('Rebate (before tax)', `<input id="dk-rebate_before_tax" type="number" step="0.01" value="${d.rebate_before_tax == null ? '' : d.rebate_before_tax}" placeholder="0.00" oninput="deskPriceRecalc()" class="${iCls}">`)}
-            ${fld('Adjustment (+/−)', `<input id="dk-adjustment" type="number" step="0.01" value="${d.adjustment == null ? '' : d.adjustment}" placeholder="0.00" oninput="deskPriceRecalc()" class="${iCls}">`)}
+            ${fld('Retail / MSRP', `<input id="dk-retail" type="text" inputmode="decimal" data-money value="${d.retail == null ? '' : msFmtMoney(d.retail)}" placeholder="0.00" oninput="deskPriceRecalc()" class="${iCls}">`)}
+            ${fld('Rebate (before tax)', `<input id="dk-rebate_before_tax" type="text" inputmode="decimal" data-money value="${d.rebate_before_tax == null ? '' : msFmtMoney(d.rebate_before_tax)}" placeholder="0.00" oninput="deskPriceRecalc()" class="${iCls}">`)}
+            ${fld('Adjustment (+/−)', `<input id="dk-adjustment" type="text" inputmode="decimal" data-money value="${d.adjustment == null ? '' : msFmtMoney(d.adjustment)}" placeholder="0.00" oninput="deskPriceRecalc()" class="${iCls}">`)}
             ${fld('Selling price', money('dk-selling_price', d.selling_price))}
           </div>
           <p class="text-[11px] text-slate-400 mt-1.5">Enter a Retail/MSRP and the selling price fills in automatically (Retail − rebate + adjustment). Leave Retail blank to just type a selling price.</p>`)}
@@ -3749,7 +3791,7 @@ function deskRenderForm(contactId) {
             ${fld('Payment frequency', `<select id="dk-payment_freq" onchange="deskRenderSummary()" class="${iCls}">${[['monthly', 'Monthly'], ['biweekly', 'Bi-weekly'], ['weekly', 'Weekly']].map(([v, l]) => `<option value="${v}" ${((d.payment_freq || 'monthly') === v) ? 'selected' : ''}>${l}</option>`).join('')}</select>`)}
             ${fld('1st payment date', txt('dk-first_payment_date', d.first_payment_date, '', 'date'))}
             ${fld('No-interest deferral (days)', `<input id="dk-deferral_days" type="number" value="${d.deferral_days == null ? '' : d.deferral_days}" placeholder="0" oninput="deskRenderSummary()" class="${iCls}">`)}
-            ${fld('Balloon / residual', `<input id="dk-balloon" type="number" step="0.01" value="${d.balloon == null ? '' : d.balloon}" placeholder="0.00" oninput="deskRenderSummary()" class="${iCls}">`)}
+            ${fld('Balloon / residual', `<input id="dk-balloon" type="text" inputmode="decimal" data-money value="${d.balloon == null ? '' : msFmtMoney(d.balloon)}" placeholder="0.00" oninput="deskRenderSummary()" class="${iCls}">`)}
             ${fld('Cash down', money('dk-down_payment', d.down_payment))}
             ${fld('Deposit', money('dk-deposit_amount', d.deposit_amount))}
             ${fld('Rebate (after tax)', money('dk-rebate', d.rebate))}
@@ -3802,7 +3844,7 @@ function deskRenderForm(contactId) {
 function deskLinesFor(kind) { return kind === 'addon' ? __deskAddons : kind === 'fni' ? __deskFni : __deskFees; }
 function deskAddLine(kind) { deskLinesFor(kind).push(kind === 'fee' ? { name: '', amount: null, taxable: true } : { name: '', price: null }); deskRenderLines(); deskRenderSummary(); }
 function deskDelLine(kind, i) { deskLinesFor(kind).splice(i, 1); deskRenderLines(); deskRenderSummary(); }
-function deskLineEdit(kind, i, field, val) { const r = deskLinesFor(kind)[i]; if (!r) return; if (field === 'taxable') r[field] = val; else if (field === 'name') r[field] = val; else r[field] = (val === '' ? null : Number(val)); deskRenderSummary(); }
+function deskLineEdit(kind, i, field, val) { const r = deskLinesFor(kind)[i]; if (!r) return; if (field === 'taxable') r[field] = val; else if (field === 'name') r[field] = val; else { const nn = msNum(val); r[field] = (val === '' || !Number.isFinite(nn)) ? null : nn; } deskRenderSummary(); }
 function deskRenderLines() {
   const iCls = 'bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm';
   const rowHtml = (kind, r, i, amtKey) => {
@@ -3813,7 +3855,7 @@ function deskRenderLines() {
     return `
     <div class="flex items-center gap-2 mb-2">
       <input value="${esc(r.name || '')}" oninput="deskLineEdit('${kind}',${i},'name',this.value)" placeholder="Description" ${ro} class="${iCls} ${roCls} flex-1">
-      <input value="${r[amtKey] == null ? '' : r[amtKey]}" oninput="deskLineEdit('${kind}',${i},'${amtKey}',this.value)" type="number" step="0.01" placeholder="0.00" ${ro} class="${iCls} ${roCls} w-28 text-right">
+      <input value="${r[amtKey] == null ? '' : msFmtMoney(r[amtKey])}" oninput="deskLineEdit('${kind}',${i},'${amtKey}',this.value)" type="text" inputmode="decimal" data-money placeholder="0.00" ${ro} class="${iCls} ${roCls} w-28 text-right">
       ${kind === 'fee' ? `<label class="inline-flex items-center gap-1 text-[11px] font-bold text-slate-500 whitespace-nowrap ${roCls}"><input type="checkbox" ${r.taxable !== false ? 'checked' : ''} ${locked ? 'disabled' : ''} onchange="deskLineEdit('fee',${i},'taxable',this.checked)" class="rounded"> tax</label>` : ''}
       ${locked ? '<span class="text-slate-400 px-1" title="Locked by management — edit in Settings › Dealer Management">🔒</span>' : `<button type="button" onclick="deskDelLine('${kind}',${i})" class="text-rose-500 hover:text-rose-600 px-1" title="Remove">✕</button>`}
     </div>`;
@@ -3893,7 +3935,8 @@ function deskApplyTrade(r) {
 // ── Collect + compute ────────────────────────────────────────────────────────
 function deskCollect(contactId) {
   const g = (id) => document.getElementById(id);
-  const num = (id) => { const el = g(id); const n = el ? Number(el.value) : NaN; return Number.isFinite(n) && el.value !== '' ? n : null; };
+  // Comma-tolerant: data-money fields carry "26,626.00" — strip before parsing.
+  const num = (id) => { const el = g(id); if (!el || el.value === '') return null; const n = msNum(el.value); return Number.isFinite(n) ? n : null; };
   const val = (id) => { const el = g(id); return el ? (el.value.trim() || null) : null; };
   const chk = (id) => { const el = g(id); return !!(el && el.checked); };
   const clean = (arr, amtKey) => arr.map(r => ({ name: (r.name || '').trim(), [amtKey]: Number(r[amtKey]) || 0 })).filter(r => r.name || r[amtKey]);
@@ -4005,10 +4048,10 @@ function deskRenderSummary() {
 // Retail/MSRP → Selling price: keep the selling-price input in sync as the manager
 // types Retail, before-tax rebate or adjustment (matches a DMS deal screen).
 function deskPriceRecalc() {
-  const n = (id) => { const el = document.getElementById(id); const v = el ? Number(el.value) : NaN; return Number.isFinite(v) ? v : 0; };
+  const n = (id) => { const el = document.getElementById(id); const v = el ? msNum(el.value) : NaN; return Number.isFinite(v) ? v : 0; };
   const retail = n('dk-retail');
   const sp = document.getElementById('dk-selling_price');
-  if (sp && retail > 0) sp.value = Math.max(0, retail - n('dk-rebate_before_tax') + n('dk-adjustment')).toFixed(2);
+  if (sp && retail > 0) sp.value = msFmtMoney(Math.max(0, retail - n('dk-rebate_before_tax') + n('dk-adjustment')).toFixed(2));
   deskRenderSummary();
 }
 window.deskPriceRecalc = deskPriceRecalc;
@@ -4475,13 +4518,13 @@ function renderDeskFeeSettings() {
   list.innerHTML = __deskFeeConfig.length ? __deskFeeConfig.map((f, i) => `
     <div class="flex flex-wrap items-center gap-2">
       <input value="${esc(f.name || '')}" oninput="deskFeeEdit(${i},'name',this.value)" placeholder="Fee name" class="${iCls} flex-1 min-w-[160px]">
-      <input value="${f.amount == null ? '' : f.amount}" oninput="deskFeeEdit(${i},'amount',this.value)" type="number" step="0.01" placeholder="0.00" class="${iCls} w-28 text-right">
+      <input value="${f.amount == null || f.amount === '' ? '' : msFmtMoney(f.amount)}" oninput="deskFeeEdit(${i},'amount',this.value)" type="text" inputmode="decimal" data-money placeholder="0.00" class="${iCls} w-28 text-right">
       <label class="inline-flex items-center gap-1 text-[11px] font-bold text-slate-500 whitespace-nowrap"><input type="checkbox" ${f.taxable !== false ? 'checked' : ''} onchange="deskFeeEdit(${i},'taxable',this.checked)" class="rounded"> Taxable</label>
       <label class="inline-flex items-center gap-1 text-[11px] font-bold text-slate-500 whitespace-nowrap" title="Locked fees can't be changed on the desk"><input type="checkbox" ${f.locked ? 'checked' : ''} onchange="deskFeeEdit(${i},'locked',this.checked)" class="rounded"> 🔒 Lock</label>
       <button type="button" onclick="deskFeeDelRow(${i})" class="text-rose-500 hover:text-rose-600 px-1" title="Remove">✕</button>
     </div>`).join('') : '<div class="text-sm text-slate-400 italic py-1">No fees yet — add the ones your store charges on every deal.</div>';
 }
-function deskFeeEdit(i, field, val) { const r = __deskFeeConfig[i]; if (!r) return; r[field] = (field === 'amount') ? (val === '' ? '' : Number(val)) : val; }
+function deskFeeEdit(i, field, val) { const r = __deskFeeConfig[i]; if (!r) return; r[field] = (field === 'amount') ? (val === '' ? '' : msNum(val)) : val; }
 function deskFeeAddRow() { __deskFeeConfig.push({ name: '', amount: '', taxable: true, locked: false }); renderDeskFeeSettings(); }
 function deskFeeDelRow(i) { __deskFeeConfig.splice(i, 1); renderDeskFeeSettings(); }
 async function saveDeskFees(btn) {
@@ -6438,13 +6481,13 @@ function openVehicleForm(vehicle) {
       <div>${lbl('Trim')}${inp('veh-trim', v.trim, 'Trim', 'w-full')}</div>
     </div>
     <div class="grid grid-cols-4 gap-2">
-      <div>${lbl('Price ($)')}<input id="veh-price" value="${v.price == null ? '' : v.price}" oninput="vehUpdateGross()" class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm"></div>
+      <div>${lbl('Price ($)')}<input id="veh-price" type="text" inputmode="decimal" data-money value="${v.price == null ? '' : msFmtMoney(v.price)}" oninput="vehUpdateGross()" class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm"></div>
       <div>${lbl('Mileage (km)')}${inp('veh-mileage', v.mileage, '', 'w-full')}</div>
       <div>${lbl('Condition')}<select id="veh-condition" class="${selCls}">${opts(v.condition || 'used', [['used', 'Used'], ['new', 'New'], ['demo', 'Demo'], ['certified', 'Certified (CPO)']])}</select></div>
       <div>${lbl('Stock #')}${inp('veh-stock', v.stocknumber, '', 'w-full')}</div>
     </div>
     <div class="grid grid-cols-4 gap-2 items-end">
-      <div>${lbl('Invoice / cost ($)')}<input id="veh-invoice" type="number" step="0.01" value="${v.invoice_amount == null ? '' : v.invoice_amount}" placeholder="Dealer cost" oninput="vehUpdateGross()" class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm"></div>
+      <div>${lbl('Invoice / cost ($)')}<input id="veh-invoice" type="text" inputmode="decimal" data-money value="${v.invoice_amount == null ? '' : msFmtMoney(v.invoice_amount)}" placeholder="Dealer cost" oninput="vehUpdateGross()" class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm"></div>
       <div class="col-span-3"><div class="text-[11px] text-slate-400 leading-snug pb-1.5">Front-end gross <span id="veh-gross" class="font-bold text-slate-700 dark:text-slate-200"></span> — internal only; never shown to reps, customers or your website.</div></div>
     </div>
     <div class="grid grid-cols-4 gap-2">
@@ -6519,10 +6562,11 @@ function openVehicleForm(vehicle) {
 // Live front-end gross in the vehicle form: price − invoice (managers only).
 function vehUpdateGross() {
   const el = document.getElementById('veh-gross'); if (!el) return;
-  const price = Number(document.getElementById('veh-price')?.value) || 0;
-  const inv = document.getElementById('veh-invoice')?.value;
-  if (inv === '' || inv == null || !(Number(inv) > 0) || !(price > 0)) { el.textContent = ''; return; }
-  const gross = price - Number(inv);
+  const price = msNum(document.getElementById('veh-price')?.value) || 0;
+  const invRaw = document.getElementById('veh-invoice')?.value;
+  const inv = msNum(invRaw);
+  if (invRaw === '' || invRaw == null || !(inv > 0) || !(price > 0)) { el.textContent = ''; return; }
+  const gross = price - inv;
   el.textContent = `${gross >= 0 ? '+' : '−'}$${Math.abs(gross).toLocaleString()}`;
   el.className = 'font-bold ' + (gross >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400');
 }
@@ -6582,9 +6626,10 @@ async function vehDecode() {
 // even before the vehicle is saved (year/make/model + specs + decoded VIN data).
 function vehFormFacts() {
   const val = (i) => (document.getElementById(i)?.value || '').trim();
+  const valn = (i) => val(i).replace(/,/g, '');   // data-money fields carry commas
   return {
     year: val('veh-year'), make: val('veh-make'), model: val('veh-model'), trim: val('veh-trim'),
-    condition: document.getElementById('veh-condition')?.value || 'used', mileage: val('veh-mileage'), price: val('veh-price'),
+    condition: document.getElementById('veh-condition')?.value || 'used', mileage: val('veh-mileage'), price: valn('veh-price'),
     exterior_color: val('veh-ext'), interior_color: val('veh-int'), drivetrain: document.getElementById('veh-drive')?.value || '',
     doors: val('veh-doors'), transmission: val('veh-trans'), fuel_type: val('veh-fuel'), engine: val('veh-engine'), body_style: val('veh-body'),
     specs_manual: {
@@ -6622,9 +6667,10 @@ async function vehAiRun(field, task) {
 }
 async function vehSave(btn, id) {
   const val = (i) => (document.getElementById(i)?.value || '').trim();
+  const valn = (i) => val(i).replace(/,/g, '');   // strip commas from data-money fields
   const body = {
     vin: val('veh-vin'), year: val('veh-year'), make: val('veh-make'), model: val('veh-model'), trim: val('veh-trim'),
-    price: val('veh-price'), invoice_amount: val('veh-invoice'), mileage: val('veh-mileage'), condition: document.getElementById('veh-condition')?.value || 'used',
+    price: valn('veh-price'), invoice_amount: valn('veh-invoice'), mileage: val('veh-mileage'), condition: document.getElementById('veh-condition')?.value || 'used',
     stocknumber: val('veh-stock'), exterior_color: val('veh-ext'), interior_color: val('veh-int'),
     drivetrain: document.getElementById('veh-drive')?.value || '', doors: val('veh-doors'),
     transmission: val('veh-trans'), fuel_type: val('veh-fuel'), engine: val('veh-engine'), body_style: val('veh-body'),
