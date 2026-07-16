@@ -3615,11 +3615,12 @@ async function loadDeskDeal() {
       <h1 class="text-2xl font-black text-slate-900 dark:text-white">Desk a deal</h1>
       <p class="text-sm text-slate-500 dark:text-slate-400">Search any customer, structure the full deal, and print an estimate or bill of sale. Everything is stored on the customer's record. Financing figures are estimates only — not a lender commitment.</p>
     </div>
-    ${isAdmin ? `
-    <details class="bg-white dark:bg-slate-900 border ${needsSetup ? 'border-amber-300 dark:border-amber-800' : 'border-slate-200 dark:border-slate-800'} rounded-xl mb-4" ${needsSetup ? 'open' : ''}>
-      <summary class="px-4 sm:px-5 py-3 cursor-pointer text-sm font-black text-slate-900 dark:text-white flex items-center gap-2">
-        Dealer details for documents ${needsSetup ? '<span class="text-[10px] font-bold uppercase tracking-wider bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300 px-2 py-0.5 rounded-full">Setup needed</span>' : '<span class="text-xs font-normal text-slate-400">— appears on the bill of sale</span>'}
-      </summary>
+    ${(isAdmin && needsSetup) ? `
+    <div id="desk-dealer-setup" class="bg-white dark:bg-slate-900 border border-amber-300 dark:border-amber-800 rounded-xl mb-4">
+      <div class="px-4 sm:px-5 py-3 text-sm font-black text-slate-900 dark:text-white flex items-center gap-2">
+        Dealer details for documents <span class="text-[10px] font-bold uppercase tracking-wider bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300 px-2 py-0.5 rounded-full">Setup needed</span>
+      </div>
+      <p class="px-4 sm:px-5 -mt-1 mb-2 text-xs text-slate-400">A one-time setup — this appears on the bill of sale. Once saved, it disappears from here and you can edit it anytime in Settings › Dealer Management.</p>
       <div class="p-4 sm:p-5 pt-0 grid grid-cols-2 sm:grid-cols-3 gap-3">
         <div class="col-span-2 sm:col-span-3"><label class="text-[11px] uppercase tracking-wider text-slate-400 font-bold block mb-1">Legal / trade name</label><input id="dlr-legal_name" value="${esc(__deskDealer.name || '')}" class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm"></div>
         <div class="col-span-2 sm:col-span-3"><label class="text-[11px] uppercase tracking-wider text-slate-400 font-bold block mb-1">Street address</label><input id="dlr-street_address" value="${esc(__deskDealer.street || '')}" placeholder="915 Niagara St" class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm"></div>
@@ -3629,7 +3630,7 @@ async function loadDeskDeal() {
         <div><label class="text-[11px] uppercase tracking-wider text-slate-400 font-bold block mb-1">OMVIC / dealer reg #</label><input id="dlr-omvic_reg" value="${esc(__deskDealer.omvic || '')}" placeholder="5686852" class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm"></div>
         <div class="col-span-2 sm:col-span-3"><button onclick="deskSaveDealer(this)" class="bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-bold px-5 py-2 rounded-lg transition">Save dealer details</button></div>
       </div>
-    </details>` : ''}
+    </div>` : ''}
     <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4 sm:p-5 mb-4">
       <label class="text-[11px] uppercase tracking-wider text-slate-400 font-bold block mb-1">Customer</label>
       <div class="relative">
@@ -4158,7 +4159,15 @@ async function deskSaveDealer(btn) {
     const res = await fetch(`${API}/ai/config`, { method: 'PUT', headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
     if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Save failed');
     __deskDealer = { ...__deskDealer, name: payload.legal_name || __deskDealer.name, street: payload.street_address || null, phone: payload.phone || null, fax: payload.fax || null, hst: payload.hst_number || null, omvic: payload.omvic_reg || null };
-    showToast('Dealer details saved', 'success');
+    // Once the required doc fields are complete, this one-time setup block leaves the
+    // desk — it now lives in Settings › Dealer Management for future edits.
+    const complete = !!(__deskDealer.hst && __deskDealer.omvic && __deskDealer.street);
+    if (complete) {
+      document.getElementById('desk-dealer-setup')?.remove();
+      showToast('Dealer details saved — you can edit them anytime in Settings › Dealer Management', 'success');
+    } else {
+      showToast('Saved. Add the HST #, OMVIC # and street address to finish setup.', 'success');
+    }
     if (btn) { btn.disabled = false; btn.textContent = 'Saved ✓'; setTimeout(() => { if (btn) btn.textContent = 'Save dealer details'; }, 1500); }
   } catch (e) { if (btn) { btn.disabled = false; btn.textContent = 'Save dealer details'; } showToast(e.message || 'Could not save', 'error'); }
 }
@@ -4457,7 +4466,7 @@ const SETTINGS_TAB_SECTIONS = {
   billing: ['billing-section'],
   aiboost: ['ai-boost-section', 'inv-intel-section'],
   group: ['groups-settings-section'],
-  dealermgmt: ['crm-dms-card', 'dealer-features-card', 'desk-fees-card', 'guardrail-settings-section'],
+  dealermgmt: ['crm-dms-card', 'dealer-features-card', 'dealer-docs-card', 'desk-fees-card', 'guardrail-settings-section'],
   security: ['security-section'],
 };
 function settingsTab(tab) {
@@ -4489,9 +4498,34 @@ function settingsTab(tab) {
     if (host && lr && isAdmin && lr.parentElement !== host) host.appendChild(lr);
     if (isAdmin) loadDealerManagementMatrix();
   }
-  if (tab === 'dealermgmt') { loadDealerFeatures(); loadDeskFeeSettings(); }
+  if (tab === 'dealermgmt') { loadDealerFeatures(); loadDeskFeeSettings(); loadDealerDocs(); }
 }
 window.settingsTab = settingsTab;
+
+// ── Dealer details for documents (Settings › Dealer Management) ──────────────
+// Same legal identifiers the desk uses on the bill of sale — edited here anytime.
+async function loadDealerDocs() {
+  if (!document.getElementById('dd-legal_name')) return;
+  let cfg = {};
+  try { cfg = await apiGetJson('/ai/config', { retries: 1 }); } catch {}
+  const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v || ''; };
+  set('dd-legal_name', cfg.legal_name); set('dd-street_address', cfg.street_address);
+  set('dd-phone', cfg.phone); set('dd-fax', cfg.fax);
+  set('dd-hst_number', cfg.hst_number); set('dd-omvic_reg', cfg.omvic_reg);
+}
+async function saveDealerDocs(btn) {
+  const g = (id) => (document.getElementById(id)?.value || '').trim();
+  const payload = { legal_name: g('dd-legal_name'), street_address: g('dd-street_address'), phone: g('dd-phone'), fax: g('dd-fax'), hst_number: g('dd-hst_number'), omvic_reg: g('dd-omvic_reg') };
+  const orig = btn.textContent; btn.disabled = true; btn.textContent = 'Saving…';
+  try {
+    await apiSendJson('/ai/config', 'PUT', payload);
+    // Keep the desk's cached copy in sync so it reflects the edit immediately.
+    if (__deskDealer) __deskDealer = { ...__deskDealer, name: payload.legal_name || __deskDealer.name, street: payload.street_address || null, phone: payload.phone || null, fax: payload.fax || null, hst: payload.hst_number || null, omvic: payload.omvic_reg || null };
+    btn.textContent = 'Saved ✓'; setTimeout(() => { btn.disabled = false; btn.textContent = orig; }, 1400);
+    showToast('Dealer details saved', 'success');
+  } catch (e) { btn.disabled = false; btn.textContent = orig; showToast(e.message || 'Could not save', 'error'); }
+}
+window.saveDealerDocs = saveDealerDocs;
 
 // ── Deal Desk fee schedule (Settings › Dealer Management) ────────────────────
 // Management-controlled prefill fees. Each: { name, amount, taxable, locked }.
