@@ -159,9 +159,18 @@ async function _runInventorySyncInner(dealershipId) {
   const jsonCache = new Map()
   const hasFeedId = await inventoryHasFeedId()
 
+  // Cloudflare/JS-gated fallback: if the server can't read a dealer's site (0 vehicles)
+  // and this dealer has no inventory yet, we flip those feeds to browser (extension)
+  // capture so the "Pull Inventory" fallback appears instead of a dead "0 of 0".
+  const { count: startingInvCount } = await supabaseAdmin
+    .from('inventory').select('id', { count: 'exact', head: true }).eq('dealership_id', dealershipId)
+  const extFallbackFeeds = []
+  let needsExtensionCapture = false
+
   let feedIndex = -1
   for (const feed of feeds) {
     feedIndex++
+    let feedVehicleCount = 0   // vehicles this feed yielded server-side (for the fallback check)
     setSyncProgress(dealershipId, {
       phase: 'fetching', feedIndex, feedCount: feeds.length, current: 0, total: 0,
       pct: syncOverallPct(feedIndex, feeds.length, 0, 0),
@@ -585,6 +594,7 @@ async function _runInventorySyncInner(dealershipId) {
       // For 500+ vehicle feeds this lets V8 reclaim per-vehicle memory mid-loop
       // instead of holding the whole array until the sync finishes.
       const feedTotal = vehicles.length
+      feedVehicleCount = feedTotal
       setSyncProgress(dealershipId, {
         phase: 'importing', feedIndex, feedCount: feeds.length, current: 0, total: feedTotal,
         pct: syncOverallPct(feedIndex, feeds.length, 0, feedTotal),
@@ -687,6 +697,29 @@ async function _runInventorySyncInner(dealershipId) {
     } catch (feedErr) {
       console.error('[sync] Feed error:', feedErr.message)
     }
+    // Server-side read produced nothing for this feed. If it's a website-style feed
+    // (not a confirmed JSON feed, and not already extension-capture), it's a candidate
+    // for the browser/extension fallback — decided after the loop (only if the whole
+    // dealer came up empty, so we never disturb an established lot on a transient blip).
+    if (feedVehicleCount === 0 && feed.platform !== 'needs_extension_capture' && feed.platform !== 'leadbox') {
+      extFallbackFeeds.push(feed)
+    }
+  }
+
+  // Cloudflare/JS-gated fallback: a brand-new dealer whose feeds all returned nothing
+  // server-side gets those feeds flipped to browser (extension) capture, so the
+  // dashboard shows the "Pull Inventory" fallback instead of a dead 0-of-0.
+  if ((startingInvCount || 0) === 0 && totalVehiclesFound === 0 && extFallbackFeeds.length) {
+    for (const f of extFallbackFeeds) {
+      let src = f.source_dealer_url
+      if (!src) { try { src = new URL(f.feed_url).origin } catch {} }
+      try {
+        await supabaseAdmin.from('inventory_feeds')
+          .update({ platform: 'needs_extension_capture', source_dealer_url: src }).eq('id', f.id)
+        needsExtensionCapture = true
+      } catch (e) { console.warn('[sync] extension-fallback flag failed (non-fatal):', e.message) }
+    }
+    if (needsExtensionCapture) console.log(`[sync] dealer ${dealershipId}: 0 vehicles server-side — ${extFallbackFeeds.length} feed(s) flagged for browser/extension capture`)
   }
 
   // ── Auto-sold: single clean block ──
@@ -865,6 +898,9 @@ async function _runInventorySyncInner(dealershipId) {
     duplicates_merged: Math.max(0, totalAttempts - uniqueVins.size),
     skipped: totalSkipped,
     skip_breakdown: skipReasons,
+    // True when the server couldn't read the site and flipped the feed(s) to browser
+    // capture — the frontend uses this to point the dealer at the Chrome extension.
+    needs_extension_capture: needsExtensionCapture,
     synced_at: new Date().toISOString()
   }
 }

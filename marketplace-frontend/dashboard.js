@@ -6256,7 +6256,13 @@ async function addFeed(feedUrl, feedType) {
         method: 'POST', headers: { 'Authorization': `Bearer ${token}` }
       });
       const syncData = await syncRes.json();
-      if (syncRes.ok && syncData.success) {
+      if (syncRes.ok && syncData.needs_extension_capture) {
+        showSyncStatus(
+          `✓ Feed added. This dealer's site blocks server access (Cloudflare) — we've switched it to browser capture. Open the MarketSync extension and click "Pull Inventory" to pull from your own browser session.`,
+          'ok'
+        );
+        loadInventoryFeeds();
+      } else if (syncRes.ok && syncData.success) {
         const b = syncData.skip_breakdown || {};
         const reasons = []
         if (b.feed_type > 0) reasons.push(`${b.feed_type} wrong condition`)
@@ -6329,10 +6335,20 @@ async function syncNow() {
         ? ` · ${data.skipped} skipped (${reasons.join(', ')})`
         : ` · ${data.skipped} skipped`;
     }
-    showSyncStatus(
-      `Synced ${data.unique_vehicles} unique vehicles (${data.available_after_sync} available)${dupNote}${skipNote}.`,
-      'ok'
-    );
+    // Cloudflare/JS-gated site the server couldn't read — the feed was flipped to
+    // browser capture. Point the dealer at the extension's Pull Inventory fallback.
+    if (data.needs_extension_capture) {
+      showSyncStatus(
+        `This dealer's site blocks server access (Cloudflare). We've switched it to browser capture — open the MarketSync extension and click "Pull Inventory" (below) to pull your inventory from your own browser session.`,
+        'ok'
+      );
+      loadInventoryFeeds?.();
+    } else {
+      showSyncStatus(
+        `Synced ${data.unique_vehicles} unique vehicles (${data.available_after_sync} available)${dupNote}${skipNote}.`,
+        'ok'
+      );
+    }
     // Refresh insights + catalog after a sync
     loadInsights();
     loadInventoryCatalog();
