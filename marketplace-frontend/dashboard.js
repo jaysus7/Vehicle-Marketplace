@@ -3988,7 +3988,7 @@ function deskPrint(kind) {
   // Per-page footer — dealer identity, address, timestamp and "Page N of 5".
   const nowStamp = new Date().toLocaleString('en-US', { month: 'numeric', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true }).replace(',', '');
   const footAddr = [dealer.street, [dealer.city, dealer.province, dealer.postal].filter(Boolean).join(', ')].filter(Boolean).join(', ');
-  const foot = (n) => `<div class="foot"><div><b>${esc(dealer.name || 'Dealership')}</b>${dealer.phone ? ' | Tel:' + esc(dealer.phone) : ''}${dealer.fax ? ' | Fax:' + esc(dealer.fax) : ''}${footAddr ? '<br>' + esc(footAddr) : ''}</div><div class="footpg">${esc(nowStamp)} &nbsp; Page ${n} of 5</div></div>`;
+  const foot = (n) => `<div class="foot"><div><b>${esc(dealer.name || 'Dealership')}</b>${dealer.phone ? ' | Tel:' + esc(dealer.phone) : ''}${dealer.fax ? ' | Fax:' + esc(dealer.fax) : ''}${footAddr ? '<br>' + esc(footAddr) : ''}</div><div class="footpg">${esc(nowStamp)} &nbsp; Page ${n} of 6</div></div>`;
   const dn = esc(dealer.name || 'the Dealer');
 
   // ── Page 2 — Important Information Respecting Motor Vehicle Sales ────────────
@@ -4061,7 +4061,9 @@ function deskPrint(kind) {
     ${foot(5)}
   </div>`;
 
-  const inner = `<style>${DESK_DOC_CSS}</style><div class="page">${face}${foot(1)}</div>${page2}${page3}${page4}${page5}`;
+  // Page 6 — a Customer Copy of the face sheet (identical page 1, tagged).
+  const page6 = `<div class="page"><div class="copytag">CUSTOMER COPY</div>${face}${foot(6)}</div>`;
+  const inner = `<style>${DESK_DOC_CSS}</style><div class="page">${face}${foot(1)}</div>${page2}${page3}${page4}${page5}${page6}`;
   if (typeof apprPrintWindow === 'function') apprPrintWindow(condLabel + ' Motor Vehicle Purchase Agreement', inner);
   else { const w = window.open('', '_blank'); if (w) { w.document.write(`<html><head><title>Bill of Sale</title></head><body>${inner}</body></html>`); w.document.close(); } }
 }
@@ -4102,6 +4104,7 @@ const DESK_DOC_CSS = `
   .lh{font-size:12px;font-weight:800;color:#0f172a;margin-top:10px;margin-bottom:2px}
   .tc{font-size:9px;line-height:1.4;color:#1f2937;margin:5px 0;text-align:justify}
   .tc b{font-size:9.5px}
+  .copytag{text-align:right;font-size:11px;font-weight:900;letter-spacing:.08em;color:#64748b;border:1px solid #cbd5e1;border-radius:4px;padding:2px 8px;align-self:flex-end;margin-bottom:4px}
 `;
 
 // Open the Desk-a-deal page focused on one customer (from a CRM row).
