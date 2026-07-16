@@ -2427,36 +2427,58 @@ function setupMobileMoreMenu() {
 
   btn.addEventListener('click', () => {
     // Rebuild each open so it reflects the user's current role/add-on access.
-    // Walk the desktop grouped sidebar so the mobile menu mirrors its structure.
+    // Mirror the desktop grouped sidebar as collapsible dropdown groups so a dealer
+    // admin can reach EVERYTHING from one place.
+    list.className = 'space-y-1.5';   // stacked full-width groups (was a 2-col grid)
     list.innerHTML = '';
-    const desktop = document.getElementById('nav-desktop');
-    const addLeaf = (src, sub) => {
-      if (!src || src.classList.contains('hidden')) return;
-      const label = src.getAttribute('title') || src.querySelector('span')?.textContent || '';
+    const mk = (html) => { const t = document.createElement('template'); t.innerHTML = html.trim(); return t.content.firstElementChild; };
+    // A single tappable destination row (fires the desktop nav item's own click).
+    const leafRow = (src, sub) => {
+      const label = src.getAttribute('title') || src.querySelector('span:last-child')?.textContent || (src.textContent || '').trim();
       const svg = src.querySelector('svg')?.outerHTML || '';
-      const item = document.createElement('button');
-      item.type = 'button';
-      item.className = `flex items-center gap-2.5 px-3 py-3 rounded-lg text-sm font-medium text-slate-700 dark:text-slate-200 bg-slate-50 dark:bg-slate-800/60 hover:bg-slate-100 dark:hover:bg-slate-800 transition text-left ${sub ? 'pl-6 text-[13px]' : 'font-semibold'}`;
-      item.innerHTML = (sub ? '' : `<span class="w-5 h-5 flex-shrink-0 opacity-70">${svg}</span>`) + `<span class="truncate">${esc(label)}</span>`;
-      item.addEventListener('click', () => { close(); src.click(); });
-      list.appendChild(item);
+      const el = mk(`<button type="button" class="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm text-slate-700 dark:text-slate-200 bg-slate-50 dark:bg-slate-800/60 hover:bg-slate-100 dark:hover:bg-slate-800 transition text-left ${sub ? 'pl-4 font-medium' : 'font-semibold'}"><span class="w-5 h-5 flex-shrink-0 opacity-70">${svg}</span><span class="truncate">${esc(label)}</span></button>`);
+      el.addEventListener('click', () => { close(); src.click(); });
+      return el;
     };
-    const addLabel = (text) => {
-      const d = document.createElement('div');
-      d.className = 'px-3 pt-3 pb-1 text-[10px] font-black uppercase tracking-wider text-slate-400';
-      d.textContent = text;
-      list.appendChild(d);
-    };
+
+    // Quick actions — header-only destinations that don't live in the sidebar, so
+    // admins get Desk a deal + Settings right at the top of the menu.
+    const isAdmin = ['DEALER_ADMIN', 'OWNER', 'MANAGER'].includes(profileContext?.role);
+    const quick = [];
+    if (isAdmin) quick.push(['desk', 'Desk a deal']);
+    quick.push(['profile', 'Settings']);
+    if (quick.length) {
+      const wrap = mk('<div class="grid grid-cols-2 gap-1.5"></div>');
+      quick.forEach(([page, label]) => {
+        const b = mk(`<button type="button" class="px-3 py-2.5 rounded-lg text-sm font-bold text-white ${page === 'desk' ? 'bg-purple-600 hover:bg-purple-500' : 'bg-indigo-600 hover:bg-indigo-500'} transition">${esc(label)}</button>`);
+        b.addEventListener('click', () => { close(); switchPage(page); });
+        wrap.appendChild(b);
+      });
+      list.appendChild(wrap);
+    }
+
+    const desktop = document.getElementById('nav-desktop');
     if (desktop) {
       [...desktop.children].forEach(node => {
         if (node.classList.contains('nav-group')) {
           if (node.classList.contains('hidden')) return;         // role-hidden group
-          const header = node.querySelector('.nav-item');         // a real destination?
-          if (header) addLeaf(header, false);
-          else addLabel(node.querySelector('button span')?.textContent || '');
-          node.querySelectorAll('.nav-group-body .nav-item').forEach(sub => addLeaf(sub, true));
-        } else if (node.matches('.nav-item')) {
-          addLeaf(node, false);
+          const bodyLeaves = [...node.querySelectorAll('.nav-group-body .nav-item')].filter(el => !el.classList.contains('hidden'));
+          const headerRow = node.querySelector(':scope > .flex');
+          const headerBtn = headerRow ? [...headerRow.querySelectorAll('button')].find(b => !(b.getAttribute('aria-label') || '').startsWith('Toggle')) : null;
+          const label = headerBtn?.getAttribute('title') || headerBtn?.querySelector('span')?.textContent || 'Menu';
+          const svg = headerBtn?.querySelector('svg')?.outerHTML || '';
+          if (!bodyLeaves.length) { if (headerBtn && headerBtn.hasAttribute('data-page')) list.appendChild(leafRow(headerBtn, false)); return; }
+          // Collapsible group card — expanded by default so nothing feels hidden.
+          const card = mk('<div class="border border-slate-200 dark:border-slate-800 rounded-lg overflow-hidden"></div>');
+          const head = mk(`<button type="button" class="w-full flex items-center justify-between gap-2 px-3 py-2.5 font-bold text-sm text-slate-800 dark:text-slate-100 bg-slate-100 dark:bg-slate-800"><span class="flex items-center gap-2.5"><span class="w-5 h-5 opacity-80">${svg}</span>${esc(label)}</span><svg class="ms-chev w-4 h-4 transition-transform" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg></button>`);
+          const body = mk('<div class="p-1.5 space-y-1"></div>');
+          if (headerBtn && headerBtn.hasAttribute('data-page')) body.appendChild(leafRow(headerBtn, true));
+          bodyLeaves.forEach(sub => body.appendChild(leafRow(sub, true)));
+          head.addEventListener('click', () => { const hid = body.classList.toggle('hidden'); head.querySelector('.ms-chev')?.classList.toggle('-rotate-90', hid); });
+          card.appendChild(head); card.appendChild(body);
+          list.appendChild(card);
+        } else if (node.matches('.nav-item') && !node.classList.contains('hidden')) {
+          list.appendChild(leafRow(node, false));
         }
       });
     }
