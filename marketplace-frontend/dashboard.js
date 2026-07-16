@@ -5500,11 +5500,49 @@ function setupExtensionBridge() {
       applyCaptureState(d.state, isNew);
     } else if (d.type === 'PULL_STARTED') {
       handlePullStarted(d);
+    } else if (d.type === 'POST_STARTED') {
+      handlePostStarted(d);
     }
   });
   // Ask the extension to announce itself (covers the case where its EXT_PRESENT
   // fired before this listener was attached).
   window.postMessage({ __marketsync: true, dir: 'from-page', type: 'PING' }, '*');
+}
+
+// Card "Post" button → drive the MarketSync extension to auto-fill the Facebook
+// listing (guardrail + AI copy + branded photos + autofill). Falls back to opening
+// Facebook's create page when the extension isn't installed/detected.
+function msPostVehicle(vehicleId, btn) {
+  if (!window.__msExtPresent) {
+    window.open('https://www.facebook.com/marketplace/create/vehicle', '_blank', 'noopener');
+    if (typeof showToast === 'function') showToast('Install the MarketSync extension to auto-fill listings. Opened Facebook so you can post manually.', 'info', 6000);
+    return;
+  }
+  window.__msPostBtns = window.__msPostBtns || {};
+  if (btn) {
+    window.__msPostBtns[vehicleId] = btn;
+    btn.dataset.msLabel = btn.innerHTML;
+    btn.disabled = true;
+    btn.textContent = 'Posting…';
+  }
+  window.postMessage({ __marketsync: true, dir: 'from-page', type: 'POST_VEHICLE', vehicleId }, '*');
+}
+window.msPostVehicle = msPostVehicle;
+
+// Reset a card's Post button after the extension replies (POST_STARTED).
+function handlePostStarted(d) {
+  const btn = window.__msPostBtns?.[d.vehicleId];
+  if (btn) {
+    btn.disabled = false;
+    if (btn.dataset.msLabel) btn.innerHTML = btn.dataset.msLabel;
+    delete window.__msPostBtns[d.vehicleId];
+  }
+  if (d.ok) {
+    if (typeof showToast === 'function') showToast('Opening Facebook — the listing will auto-fill in the new tab.', 'success', 4000);
+  } else if (d.error) {
+    if (typeof showToast === 'function') showToast(d.error, d.blocked ? 'info' : 'error', 6000);
+    else alert(d.error);
+  }
 }
 
 function pullViaExtension(feedId, feedUrl) {
@@ -8077,6 +8115,7 @@ window.uploadPhotoBackground = uploadPhotoBackground;
 window.removePhotoBackground = removePhotoBackground;
 
 async function loadInventoryCatalog() {
+  if (typeof setupExtensionBridge === 'function') setupExtensionBridge();  // so card "Post" can detect the extension
   const list = document.getElementById('catalog-list');
   list.innerHTML = '<div class="text-xs text-slate-500 italic col-span-full">Loading catalog...</div>';
   try {
@@ -8262,7 +8301,7 @@ function renderCatalog() {
     return `
       <${tag} ${linkAttrs} class="relative bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded p-3 flex flex-col gap-2 ${href ? 'hover:border-indigo-400 dark:hover:border-indigo-500 transition no-underline' : ''}">
         ${catalogIsMine(v) ? `<button onclick="event.preventDefault();event.stopPropagation();editVehicle('${v.id}')" title="Edit vehicle" class="absolute top-1.5 right-1.5 z-10 bg-white/90 dark:bg-slate-800/90 hover:bg-white dark:hover:bg-slate-700 rounded-md p-1 shadow border border-slate-200 dark:border-slate-700"><svg class="w-3.5 h-3.5 text-slate-600 dark:text-slate-300" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M11 4H4a1 1 0 00-1 1v14a1 1 0 001 1h14a1 1 0 001-1v-7M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>`
-          : `<button type="button" onclick="event.preventDefault();event.stopPropagation();window.open('https://www.facebook.com/marketplace/create/vehicle','_blank','noopener')" title="Post this vehicle on Facebook Marketplace" class="absolute top-1.5 right-1.5 z-10 bg-[#1877F2] hover:bg-[#0f6ae0] text-white rounded-md px-1.5 py-1 shadow text-[10px] font-bold flex items-center gap-1">Post ↗</button>`}
+          : `<button type="button" onclick="event.preventDefault();event.stopPropagation();msPostVehicle('${v.id}',this)" title="Post this vehicle on Facebook Marketplace — the MarketSync extension auto-fills the listing" class="absolute top-1.5 right-1.5 z-10 bg-[#1877F2] hover:bg-[#0f6ae0] text-white rounded-md px-1.5 py-1 shadow text-[10px] font-bold flex items-center gap-1">Post ↗</button>`}
         ${img}
         <div class="text-xs font-bold text-slate-900 dark:text-white truncate" title="${v.year} ${v.make} ${v.model} ${v.trim || ''}">${v.year} ${v.make} ${v.model}</div>
         <div class="flex items-center gap-1 flex-wrap">

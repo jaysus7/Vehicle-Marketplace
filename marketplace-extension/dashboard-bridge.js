@@ -152,6 +152,22 @@
 
     if (d.type === 'PING') { post({ type: 'EXT_PRESENT', version }); return }
 
+    if (d.type === 'POST_VEHICLE' && d.vehicleId) {
+      chrome.runtime.sendMessage(
+        { type: 'POST_VEHICLE', inventoryId: d.vehicleId },
+        (resp) => {
+          post({
+            type: 'POST_STARTED',
+            vehicleId: d.vehicleId,
+            ok: !!resp?.ok,
+            error: resp?.error || null,
+            blocked: !!resp?.blocked
+          })
+        }
+      )
+      return
+    }
+
     if (d.type === 'PULL_INVENTORY' && d.feedUrl) {
       chrome.runtime.sendMessage(
         { type: 'CONNECT_DEALER_SITE', url: d.feedUrl, feed_id: d.feedId || null },

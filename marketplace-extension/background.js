@@ -41,6 +41,68 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     })
     return true
   }
+
+  // ── Post a vehicle straight from the dashboard (via dashboard-bridge.js) ──────
+  // Mirrors the side-panel's Post button (popup.js postVehicle): run the guardrail,
+  // pull the vehicle + AI copy + brand photos, stash pendingPost, then open the FB
+  // create flow where content.js autofills. Lets the dashboard "Post" button drive
+  // the same automation without opening the extension popup.
+  if (msg.type === 'POST_VEHICLE') {
+    const inventoryId = msg.inventoryId
+    chrome.storage.local.get(['token'], async ({ token }) => {
+      if (!token) { sendResponse({ ok: false, error: 'Not signed in — open the MarketSync extension and sign in.' }); return }
+      if (!inventoryId) { sendResponse({ ok: false, error: 'No vehicle id' }); return }
+      const apiGet = async (path) => {
+        const r = await fetch(`${API}${path}`, { headers: { Authorization: `Bearer ${token}` } })
+        if (!r.ok) throw new Error(`HTTP ${r.status}`)
+        return r.json()
+      }
+      try {
+        // FB ban protection: honor the dealership's posting guardrail (daily cap / cooldown).
+        try {
+          const g = await apiGet('/posting/guardrail')
+          if (g && g.enabled && !g.allowed) {
+            const reason = g.reason === 'daily_limit'
+              ? `Daily posting limit reached (${g.daily_cap}/day). This protects your Facebook account. Try again tomorrow.`
+              : g.reason === 'cooldown'
+                ? `You've posted ${g.burst_size || 5} in a row — take a short break, then post another batch.`
+                : 'Posting is paused by your dealership right now.'
+            sendResponse({ ok: false, error: reason, blocked: true })
+            return
+          }
+        } catch { /* guardrail is best-effort — never block on a network hiccup */ }
+
+        const [vehicle, enriched, poster] = await Promise.all([
+          apiGet(`/inventory/${inventoryId}`),
+          fetch(`${API}/ai/enrich-listing`, {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ inventory_id: inventoryId })
+          }).then(r => r.ok ? r.json() : null).catch(() => null),
+          apiGet('/auth/me').catch(() => null)
+        ])
+        if (enriched?.copy) vehicle.ai_description = enriched.copy
+
+        // Post branded (phone/logo overlay) photos when the dealer uses them.
+        if (Array.isArray(vehicle.branded_image_urls) && vehicle.branded_image_urls.length) {
+          vehicle.image_urls = vehicle.branded_image_urls
+        } else {
+          try {
+            const r = await fetch(`${API}/photos/brand/${inventoryId}`, { method: 'POST', headers: { Authorization: `Bearer ${token}` } })
+            if (r.ok) { const d = await r.json(); if (Array.isArray(d.branded_image_urls) && d.branded_image_urls.length) vehicle.image_urls = d.branded_image_urls }
+          } catch { /* overlays off or unavailable — post the original photos */ }
+        }
+
+        chrome.storage.local.set({ pendingPost: { vehicle, token, poster } }, () => {
+          chrome.tabs.create({ url: 'https://www.facebook.com/marketplace/create/vehicle' })
+          sendResponse({ ok: true })
+        })
+      } catch (e) {
+        sendResponse({ ok: false, error: e.message || 'Could not prepare the vehicle.' })
+      }
+    })
+    return true
+  }
 // ── Reliable FB listing URL capture ──────────────────────────────────────────
   // Watches the SENDER'S tab (the one currently on the FB create-listing flow) for
   // its URL to change to a /marketplace/item/... page — works in background tabs,
