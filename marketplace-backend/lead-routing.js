@@ -59,7 +59,8 @@ export async function routeAndNotifyLead(dealershipId, { contactId, vehicleId, n
         managers.forEach(m => recips.add(m.id))
         if (cfg.notify_all_sales) reps.forEach(r => recips.add(r.id))
       } else {
-        managers.filter(m => m.mgr_role === 'gsm').forEach(m => recips.add(m.id))
+        // A General Manager (gm) and General Sales Manager (gsm) both see every lead.
+        managers.filter(m => m.mgr_role === 'gsm' || m.mgr_role === 'gm').forEach(m => recips.add(m.id))
         const teamMgrRole = leadType === 'new' ? 'new_mgr' : leadType === 'used' ? 'used_mgr' : null
         if (teamMgrRole) managers.filter(m => m.mgr_role === teamMgrRole).forEach(m => recips.add(m.id))
         // No scoped managers configured → fall back to all managers so nothing slips.
@@ -82,7 +83,7 @@ export async function routeAndNotifyLead(dealershipId, { contactId, vehicleId, n
       const { data: openTask } = await supabaseAdmin.from('crm_tasks')
         .select('id').eq('contact_id', contactId).eq('done', false).in('type', ['call', 'followup']).limit(1)
       if (!openTask || !openTask.length) {
-        const gsm = managers.find(m => m.mgr_role === 'gsm') || managers[0] || null
+        const gsm = managers.find(m => m.mgr_role === 'gsm' || m.mgr_role === 'gm') || managers[0] || null
         const taskOwner = assignee?.id || gsm?.id || null
         const due = new Date(Date.now() + 60 * 60 * 1000)   // 1 hour → speed to lead
         await supabaseAdmin.from('crm_tasks').insert({

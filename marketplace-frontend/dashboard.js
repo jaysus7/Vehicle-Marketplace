@@ -1378,14 +1378,17 @@ const crmWhen = (s) => {
   return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: diff > 300 ? 'numeric' : undefined });
 };
 const CRM_STATUS = { uncontacted: 'Uncontacted', contacted: 'Contacted', appointment: 'Appointment', sold: 'Sold', fni: 'F&I', turnover: 'Turn over', delivered: 'Delivered', followup: 'Follow up', lost: 'Lost' };
+// Chip text: a sold-but-not-yet-delivered customer reads "Sold · Not delivered"
+// (orange), and only shows plain "Delivered" (green) once the car is handed over.
+const crmChipText = (s) => s === 'sold' ? 'Sold · Not delivered' : (CRM_STATUS[s] || s);
 const crmStatusColor = (s) => ({
   uncontacted: 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300',
   contacted: 'bg-sky-100 text-sky-700 dark:bg-sky-950/40 dark:text-sky-300',
   appointment: 'bg-violet-100 text-violet-700 dark:bg-violet-950/40 dark:text-violet-300',
-  sold: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300',
+  sold: 'bg-orange-100 text-orange-700 dark:bg-orange-950/40 dark:text-orange-300',
   fni: 'bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300',
   turnover: 'bg-orange-100 text-orange-700 dark:bg-orange-950/40 dark:text-orange-300',
-  delivered: 'bg-teal-100 text-teal-700 dark:bg-teal-950/40 dark:text-teal-300',
+  delivered: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300',
   followup: 'bg-blue-100 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300',
   lost: 'bg-rose-100 text-rose-600 dark:bg-rose-950/40 dark:text-rose-300',
 }[s] || 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300');
@@ -1567,7 +1570,7 @@ function crmContactRow(c) {
     <div class="w-9 h-9 rounded-full bg-indigo-100 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-300 flex items-center justify-center text-xs font-black flex-shrink-0">${esc(initials || '?')}</div>
     <div class="min-w-0 flex-1">
       <div class="flex items-center gap-2"><span class="font-bold text-slate-900 dark:text-white truncate">${esc(c.full_name || 'Unknown')}</span>
-        <span class="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-full ${crmStatusColor(c.status)}">${esc(CRM_STATUS[c.status] || c.status)}</span>
+        <span class="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-full ${crmStatusColor(c.status)}">${esc(crmChipText(c.status))}</span>
         ${c.dnc ? '<span class="text-[10px] font-bold text-rose-500">DNC</span>' : ''}
       </div>
       <div class="text-xs text-slate-500 dark:text-slate-400 truncate">${esc(sub || '—')}</div>
@@ -1595,7 +1598,7 @@ function crmSoldRow(c) {
         </div>
       </div>
     </td>
-    <td class="py-3 px-3"><span class="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-full ${crmStatusColor(c.status)}">${esc(CRM_STATUS[c.status] || c.status)}</span></td>
+    <td class="py-3 px-3"><span class="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-full ${crmStatusColor(c.status)}">${esc(crmChipText(c.status))}</span></td>
     <td class="py-3 px-3 text-slate-600 dark:text-slate-300">${esc(c.sold_source || c.source || '—')}</td>
     <td class="py-3 px-3 text-slate-600 dark:text-slate-300">${esc(c.rep_name || '—')}</td>
     <td class="py-3 px-3 text-slate-400 whitespace-nowrap">${esc(crmWhen(c.last_activity_at || c.created_at))}</td>
@@ -1652,7 +1655,7 @@ function crmDetailHtml(d) {
       <div class="w-11 h-11 rounded-full bg-indigo-100 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-300 flex items-center justify-center text-sm font-black flex-shrink-0">${esc(initials || '?')}</div>
       <div class="min-w-0">
         <div class="flex items-center gap-2"><span class="text-lg font-black text-slate-900 dark:text-white truncate">${esc(c.full_name || 'Unknown')}</span>
-          <span class="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-full ${crmStatusColor(c.status)}">${esc(CRM_STATUS[c.status] || c.status)}</span></div>
+          <span class="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-full ${crmStatusColor(c.status)}">${esc(crmChipText(c.status))}</span></div>
         <div class="text-xs text-slate-500 dark:text-slate-400 truncate">${esc([c.email, c.phone].filter(Boolean).join(' · ') || 'No contact info')}</div>
       </div>
     </div>
@@ -3615,6 +3618,7 @@ function deskRenderForm(contactId) {
 
       <div class="lg:sticky lg:top-4">
         <div id="desk-summary" class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-5"></div>
+        <div id="desk-status-bar" class="mt-3">${deskStatusBar(contactId)}</div>
         <div class="flex flex-col gap-2 mt-3">
           <button id="desk-save" onclick="deskSave('${contactId}')" class="bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-bold px-6 py-2.5 rounded-lg transition">Save deal</button>
           <div class="grid grid-cols-2 gap-2">
@@ -3804,28 +3808,96 @@ function deskRenderSummary() {
     <p class="text-[10px] text-slate-400 mt-2 leading-snug">Estimate only, on approved credit. Rate is an example, not a lender commitment. Taxes/fees per Ontario; verify before contract.</p>`;
 }
 
+// Persist the current form to the deal record (no toast / re-render) — shared by
+// Save deal and the status actions so a status change always saves the latest edits.
+async function deskPersist(contactId) {
+  const d = deskCollect(contactId);
+  const c = deskCompute(d);
+  d.tax_amount = Math.round(c.taxAmount * 100) / 100;
+  d.total_price = Math.round(c.total * 100) / 100;
+  d.amount_financed = Math.round(c.amountFinanced * 100) / 100;
+  d.payment = Math.round(c.payment * 100) / 100;
+  const res = await fetch(`${API}/reports/deal`, { method: 'POST', headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify(d) });
+  if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Save failed');
+  const body = await res.json();
+  __deskDeal = { ...__deskDeal, ...(body.deal || {}) };
+  if (body.customer_number) __deskCustomerNumber = body.customer_number;
+  if (body.salesperson) __deskSalesperson = body.salesperson;
+  return body;
+}
 async function deskSave(contactId) {
   const btn = document.getElementById('desk-save');
   if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
   try {
-    const d = deskCollect(contactId);
-    const c = deskCompute(d);
-    d.tax_amount = Math.round(c.taxAmount * 100) / 100;
-    d.total_price = Math.round(c.total * 100) / 100;
-    d.amount_financed = Math.round(c.amountFinanced * 100) / 100;
-    d.payment = Math.round(c.payment * 100) / 100;
-    const res = await fetch(`${API}/reports/deal`, { method: 'POST', headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify(d) });
-    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Save failed');
-    const body = await res.json();
-    __deskDeal = { ...__deskDeal, ...(body.deal || {}) };
-    if (body.customer_number) __deskCustomerNumber = body.customer_number;
-    if (body.salesperson) __deskSalesperson = body.salesperson;
-    showToast(`Deal saved · Deal #${body.deal?.deal_number || '—'}`, 'success');
+    const body = await deskPersist(contactId);
+    showToast(`Deal saved · Deal #${body.deal?.deal_number || '—'}${body.vehicle_pending ? ' · vehicle marked pending' : ''}`, 'success');
     deskRenderForm(contactId);   // re-render so the new Customer #/Deal # show
     if (btn) { btn.disabled = false; btn.textContent = 'Saved ✓'; setTimeout(() => { if (btn) btn.textContent = 'Save deal'; }, 1500); }
   } catch (e) {
     if (btn) { btn.disabled = false; btn.textContent = 'Save deal'; }
     showToast(e.message || 'Could not save the deal', 'error');
+  }
+}
+// The deal-lifecycle action bar on the desk (managers + F&I). Renders the current
+// status chip plus the next-step buttons: Pending credit app → Sold → Delivered.
+function deskStatusBar(contactId) {
+  if (!['DEALER_ADMIN', 'OWNER', 'MANAGER'].includes(profileContext?.role)) return '';
+  const st = __deskDeal?.deal_status || 'working';
+  const CHIP = {
+    working: ['Working', 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'],
+    pending_credit: ['Pending credit app', 'bg-orange-100 text-orange-700 dark:bg-orange-950/40 dark:text-orange-300'],
+    sold: ['Sold · Not delivered', 'bg-orange-100 text-orange-700 dark:bg-orange-950/40 dark:text-orange-300'],
+    delivered: ['Delivered', 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300'],
+  };
+  const chip = CHIP[st] || CHIP.working;
+  const btn = (action, label, cls) => `<button type="button" onclick="deskSetStatus('${action}','${contactId}')" class="${cls} text-sm font-bold px-3 py-2 rounded-lg transition">${label}</button>`;
+  let actions = '';
+  if (st === 'working') {
+    actions = `<div class="grid grid-cols-2 gap-2">
+        ${btn('pending_credit', 'Pending credit app', 'bg-orange-600 hover:bg-orange-500 text-white')}
+        ${btn('cash', 'Cash deal — Sold', 'bg-emerald-600 hover:bg-emerald-500 text-white')}
+      </div>
+      <div class="mt-2">${btn('sold', 'Financed — Mark sold', 'w-full bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-200')}</div>`;
+  } else if (st === 'pending_credit') {
+    actions = `<div>${btn('sold', 'Credit approved — Mark sold', 'w-full bg-emerald-600 hover:bg-emerald-500 text-white')}</div>`;
+  } else if (st === 'sold') {
+    actions = `<div>${btn('delivered', 'Mark delivered', 'w-full bg-emerald-600 hover:bg-emerald-500 text-white')}</div>`;
+  } else if (st === 'delivered') {
+    actions = `<div class="text-center text-sm font-bold text-emerald-600 dark:text-emerald-400 py-1">Delivered ✓</div>`;
+  }
+  return `<div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4">
+      <div class="flex items-center justify-between mb-2">
+        <span class="text-[11px] uppercase tracking-wider text-slate-400 font-bold">Deal status</span>
+        <span class="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full ${chip[1]}">${chip[0]}</span>
+      </div>
+      ${actions}
+      <p class="text-[10px] text-slate-400 mt-2 leading-snug">Marking sold moves the customer to your Sold list; the vehicle status updates automatically.</p>
+    </div>`;
+}
+// Advance the deal through its lifecycle. Saves the latest form first, transitions
+// the deal + vehicle, then moves the customer's CRM status so pipeline tags update.
+async function deskSetStatus(action, contactId) {
+  const CONTACT_STATUS = { pending_credit: 'turnover', cash: 'sold', sold: 'sold', delivered: 'delivered' };
+  const DONE = { pending_credit: 'Marked pending credit app', cash: 'Cash deal closed — Sold', sold: 'Marked sold', delivered: 'Marked delivered' };
+  const cStatus = CONTACT_STATUS[action];
+  // Capture where a sale came from (feeds the ROI "sales by source" report).
+  const soldSource = (action === 'cash' || action === 'sold') ? askSoldSource() : null;
+  const bar = document.getElementById('desk-status-bar');
+  if (bar) bar.style.opacity = '0.5';
+  try {
+    await deskPersist(contactId);   // ensure the deal row + numbers exist and are current
+    const r = await apiSendJson('/reports/deal/status', 'POST', { contact_id: contactId, action });
+    if (cStatus) {
+      const body = { status: cStatus };
+      if (soldSource) body.sold_source = soldSource;
+      await apiSendJson(`/crm/contacts/${contactId}`, 'PUT', body);
+    }
+    __deskDeal.deal_status = r.deal_status || __deskDeal.deal_status;
+    showToast(DONE[action] + ' ✓', 'success');
+    deskRenderForm(contactId);
+  } catch (e) {
+    if (bar) bar.style.opacity = '1';
+    showToast(e.message || 'Could not update the deal', 'error');
   }
 }
 
@@ -4120,6 +4192,7 @@ window.deskPullTrade = deskPullTrade;
 window.deskApplyTrade = deskApplyTrade;
 window.deskRenderSummary = deskRenderSummary;
 window.deskSave = deskSave;
+window.deskSetStatus = deskSetStatus;
 window.deskSaveDealer = deskSaveDealer;
 window.deskPrint = deskPrint;
 window.openDeskForContact = openDeskForContact;
@@ -4441,7 +4514,7 @@ function openRepEdit(id) {
   const lbl = (t) => `<label class="block text-[11px] font-semibold text-slate-500 dark:text-slate-400 mb-1">${t}</label>`;
   const routingRow = (m.role === 'SALES_REP')
     ? `<div>${lbl('Sales lot (for auto-assigned leads)')}<select id="re-team" class="${ic}">${[['', '—'], ['new', 'New'], ['used', 'Used'], ['both', 'Both']].map(o => `<option value="${o[0]}" ${(m.sales_team || '') === o[0] ? 'selected' : ''}>${o[1] === '—' ? 'Not set' : o[1]}</option>`).join('')}</select></div>`
-    : `<div>${lbl('Manager scope (lead notifications)')}<select id="re-mgr" class="${ic}">${[['', '—'], ['gsm', 'GSM'], ['new_mgr', 'New-car manager'], ['used_mgr', 'Used-car manager']].map(o => `<option value="${o[0]}" ${(m.mgr_role || '') === o[0] ? 'selected' : ''}>${o[1] === '—' ? 'Not set' : o[1]}</option>`).join('')}</select></div>`;
+    : `<div>${lbl('Manager scope (lead notifications)')}<select id="re-mgr" class="${ic}">${[['', '—'], ['gm', 'General manager'], ['gsm', 'GSM'], ['new_mgr', 'New-car manager'], ['used_mgr', 'Used-car manager'], ['fni', 'F&I manager']].map(o => `<option value="${o[0]}" ${(m.mgr_role || '') === o[0] ? 'selected' : ''}>${o[1] === '—' ? 'Not set' : o[1]}</option>`).join('')}</select></div>`;
   crmOverlay(`<div class="p-5 space-y-3">
     <div class="flex items-center justify-between"><div class="text-lg font-black text-slate-900 dark:text-white">Edit ${esc(m.full_name || 'team member')}</div><button onclick="this.closest('.fixed').remove()" class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"><svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" d="M6 6l12 12M18 6L6 18"/></svg></button></div>
     <div class="flex items-center gap-3">

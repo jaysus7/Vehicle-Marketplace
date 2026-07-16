@@ -21,6 +21,7 @@ export function registerRoutes(app) {
       phone: req.profile.phone || null,
       avatar_url: req.profile.avatar_url || null,
       role: req.profile.role,
+      mgr_role: req.profile.mgr_role || null,
       dealership: req.profile.dealerships
     })
   })
@@ -284,7 +285,7 @@ export function registerRoutes(app) {
     if (!target || target.dealership_id !== req.dealershipId) return res.status(404).json({ error: 'User not found in your dealership' })
     const b = req.body || {}, patch = {}
     if (b.sales_team !== undefined) patch.sales_team = ['new', 'used', 'both'].includes(b.sales_team) ? b.sales_team : null
-    if (b.mgr_role !== undefined) patch.mgr_role = ['gsm', 'new_mgr', 'used_mgr'].includes(b.mgr_role) ? b.mgr_role : null
+    if (b.mgr_role !== undefined) patch.mgr_role = ['gm', 'gsm', 'new_mgr', 'used_mgr', 'fni'].includes(b.mgr_role) ? b.mgr_role : null
     if (b.active !== undefined) patch.active = !!b.active
     if (!Object.keys(patch).length) return res.json({ ok: true })
     const { error } = await supabaseAdmin.from('profiles').update(patch).eq('id', req.params.id)

@@ -1309,12 +1309,65 @@ export function registerRoutes(app) {
     const { data, error } = await supabaseAdmin.from('deals')
       .upsert(row, { onConflict: 'contact_id' }).select().maybeSingle()
     if (error) { console.error('deal upsert failed:', error.message); return res.status(500).json({ error: 'Save failed' }) }
+    // Once F&I has added products and saved, the vehicle is no longer up for grabs —
+    // mark it pending sale (only if it's still an available unit, never overriding a
+    // sold car). This is the "desk a deal → pending on F&I save" behavior.
+    let vehiclePending = false
+    const fniItems = Array.isArray(data?.fni_items) ? data.fni_items : []
+    if (data?.inventory_id && fniItems.some(x => (x?.name || '').trim() || Number(x?.price) > 0)) {
+      const { data: veh } = await supabaseAdmin.from('inventory')
+        .select('status').eq('id', data.inventory_id).eq('dealership_id', req.dealershipId).maybeSingle()
+      if (veh && String(veh.status || 'available').toLowerCase() === 'available') {
+        await supabaseAdmin.from('inventory').update({ status: 'pending' }).eq('id', data.inventory_id).eq('dealership_id', req.dealershipId)
+        vehiclePending = true
+      }
+    }
     let salesperson = null
     if (row.created_by) {
       const { data: rep } = await supabaseAdmin.from('profiles').select('full_name, registration_id').eq('id', row.created_by).maybeSingle()
       if (rep) salesperson = { name: rep.full_name || null, registration_id: rep.registration_id || null }
     }
-    res.json({ ok: true, deal: data, customer_number: customerNumber, salesperson })
+    res.json({ ok: true, deal: data, customer_number: customerNumber, salesperson, vehicle_pending: vehiclePending })
+  })
+
+  // Move a deal through its lifecycle from the desk. Managers + F&I only.
+  //   pending_credit → credit app submitted; car pending, customer "turned over"
+  //   cash / sold    → deal closed; car sold, customer sold (not yet delivered)
+  //   delivered      → vehicle handed over; car sold, customer delivered
+  // Updates the deal + its linked inventory unit. The CONTACT status is updated
+  // separately by the client (via /crm/contacts/:id) so pipeline automation fires.
+  app.post('/reports/deal/status', requireAuth, async (req, res) => {
+    if (!req.dealershipId) return res.status(400).json({ error: 'No dealership' })
+    if (!['DEALER_ADMIN', 'OWNER', 'MANAGER'].includes(req.profile?.role)) return res.status(403).json({ error: 'Manager access required' })
+    const contactId = String(req.body?.contact_id || '')
+    const action = String(req.body?.action || '').toLowerCase()
+    if (!contactId) return res.status(400).json({ error: 'contact_id required' })
+    const now = new Date().toISOString()
+    // action → { deal_status, inventory status, timestamp column }
+    const MAP = {
+      working:        { deal: 'working',        inv: 'available' },
+      pending_credit: { deal: 'pending_credit', inv: 'pending', stamp: 'credit_app_at' },
+      cash:           { deal: 'sold',           inv: 'sold', stamp: 'sold_at' },
+      sold:           { deal: 'sold',           inv: 'sold', stamp: 'sold_at' },
+      delivered:      { deal: 'delivered',      inv: 'sold', stamp: 'delivered_at' },
+    }
+    const m = MAP[action]
+    if (!m) return res.status(400).json({ error: 'Invalid action' })
+    const { data: deal } = await supabaseAdmin.from('deals')
+      .select('id, inventory_id').eq('contact_id', contactId).eq('dealership_id', req.dealershipId).maybeSingle()
+    if (!deal) return res.status(404).json({ error: 'Save the deal first, then set its status.' })
+    const patch = { deal_status: m.deal, updated_at: now }
+    if (m.stamp) patch[m.stamp] = now
+    const { error } = await supabaseAdmin.from('deals').update(patch).eq('id', deal.id).eq('dealership_id', req.dealershipId)
+    if (error) { console.error('deal status update failed:', error.message); return res.status(500).json({ error: 'Update failed' }) }
+    // Flip the vehicle to match. Never touch a car that isn't linked to this deal.
+    if (deal.inventory_id) {
+      const invPatch = { status: m.inv }
+      if (m.inv === 'sold') invPatch.sold_at = now
+      if (m.inv === 'available') invPatch.sold_at = null
+      await supabaseAdmin.from('inventory').update(invPatch).eq('id', deal.inventory_id).eq('dealership_id', req.dealershipId)
+    }
+    res.json({ ok: true, deal_status: m.deal, vehicle_status: m.inv })
   })
 
   // ── Desk-a-deal helpers: search customers, prefill one, search inventory ──────
