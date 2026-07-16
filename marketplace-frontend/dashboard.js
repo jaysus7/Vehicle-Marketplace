@@ -6071,6 +6071,10 @@ function openVehicleForm(vehicle) {
   const isEdit = !!v.id;
   __vehExistingUrls = Array.isArray(v.image_urls) ? v.image_urls.slice() : [];
   __vehFormFiles = [];
+  // Enriched VIN decode (safety systems, recalls) held while the form is open, so it
+  // saves with the vehicle and enriches the AI copy. Seed from the existing record.
+  __vehDecodedVinData = (v.vin_data && typeof v.vin_data === 'object') ? v.vin_data : null;
+  __vehDecodedRecalls = Array.isArray(v.recalls) ? v.recalls : null;
   const inp = (id, val, ph, cls = '') => `<input id="${id}" value="${esc(val == null ? '' : val)}" placeholder="${esc(ph)}" class="${cls} bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm">`;
   const lbl = (t) => `<label class="block text-[11px] font-semibold text-slate-500 dark:text-slate-400 mb-1">${t}</label>`;
   const opts = (cur, arr) => arr.map(o => `<option value="${o[0]}" ${String(cur || '') === o[0] ? 'selected' : ''}>${o[1]}</option>`).join('');
@@ -6112,13 +6116,19 @@ function openVehicleForm(vehicle) {
       <div>${lbl('Engine')}${inp('veh-engine', v.engine, '', 'w-full')}</div>
       <div>${lbl('Body')}${inp('veh-body', v.body_style, '', 'w-full')}</div>
     </div>
-    <div>${lbl('Description')}<textarea id="veh-desc" rows="3" class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm">${esc(v.description || '')}</textarea></div>
+    <div>
+      <div class="flex items-center justify-between mb-1">
+        <label class="block text-[11px] font-semibold text-slate-500 dark:text-slate-400">Description</label>
+        <button type="button" onclick="vehAiMenu(event,'description')" class="text-[11px] font-bold text-violet-600 dark:text-violet-400 hover:text-violet-500">✨ AI</button>
+      </div>
+      <textarea id="veh-desc" rows="3" class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm">${esc(v.description || '')}</textarea>
+    </div>
     <div>
       <div class="flex items-center justify-between mb-1">
         <label class="block text-[11px] font-semibold text-slate-500 dark:text-slate-400">Sales pitch <span class="text-slate-400 font-normal">(shown on your website)</span></label>
-        ${isEdit ? `<button type="button" onclick="vehGenPitch('${v.id}', this)" class="text-[11px] font-bold text-violet-600 dark:text-violet-400 hover:text-violet-500">✨ Write with AI</button>` : '<span class="text-[10px] text-slate-400 italic">Save first, then generate</span>'}
+        <button type="button" onclick="vehAiMenu(event,'pitch')" class="text-[11px] font-bold text-violet-600 dark:text-violet-400 hover:text-violet-500">✨ AI</button>
       </div>
-      <textarea id="veh-pitch" rows="3" placeholder="A compelling pitch for this car. Click ✨ Write with AI, or type your own." class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm">${esc(v.sales_pitch || '')}</textarea>
+      <textarea id="veh-pitch" rows="3" placeholder="A compelling pitch for this car. Click ✨ AI, or type your own." class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm">${esc(v.sales_pitch || '')}</textarea>
     </div>
     <div class="border-t border-slate-200 dark:border-slate-700 pt-3">
       <div class="text-sm font-black text-slate-900 dark:text-white">Key specs</div>
@@ -6185,20 +6195,87 @@ function renderVehPhotos() {
 function vehAddFiles(fileList) { __vehFormFiles.push(...Array.from(fileList || [])); renderVehPhotos(); }
 function vehRemoveFile(i) { __vehFormFiles.splice(i, 1); renderVehPhotos(); }
 function vehRemoveExisting(i) { __vehExistingUrls.splice(i, 1); renderVehPhotos(); }
+let __vehDecodedVinData = null;   // enriched NHTSA vin_data held while the form is open
+let __vehDecodedRecalls = null;   // recall list from the enriched decode
+// Fill the add/edit form from a decoded VIN. Prefers the ENRICHED decoder
+// (/vin/decode — safety systems, plant, recalls, extra fields) and falls back to
+// the lightweight decoder when Inventory Intelligence isn't active.
 async function vehDecode() {
   const vin = (document.getElementById('veh-vin')?.value || '').trim().toUpperCase();
   if (vin.length !== 17) { showToast('Enter a 17-character VIN', 'error'); return; }
+  const btn = document.querySelector('[onclick="vehDecode()"]');
+  const orig = btn ? btn.textContent : '';
+  if (btn) { btn.disabled = true; btn.textContent = 'Decoding…'; }
+  const setDrive = (val) => { const dt = document.getElementById('veh-drive'); if (dt && val) { const u = String(val).toUpperCase(); dt.value = /AWD|ALL|4MATIC|QUATTRO/.test(u) ? 'AWD' : /4WD|4X4/.test(u) ? '4WD' : /RWD|REAR/.test(u) ? 'RWD' : /FWD|FRONT/.test(u) ? 'FWD' : ''; } };
+  const set = (id, val) => { const el = document.getElementById(id); if (el && val != null && val !== '') el.value = val; };
   try {
+    // Enriched decode first — GET /vin/decode/:vin returns { decoded, recalls, all_fields }.
+    const er = await fetch(`${API}/vin/decode/${encodeURIComponent(vin)}`, { headers: { 'Authorization': `Bearer ${token}` } });
+    if (er.ok) {
+      const ed = await er.json();
+      const d = ed.decoded || {};
+      set('veh-year', d.year); set('veh-make', d.make); set('veh-model', d.model); set('veh-trim', d.trim);
+      set('veh-trans', d.transmission); set('veh-fuel', d.fuel_type); set('veh-engine', d.engine);
+      set('veh-body', d.body_style); set('veh-doors', d.doors); setDrive(d.drivetrain);
+      __vehDecodedVinData = (d.vin_data && typeof d.vin_data === 'object') ? d.vin_data : null;
+      __vehDecodedRecalls = Array.isArray(ed.recalls) ? ed.recalls : null;
+      const nRec = __vehDecodedRecalls ? __vehDecodedRecalls.length : 0;
+      showToast(nRec ? `VIN decoded — ⚠ ${nRec} open recall${nRec > 1 ? 's' : ''} flagged` : 'VIN decoded — full specs & recall check', 'success');
+      return;
+    }
+    // 403 = no Inventory Intelligence → fall back to the free lightweight decoder.
+    if (er.status !== 403) { const ej = await er.json().catch(() => ({})); throw new Error(ej.error || 'Decode failed'); }
     const r = await fetch(`${API}/ai/vin-decode`, { method: 'POST', headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ vin }) });
     const d = await r.json();
     if (!r.ok) throw new Error(d.error || 'Decode failed');
-    const set = (id, val) => { const el = document.getElementById(id); if (el && val != null && val !== '') el.value = val; };
     set('veh-year', d.year); set('veh-make', d.make); set('veh-model', d.model); set('veh-trim', d.trim);
-    set('veh-trans', d.transmission); set('veh-fuel', d.fuel_type); set('veh-engine', d.engine); set('veh-body', d.body_style);
-    const dt = document.getElementById('veh-drive');
-    if (dt && d.drivetrain) { const u = d.drivetrain.toUpperCase(); dt.value = /AWD|ALL|4MATIC|QUATTRO/.test(u) ? 'AWD' : /4WD|4X4/.test(u) ? '4WD' : /RWD|REAR/.test(u) ? 'RWD' : /FWD|FRONT/.test(u) ? 'FWD' : ''; }
+    set('veh-trans', d.transmission); set('veh-fuel', d.fuel_type); set('veh-engine', d.engine); set('veh-body', d.body_type || d.body_style);
+    setDrive(d.drivetrain);
     showToast('VIN decoded', 'success');
   } catch (e) { showToast(e.message, 'error'); }
+  finally { if (btn) { btn.disabled = false; btn.textContent = orig; } }
+}
+// Collect the current form's vehicle facts so the ✨ AI writer has real context
+// even before the vehicle is saved (year/make/model + specs + decoded VIN data).
+function vehFormFacts() {
+  const val = (i) => (document.getElementById(i)?.value || '').trim();
+  return {
+    year: val('veh-year'), make: val('veh-make'), model: val('veh-model'), trim: val('veh-trim'),
+    condition: document.getElementById('veh-condition')?.value || 'used', mileage: val('veh-mileage'), price: val('veh-price'),
+    exterior_color: val('veh-ext'), interior_color: val('veh-int'), drivetrain: document.getElementById('veh-drive')?.value || '',
+    doors: val('veh-doors'), transmission: val('veh-trans'), fuel_type: val('veh-fuel'), engine: val('veh-engine'), body_style: val('veh-body'),
+    specs_manual: {
+      towing_capacity: val('veh-sp-tow'), horsepower: val('veh-sp-hp'), torque: val('veh-sp-tq'), curb_weight: val('veh-sp-cw'),
+      payload: val('veh-sp-pl'), seating: val('veh-sp-seat'), fuel_economy: val('veh-sp-fe'), cargo: val('veh-sp-cargo'),
+    },
+    vin_data: __vehDecodedVinData || undefined,
+  };
+}
+// ✨ AI menu for the vehicle Description / Sales-pitch fields — same modes as the
+// automation & website writers (boost / fresh / short / long / seo).
+function vehAiMenu(ev, field) {
+  ev.stopPropagation();
+  document.querySelectorAll('.ai-menu').forEach(m => m.remove());
+  const acts = [['boost', '✨ Boost what\'s here'], ['fresh', 'Rewrite fresh'], ['short', 'Shorter version'], ['long', 'Longer version'], ['seo', 'SEO rewrite']];
+  const m = document.createElement('div');
+  m.className = 'ai-menu fixed z-[9999] bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg shadow-xl py-1 min-w-[170px]';
+  const r = ev.currentTarget.getBoundingClientRect();
+  m.style.top = (r.bottom + 4) + 'px'; m.style.left = Math.max(8, r.right - 180) + 'px';
+  m.innerHTML = acts.map(a => `<button class="block w-full text-left px-3 py-1.5 text-sm hover:bg-slate-100 dark:hover:bg-slate-800" onclick="vehAiRun('${field}','${a[0]}');this.closest('.ai-menu').remove()">${a[1]}</button>`).join('');
+  document.body.appendChild(m);
+  setTimeout(() => document.addEventListener('click', function h() { m.remove(); document.removeEventListener('click', h); }, { once: true }), 10);
+}
+async function vehAiRun(field, task) {
+  const taId = field === 'pitch' ? 'veh-pitch' : 'veh-desc';
+  const ta = document.getElementById(taId); if (!ta) return;
+  const facts = vehFormFacts();
+  if (!facts.make || !facts.model) { showToast('Add at least the make and model first (or Decode a VIN).', 'info'); return; }
+  showToast('✨ Writing…', 'info');
+  try {
+    const d = await apiSendJson('/ai/vehicle-copy', 'POST', { field, task, vehicle: facts, current: ta.value });
+    if (d.text) { ta.value = d.text; showToast('✨ Done — review & Save', 'success'); }
+    else showToast('Could not generate copy', 'error');
+  } catch (e) { showToast(e.message === 'AI Boost not active' ? `AI writing needs AI Boost (or your free trial).` : e.message, 'error'); }
 }
 async function vehSave(btn, id) {
   const val = (i) => (document.getElementById(i)?.value || '').trim();
@@ -6214,6 +6291,9 @@ async function vehSave(btn, id) {
       payload: val('veh-sp-pl'), seating: val('veh-sp-seat'), fuel_economy: val('veh-sp-fe'), cargo: val('veh-sp-cargo'),
     },
   };
+  // Persist the enriched VIN decode + recall check when the form decoded a VIN.
+  if (__vehDecodedVinData) body.vin_data = __vehDecodedVinData;
+  if (__vehDecodedRecalls) body.recalls = __vehDecodedRecalls;
   if (!body.make || !body.model) { showToast('Make and model are required', 'error'); return; }
   const orig = btn.textContent; btn.disabled = true; btn.textContent = 'Saving…';
   try {
@@ -12978,7 +13058,7 @@ const APPR_DISCLOSURE_SECTIONS = [
     { id: 'accident', q: 'Has the vehicle been in an accident?', money: true, moneyLabel: 'Amount $', detail: true },
     { id: 'panels', q: 'Have any panels been repaired, repainted or replaced?', detail: true },
     { id: 'abs', q: 'Is the ABS operational?', detail: true, detailLabel: 'If "No," details' },
-    { id: 'accident_type', q: 'Vehicle accident type', type: 'select', options: ['Minor', 'Moderate', 'Severe', 'Other'], detail: true, detailLabel: 'If "Other," details' },
+    { id: 'accident_type', q: 'Vehicle accident type', type: 'select', options: ['None', 'Salvage', 'Irreparable', 'Rebuilt', 'Other'], detail: true, detailLabel: 'If "Other," details' },
     { id: 'original_owner', q: 'Customer is original owner?', detail: true, detailLabel: 'If "No," where was it purchased' },
     { id: 'airbags', q: 'Are all of the air bags operational?', detail: true, detailLabel: 'If "No," details' },
     { id: 'import', q: 'Is this a US or out-of-province vehicle?', where: true, whereLabel: 'Which province / state', detail: true },

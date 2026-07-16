@@ -129,7 +129,13 @@ export function registerRoutes(app) {
       transmission: b.transmission || null, fuel_type: b.fuel_type || null,
       drivetrain: b.drivetrain || null, engine: b.engine || null, body_style: b.body_style || null,
       doors: numOrNull(b.doors), description: b.description || null,
+      sales_pitch: (b.sales_pitch || '').trim() || null,
       specs_manual: cleanSpecs(b.specs_manual),
+      // Enriched VIN decode (safety systems, plant, etc.) + recall check, when the
+      // Add-vehicle form decoded a VIN — carries into stickers, pitches & recall badges.
+      vin_data: (b.vin_data && typeof b.vin_data === 'object') ? b.vin_data : null,
+      recalls: Array.isArray(b.recalls) ? b.recalls : null,
+      recalls_checked_at: Array.isArray(b.recalls) ? new Date().toISOString() : null,
       image_urls: Array.isArray(b.image_urls) ? b.image_urls : [],
       lot_date: new Date().toISOString(),
     }
@@ -153,6 +159,8 @@ export function registerRoutes(app) {
     if (b.invoice_amount !== undefined) patch.invoice_amount = numOrNull(b.invoice_amount)
     if (b.mileage !== undefined) { const m = numOrNull(b.mileage); patch.mileage = m != null ? Math.round(m) : null }
     if (b.doors !== undefined) patch.doors = numOrNull(b.doors)
+    if (b.vin_data !== undefined) patch.vin_data = (b.vin_data && typeof b.vin_data === 'object') ? b.vin_data : null
+    if (Array.isArray(b.recalls)) { patch.recalls = b.recalls; patch.recalls_checked_at = new Date().toISOString() }
     if (b.specs_manual !== undefined) patch.specs_manual = cleanSpecs(b.specs_manual)
     if (Array.isArray(b.image_urls)) patch.image_urls = b.image_urls
     if (b.status !== undefined && ['available', 'sold', 'pending'].includes(b.status)) {

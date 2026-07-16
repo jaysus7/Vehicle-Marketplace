@@ -925,6 +925,76 @@ Facts (ignore any blank/unknown fields): ${JSON.stringify(facts)}`
     res.json({ ok: true, count: done, pitches, limited })
   })
 
+  // POST /ai/vehicle-copy — write a website description OR sales pitch for a single
+  // vehicle from ad-hoc facts (no saved row needed), with the same rewrite modes as
+  // the automation/website AI: boost / fresh / short / long / seo. Powers the ✨ AI
+  // menu on the Add/Edit vehicle form, so copy can be generated before the car is saved.
+  // Body: { field: 'description'|'pitch', task, vehicle:{year,make,...,specs_manual}, current }
+  app.post('/ai/vehicle-copy', requireAuth, async (req, res) => {
+    if (!req.dealershipId) return res.status(400).json({ error: 'No dealership' })
+    const b = req.body || {}
+    const field = String(b.field || 'description').toLowerCase() === 'pitch' ? 'pitch' : 'description'
+    const taskAlias = { improve: 'boost', rewrite: 'fresh', generate: 'fresh', expand: 'long', shorten: 'short' }
+    const task = taskAlias[String(b.task || 'fresh').toLowerCase()] || String(b.task || 'fresh').toLowerCase()
+    const current = String(b.current || '').slice(0, 2000)
+    const v = (b.vehicle && typeof b.vehicle === 'object') ? b.vehicle : {}
+
+    const { data: dealer } = await supabaseAdmin
+      .from('dealerships').select('name, ai_tone, ai_boost_active, city, province').eq('id', req.dealershipId).maybeSingle()
+    const isOwner = (req.user.email || '').toLowerCase() === OWNER_EMAIL
+    if (!isOwner && !dealer?.ai_boost_active) return res.status(403).json({ error: 'AI Boost not active' })
+    if (!process.env.ANTHROPIC_API_KEY) return res.status(503).json({ error: 'AI features not configured' })
+    if (!(await aiAllowed(req.dealershipId, isOwner))) return res.status(429).json({ error: 'Monthly AI limit reached — resets next month.' })
+
+    const YEAR = new Date().getFullYear()
+    const sm = (v.specs_manual && typeof v.specs_manual === 'object') ? v.specs_manual : {}
+    const vd = (v.vin_data && typeof v.vin_data === 'object') ? v.vin_data : {}
+    const facts = {
+      vehicle: [v.year, v.make, v.model, v.trim].filter(Boolean).join(' '),
+      condition: v.condition, mileage_km: v.mileage, price: v.price,
+      exterior: v.exterior_color, interior: v.interior_color,
+      drivetrain: v.drivetrain, fuel: v.fuel_type, transmission: v.transmission,
+      engine: v.engine || vd.engine_model, body_style: v.body_style, doors: v.doors,
+      towing_capacity: sm.towing_capacity, horsepower: sm.horsepower, torque: sm.torque,
+      curb_weight: sm.curb_weight, payload: sm.payload, seating: sm.seating,
+      fuel_economy: sm.fuel_economy, cargo: sm.cargo,
+      safety: Object.entries({ 'forward-collision warning': vd.forward_collision, 'automatic emergency braking': vd.auto_brake, 'lane-keep assist': vd.lane_keep, 'blind-spot monitor': vd.blind_spot_mon, 'adaptive cruise': vd.adaptive_cruise }).filter(([, x]) => x && String(x).toLowerCase() !== 'not available').map(([k]) => k),
+    }
+    if (!facts.vehicle) return res.status(400).json({ error: 'Add at least the year, make and model first.' })
+
+    const tone = dealer?.ai_tone === 'friendly' ? 'warm and friendly' : dealer?.ai_tone === 'aggressive' ? 'energetic and deal-focused' : 'professional and confident'
+    const loc = [dealer?.city, dealer?.province].filter(Boolean).join(', ')
+    const instr = {
+      boost: 'Keep the meaning but make it noticeably sharper — tighter phrasing, stronger verbs, better flow and punch.',
+      fresh: 'Write it from scratch with a genuinely new angle and fresh wording.',
+      short: 'Make it shorter and punchier — cut every wasted word while keeping the core selling points.',
+      long: 'Expand it with more useful, specific detail a buyer actually cares about — no filler.',
+      seo: `Rewrite it for search using modern ${YEAR} SEO best practices: write for humans first, weave in the year/make/model and body style naturally near the start, match buyer search intent, and keep it scannable. Never keyword-stuff.`,
+    }[task] || 'Write fresh, specific copy.'
+
+    const spec = field === 'pitch'
+      ? `Write a compelling, honest SALES PITCH for the vehicle below, to appear on the dealership's website vehicle-detail page. 2–3 short paragraphs (about 60–120 words total). Lead with what makes THIS specific vehicle appealing (capability, comfort, tech, value); sell the experience, don't just list features.`
+      : `Write a clear, appealing website DESCRIPTION for the vehicle below (the vehicle-detail overview). 2–4 sentences (about 40–80 words). Highlight the standout specs, features and condition a buyer cares about.`
+    const prompt = `You are an expert automotive copywriter for ${dealer?.name || 'a car dealership'}${loc ? ' in ' + loc : ''}. Tone: ${tone}.
+${spec} ${instr}
+Rules: Use ONLY the facts provided — never invent specs, pricing, history, packages or awards. No emoji, no markdown, no headings, no quotes.${current ? `\nCurrent text to work from: "${current}".` : ''}
+Facts (ignore any blank/unknown fields): ${JSON.stringify(facts)}
+Return ONLY the ${field === 'pitch' ? 'sales pitch' : 'description'} — no preamble.`
+
+    try {
+      const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
+      const maxTok = task === 'long' || field === 'pitch' ? 600 : 400
+      const msg = await Promise.race([
+        anthropic.messages.create({ model: 'claude-haiku-4-5-20251001', max_tokens: maxTok, temperature: 1, messages: [{ role: 'user', content: prompt }] }),
+        new Promise((_, rej) => setTimeout(() => rej(new Error('ai timeout')), 25000)),
+      ])
+      const text = (msg?.content?.[0]?.text || '').trim().replace(/^["']|["']$/g, '')
+      if (!text) throw new Error('No copy generated')
+      recordUsage(req.dealershipId, { ai: 1 })
+      res.json({ ok: true, text })
+    } catch (e) { res.status(500).json({ error: e.message }) }
+  })
+
   // Decode a VIN to year/make/model/trim via NHTSA (free, no key). Used by the
   // Trade Appraisal form's "Decode" button to prefill the manual fields.
   app.post('/ai/vin-decode', requireAuth, async (req, res) => {
