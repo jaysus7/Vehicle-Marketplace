@@ -808,7 +808,7 @@ async function _runInventorySyncInner(dealershipId) {
     for (let i = 0; i < invIds.length; i += 100) {
       const slice = invIds.slice(i, i + 100)
       const { data: posted } = await supabaseAdmin.from('listings')
-        .select('id, inventory_id, posted_by, posted_price, vehicle_label')
+        .select('id, inventory_id, posted_by, posted_price, vehicle_label, fb_listing_url')
         .in('inventory_id', slice).eq('status', 'posted').not('fb_listing_url', 'is', null)
       for (const l of (posted || [])) {
         const inv = invById[l.inventory_id]; if (!inv) continue
@@ -817,8 +817,11 @@ async function _runInventorySyncInner(dealershipId) {
         const label = l.vehicle_label || [inv.year, inv.make, inv.model, inv.trim].filter(Boolean).join(' ') || 'A vehicle'
         const dir = newP > oldP ? 'up' : 'down'
         if (l.posted_by) await createNotification({
-          dealershipId, type: 'fb_price_change', targetUserId: l.posted_by, linkPage: 'inventory', linkFilter: label,
-          title: 'Price changed — update Facebook', body: `${label} price moved ${dir} from $${oldP.toLocaleString()} to $${newP.toLocaleString()}. Update the price on your Facebook Marketplace listing.`,
+          dealershipId, type: 'fb_price_change', targetUserId: l.posted_by,
+          // Link straight to the Facebook ad so the rep can hit Edit and fix the price.
+          // Fall back to the inventory page if the listing has no stored ad URL.
+          linkUrl: l.fb_listing_url || null, linkPage: 'inventory', linkFilter: label,
+          title: 'Price changed — update Facebook', body: `${label} price moved ${dir} from $${oldP.toLocaleString()} to $${newP.toLocaleString()}. Open your Facebook Marketplace ad and hit Edit to update the price to $${newP.toLocaleString()}.`,
         })
         await supabaseAdmin.from('listings').update({ posted_price: newP }).eq('id', l.id)
       }

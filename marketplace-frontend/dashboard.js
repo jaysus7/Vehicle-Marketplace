@@ -2505,8 +2505,12 @@ function plRender() {
     btn.disabled = true; btn.textContent = 'Relisting…';
     try {
       const r = await fetch(`${API}/pipeline/${btn.dataset.relist}/relist`, { method: 'POST', headers: { 'Authorization': `Bearer ${token}` } });
-      if (!r.ok) throw new Error((await r.json()).error || 'Failed');
-      window.open('https://www.facebook.com/marketplace/create/vehicle', '_blank', 'noopener');
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(data.error || 'Failed');
+      // Drive the extension to re-post with a fully auto-filled listing (guardrail,
+      // AI copy, branded photos). Falls back to opening Facebook when it's not detected.
+      if (data.inventory_id) msPostVehicle(data.inventory_id);
+      else window.open('https://www.facebook.com/marketplace/create/vehicle', '_blank', 'noopener');
       loadPipelinePage();
     } catch (e) { alert(e.message); btn.disabled = false; btn.textContent = '↻ Relist on Facebook'; }
   }));
@@ -2547,6 +2551,7 @@ function plRender() {
 async function loadPipelinePage() {
   const root = document.getElementById('pipeline-root');
   if (!root) return;
+  if (typeof setupExtensionBridge === 'function') setupExtensionBridge();  // so Relist can detect the extension
   root.innerHTML = `<div class="py-16 text-center text-sm text-slate-400 italic">Loading pipeline…</div>`;
   try {
     PL_DATA = await apiGetJson('/pipeline', { onRetry: (n, total) => {
@@ -12175,7 +12180,7 @@ document.addEventListener('DOMContentLoaded', () => {
               <span class="text-[10px] text-slate-400 whitespace-nowrap flex-shrink-0 mt-0.5">${timeAgo(n.created_at)}</span>
             </div>
             ${n.body ? `<p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5 leading-snug">${n.body}</p>` : ''}
-            ${n.link_url ? `<span class="inline-flex items-center gap-1 mt-1.5 text-[11px] font-semibold text-indigo-600 dark:text-indigo-400">Open PDF
+            ${n.link_url ? `<span class="inline-flex items-center gap-1 mt-1.5 text-[11px] font-semibold text-indigo-600 dark:text-indigo-400">${n.type === 'fb_price_change' ? 'Open Facebook ad' : n.type === 'fb_sold' ? 'Open listing' : 'Open PDF'}
               <svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/></svg>
             </span>` : ''}
           </div>
