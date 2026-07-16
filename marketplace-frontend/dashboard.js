@@ -496,6 +496,9 @@ async function initializeDashboardEcosystem() {
         const page = btn.dataset.page, tab = btn.dataset.tab;
         // The Customers page can be pre-filtered (e.g. Sold Customers).
         if (page === 'crm') __crmStatusFilter = btn.dataset.filter === 'sold' ? 'sold,fni,delivered' : '';
+        // The Inventory page renders differently for the Facebook posting hub vs
+        // the manual (Inventory Intelligence) list — the nav leaf carries the mode.
+        if (page === 'inventory' && btn.dataset.invmode) __inventoryMode = btn.dataset.invmode;
         if (page === 'profile' && tab) __settingsTab = tab;
         switchPage(page);
       });
@@ -644,6 +647,7 @@ function switchPage(pageId) {
   // leaderboard, guardrail settings, inventory-intelligence tags).
   runPageInit(pageId);
 
+  if (pageId === 'inventory') applyInventoryMode();
   if (pageId === 'vin-sticker') loadVinStickerPage();
   if (pageId === 'profile') { loadProfileBranding(); loadCrmAdfSetting(); settingsTab(__settingsTab); }
   if (pageId === 'inv-intel' && typeof window._invIntelPageHook === 'function') window._invIntelPageHook();
@@ -1465,19 +1469,36 @@ window.crmInsightsRange = crmInsightsRange;
 
 let __crmCanSeeAll = false;
 let __crmStatusFilter = '';   // set by the "Sold Customers" nav leaf (comma list)
-function crmClearStatusFilter() { __crmStatusFilter = ''; crmRefreshContacts(); }
+const crmIsSoldView = () => !!__crmStatusFilter;
+function crmClearStatusFilter() { __crmStatusFilter = ''; crmLoadContacts(); }
 window.crmClearStatusFilter = crmClearStatusFilter;
+// Retitle the shared CRM page depending on whether we're on Customers or the
+// Sold Customers view (both live on the same page container).
+function crmApplyPageChrome() {
+  const t = document.getElementById('crm-page-title'), s = document.getElementById('crm-page-sub');
+  const search = document.getElementById('crm-search');
+  if (crmIsSoldView()) {
+    if (t) t.textContent = 'Sold Customers';
+    if (s) s.textContent = 'Everyone who bought — their deal, sale source and salesperson, ready for delivery follow-up, referrals and equity mining.';
+    if (search) search.placeholder = 'Search sold customers — name, email, phone…';
+  } else {
+    if (t) t.textContent = 'Customers';
+    if (s) s.textContent = 'Every lead, appraisal and sale on one customer record — with a full activity timeline, follow-up tasks, and one-click email.';
+    if (search) search.placeholder = 'Search ALL contacts — name, email, phone…';
+  }
+}
 // Renders the persistent toolbar (search + manager "by rep" filter) ONCE, then
 // only refreshes the list on search/filter so the search box keeps focus.
 async function crmLoadContacts() {
   const body = document.getElementById('crm-body');
   if (!body) return;
   await crmEnsureLookups();   // reps for the "by rep" filter
+  crmApplyPageChrome();
   body.innerHTML = `
     <div class="flex flex-wrap items-center gap-2 mb-3">
       <div class="relative flex-1 min-w-[200px] max-w-sm">
         <svg class="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path stroke-linecap="round" d="M21 21l-4-4"/></svg>
-        <input id="crm-search" placeholder="Search ALL contacts — name, email, phone…" oninput="crmSearchDebounced()" class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg pl-9 pr-3 py-2 text-sm">
+        <input id="crm-search" placeholder="${crmIsSoldView() ? 'Search sold customers — name, email, phone…' : 'Search ALL contacts — name, email, phone…'}" oninput="crmSearchDebounced()" class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg pl-9 pr-3 py-2 text-sm">
       </div>
       <span id="crm-repfilter"></span>
     </div>
@@ -1507,19 +1528,30 @@ async function crmRefreshContacts() {
       </select>`;
     }
     const contacts = d.contacts || [];
-    const filterChip = __crmStatusFilter
-      ? `<div class="mb-2"><span class="inline-flex items-center gap-1.5 text-xs font-bold bg-indigo-100 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 px-2.5 py-1 rounded-full">Sold customers<button onclick="crmClearStatusFilter()" class="hover:text-indigo-900 dark:hover:text-white" aria-label="Clear filter">&times;</button></span></div>`
-      : '';
+    const soldView = crmIsSoldView();
     if (!contacts.length) {
       list.className = '';
-      list.innerHTML = filterChip + `<div class="py-16 text-center text-sm text-slate-400">${q || rep || __crmStatusFilter ? 'No contacts match.' : 'No contacts yet — they appear automatically as you capture leads and save appraisals, or add one manually.'}</div>`;
+      list.innerHTML = `<div class="py-16 text-center text-sm text-slate-400">${q || rep || __crmStatusFilter ? (soldView ? 'No sold customers match.' : 'No contacts match.') : 'No contacts yet — they appear automatically as you capture leads and save appraisals, or add one manually.'}</div>`;
       return;
     }
     const scopeNote = q ? 'searching all' : (rep ? 'one rep' : (d.can_see_all ? 'whole team' : 'yours'));
     list.className = '';
-    list.innerHTML = filterChip + `<div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden divide-y divide-slate-100 dark:divide-slate-800">
-      ${contacts.map(crmContactRow).join('')}</div>
-      <div class="text-[11px] text-slate-400 mt-2">${contacts.length} contact${contacts.length === 1 ? '' : 's'} · ${scopeNote}</div>`;
+    // Sold Customers gets a purpose-built table (deal-oriented columns); the open
+    // pipeline keeps the pipeline-move contact list.
+    if (soldView) {
+      list.innerHTML = `<div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden">
+        <div class="overflow-x-auto"><table class="w-full text-sm text-left min-w-[640px]">
+          <thead><tr class="border-b border-slate-200 dark:border-slate-800 text-slate-500 dark:text-slate-400 uppercase text-[11px] tracking-wider">
+            <th class="py-2.5 px-4">Customer</th><th class="py-2.5 px-3">Stage</th><th class="py-2.5 px-3">Sale source</th><th class="py-2.5 px-3">Salesperson</th><th class="py-2.5 px-3 whitespace-nowrap">Sold</th>
+          </tr></thead>
+          <tbody class="divide-y divide-slate-100 dark:divide-slate-800">${contacts.map(crmSoldRow).join('')}</tbody>
+        </table></div></div>
+        <div class="text-[11px] text-slate-400 mt-2">${contacts.length} sold customer${contacts.length === 1 ? '' : 's'} · ${scopeNote}</div>`;
+    } else {
+      list.innerHTML = `<div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden divide-y divide-slate-100 dark:divide-slate-800">
+        ${contacts.map(crmContactRow).join('')}</div>
+        <div class="text-[11px] text-slate-400 mt-2">${contacts.length} contact${contacts.length === 1 ? '' : 's'} · ${scopeNote}</div>`;
+    }
   } catch (e) {
     const list = document.getElementById('crm-list');
     if (list) list.innerHTML = `<div class="py-16 text-center text-sm text-slate-500">Couldn't load contacts: ${esc(e.message)}<br><button onclick="crmRefreshContacts()" class="mt-3 text-indigo-500 font-bold">Retry</button></div>`;
@@ -1545,6 +1577,26 @@ function crmContactRow(c) {
       <div class="text-[11px] text-slate-400">${esc(crmWhen(c.last_activity_at || c.created_at))}</div>
     </div>
   </div>`;
+}
+// A row on the Sold Customers table — deal-oriented, distinct from the pipeline list.
+function crmSoldRow(c) {
+  const initials = (c.full_name || '?').split(/\s+/).map(w => w[0]).filter(Boolean).slice(0, 2).join('').toUpperCase();
+  const sub = [c.email, c.phone].filter(Boolean).join(' · ');
+  return `<tr onclick="openCrmContact('${c.id}')" class="cursor-pointer hover:bg-emerald-50 dark:hover:bg-emerald-950/20 transition">
+    <td class="py-3 px-4">
+      <div class="flex items-center gap-3 min-w-0">
+        <div class="w-8 h-8 rounded-full bg-emerald-100 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-300 flex items-center justify-center text-xs font-black flex-shrink-0">${esc(initials || '?')}</div>
+        <div class="min-w-0">
+          <div class="font-bold text-slate-900 dark:text-white truncate">${esc(c.full_name || 'Unknown')}${c.dnc ? ' <span class="text-[10px] font-bold text-rose-500">DNC</span>' : ''}</div>
+          <div class="text-xs text-slate-500 dark:text-slate-400 truncate">${esc(sub || '—')}</div>
+        </div>
+      </div>
+    </td>
+    <td class="py-3 px-3"><span class="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-full ${crmStatusColor(c.status)}">${esc(CRM_STATUS[c.status] || c.status)}</span></td>
+    <td class="py-3 px-3 text-slate-600 dark:text-slate-300">${esc(c.sold_source || c.source || '—')}</td>
+    <td class="py-3 px-3 text-slate-600 dark:text-slate-300">${esc(c.rep_name || '—')}</td>
+    <td class="py-3 px-3 text-slate-400 whitespace-nowrap">${esc(crmWhen(c.last_activity_at || c.created_at))}</td>
+  </tr>`;
 }
 // Quick pipeline move from the list — PUT the new stage (fires automation server-side).
 async function crmQuickStatus(ev, id) {
@@ -1651,8 +1703,10 @@ function crmDetailFacts(c, d) {
 }
 function crmTaskRow(t, contactId) {
   const overdue = t.due_at && new Date(t.due_at) < Date.now();
+  const dot = t.type === 'lead_followup' ? 'bg-orange-500' : t.type === 'delivery_followup' ? 'bg-emerald-500' : '';
   return `<div class="flex items-center gap-2 text-sm">
     <input type="checkbox" ${t.done ? 'checked' : ''} onchange="crmToggleTask('${t.id}', this.checked, '${contactId}')" class="w-4 h-4 rounded accent-indigo-600 flex-shrink-0">
+    ${dot ? `<span class="w-2 h-2 rounded-full ${dot} flex-shrink-0" title="${t.type === 'lead_followup' ? 'New-lead follow-up' : 'Delivery follow-up'}"></span>` : ''}
     <span class="flex-1 ${t.done ? 'line-through text-slate-400' : 'text-slate-700 dark:text-slate-200'}">${esc(t.title)}</span>
     ${t.due_at ? `<span class="text-[11px] ${overdue && !t.done ? 'text-rose-500 font-bold' : 'text-slate-400'}">${esc(crmWhen(t.due_at))}</span>` : ''}
   </div>`;
@@ -2081,6 +2135,13 @@ async function crmSaveContact(btn, id) {
 }
 
 // ── Tasks tab ────────────────────────────────────────────────────────────────
+// Colour + label per automated task journey: orange for new-lead follow-up,
+// green for post-delivery follow-up, neutral for manually-added tasks.
+function crmTaskTypeMeta(type) {
+  if (type === 'lead_followup') return { label: 'New lead', border: 'border-orange-500', badge: 'bg-orange-100 text-orange-700 dark:bg-orange-950/40 dark:text-orange-300' };
+  if (type === 'delivery_followup') return { label: 'Delivery', border: 'border-emerald-500', badge: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300' };
+  return { label: type || 'follow-up', border: 'border-slate-200 dark:border-slate-700', badge: 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300' };
+}
 async function crmLoadTasks() {
   const body = document.getElementById('tasks-root');
   if (!body) return;
@@ -2092,14 +2153,20 @@ async function crmLoadTasks() {
     if (!el) return;   // user navigated away mid-fetch
     if (!tasks.length) { el.className = ''; el.innerHTML = '<div class="py-16 text-center text-sm text-slate-400">No open tasks. Add follow-ups from a contact.</div>'; return; }
     el.className = '';
-    el.innerHTML = `<div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl divide-y divide-slate-100 dark:divide-slate-800">
+    // Legend for the two automated task journeys.
+    const legend = `<div class="flex flex-wrap items-center gap-3 mb-3 text-[11px] font-semibold text-slate-500 dark:text-slate-400">
+      <span class="inline-flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-orange-500"></span>New-lead follow-up</span>
+      <span class="inline-flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>Delivery follow-up</span>
+    </div>`;
+    el.innerHTML = legend + `<div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl divide-y divide-slate-100 dark:divide-slate-800">
       ${tasks.map(t => {
         const overdue = t.due_at && new Date(t.due_at) < Date.now();
-        return `<div class="flex items-center gap-3 px-4 py-3">
+        const meta = crmTaskTypeMeta(t.type);
+        return `<div class="flex items-center gap-3 px-4 py-3 border-l-4 ${meta.border}">
           <input type="checkbox" onchange="crmToggleTask('${t.id}', this.checked)" class="w-4 h-4 rounded accent-indigo-600 flex-shrink-0">
           <div class="min-w-0 flex-1">
             <div class="font-semibold text-sm text-slate-800 dark:text-slate-100 truncate">${esc(t.title)}</div>
-            <div class="text-xs text-slate-400">${t.contact_name ? `<button onclick="openCrmContact('${t.contact_id}')" class="text-indigo-500 hover:underline">${esc(t.contact_name)}</button> · ` : ''}${esc((t.type || 'followup'))}</div>
+            <div class="text-xs text-slate-400 flex flex-wrap items-center gap-1.5">${t.contact_name ? `<button onclick="openCrmContact('${t.contact_id}')" class="text-indigo-500 hover:underline">${esc(t.contact_name)}</button>` : ''}<span class="text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded-full ${meta.badge}">${esc(meta.label)}</span></div>
           </div>
           ${t.due_at ? `<span class="text-[11px] flex-shrink-0 ${overdue ? 'text-rose-500 font-bold' : 'text-slate-400'}">${esc(crmWhen(t.due_at))}</span>` : ''}
         </div>`;
@@ -2115,18 +2182,16 @@ async function loadLeadsPage() {
   const root = document.getElementById('leads-root');
   if (!root) return;
   root.innerHTML = `<div class="py-16 text-center text-sm text-slate-400 italic">Loading leads…</div>`;
-  let data, inv = [];
+  let data;
   try {
     data = await apiGetJson('/leads', { onRetry: (n, total) => {
       root.innerHTML = `<div class="py-16 text-center text-sm text-slate-400 italic">Still loading… retrying (${n}/${total})</div>`;
     }});
-    try { inv = (await apiGetJson('/inventory/all', { retries: 1 })).filter(v => String(v.status || 'available').toLowerCase() === 'available'); } catch {}
   } catch (e) {
     root.innerHTML = `<div class="py-16 text-center text-sm text-slate-500">Couldn't load leads: ${esc(e.message)}<br><button onclick="loadLeadsPage()" class="mt-3 text-indigo-500 hover:text-indigo-400 font-bold">Retry</button></div>`;
     return;
   }
 
-  const vehOpts = inv.slice(0, 500).map(v => `<option value="${v.id}">${esc([v.year, v.make, v.model, v.trim].filter(Boolean).join(' '))}${v.stocknumber ? ' · #' + esc(v.stocknumber) : ''}</option>`).join('');
   const crmSet = !!data.crm_adf_email;
 
   const statusPill = (l) => {
@@ -2149,10 +2214,12 @@ async function loadLeadsPage() {
   root.innerHTML = `
     <div class="mb-5 flex items-start justify-between gap-3 flex-wrap">
       <div>
-        <h2 class="text-xl font-bold text-slate-900 dark:text-white">Leads</h2>
-        <p class="text-sm text-slate-500 dark:text-slate-400 mt-1">Log buyer leads — they're delivered to your CRM automatically as an ADF email.</p>
+        <h2 class="text-xl font-bold text-slate-900 dark:text-white">New Leads</h2>
+        <p class="text-sm text-slate-500 dark:text-slate-400 mt-1">Incoming Marketplace &amp; web leads — each auto-assigned to a salesperson and delivered to your CRM as an ADF email. To log one yourself, add them as a contact.</p>
       </div>
       <div class="flex items-center gap-2">
+        <button onclick="crmOpenForm(null)" class="inline-flex items-center gap-1.5 text-sm font-bold bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg transition">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>New contact</button>
         <button onclick="leadsExportCsv(this)" class="inline-flex items-center gap-1.5 text-xs font-bold border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 px-3 py-2 rounded-lg">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Export CSV</button>
         ${data.can_configure ? `<button onclick="document.getElementById('leads-import-file').click()" class="inline-flex items-center gap-1.5 text-xs font-bold border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 px-3 py-2 rounded-lg">
@@ -2161,22 +2228,7 @@ async function loadLeadsPage() {
       </div>
     </div>
 
-    ${!crmSet ? `<div class="bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-lg px-4 py-3 text-sm text-amber-700 dark:text-amber-300">No CRM/DMS connection set yet — leads are still saved here, and will send once ${data.can_configure ? 'you add it in <b>Settings → CRM / DMS connection</b>' : 'your admin adds it in Settings'}.</div>` : ''}
-
-    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-5">
-      <h3 class="text-sm font-bold text-slate-900 dark:text-white mb-3">Log a lead</h3>
-      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <input id="lead-name" placeholder="Buyer name" class="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm">
-        <input id="lead-phone" placeholder="Phone" class="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm">
-        <input id="lead-email" type="email" placeholder="Email" class="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm">
-        <select id="lead-vehicle" class="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm"><option value="">Vehicle of interest (optional)</option>${vehOpts}</select>
-      </div>
-      <textarea id="lead-comments" rows="2" placeholder="Notes / what they asked about" class="w-full mt-3 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm"></textarea>
-      <div class="flex items-center gap-3 mt-3">
-        <button id="lead-save" class="bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-bold px-5 py-2 rounded-lg transition">Save lead${crmSet ? ' & send to CRM' : ''}</button>
-        <span id="lead-msg" class="hidden text-xs"></span>
-      </div>
-    </div>
+    ${!crmSet ? `<div class="bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-lg px-4 py-3 text-sm text-amber-700 dark:text-amber-300 mb-4">No CRM/DMS connection set yet — leads are still saved here, and will send once ${data.can_configure ? 'you add it in <b>Settings → CRM / DMS connection</b>' : 'your admin adds it in Settings'}.</div>` : ''}
 
     <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden">
       <div class="overflow-x-auto"><table class="w-full text-sm text-left min-w-[640px]">
@@ -2186,26 +2238,6 @@ async function loadLeadsPage() {
         <tbody>${rows}</tbody>
       </table></div>
     </div>`;
-
-  document.getElementById('lead-save')?.addEventListener('click', async () => {
-    const btn = document.getElementById('lead-save'); const msg = document.getElementById('lead-msg');
-    btn.disabled = true;
-    try {
-      const r = await fetch(`${API}/leads`, { method: 'POST', headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({
-        name: document.getElementById('lead-name').value.trim(),
-        phone: document.getElementById('lead-phone').value.trim(),
-        email: document.getElementById('lead-email').value.trim(),
-        inventory_id: document.getElementById('lead-vehicle').value || null,
-        comments: document.getElementById('lead-comments').value.trim(),
-      }) });
-      const d = await r.json();
-      if (!r.ok) throw new Error(d.error || 'Failed');
-      msg.textContent = d.delivered ? '✓ Saved & sent to CRM' : (d.crm_configured ? 'Saved (CRM send failed — check address)' : 'Saved (set your CRM email to auto-send)');
-      msg.className = 'text-xs ' + (d.delivered ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400');
-      msg.classList.remove('hidden');
-      loadLeadsPage();
-    } catch (e) { msg.textContent = e.message; msg.className = 'text-xs text-red-500'; msg.classList.remove('hidden'); btn.disabled = false; }
-  });
 
   root.querySelectorAll('.lead-resend').forEach(b => b.addEventListener('click', async () => {
     b.disabled = true; b.textContent = 'Sending…';
@@ -6249,37 +6281,46 @@ function siteSettingsFields(cfg) {
   const inp = (id, v, ph, cls = '') => `<input id="${id}" value="${esc(v == null ? '' : v)}" placeholder="${esc(ph)}" class="${cls} bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm">`;
   const lbl = (t) => `<label class="block text-[11px] font-semibold text-slate-500 dark:text-slate-400 mb-1">${t}</label>`;
   const ta = (id, v, ph, rows, mono) => `<textarea id="${id}" rows="${rows}" placeholder="${esc(ph)}" class="w-full ${mono ? 'font-mono text-[11px]' : 'text-sm'} bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2">${esc(v || '')}</textarea>`;
+  // Consistent section wrapper so every group of settings reads as its own block.
+  // `top` drops the divider for the first section.
+  const sec = (title, desc, inner, top) => `<div class="${top ? '' : 'border-t border-slate-200 dark:border-slate-700 '}pt-3">
+    <div class="text-sm font-black text-slate-900 dark:text-white">${title}</div>
+    ${desc ? `<p class="text-[11px] text-slate-400 mb-2">${desc}</p>` : '<div class="mb-2"></div>'}
+    ${inner}</div>`;
   return `
-    ${publicUrl ? `<div class="flex items-center gap-2 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2">
-      <span class="text-xs text-slate-600 dark:text-slate-300 truncate flex-1">${esc(publicUrl)}</span>
-      <button onclick="navigator.clipboard?.writeText('${publicUrl}');showToast('Link copied','success')" class="text-xs font-bold text-indigo-600 dark:text-indigo-400">Copy</button>
-      <a href="${publicUrl}" target="_blank" class="text-xs font-bold text-indigo-600 dark:text-indigo-400">Open ↗</a>
-    </div>` : ''}
-    <div class="flex items-center gap-2">
-      <div class="flex-1">${lbl('Site address (letters, numbers, dashes)')}
-        <div class="flex items-center gap-1 text-sm"><span class="text-xs text-slate-400 whitespace-nowrap">…/site.html?d=</span>${inp('site-slug', cfg.site_slug, 'welland-chev', 'flex-1')}</div>
+    ${sec('Address &amp; visibility', 'Your site&rsquo;s public link and whether it&rsquo;s live.', `
+      ${publicUrl ? `<div class="flex items-center gap-2 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 mb-2">
+        <span class="text-xs text-slate-600 dark:text-slate-300 truncate flex-1">${esc(publicUrl)}</span>
+        <button onclick="navigator.clipboard?.writeText('${publicUrl}');showToast('Link copied','success')" class="text-xs font-bold text-indigo-600 dark:text-indigo-400">Copy</button>
+        <a href="${publicUrl}" target="_blank" class="text-xs font-bold text-indigo-600 dark:text-indigo-400">Open ↗</a>
+      </div>` : ''}
+      <div class="flex items-center gap-2">
+        <div class="flex-1">${lbl('Site address (letters, numbers, dashes)')}
+          <div class="flex items-center gap-1 text-sm"><span class="text-xs text-slate-400 whitespace-nowrap">…/site.html?d=</span>${inp('site-slug', cfg.site_slug, 'welland-chev', 'flex-1')}</div>
+        </div>
+        <label class="flex items-center gap-1.5 text-sm font-bold mt-4 whitespace-nowrap"><input id="site-pub" type="checkbox" ${cfg.site_published ? 'checked' : ''} class="accent-indigo-600 w-4 h-4">Published</label>
       </div>
-      <label class="flex items-center gap-1.5 text-sm font-bold mt-4 whitespace-nowrap"><input id="site-pub" type="checkbox" ${cfg.site_published ? 'checked' : ''} class="accent-indigo-600 w-4 h-4">Published</label>
-    </div>
-    ${customDomainCard(cfg)}
-    <div class="grid grid-cols-1 gap-2">
-      <div>${lbl('Headline / tagline')}${inp('site-tagline', c.tagline, 'Your trusted local dealership', 'w-full')}</div>
-      <div><div class="flex items-center justify-between"><div>${lbl('About')}</div><button type="button" onclick="aiAboutMenu(event)" class="text-[11px] font-bold text-violet-600 dark:text-violet-400 hover:text-violet-500 mb-1">✨ AI</button></div>${ta('site-about', c.about, 'A sentence or two about your store', 2)}</div>
-      <div class="grid grid-cols-2 gap-2">
-        <div>${lbl('Phone')}${inp('site-phone', c.phone, '905-555-1234', 'w-full')}</div>
-        <div>${lbl('Email')}${inp('site-email', c.email, 'sales@…', 'w-full')}</div>
-      </div>
-      <div>${lbl('Address')}${inp('site-address', c.address, 'Street, City', 'w-full')}</div>
-      <div>${lbl('Hours')}${ta('site-hours', c.hours, 'Mon–Fri 9–6, Sat 9–5', 2)}</div>
+      ${customDomainCard(cfg)}`, true)}
+    ${sec('Business details', 'Name, contact info and hours shown across your site.', `
+      <div class="grid grid-cols-1 gap-2">
+        <div>${lbl('Headline / tagline')}${inp('site-tagline', c.tagline, 'Your trusted local dealership', 'w-full')}</div>
+        <div><div class="flex items-center justify-between"><div>${lbl('About')}</div><button type="button" onclick="aiAboutMenu(event)" class="text-[11px] font-bold text-violet-600 dark:text-violet-400 hover:text-violet-500 mb-1">✨ AI</button></div>${ta('site-about', c.about, 'A sentence or two about your store', 2)}</div>
+        <div class="grid grid-cols-2 gap-2">
+          <div>${lbl('Phone')}${inp('site-phone', c.phone, '905-555-1234', 'w-full')}</div>
+          <div>${lbl('Email')}${inp('site-email', c.email, 'sales@…', 'w-full')}</div>
+        </div>
+        <div>${lbl('Address')}${inp('site-address', c.address, 'Street, City', 'w-full')}</div>
+        <div>${lbl('Hours')}${ta('site-hours', c.hours, 'Mon–Fri 9–6, Sat 9–5', 2)}</div>
+        <div class="grid grid-cols-2 gap-2">
+          <div>${lbl('Facebook URL')}${inp('site-fb', c.facebook_url, 'https://facebook.com/…', 'w-full')}</div>
+          <div>${lbl('Instagram URL')}${inp('site-ig', c.instagram_url, 'https://instagram.com/…', 'w-full')}</div>
+        </div>
+      </div>`)}
+    ${sec('Branding', 'Your brand colour and the hero image at the top of the homepage.', `
       <div class="grid grid-cols-2 gap-2">
         <div>${lbl('Brand colour')}<input id="site-color" type="color" value="${esc(c.primary_color || '#1e3a8a')}" class="w-full h-9 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg"></div>
         <div>${lbl('Hero image')}<div class="flex gap-1">${inp('site-hero', c.hero_url, 'Paste URL or upload', 'flex-1')}<input id="site-hero-file" type="file" accept="image/*" class="hidden" onchange="uploadSiteImage('site-hero', this.files[0])"><button type="button" onclick="document.getElementById('site-hero-file').click()" class="text-xs font-bold bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 px-3 rounded-lg">Upload</button></div></div>
-      </div>
-      <div class="grid grid-cols-2 gap-2">
-        <div>${lbl('Facebook URL')}${inp('site-fb', c.facebook_url, 'https://facebook.com/…', 'w-full')}</div>
-        <div>${lbl('Instagram URL')}${inp('site-ig', c.instagram_url, 'https://instagram.com/…', 'w-full')}</div>
-      </div>
-    </div>
+      </div>`)}
     <div class="border-t border-slate-200 dark:border-slate-700 pt-3">
       <div class="text-sm font-black text-slate-900 dark:text-white">Build &amp; Price brands</div>
       <p class="text-[11px] text-slate-400 mb-2">Which brands do you sell new? Only these appear on your Build &amp; Price page — keeps used trade-ins and off-brands out. Leave all unchecked to auto-detect from your new inventory.</p>
@@ -7340,6 +7381,23 @@ let __autoHol = [];
 const AUTO_CATS = [['pipeline', 'Sales pipeline'], ['tasks', 'Sales-rep tasks'], ['retention', 'Post-delivery retention'], ['reviews', 'Reviews'], ['referrals', 'Referrals'], ['equity', 'Lease pull-ahead'], ['calendar', 'Birthdays'], ['custom', 'Custom']];
 const AUTO_TRIGGER_LABEL = { internet_lead: 'New internet lead', appointment_booked: 'Appointment booked', show_no_sale: 'Showed — no sale', delivered: 'Vehicle delivered', birthday: 'Birthday', holiday: 'Holiday' };
 const AUTO_VARS = ['customer.first_name', 'vehicle.ymm', 'vehicle.model', 'rep.first_name', 'dealership.name', 'review_url', 'referral_bonus', 'service_url'];
+// One-tap AI rewrite presets — the "quick buttons" that fill the AI instruction so
+// reps don't have to type. The free-text prompt still works alongside these.
+const AI_QUICK = [
+  ['Shorter', 'Make it shorter and punchier — cut it to two or three tight sentences.'],
+  ['Warmer', 'Make it warmer and friendlier, like a note from a person who cares.'],
+  ['Casual', 'Make it more casual and conversational — drop the stiff wording.'],
+  ['Add urgency', 'Add a bit of gentle urgency so they act now, without being pushy.'],
+  ['Polish', 'Make it more polished and professional, and fix any grammar.'],
+];
+// Renders the quick-rewrite chips. `runner` is the JS call template that takes the
+// preset instruction string, e.g. "autoAiCard('id',this,%I)" where %I is replaced.
+function aiQuickChips(runner) {
+  return `<div class="flex flex-wrap gap-1 w-full">${AI_QUICK.map(([label, instr]) => {
+    const call = runner.replace('%I', `'${esc(instr).replace(/'/g, "\\'")}'`);
+    return `<button type="button" onclick="${call}" class="text-[11px] font-semibold bg-violet-50 dark:bg-violet-950/30 text-violet-700 dark:text-violet-300 hover:bg-violet-100 dark:hover:bg-violet-900/40 border border-violet-200 dark:border-violet-900/50 rounded-full px-2.5 py-1 transition">✨ ${esc(label)}</button>`;
+  }).join('')}</div>`;
+}
 function autoDelayLabel(c) {
   if (c.interval_months?.length) return `Months ${c.interval_months[0]}–${c.interval_months[c.interval_months.length - 1]}`;
   const m = c.delay_minutes || 0;
@@ -7639,8 +7697,9 @@ function autoCardHtml(c) {
     ${c.channel === 'email' ? `<input id="am-subj-${c.id}" value="${esc(c.subject_template || '')}" placeholder="Email subject" class="${ta} mb-2">` : ''}
     <textarea id="am-body-${c.id}" rows="${isTask ? 2 : 3}" class="${ta}">${esc(c.message_body_template || '')}</textarea>
     ${isTask ? `<div class="text-[11px] text-slate-400 mt-1">Creates a follow-up task for the lead's assigned salesperson ${esc(autoDelayLabel(c)).toLowerCase()} after the lead comes in.</div>` : autoVarChips(c.id)}
+    ${isTask ? '' : `<div class="mt-2">${aiQuickChips(`autoAiCard('${c.id}',this,%I)`)}</div>`}
     <div class="flex flex-wrap items-center gap-2 mt-2">
-      ${isTask ? '' : `<input id="am-ai-${c.id}" placeholder="✨ Tell AI how to rewrite (e.g. more casual, mention the $250 bonus)" class="flex-1 min-w-[200px] bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-1.5 text-xs">
+      ${isTask ? '' : `<input id="am-ai-${c.id}" placeholder="✨ …or tell AI how to rewrite (e.g. mention the $250 bonus)" class="flex-1 min-w-[200px] bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-1.5 text-xs">
       <button onclick="autoAiCard('${c.id}',this)" class="text-xs font-bold bg-violet-600 hover:bg-violet-500 text-white px-3 py-1.5 rounded-lg">✨ Rewrite</button>`}
       <button onclick="autoSaveCard('${c.id}',this)" class="text-xs font-bold bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-1.5 rounded-lg">Save</button>
     </div>
@@ -7675,9 +7734,9 @@ async function autoDeleteCard(cid, btn) {
     autoRerenderCurrent(); showToast('Deleted', 'success');
   } catch (e) { btn.disabled = false; showToast(e.message, 'error'); }
 }
-async function autoAiCard(cid, btn) {
+async function autoAiCard(cid, btn, presetInstr) {
   const c = __autoCfg.campaigns.find(x => x.id === cid); if (!c) return;
-  const instr = document.getElementById(`am-ai-${cid}`)?.value.trim();
+  const instr = presetInstr || document.getElementById(`am-ai-${cid}`)?.value.trim();
   if (!instr) { showToast('Tell the AI what you want first', 'info'); return; }
   const orig = btn.textContent; btn.disabled = true; btn.textContent = '✨ Writing…';
   try {
@@ -7686,27 +7745,57 @@ async function autoAiCard(cid, btn) {
   } catch (e) { showToast(e.message === 'AI Boost not active' ? 'AI copy needs AI Boost (or your free trial).' : e.message, 'error'); }
   finally { btn.disabled = false; btn.textContent = orig; }
 }
+// Variable chips for a holiday message textarea (inserts into am-hol-<i>).
+function autoHolVarChips(i) {
+  return `<div class="flex flex-wrap gap-1 mt-1">${AUTO_VARS.map(v => `<button type="button" onclick="autoHolInsertVar(${i},'${v}')" class="text-[10px] font-mono bg-slate-100 dark:bg-slate-800 hover:bg-indigo-100 dark:hover:bg-indigo-950/40 rounded px-1.5 py-0.5">{{${v}}}</button>`).join('')}</div>`;
+}
+function autoHolInsertVar(i, v) {
+  const el = document.getElementById(`am-hol-${i}`); if (!el) return;
+  const tag = `{{${v}}}`, at = el.selectionStart ?? el.value.length;
+  el.value = el.value.slice(0, at) + tag + el.value.slice(el.selectionEnd ?? at); el.focus();
+  if (__autoHol[i]) __autoHol[i].message = el.value;
+}
+// Each holiday now mirrors the automation card: pill toggle, channel/date badges,
+// message, variable chips, quick AI buttons and a free-text rewrite prompt.
 function autoHolidaysHtml() {
-  const rows = __autoHol.map((h, i) => `<div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-3" data-hk="${i}">
-    <div class="flex items-center gap-2 mb-1">
-      <input type="checkbox" onchange="autoHolToggle(${i},this.checked)" ${h.enabled ? 'checked' : ''} class="accent-indigo-600 w-4 h-4">
-      <div class="font-bold text-sm text-slate-900 dark:text-white flex-1">${esc(h.name)} <span class="text-[11px] font-normal text-slate-400">${esc(h.date)}</span></div>
-      <button onclick="autoHolAi(${i},this)" class="text-xs font-bold text-violet-600 dark:text-violet-400">✨ Rewrite</button>
+  const rows = __autoHol.map((h, i) => `<div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4" data-hk="${i}">
+    <div class="flex items-center gap-3 mb-2">
+      <button onclick="autoHolToggle(${i}, ${!h.enabled})" title="${h.enabled ? 'On — click to pause' : 'Off — click to turn on'}" class="shrink-0 w-9 h-5 rounded-full transition ${h.enabled ? 'bg-emerald-500' : 'bg-slate-300 dark:bg-slate-700'} relative"><span class="absolute top-0.5 w-4 h-4 bg-white rounded-full transition" style="left:${h.enabled ? '18px' : '2px'}"></span></button>
+      <div class="min-w-0 flex-1"><div class="font-bold text-sm text-slate-900 dark:text-white truncate">${esc(h.name)}</div>
+        <div class="flex flex-wrap items-center gap-1.5 mt-0.5">
+          <span class="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded-full bg-violet-100 text-violet-700 dark:bg-violet-950/40 dark:text-violet-300">email</span>
+          <span class="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300">${esc(h.date)}</span>
+        </div>
+      </div>
+      ${h.preset ? '' : `<button onclick="autoDeleteHolidayRow(${i})" title="Remove this holiday" class="shrink-0 text-slate-400 hover:text-red-500 p-1"><svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg></button>`}
     </div>
-    <textarea id="am-hol-${i}" rows="2" oninput="__autoHol[${i}].message=this.value" class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm">${esc(h.message)}</textarea>
+    <textarea id="am-hol-${i}" rows="3" oninput="__autoHol[${i}].message=this.value" class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm">${esc(h.message)}</textarea>
+    ${autoHolVarChips(i)}
+    <div class="mt-2">${aiQuickChips(`autoHolAi(${i},this,%I)`)}</div>
+    <div class="flex flex-wrap items-center gap-2 mt-2">
+      <input id="am-hol-ai-${i}" placeholder="✨ …or tell AI how to rewrite (e.g. mention our holiday hours)" class="flex-1 min-w-[200px] bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-1.5 text-xs">
+      <button onclick="autoHolAi(${i},this)" class="text-xs font-bold bg-violet-600 hover:bg-violet-500 text-white px-3 py-1.5 rounded-lg">✨ Rewrite</button>
+    </div>
   </div>`).join('');
   return `<div><div class="flex items-center justify-between mt-4 mb-2"><div class="text-xs font-black uppercase tracking-wider text-slate-400">Holidays <span class="normal-case font-normal text-slate-400">· auto-filled for your region — flip on the ones you want</span></div><button onclick="autoAddHolidayRow()" class="text-xs font-bold text-indigo-600 dark:text-indigo-400">+ Add holiday</button></div>
     <div class="space-y-2">${rows || '<div class="text-xs text-slate-400 italic">No holidays.</div>'}</div>
     <button onclick="autoSaveHolidays(this)" class="mt-3 text-sm font-bold bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg">Save holidays</button>
     <span id="am-hol-msg" class="hidden text-xs ml-2"></span></div>`;
 }
-function autoHolToggle(i, on) { if (__autoHol[i]) __autoHol[i].enabled = on; }
-async function autoHolAi(i, btn) {
+// Toggle re-renders so the pill flips; textarea edits are already mirrored to state.
+function autoHolToggle(i, on) { if (__autoHol[i]) { __autoHol[i].enabled = on; renderHolidaysRoot(); } }
+function autoDeleteHolidayRow(i) {
+  const el = document.getElementById(`am-hol-${i}`); if (el && __autoHol[i]) __autoHol[i].message = el.value;
+  __autoHol.splice(i, 1); renderHolidaysRoot();
+}
+async function autoHolAi(i, btn, presetInstr) {
   const h = __autoHol[i]; if (!h) return;
+  const instr = presetInstr || document.getElementById(`am-hol-ai-${i}`)?.value.trim();
+  const base = instr ? `${instr}\n\nHere is the current message:\n${h.message || ''}` : `Write a short, warm holiday greeting email for ${h.name}.`;
   const orig = btn.textContent; btn.disabled = true; btn.textContent = '✨…';
   try {
-    const d = await apiSendJson('/automation/ai-copy', 'POST', { instruction: `Write a short, warm holiday greeting email for ${h.name}.`, context: { campaign_type: 'calendar', channel: 'email', sender_identity: 'house', strict_guardrails: true } });
-    h.message = d.text; const el = document.getElementById(`am-hol-${i}`); if (el) el.value = d.text; showToast('✨ Rewritten', 'success');
+    const d = await apiSendJson('/automation/ai-copy', 'POST', { instruction: base, context: { campaign_type: 'calendar', channel: 'email', sender_identity: 'house', strict_guardrails: true } });
+    h.message = d.text; const el = document.getElementById(`am-hol-${i}`); if (el) el.value = d.text; showToast('✨ Rewritten — review & Save', 'success');
   } catch (e) { showToast(e.message === 'AI Boost not active' ? 'AI copy needs AI Boost (or your free trial).' : e.message, 'error'); }
   finally { btn.disabled = false; btn.textContent = orig; }
 }
@@ -7733,7 +7822,7 @@ async function autoSaveGlobals(btn) {
   catch (e) { if (msg) { msg.textContent = e.message; msg.className = 'text-xs ml-2 text-red-500'; msg.classList.remove('hidden'); } }
   finally { btn.disabled = false; btn.textContent = orig; }
 }
-Object.assign(window, { loadAutomationPage, loadAutoHolidays, loadAutoLeads, loadAutoDelivery, autoToggleEngine, autoToggleCard, autoCardField, autoInsertVar, autoSaveCard, autoAiCard, autoHolToggle, autoHolAi, autoAddHolidayRow, autoSaveHolidays, autoSaveGlobals, autoSaveEmail, autoOpenTemplates, autoAddTemplate, autoDeleteCard });
+Object.assign(window, { loadAutomationPage, loadAutoHolidays, loadAutoLeads, loadAutoDelivery, autoToggleEngine, autoToggleCard, autoCardField, autoInsertVar, autoSaveCard, autoAiCard, autoHolToggle, autoHolAi, autoAddHolidayRow, autoDeleteHolidayRow, autoHolInsertVar, autoSaveHolidays, autoSaveGlobals, autoSaveEmail, autoOpenTemplates, autoAddTemplate, autoDeleteCard });
 
 // ══ Equity Radar — lease pull-ahead / equity mining (managers) ═══════════════
 let __equity = { radar: [], leases: [], settings: {}, tab: 'radar' };
@@ -8010,6 +8099,37 @@ let __catalogStatusFilter = 'all';
 let __catalogTypeFilter = 'all';
 let __catalogSegmentFilter = 'all';
 let __catalogSourceFilter = 'mine';   // 'mine' (added + trades) | 'synced' (feed) | 'all'
+
+// The Inventory page serves two nav entries: the Facebook posting hub (feed sync +
+// synced/own stock) and the Inventory-Intelligence manual list (own stock only).
+// Default to 'manual' so generic deep-links land on the dealer's own inventory.
+let __inventoryMode = 'manual';   // 'facebook' | 'manual'
+function applyInventoryMode() {
+  const facebook = __inventoryMode === 'facebook';
+  const feeds = document.getElementById('feeds-panel');
+  const srcPills = document.getElementById('catalog-source-pills');
+  const title = document.getElementById('catalog-title');
+  const sub = document.getElementById('catalog-sub');
+  // Feed sync + the "synced feed" source only live under Facebook. The manual list
+  // is the dealer's own stock, so it hides both.
+  if (feeds) feeds.classList.toggle('hidden', !facebook);
+  if (srcPills) srcPills.classList.toggle('hidden', !facebook);
+  if (!facebook) __catalogSourceFilter = 'mine';
+  // Keep the source pills reflecting the active filter for when Facebook shows them.
+  document.querySelectorAll('.catalog-source-pill').forEach(b => {
+    const active = b.dataset.src === __catalogSourceFilter;
+    b.className = active
+      ? 'catalog-source-pill active px-3 py-1 rounded-full text-xs font-semibold bg-indigo-600 text-white transition'
+      : 'catalog-source-pill px-3 py-1 rounded-full text-xs font-semibold border border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition';
+  });
+  if (title) title.textContent = facebook ? 'Inventory Catalog' : 'Inventory List';
+  if (sub) sub.textContent = facebook
+    ? 'Your added vehicles & trades — plus feed-synced stock to post on Facebook.'
+    : 'Your manually-added vehicles & trades.';
+  // Re-render if the catalog is already loaded; first open loads it via page init.
+  if (typeof __catalogCache !== 'undefined' && __catalogCache && document.getElementById('catalog-list')) renderCatalog();
+}
+window.applyInventoryMode = applyInventoryMode;
 
 // A vehicle the dealer entered themselves: manually added, imported, or acquired
 // from a trade appraisal. Everything else came in from a synced website feed.

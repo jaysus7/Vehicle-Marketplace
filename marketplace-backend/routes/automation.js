@@ -423,9 +423,14 @@ async function createRepTask(msg, campaign) {
     }
     const who = contact.first_name || contact.full_name || 'lead'
     const title = `${campaign.name || 'Follow-up'}: ${who}`
+    // Tag the task by journey so the CRM can colour it — green for post-delivery
+    // retention, orange for new-lead follow-up.
+    const deliveryBuckets = ['retention', 'reviews', 'referrals']
+    const isDelivery = campaign.trigger_event === 'delivered' || deliveryBuckets.includes(campaign.category)
+    const taskType = isDelivery ? 'delivery_followup' : 'lead_followup'
     await supabaseAdmin.from('crm_tasks').insert({
       dealership_id: msg.dealership_id, contact_id: msg.contact_id, assigned_to: msg.rep_id || null,
-      title, type: 'followup', due_at: nowIso(),
+      title, type: taskType, due_at: nowIso(),
     })
     await supabaseAdmin.from('scheduled_messages').update({ status: 'sent', sent_at: nowIso(), verified_at: nowIso() }).eq('id', msg.id)
     return true
