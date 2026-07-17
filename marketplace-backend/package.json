@@ -6,7 +6,8 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node --watch server.js",
-    "build": "npm install",
+    "build": "npm install && npm run build:kb",
+    "build:kb": "node scripts/build-kb.js",
     "seed:jms": "node scripts/seed-jms.js"
   },
   "keywords": [],

@@ -177,4 +177,122 @@
         document.addEventListener('keydown',function(e){if(e.key==='Escape'&&!lb.hidden){close();}});
       })();
     </script>
+
+    <!-- MarketSync sales assistant — grounded in the site knowledge base -->
+    <div id="msc-root">
+      <button id="msc-fab" type="button" aria-label="Chat with MarketSync" aria-expanded="false">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>
+        <span>Ask MarketSync</span>
+      </button>
+      <section id="msc-panel" hidden aria-label="MarketSync assistant">
+        <header id="msc-head">
+          <span class="msc-dot"></span>
+          <div><strong>MarketSync Assistant</strong><em>Sales &amp; product questions</em></div>
+          <button id="msc-close" type="button" aria-label="Close">&times;</button>
+        </header>
+        <div id="msc-msgs" role="log" aria-live="polite"></div>
+        <div id="msc-chips">
+          <button type="button" class="msc-chip">What is MarketSync?</button>
+          <button type="button" class="msc-chip">How much does it cost?</button>
+          <button type="button" class="msc-chip">Book a demo</button>
+        </div>
+        <form id="msc-lead" hidden>
+          <p class="msc-lead-t">Great — leave your details and the team will reach out.</p>
+          <input name="name" placeholder="Your name" autocomplete="name" required>
+          <input name="email" type="email" placeholder="Work email" autocomplete="email" required>
+          <input name="company" placeholder="Dealership name" autocomplete="organization">
+          <label class="msc-demo"><input type="checkbox" name="demo"> I'd like to book a demo</label>
+          <button type="submit">Send to MarketSync</button>
+        </form>
+        <form id="msc-form">
+          <input id="msc-input" autocomplete="off" placeholder="Ask about features, pricing, a demo…" aria-label="Message">
+          <button type="submit" aria-label="Send"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2 11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg></button>
+        </form>
+        <div id="msc-foot">AI assistant · answers from marketsync.link</div>
+      </section>
+    </div>
+    <style>
+      #msc-root{position:fixed;right:20px;bottom:20px;z-index:130;font-family:Inter,system-ui,-apple-system,Segoe UI,Arial,sans-serif}
+      #msc-fab{display:inline-flex;align-items:center;gap:9px;padding:12px 18px;border:0;border-radius:999px;cursor:pointer;color:#fff;font-weight:700;font-size:14px;background:linear-gradient(135deg,#6366F1,#8B5CF6);box-shadow:0 12px 30px -8px rgba(99,102,241,.6)}
+      #msc-fab:hover{filter:brightness(1.05)}
+      #msc-panel{position:absolute;right:0;bottom:0;width:min(380px,calc(100vw - 32px));height:min(560px,calc(100vh - 96px));display:flex;flex-direction:column;border-radius:18px;overflow:hidden;background:#fff;color:#0f172a;border:1px solid #e2e8f0;box-shadow:0 30px 70px -20px rgba(2,6,23,.45)}
+      #msc-panel[hidden]{display:none}
+      #msc-head{display:flex;align-items:center;gap:10px;padding:14px 14px;color:#fff;background:linear-gradient(135deg,#6366F1,#8B5CF6)}
+      #msc-head strong{display:block;font-size:14px;line-height:1.1}
+      #msc-head em{font-style:normal;font-size:11.5px;opacity:.85}
+      #msc-head .msc-dot{width:9px;height:9px;border-radius:50%;background:#34d399;box-shadow:0 0 0 3px rgba(52,211,153,.3)}
+      #msc-close{margin-left:auto;background:rgba(255,255,255,.18);border:0;color:#fff;width:30px;height:30px;border-radius:9px;font-size:20px;line-height:1;cursor:pointer}
+      #msc-msgs{flex:1;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:10px;background:#f8fafc}
+      .msc-b{max-width:85%;padding:9px 12px;border-radius:14px;font-size:13.5px;line-height:1.45;white-space:pre-wrap;word-wrap:break-word}
+      .msc-a{align-self:flex-start;background:#fff;border:1px solid #e6ebf3;border-bottom-left-radius:5px;color:#0f172a}
+      .msc-u{align-self:flex-end;background:#6366F1;color:#fff;border-bottom-right-radius:5px}
+      .msc-typing{align-self:flex-start;color:#94a3b8;font-size:13px;padding:4px 6px}
+      #msc-chips{display:flex;flex-wrap:wrap;gap:6px;padding:0 14px 10px;background:#f8fafc}
+      .msc-chip{border:1px solid #d5dbe6;background:#fff;color:#4f46e5;font-size:12px;font-weight:600;padding:6px 10px;border-radius:999px;cursor:pointer}
+      .msc-chip:hover{background:#eef2ff}
+      #msc-form{display:flex;gap:8px;padding:10px;border-top:1px solid #eef2f7;background:#fff}
+      #msc-input{flex:1;border:1px solid #d5dbe6;border-radius:12px;padding:10px 12px;font-size:13.5px;outline:none;color:#0f172a;background:#fff}
+      #msc-input:focus{border-color:#818cf8;box-shadow:0 0 0 3px rgba(129,140,248,.2)}
+      #msc-form button,#msc-lead button[type=submit]{border:0;border-radius:12px;background:#6366F1;color:#fff;font-weight:700;cursor:pointer}
+      #msc-form button{width:42px;display:flex;align-items:center;justify-content:center}
+      #msc-lead{display:flex;flex-direction:column;gap:8px;padding:12px 14px;border-top:1px solid #eef2f7;background:#fff}
+      #msc-lead[hidden]{display:none}
+      .msc-lead-t{margin:0 0 2px;font-size:12.5px;font-weight:600;color:#334155}
+      #msc-lead input[type=text],#msc-lead input[name=name],#msc-lead input[name=email],#msc-lead input[name=company]{border:1px solid #d5dbe6;border-radius:10px;padding:9px 11px;font-size:13px;color:#0f172a;background:#fff}
+      .msc-demo{display:flex;align-items:center;gap:8px;font-size:12.5px;color:#475569}
+      #msc-lead button[type=submit]{padding:10px;font-size:13px}
+      #msc-foot{padding:8px 12px;text-align:center;font-size:10.5px;color:#94a3b8;background:#fff}
+      @media (prefers-color-scheme: dark){
+        #msc-panel{background:#0f1626;color:#e6edf7;border-color:#1f2a3d}
+        #msc-msgs,#msc-chips{background:#0b111e}
+        .msc-a{background:#131a2c;border-color:#22304a;color:#e6edf7}
+        .msc-chip{background:#131a2c;border-color:#2a3a57;color:#a5b4fc}
+        .msc-chip:hover{background:#1a2438}
+        #msc-form,#msc-lead,#msc-foot{background:#0f1626;border-color:#1f2a3d}
+        #msc-input,#msc-lead input{background:#0b111e;border-color:#2a3a57;color:#e6edf7}
+        .msc-lead-t{color:#cbd5e1}.msc-demo{color:#93a2bc}
+      }
+    </style>
+    <script>
+      (function(){
+        var API='https://vehicle-marketplace-s0e4.onrender.com';
+        var root=document.getElementById('msc-root'),fab=document.getElementById('msc-fab'),panel=document.getElementById('msc-panel'),
+            msgs=document.getElementById('msc-msgs'),form=document.getElementById('msc-form'),input=document.getElementById('msc-input'),
+            lead=document.getElementById('msc-lead'),chips=document.getElementById('msc-chips'),closeBtn=document.getElementById('msc-close');
+        var history=[],greeted=false,lastUser='';
+        function esc(s){var d=document.createElement('div');d.textContent=s;return d.innerHTML;}
+        function bubble(text,who){var b=document.createElement('div');b.className='msc-b '+(who==='user'?'msc-u':'msc-a');b.innerHTML=esc(text);msgs.appendChild(b);msgs.scrollTop=msgs.scrollHeight;return b;}
+        function typing(){var b=document.createElement('div');b.className='msc-typing';b.textContent='MarketSync is typing…';msgs.appendChild(b);msgs.scrollTop=msgs.scrollHeight;return b;}
+        function openPanel(){panel.hidden=false;fab.setAttribute('aria-expanded','true');if(!greeted){greeted=true;bubble("Hi! I'm the MarketSync assistant. Ask me anything about the platform — features, pricing, or how the workflow fits your store. I can also set up a demo.","bot");}setTimeout(function(){input.focus();},50);}
+        function closePanel(){panel.hidden=true;fab.setAttribute('aria-expanded','false');}
+        fab.addEventListener('click',function(){panel.hidden?openPanel():closePanel();});
+        closeBtn.addEventListener('click',closePanel);
+        async function send(text){
+          text=(text||'').trim();if(!text)return;
+          bubble(text,'user');lastUser=text;history.push({role:'user',content:text});
+          input.value='';chips.style.display='none';
+          var t=typing();
+          try{
+            var r=await fetch(API+'/marketsync/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages:history})});
+            var j=await r.json();t.remove();
+            var reply=(j&&j.reply)||"Sorry, I couldn't respond just now.";
+            bubble(reply,'bot');history.push({role:'assistant',content:reply});
+            if(j&&j.capture){lead.hidden=false;lead.scrollIntoView({behavior:'smooth',block:'nearest'});}
+          }catch(e){t.remove();bubble("I'm having trouble connecting. Leave your details and we'll reach out.","bot");lead.hidden=false;}
+        }
+        form.addEventListener('submit',function(e){e.preventDefault();send(input.value);});
+        chips.addEventListener('click',function(e){var c=e.target.closest('.msc-chip');if(c)send(c.textContent);});
+        lead.addEventListener('submit',async function(e){
+          e.preventDefault();
+          var fd=new FormData(lead);
+          var payload={name:fd.get('name'),email:fd.get('email'),company:fd.get('company'),demo:lead.querySelector('[name=demo]').checked,message:lastUser};
+          var btn=lead.querySelector('button[type=submit]');btn.disabled=true;btn.textContent='Sending…';
+          try{
+            var r=await fetch(API+'/marketsync/lead',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+            if(!r.ok)throw 0;
+            lead.hidden=true;bubble("Thanks, "+(payload.name.split(' ')[0]||'there')+"! The MarketSync team will be in touch shortly. Anything else I can answer?","bot");
+          }catch(e){btn.disabled=false;btn.textContent='Send to MarketSync';bubble("Hmm, that didn't go through — you can also email hello@marketsync.link.","bot");}
+        });
+      })();
+    </script>
 </body></html>
