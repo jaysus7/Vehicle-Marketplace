@@ -94,7 +94,7 @@ export function registerLeads(app) {
     if (!req.dealershipId) return res.json({ leads: [], crm_adf_email: null })
     const dealerLevel = ['DEALER_ADMIN', 'OWNER', 'MANAGER'].includes(req.profile.role)
     let q = supabaseAdmin.from('leads')
-      .select('id, name, email, phone, comments, source, status, adf_sent_at, adf_error, inventory_id, contact_id, created_by, created_at')
+      .select('id, name, email, phone, comments, source, status, adf_sent_at, adf_error, inventory_id, contact_id, created_by, created_at, responded_at, responded_by')
       .eq('dealership_id', req.dealershipId)
       .order('created_at', { ascending: false })
       .limit(300)
@@ -121,7 +121,7 @@ export function registerLeads(app) {
       const { data: cs } = await supabaseAdmin.from('contacts').select('id, assigned_rep').in('id', contactIds)
       assignedByContact = Object.fromEntries((cs || []).map(c => [c.id, c.assigned_rep]).filter(([, r]) => r))
     }
-    const repIds = [...new Set([...(data || []).map(l => l.created_by), ...Object.values(assignedByContact)].filter(Boolean))]
+    const repIds = [...new Set([...(data || []).map(l => l.created_by), ...(data || []).map(l => l.responded_by), ...Object.values(assignedByContact)].filter(Boolean))]
     let repNames = {}
     if (repIds.length) {
       const { data: reps } = await supabaseAdmin
@@ -130,7 +130,7 @@ export function registerLeads(app) {
     }
     const leads = (data || []).map(l => {
       const ownerId = assignedByContact[l.contact_id] || l.created_by || null
-      return { ...l, rep: ownerId ? (repNames[ownerId] || null) : null, owner_id: ownerId }
+      return { ...l, rep: ownerId ? (repNames[ownerId] || null) : null, owner_id: ownerId, responded_by_name: l.responded_by ? (repNames[l.responded_by] || null) : null }
     })
 
     const { data: dealer } = await supabaseAdmin
@@ -162,6 +162,69 @@ export function registerLeads(app) {
       .update({ assigned_rep: repId }).eq('id', lead.contact_id).eq('dealership_id', req.dealershipId)
     if (error) return res.status(500).json({ error: error.message })
     res.json({ ok: true })
+  })
+
+  // Mark a lead as answered — stops the speed-to-lead clock. First response wins
+  // (idempotent: a second call won't overwrite the original answer time). Any user in
+  // the dealership can answer; we record who did for the per-rep report.
+  app.post('/leads/:id/answered', requireAuth, async (req, res) => {
+    if (!req.dealershipId) return res.status(400).json({ error: 'No dealership associated' })
+    const { data: lead } = await supabaseAdmin.from('leads')
+      .select('id, responded_at, created_at').eq('id', req.params.id).eq('dealership_id', req.dealershipId).maybeSingle()
+    if (!lead) return res.status(404).json({ error: 'Lead not found' })
+    if (lead.responded_at) return res.json({ ok: true, responded_at: lead.responded_at, already: true })
+    const now = new Date().toISOString()
+    const { error } = await supabaseAdmin.from('leads')
+      .update({ responded_at: now, responded_by: req.user.id }).eq('id', lead.id).eq('dealership_id', req.dealershipId)
+    if (error) return res.status(500).json({ error: error.message })
+    const seconds = Math.max(0, Math.round((new Date(now) - new Date(lead.created_at)) / 1000))
+    res.json({ ok: true, responded_at: now, response_seconds: seconds })
+  })
+
+  // Speed-to-lead reporting (manager/dealer-admin). Aggregates time-to-answer over a
+  // window: overall median/avg, how many were answered inside 5/15/60 min, still-open
+  // count, and a per-responder breakdown. All timing is created_at → responded_at.
+  app.get('/leads/response-metrics', requireAuth, async (req, res) => {
+    if (!req.dealershipId) return res.status(400).json({ error: 'No dealership associated' })
+    if (!['DEALER_ADMIN', 'OWNER', 'MANAGER'].includes(req.profile.role)) {
+      return res.status(403).json({ error: 'Manager access required' })
+    }
+    const days = Math.min(365, Math.max(1, parseInt(req.query.days) || 30))
+    const since = new Date(Date.now() - days * 86400000).toISOString()
+    const { data, error } = await supabaseAdmin.from('leads')
+      .select('created_at, responded_at, responded_by')
+      .eq('dealership_id', req.dealershipId).gte('created_at', since).limit(10000)
+    if (error) return res.status(500).json({ error: error.message })
+    const rows = data || []
+    const answered = rows.filter(l => l.responded_at)
+    const secs = answered.map(l => Math.max(0, Math.round((new Date(l.responded_at) - new Date(l.created_at)) / 1000))).sort((a, b) => a - b)
+    const median = secs.length ? (secs.length % 2 ? secs[(secs.length - 1) / 2] : Math.round((secs[secs.length / 2 - 1] + secs[secs.length / 2]) / 2)) : null
+    const avg = secs.length ? Math.round(secs.reduce((a, b) => a + b, 0) / secs.length) : null
+    const within = (n) => secs.filter(s => s <= n).length
+    // Per-responder answered counts + median.
+    const byRep = {}
+    for (const l of answered) {
+      const k = l.responded_by || 'unknown'
+      const s = Math.max(0, Math.round((new Date(l.responded_at) - new Date(l.created_at)) / 1000))
+      ;(byRep[k] = byRep[k] || []).push(s)
+    }
+    const repIds = Object.keys(byRep).filter(k => k !== 'unknown')
+    let repNames = {}
+    if (repIds.length) {
+      const { data: reps } = await supabaseAdmin.from('profiles').select('id, full_name, display_name').in('id', repIds)
+      repNames = Object.fromEntries((reps || []).map(r => [r.id, r.full_name || r.display_name || '—']))
+    }
+    const per_rep = Object.entries(byRep).map(([k, arr]) => {
+      const sorted = arr.sort((a, b) => a - b)
+      const med = sorted.length % 2 ? sorted[(sorted.length - 1) / 2] : Math.round((sorted[sorted.length / 2 - 1] + sorted[sorted.length / 2]) / 2)
+      return { rep: k === 'unknown' ? 'Unknown' : (repNames[k] || '—'), answered: arr.length, median_seconds: med }
+    }).sort((a, b) => a.median_seconds - b.median_seconds)
+    res.json({
+      days, total: rows.length, answered: answered.length, unanswered: rows.length - answered.length,
+      median_seconds: median, avg_seconds: avg,
+      within_5min: within(300), within_15min: within(900), within_60min: within(3600),
+      per_rep,
+    })
   })
 
   // Export leads as CSV. Reps get their own; dealer-level gets the whole team.

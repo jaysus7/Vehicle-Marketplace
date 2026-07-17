@@ -2351,13 +2351,16 @@ async function loadLeadsPage() {
     if (l.adf_error) return `<span class="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded bg-red-100 text-red-700 dark:bg-red-950/50 dark:text-red-300" title="${esc(l.adf_error)}">Failed</span>`;
     return `<span class="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400">Not delivered</span>`;
   };
-  // How long the lead has been sitting since it arrived — green ≤1h, amber ≤1d, red older.
+  // Speed-to-lead clock. Open leads tick LIVE every second (green ≤5m, amber ≤15m,
+  // red after); answered leads freeze at their time-to-answer. The live text is filled
+  // by startLeadTimers() so all rows update in one interval.
   const sittingBadge = (l) => {
     if (!l.created_at) return '<span class="text-xs text-slate-400">—</span>';
-    const mins = Math.max(0, Math.floor((Date.now() - new Date(l.created_at)) / 60000));
-    const txt = mins < 60 ? `${mins}m` : mins < 1440 ? `${Math.floor(mins / 60)}h` : `${Math.floor(mins / 1440)}d`;
-    const cls = mins <= 60 ? 'text-emerald-600 dark:text-emerald-400' : mins <= 1440 ? 'text-amber-600 dark:text-amber-400' : 'text-red-500';
-    return `<span class="text-xs font-bold ${cls}" title="Time since this lead arrived">⏱ ${txt}</span>`;
+    if (l.responded_at) {
+      const sec = Math.max(0, Math.round((new Date(l.responded_at) - new Date(l.created_at)) / 1000));
+      return `<span class="text-xs font-bold text-emerald-600 dark:text-emerald-400" title="Answered${l.responded_by_name ? ' by ' + esc(l.responded_by_name) : ''} in ${fmtLeadDuration(sec)}">✓ ${fmtLeadDuration(sec)}</span>`;
+    }
+    return `<span class="lead-timer text-xs font-black tabular-nums" data-created="${l.created_at}" title="Live — time this lead has gone unanswered">${fmtLeadDuration(Math.max(0, Math.round((Date.now() - new Date(l.created_at)) / 1000)))}</span>`;
   };
   // Managers/dealer-admins get a reassign dropdown; everyone else sees the owner name.
   const repControl = (l) => {
@@ -2376,7 +2379,8 @@ async function loadLeadsPage() {
       <td class="py-3 px-3 whitespace-nowrap">${sittingBadge(l)}</td>
       <td class="py-3 px-3">${statusPill(l)}</td>
       <td class="py-3 px-3 text-right whitespace-nowrap">
-        <button class="lead-ai-reply text-violet-600 hover:text-violet-500 text-xs font-bold" data-id="${l.id}">✦ Draft reply</button>
+        ${!l.responded_at ? `<button class="lead-answered text-emerald-600 hover:text-emerald-500 text-xs font-bold" data-id="${l.id}" title="Stop the clock — mark this lead answered">✓ Mark answered</button>` : ''}
+        <button class="lead-ai-reply text-violet-600 hover:text-violet-500 text-xs font-bold ml-3" data-id="${l.id}">✦ Draft reply</button>
         ${!l.adf_sent_at && crmSet ? `<button class="lead-resend text-indigo-500 hover:text-indigo-400 text-xs font-bold ml-3" data-id="${l.id}">Send to CRM</button>` : ''}
       </td>
     </tr>`).join('') || '<tr><td colspan="6" class="py-8 text-center text-sm text-slate-400 italic">No leads yet.</td></tr>';
@@ -2400,14 +2404,28 @@ async function loadLeadsPage() {
 
     ${!crmSet ? `<div class="bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-lg px-4 py-3 text-sm text-amber-700 dark:text-amber-300 mb-4">No CRM/DMS connection set yet — leads are still saved here, and will send once ${data.can_configure ? 'you add it in <b>Settings → CRM / DMS connection</b>' : 'your admin adds it in Settings'}.</div>` : ''}
 
+    <div id="leads-metrics" class="mb-4"></div>
+
     <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden">
       <div class="overflow-x-auto"><table class="w-full text-sm text-left min-w-[640px]">
         <thead><tr class="border-b border-slate-200 dark:border-slate-800 text-slate-500 dark:text-slate-400 uppercase text-xs tracking-wider">
-          <th class="py-3 px-3">Buyer</th><th class="py-3 px-3">Contact</th><th class="py-3 px-3">Notes</th><th class="py-3 px-3">Sitting</th><th class="py-3 px-3">CRM</th><th class="py-3 px-3 text-right">Action</th>
+          <th class="py-3 px-3">Buyer</th><th class="py-3 px-3">Contact</th><th class="py-3 px-3">Notes</th><th class="py-3 px-3">Time to answer</th><th class="py-3 px-3">CRM</th><th class="py-3 px-3 text-right">Action</th>
         </tr></thead>
         <tbody>${rows}</tbody>
       </table></div>
     </div>`;
+
+  startLeadTimers();
+  if (data.can_reassign) renderLeadMetrics();
+
+  root.querySelectorAll('.lead-answered').forEach(b => b.addEventListener('click', async () => {
+    b.disabled = true; b.textContent = 'Saving…';
+    try {
+      const r = await fetch(`${API}/leads/${b.dataset.id}/answered`, { method: 'POST', headers: { 'Authorization': `Bearer ${token}` } });
+      if (!r.ok) throw new Error((await r.json()).error || 'Failed');
+      loadLeadsPage();
+    } catch (e) { showToast(e.message || 'Could not mark answered', 'error'); b.disabled = false; b.textContent = '✓ Mark answered'; }
+  }));
 
   root.querySelectorAll('.lead-resend').forEach(b => b.addEventListener('click', async () => {
     b.disabled = true; b.textContent = 'Sending…';
@@ -2434,6 +2452,60 @@ async function loadLeadsPage() {
       loadLeadsPage();
     } catch (e) { showToast(e.message || 'Could not reassign', 'error'); sel.disabled = false; }
   }));
+}
+
+// Format seconds → compact "1h 02m 45s" / "3m 12s" / "45s" (down to the second).
+function fmtLeadDuration(totalSec) {
+  totalSec = Math.max(0, Math.floor(totalSec));
+  const s = totalSec % 60, m = Math.floor(totalSec / 60) % 60, h = Math.floor(totalSec / 3600) % 24, d = Math.floor(totalSec / 86400);
+  const p = (n) => String(n).padStart(2, '0');
+  if (d > 0) return `${d}d ${p(h)}h ${p(m)}m`;
+  if (h > 0) return `${h}h ${p(m)}m ${p(s)}s`;
+  if (m > 0) return `${m}m ${p(s)}s`;
+  return `${s}s`;
+}
+
+// One interval ticks every open lead's clock each second. Colour escalates with age
+// (≤5m green, ≤15m amber, then red) so a stalling lead visually screams. Self-clears
+// once no live timers remain on the page.
+let __leadTimerInterval = null;
+function startLeadTimers() {
+  if (__leadTimerInterval) { clearInterval(__leadTimerInterval); __leadTimerInterval = null; }
+  const COLORS = ['text-emerald-600', 'dark:text-emerald-400', 'text-amber-600', 'dark:text-amber-400', 'text-red-500'];
+  const tick = () => {
+    const els = document.querySelectorAll('.lead-timer');
+    if (!els.length) { clearInterval(__leadTimerInterval); __leadTimerInterval = null; return; }
+    els.forEach(el => {
+      const sec = Math.max(0, Math.round((Date.now() - new Date(el.dataset.created)) / 1000));
+      el.textContent = fmtLeadDuration(sec);
+      el.classList.remove(...COLORS);
+      const add = sec <= 300 ? ['text-emerald-600', 'dark:text-emerald-400'] : sec <= 900 ? ['text-amber-600', 'dark:text-amber-400'] : ['text-red-500'];
+      el.classList.add(...add);
+    });
+  };
+  tick();
+  __leadTimerInterval = setInterval(tick, 1000);
+}
+
+// Speed-to-lead KPI strip for managers — median answer time, answered %, SLA hits.
+async function renderLeadMetrics() {
+  const box = document.getElementById('leads-metrics');
+  if (!box) return;
+  let m;
+  try { m = await apiGetJson('/leads/response-metrics?days=30'); } catch { return; }
+  const dur = (s) => s == null ? '—' : fmtLeadDuration(s);
+  const pct = m.total ? Math.round((m.answered / m.total) * 100) : 0;
+  const tile = (label, val, cls = 'text-slate-900 dark:text-white') => `<div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg px-3 py-2"><div class="text-[10px] uppercase tracking-wider text-slate-400 font-bold">${label}</div><div class="text-base font-black ${cls}">${val}</div></div>`;
+  const best = (m.per_rep || [])[0];
+  box.innerHTML = `
+    <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
+      ${tile('Median answer', dur(m.median_seconds), 'text-indigo-600 dark:text-indigo-400')}
+      ${tile('Answered', `${pct}% <span class="text-xs font-semibold text-slate-400">(${m.answered}/${m.total})</span>`)}
+      ${tile('Within 5 min', m.within_5min, 'text-emerald-600 dark:text-emerald-400')}
+      ${tile('Still open', m.unanswered, m.unanswered ? 'text-red-500' : 'text-slate-900 dark:text-white')}
+      ${tile('Fastest rep', best ? esc(best.rep) : '—')}
+    </div>
+    <div class="text-[11px] text-slate-400 mt-1">Speed-to-lead over the last ${m.days} days · median is created→answered time.</div>`;
 }
 
 // AI reply draft for a Marketplace lead (AI Boost). Non-subscribers → upgrade modal.
@@ -2475,6 +2547,10 @@ async function openLeadReply(leadId) {
       const t = modal.querySelector('#lead-reply-text');
       t.select();
       (navigator.clipboard?.writeText(t.value) || Promise.reject()).then(() => showToast('Reply copied', 'success')).catch(() => { try { document.execCommand('copy'); showToast('Reply copied', 'success'); } catch {} });
+      // Copying the reply to send = answering the lead → stop the speed-to-lead clock.
+      fetch(`${API}/leads/${leadId}/answered`, { method: 'POST', headers: { 'Authorization': `Bearer ${token}` } })
+        .then(() => { if (document.getElementById('leads-root') && typeof loadLeadsPage === 'function') loadLeadsPage(); })
+        .catch(() => {});
     });
   } catch (e) {
     body.className = 'py-8 text-center text-sm text-red-500';
