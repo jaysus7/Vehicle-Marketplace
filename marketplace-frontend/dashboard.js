@@ -4122,15 +4122,19 @@ function deskRenderForm(contactId) {
             ${fld('Deal type', `<select id="dk-deal_type" class="${iCls}">${['Finance', 'Lease', 'Cash'].map(o => `<option ${d.deal_type === o ? 'selected' : ''}>${o}</option>`).join('')}</select>`)}
             ${fld('Lender', txt('dk-finance_company', d.finance_company, 'e.g. TD Auto Finance'))}
             ${fld('Program', txt('dk-program', d.program, 'e.g. Finance rates'))}
-            ${fld('APR %', `<input id="dk-apr" type="number" step="0.01" value="${apr}" oninput="deskRenderSummary()" class="${iCls}">`)}
+            ${fld('APR / sell rate %', `<input id="dk-apr" type="number" step="0.01" value="${apr}" oninput="deskRenderSummary()" class="${iCls}">`)}
+            ${fld('Buy rate % (reserve)', `<input id="dk-buy_rate" type="number" step="0.01" value="${d.buy_rate == null ? '' : d.buy_rate}" placeholder="lender buy rate" oninput="deskRenderSummary()" class="${iCls}">`)}
             ${fld('Term (months)', `<input id="dk-term" type="number" value="${d.term == null ? 60 : d.term}" oninput="deskRenderSummary()" class="${iCls}">`)}
             ${fld('Payment frequency', `<select id="dk-payment_freq" onchange="deskRenderSummary()" class="${iCls}">${[['monthly', 'Monthly'], ['biweekly', 'Bi-weekly'], ['weekly', 'Weekly']].map(([v, l]) => `<option value="${v}" ${((d.payment_freq || 'monthly') === v) ? 'selected' : ''}>${l}</option>`).join('')}</select>`)}
             ${fld('1st payment date', txt('dk-first_payment_date', d.first_payment_date, '', 'date'))}
             ${fld('No-interest deferral (days)', `<input id="dk-deferral_days" type="number" value="${d.deferral_days == null ? '' : d.deferral_days}" placeholder="0" oninput="deskRenderSummary()" class="${iCls}">`)}
             ${fld('Balloon / residual', `<input id="dk-balloon" type="text" inputmode="decimal" data-money value="${d.balloon == null ? '' : msFmtMoney(d.balloon)}" placeholder="0.00" oninput="deskRenderSummary()" class="${iCls}">`)}
+            ${fld('Lease residual $', `<input id="dk-residual_amount" type="text" inputmode="decimal" data-money value="${d.residual_amount == null ? '' : msFmtMoney(d.residual_amount)}" placeholder="lease only" oninput="deskRenderSummary()" class="${iCls}">`)}
+            ${fld('Lease km/yr', `<input id="dk-mileage_allowance" type="number" value="${d.mileage_allowance == null ? '' : d.mileage_allowance}" placeholder="e.g. 20000" oninput="deskRenderSummary()" class="${iCls}">`)}
             ${fld('Cash down', money('dk-down_payment', d.down_payment))}
             ${fld('Deposit', money('dk-deposit_amount', d.deposit_amount))}
             ${fld('Rebate (after tax)', money('dk-rebate', d.rebate))}
+            ${fld('Province (auto tax)', `<select id="dk-tax_province" onchange="deskSetProvince()" class="${iCls}"><option value="">— Select —</option>${Object.entries(DESK_TAX_PROVINCES).map(([code, p]) => `<option value="${code}" ${d.tax_province === code ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}</select>`)}
             ${fld('Tax rate %', `<input id="dk-tax_rate" type="number" step="0.001" value="${rate}" oninput="deskRenderSummary()" class="${iCls}">`)}
             <div class="flex items-end pb-2"><label class="inline-flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-200 cursor-pointer"><input type="checkbox" id="dk-tax_on_difference" ${taxOnDiff ? 'checked' : ''} onchange="deskRenderSummary()" class="rounded"> Tax on the difference</label></div>
           </div>`)}
@@ -4321,8 +4325,9 @@ function deskCollect(contactId) {
     trade_value: num('dk-trade_value'), trade_payoff: num('dk-trade_payoff'), trade_desc: val('dk-trade_desc'), trade_vin: val('dk-trade_vin'),
     down_payment: num('dk-down_payment'), deposit_amount: num('dk-deposit_amount'), rebate: num('dk-rebate'),
     apr: num('dk-apr'), term: num('dk-term'), payment_freq: val('dk-payment_freq'), deal_type: val('dk-deal_type'),
+    buy_rate: num('dk-buy_rate'), residual_amount: num('dk-residual_amount'), mileage_allowance: num('dk-mileage_allowance'),
     finance_company: val('dk-finance_company'), first_payment_date: val('dk-first_payment_date'),
-    tax_rate: num('dk-tax_rate'), tax_on_difference: chk('dk-tax_on_difference'),
+    tax_province: val('dk-tax_province'), tax_rate: num('dk-tax_rate'), tax_on_difference: chk('dk-tax_on_difference'),
     addons: clean(__deskAddons, 'price'), fni_items: clean(__deskFni, 'price'), fees,
     insurance: { company: val('dk-ins-company'), policy: val('dk-ins-policy'), agent: val('dk-ins-agent'), phone: val('dk-ins-phone'), expiry: val('dk-ins-expiry') },
     vehicle: { year: val('dk-veh-year'), make: val('dk-veh-make'), model: val('dk-veh-model'), trim: val('dk-veh-trim'), vin: val('dk-veh-vin'), mileage: num('dk-veh-mileage'), color: val('dk-veh-color'), stock: val('dk-veh-stock') },
@@ -4532,8 +4537,58 @@ function deskCompute(d) {
   // Cash the customer still brings at delivery = cash down not yet covered by the deposit.
   const dueOnDelivery = Math.max(0, down - deposit);
   const deferralDays = n(d.deferral_days);
-  return { sellingPrice, retail, rebateBeforeTax, adjustment, addonsTotal, fniTotal, taxableFees, feesTotal, taxableBase, taxAmount, cashPrice, total, tradeValue, tradePayoff, tradeEquity, down, deposit, rebate, balloon, amountFinanced, apr, term, freq, perYear, nPer, payment, costOfBorrowing, totalPayment, dueOnDelivery, deferralDays, rate };
+
+  // F&I reserve — the finance charge kept from selling above the lender's buy rate.
+  const buyRate = n(d.buy_rate);
+  let reserve = 0;
+  if (amountFinanced > 0 && nPer > 0 && buyRate > 0 && apr > buyRate) {
+    const payAt = (rt) => { const rr = rt / 100 / perYear; if (rr > 0) { const pv = balloon / Math.pow(1 + rr, nPer); return (rr * (amountFinanced - pv)) / (1 - Math.pow(1 + rr, -nPer)); } return (amountFinanced - balloon) / nPer; };
+    reserve = Math.max(0, (payment - payAt(buyRate)) * nPer);
+  }
+
+  // Lease — depreciation + finance (money factor = APR/2400), tax per payment.
+  const isLease = (d.deal_type === 'Lease');
+  const residual = n(d.residual_amount);
+  let leasePayment = 0, leaseDepreciation = 0, leaseFinance = 0, leaseTaxAmt = 0, adjCap = 0;
+  if (isLease) {
+    const months = term > 0 ? term : 0;
+    const capReduction = down + deposit + rebate + tradeEquity;
+    adjCap = Math.max(0, cashPrice - capReduction);
+    if (months > 0) {
+      const mf = apr / 2400;
+      leaseDepreciation = (adjCap - residual) / months;
+      leaseFinance = (adjCap + residual) * mf;
+      const base = Math.max(0, leaseDepreciation + leaseFinance);
+      leaseTaxAmt = base * rate / 100;
+      leasePayment = base + leaseTaxAmt;
+    }
+  }
+
+  return { sellingPrice, retail, rebateBeforeTax, adjustment, addonsTotal, fniTotal, taxableFees, feesTotal, taxableBase, taxAmount, cashPrice, total, tradeValue, tradePayoff, tradeEquity, down, deposit, rebate, balloon, amountFinanced, apr, term, freq, perYear, nPer, payment, costOfBorrowing, totalPayment, dueOnDelivery, deferralDays, rate, buyRate, reserve, isLease, residual, adjCap, leasePayment, leaseDepreciation, leaseFinance, leaseTaxAmt };
 }
+
+// Canadian combined sales-tax rates (GST + PST/HST) for auto-filling the desk. These
+// are a convenience — the manager should verify GST vs PST treatment (esp. how a
+// trade-in reduces the taxable amount) for their province. Rates as of 2026.
+const DESK_TAX_PROVINCES = {
+  AB: { name: 'Alberta', rate: 5, diff: true }, BC: { name: 'British Columbia', rate: 12, diff: true },
+  MB: { name: 'Manitoba', rate: 12, diff: true }, NB: { name: 'New Brunswick', rate: 15, diff: true },
+  NL: { name: 'Newfoundland & Labrador', rate: 15, diff: true }, NS: { name: 'Nova Scotia', rate: 14, diff: true },
+  NT: { name: 'Northwest Territories', rate: 5, diff: true }, NU: { name: 'Nunavut', rate: 5, diff: true },
+  ON: { name: 'Ontario', rate: 13, diff: true }, PE: { name: 'Prince Edward Island', rate: 15, diff: true },
+  QC: { name: 'Quebec', rate: 14.975, diff: true }, SK: { name: 'Saskatchewan', rate: 11, diff: true },
+  YT: { name: 'Yukon', rate: 5, diff: true },
+};
+function deskSetProvince() {
+  const code = document.getElementById('dk-tax_province')?.value;
+  const p = DESK_TAX_PROVINCES[code];
+  if (p) {
+    const rt = document.getElementById('dk-tax_rate'); if (rt) rt.value = p.rate;
+    const td = document.getElementById('dk-tax_on_difference'); if (td) td.checked = p.diff;
+  }
+  deskRenderSummary();
+}
+window.deskSetProvince = deskSetProvince;
 function deskRenderSummary() {
   const box = document.getElementById('desk-summary');
   if (!box) return;
@@ -4554,7 +4609,7 @@ function deskRenderSummary() {
       ${c.tradeValue ? row('Trade allowance', '−' + deskM(c.tradeValue)) : ''}
       <div class="border-t border-slate-200 dark:border-slate-800 my-1.5"></div>
       ${row(`Taxable amount`, deskM(c.taxableBase))}
-      ${row(`HST (${c.rate}%)`, deskM(c.taxAmount))}
+      ${row(`Tax (${c.rate}%)`, deskM(c.taxAmount))}
       ${row('Total', deskM(c.total), true)}
       <div class="border-t border-slate-200 dark:border-slate-800 my-1.5"></div>
       ${c.down ? row('Cash down', '−' + deskM(c.down)) : ''}
@@ -4563,16 +4618,23 @@ function deskRenderSummary() {
       ${row('Amount financed', deskM(c.amountFinanced), true)}
       ${c.balloon ? row('Balloon / residual', deskM(c.balloon)) : ''}
     </div>
+    ${c.isLease ? `
+    <div class="mt-3 bg-violet-600 text-white rounded-lg px-4 py-3">
+      <div class="text-[11px] uppercase tracking-wider opacity-80">Lease payment</div>
+      <div class="text-2xl font-black">${deskM(c.leasePayment)}<span class="text-sm font-bold opacity-80"> /mo</span></div>
+      <div class="text-[11px] opacity-80 mt-0.5">${c.term} mo · residual ${deskM(c.residual)} · depr ${deskM(c.leaseDepreciation)} + finance ${deskM(c.leaseFinance)} + tax ${deskM(c.leaseTaxAmt)} per mo</div>
+    </div>` : `
     <div class="mt-3 bg-indigo-600 text-white rounded-lg px-4 py-3">
       <div class="text-[11px] uppercase tracking-wider opacity-80">Estimated payment</div>
       <div class="text-2xl font-black">${deskM(c.payment)}<span class="text-sm font-bold opacity-80">${freqLabel}</span></div>
       <div class="text-[11px] opacity-80 mt-0.5">${c.apr}% APR · ${c.nPer} payments · total ${deskM(c.totalPayment)} · cost of borrowing ${deskM(Math.max(0, c.costOfBorrowing))}${c.deferralDays ? ` · ${c.deferralDays}-day deferral` : ''}</div>
-    </div>
+    </div>`}
+    ${c.reserve > 0 ? `<div class="mt-2 bg-amber-50 dark:bg-amber-950/30 rounded-lg px-3 py-2 flex items-center justify-between"><span class="text-[10px] uppercase tracking-wider text-amber-600 dark:text-amber-400 font-bold">F&amp;I reserve · internal</span><span class="font-black text-amber-700 dark:text-amber-300">${deskM(c.reserve)}</span></div>` : ''}
     <div class="mt-2 grid grid-cols-2 gap-2 text-sm">
       <div class="bg-slate-50 dark:bg-slate-800/60 rounded-lg px-3 py-2"><div class="text-[10px] uppercase tracking-wider text-slate-400 font-bold">Deposit</div><div class="font-black text-slate-900 dark:text-white">${deskM(c.deposit)}</div></div>
       <div class="bg-emerald-50 dark:bg-emerald-950/30 rounded-lg px-3 py-2"><div class="text-[10px] uppercase tracking-wider text-emerald-600 dark:text-emerald-400 font-bold">Due on delivery</div><div class="font-black text-emerald-700 dark:text-emerald-300">${deskM(c.dueOnDelivery)}</div></div>
     </div>
-    <p class="text-[10px] text-slate-400 mt-2 leading-snug">Estimate only, on approved credit. Rate is an example, not a lender commitment. Taxes/fees per Ontario; verify before contract.</p>`;
+    <p class="text-[10px] text-slate-400 mt-2 leading-snug">Estimate only, on approved credit. Rate is an example, not a lender commitment. Tax auto-filled from the selected province — verify GST/PST treatment before contract.</p>`;
 }
 // Retail/MSRP → Selling price: keep the selling-price input in sync as the manager
 // types Retail, before-tax rebate or adjustment (matches a DMS deal screen).
