@@ -553,6 +553,8 @@ async function initializeDashboardEcosystem() {
         if (page === 'crm') {
           __crmStatusFilter = btn.dataset.filter === 'sold' ? 'sold,fni,delivered' : '';
           __crmInitRep = btn.dataset.crmView === 'mine' ? (profileContext?.id || '') : '';
+          // "Search Customers" spans the whole dealership; "My Customer Database" is the rep's own.
+          __crmSearchAll = btn.dataset.crmView === 'all';
           __crmPendingAdd = btn.dataset.crmAction === 'add';
         }
         // The Inventory page renders differently for the Facebook posting hub vs
@@ -1578,6 +1580,7 @@ window.crmInsightsRange = crmInsightsRange;
 let __crmCanSeeAll = false;
 let __crmStatusFilter = '';   // set by the "Sold Customers" nav leaf (comma list)
 let __crmInitRep = '';        // "My Customer Database" nav leaf pre-filters to the current user
+let __crmSearchAll = false;   // "Search Customers" leaf spans the whole dealership (all reps)
 let __crmPendingAdd = false;  // "Add Customer" nav leaf opens the New-contact form on load
 const crmIsSoldView = () => !!__crmStatusFilter;
 function crmClearStatusFilter() { __crmStatusFilter = ''; crmLoadContacts(); }
@@ -1625,6 +1628,7 @@ async function crmRefreshContacts() {
   const params = new URLSearchParams();
   if (q) params.set('q', q);
   if (rep) params.set('rep', rep);
+  if (__crmSearchAll && !rep) params.set('scope', 'all');   // whole-dealership browse for Search Customers
   if (__crmStatusFilter) params.set('status', __crmStatusFilter);
   try {
     const d = await apiGetJson(`/crm/contacts${params.toString() ? `?${params}` : ''}`);
@@ -6599,14 +6603,15 @@ function fniStatusPill(s) {
 function fniRowHtml(d) {
   const approved = !!d.approved_at;
   const deliv = d.delivery_date ? `${d.delivery_date}${d.delivery_time ? ' ' + d.delivery_time : ''}` : '<span class="text-slate-400">—</span>';
-  return `<tr class="border-b border-slate-100 dark:border-slate-800/60">
-    <td class="py-2.5 px-3"><div class="text-sm font-semibold text-slate-900 dark:text-white">${esc(d.customer)}</div><div class="text-[11px] text-slate-400">${d.deal_number ? 'Deal #' + esc(String(d.deal_number)) : ''}</div></td>
+  return `<tr class="border-b border-slate-100 dark:border-slate-800/60 hover:bg-slate-50 dark:hover:bg-slate-800/40 ${d.contact_id ? 'cursor-pointer' : ''}" ${d.contact_id ? `data-fni-view="${esc(d.contact_id)}"` : ''}>
+    <td class="py-2.5 px-3"><div class="text-sm font-semibold text-indigo-700 dark:text-indigo-300">${esc(d.customer)}</div><div class="text-[11px] text-slate-400">${d.deal_number ? 'Deal #' + esc(String(d.deal_number)) : ''}</div></td>
     <td class="py-2.5 px-3 text-sm text-slate-700 dark:text-slate-200">${esc(d.vehicle)}${d.stocknumber ? ` <span class="text-[11px] text-slate-400">#${esc(d.stocknumber)}</span>` : ''}</td>
     <td class="py-2.5 px-3 text-sm text-slate-600 dark:text-slate-300">${d.salesperson ? esc(d.salesperson) : '<span class="text-slate-400">—</span>'}</td>
     <td class="py-2.5 px-3 whitespace-nowrap">${fniStatusPill(d.deal_status)}${approved ? ' <span class="text-[10px] font-bold text-emerald-600 dark:text-emerald-400">✓ Approved</span>' : ''}</td>
     <td class="py-2.5 px-3 text-sm whitespace-nowrap">${deliv}</td>
     <td class="py-2.5 px-3 text-right whitespace-nowrap">
-      <button data-fni-approve="${d.id}" class="text-indigo-500 hover:text-indigo-400 text-xs font-bold">${approved ? 'Edit get-ready' : 'Approve'}</button>
+      ${d.contact_id ? `<button data-fni-view="${esc(d.contact_id)}" class="text-slate-500 hover:text-indigo-500 text-xs font-bold">View deal</button>` : ''}
+      <button data-fni-approve="${d.id}" class="text-indigo-500 hover:text-indigo-400 text-xs font-bold ml-3">${approved ? 'Edit get-ready' : 'Approve'}</button>
       <button data-fni-delivered="${d.id}" class="text-emerald-600 hover:text-emerald-500 text-xs font-bold ml-3">Delivered</button>
     </td>
   </tr>`;
@@ -6619,8 +6624,13 @@ function fniRenderRows() {
   let filtered = __fniData.deals || [];
   if (q) filtered = filtered.filter(d => `${d.customer} ${d.vehicle} ${d.stocknumber || ''} ${d.deal_number || ''} ${d.salesperson || ''}`.toLowerCase().includes(q));
   tbody.innerHTML = filtered.map(fniRowHtml).join('') || '<tr><td colspan="6" class="py-8 text-center text-sm text-slate-400 italic">No deals waiting.</td></tr>';
-  tbody.querySelectorAll('[data-fni-approve]').forEach(b => b.addEventListener('click', () => openFniApprove(b.dataset.fniApprove)));
-  tbody.querySelectorAll('[data-fni-delivered]').forEach(b => b.addEventListener('click', () => fniMarkDelivered(b.dataset.fniDelivered)));
+  tbody.querySelectorAll('[data-fni-approve]').forEach(b => b.addEventListener('click', (e) => { e.stopPropagation(); openFniApprove(b.dataset.fniApprove); }));
+  tbody.querySelectorAll('[data-fni-delivered]').forEach(b => b.addEventListener('click', (e) => { e.stopPropagation(); fniMarkDelivered(b.dataset.fniDelivered); }));
+  // Row (and the explicit "View deal" button) opens the deal desk — F&I's hub.
+  tbody.querySelectorAll('tr[data-fni-view]').forEach(tr => tr.addEventListener('click', (e) => {
+    if (e.target.closest('[data-fni-approve],[data-fni-delivered]')) return;   // let action buttons win
+    openDeskForContact(tr.dataset.fniView);
+  }));
 }
 
 // FNI page has two tabs: the Deals worklist and the F&I performance Report.

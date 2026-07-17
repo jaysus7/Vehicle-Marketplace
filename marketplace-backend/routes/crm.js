@@ -134,6 +134,7 @@ export function registerCrm(app) {
     const q = String(req.query.q || '').trim().replace(/[(),]/g, ' ').trim()
     const status = String(req.query.status || '').trim()
     const repFilter = String(req.query.rep || '').trim()
+    const scopeAll = String(req.query.scope || '').trim() === 'all'   // "Search Customers" = whole dealership
     const limit = Math.min(500, Math.max(1, parseInt(req.query.limit) || 200))
     const dealer = isDealerLevel(req)
     const searching = q.length > 0
@@ -142,8 +143,9 @@ export function registerCrm(app) {
       .eq('dealership_id', req.dealershipId)
       .order('last_activity_at', { ascending: false, nullsFirst: false })
       .limit(limit)
-    // Ownership scope applies only while BROWSING (no search). Search sees everyone.
-    if (!dealer && !searching) query = query.or(`assigned_rep.eq.${req.user.id},created_by.eq.${req.user.id}`)
+    // Ownership scope applies only while BROWSING (no search) and NOT in the all-
+    // customers "Search Customers" view. Search and scope=all see the whole store.
+    if (!dealer && !searching && !scopeAll) query = query.or(`assigned_rep.eq.${req.user.id},created_by.eq.${req.user.id}`)
     // "By rep" filter — managers only (a rep can't browse another rep's whole book).
     if (repFilter && dealer) query = query.eq('assigned_rep', repFilter)
     if (status) { const list = status.split(',').map(s => s.trim()).filter(Boolean); query = list.length > 1 ? query.in('status', list) : query.eq('status', list[0]) }
