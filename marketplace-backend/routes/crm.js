@@ -191,12 +191,14 @@ export function registerCrm(app) {
       .select('*').eq('id', req.params.id).eq('dealership_id', req.dealershipId).maybeSingle()
     if (!contact) return res.status(404).json({ error: 'Contact not found' })
 
-    const [{ data: comms }, { data: leads }, { data: appraisals }, { data: tasks }, { data: attachments }] = await Promise.all([
+    const [{ data: comms }, { data: leads }, { data: appraisals }, { data: tasks }, { data: attachments }, { data: deal }] = await Promise.all([
       supabaseAdmin.from('communications').select('*').eq('contact_id', contact.id).order('occurred_at', { ascending: false }).limit(200),
       supabaseAdmin.from('leads').select('id, comments, source, status, inventory_id, created_by, created_at').eq('contact_id', contact.id).order('created_at', { ascending: false }),
       supabaseAdmin.from('trade_appraisals').select('id, year, make, model, trim, vin, suggested_offer, currency, created_by, created_at').eq('contact_id', contact.id).order('created_at', { ascending: false }),
       supabaseAdmin.from('crm_tasks').select('*').eq('contact_id', contact.id).order('due_at', { ascending: true, nullsFirst: false }),
       supabaseAdmin.from('crm_attachments').select('id, url, filename, content_type, size, kind, uploaded_by, created_at').eq('contact_id', contact.id).order('created_at', { ascending: false }).then(r => r, () => ({ data: [] })),
+      // A worked deal for this customer (if any) — powers the "View deal / Desk a deal" button.
+      supabaseAdmin.from('deals').select('deal_number, deal_status').eq('contact_id', contact.id).eq('dealership_id', req.dealershipId).maybeSingle().then(r => r, () => ({ data: null })),
     ])
 
     // Resolve vehicle labels for pinned leads.
@@ -243,6 +245,7 @@ export function registerCrm(app) {
       timeline,
       tasks: (tasks || []).map(t => ({ ...t, assignee_name: reps[t.assigned_to] || null })),
       attachments: attachments || [],
+      deal: deal || null,
       can_see_all: isDealerLevel(req),
     })
   })
