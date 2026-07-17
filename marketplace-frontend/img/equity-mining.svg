@@ -1,0 +1,65 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1240 780" font-family="Inter,Segoe UI,Arial,sans-serif">
+  <defs>
+    <linearGradient id="hero" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#6366F1"/><stop offset="1" stop-color="#A78BFA"/>
+    </linearGradient>
+    <filter id="sh" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="10" stdDeviation="16" flood-color="#000" flood-opacity="0.35"/>
+    </filter>
+  </defs>
+  <rect width="1240" height="780" rx="18" fill="#0B0F19"/>
+  <!-- window chrome -->
+  <rect width="1240" height="46" rx="18" fill="#0F1626"/>
+  <rect y="30" width="1240" height="16" fill="#0F1626"/>
+  <circle cx="28" cy="23" r="6" fill="#FF5F57"/><circle cx="50" cy="23" r="6" fill="#FEBC2E"/><circle cx="72" cy="23" r="6" fill="#28C840"/>
+  <rect x="470" y="13" width="300" height="20" rx="10" fill="#0A0F1B"/>
+  <text x="620" y="27" text-anchor="middle" font-size="11" fill="#5B6B86">app.marketsync.link</text>
+  <!-- sidebar -->
+  <rect x="0" y="46" width="208" height="734" fill="#0E1424"/>
+  <line x1="208" y1="46" x2="208" y2="780" stroke="#1F2A3D"/>
+  <text x="24" y="82" font-size="20" fill="#fff" font-weight="400">|</text>
+  <text x="40" y="84" font-size="17" font-weight="800" fill="#fff">Market<tspan fill="#6366F1">Sync</tspan></text>
+  <g transform="translate(20 118)">
+      
+      <circle cx="10" cy="3" r="12" fill="#182236" opacity="1"/>
+      <path d="M3 12l9-9 9 9M5 10v9h5v-6h4v6h5v-9" transform="translate(2 -5) scale(0.66)" fill="none" stroke="#93A2BC" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+      <text x="32" y="8" font-size="14" font-weight="500" fill="#93A2BC" font-family="Inter,Arial,sans-serif">Dashboard</text>
+    </g><g transform="translate(20 164)">
+      
+      <circle cx="10" cy="3" r="12" fill="#182236" opacity="1"/>
+      <path d="M4 5h16v4H4zM4 11h16v8H4" transform="translate(2 -5) scale(0.66)" fill="none" stroke="#93A2BC" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+      <text x="32" y="8" font-size="14" font-weight="500" fill="#93A2BC" font-family="Inter,Arial,sans-serif">Inventory</text>
+    </g><g transform="translate(20 210)">
+      
+      <circle cx="10" cy="3" r="12" fill="#182236" opacity="1"/>
+      <path d="M12 2a10 10 0 1010 10" transform="translate(2 -5) scale(0.66)" fill="none" stroke="#93A2BC" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+      <text x="32" y="8" font-size="14" font-weight="500" fill="#93A2BC" font-family="Inter,Arial,sans-serif">Intelligence</text>
+    </g><g transform="translate(20 256)">
+      
+      <circle cx="10" cy="3" r="12" fill="#182236" opacity="1"/>
+      <path d="M4 4h16v12H4zM8 20h8" transform="translate(2 -5) scale(0.66)" fill="none" stroke="#93A2BC" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+      <text x="32" y="8" font-size="14" font-weight="500" fill="#93A2BC" font-family="Inter,Arial,sans-serif">Deals</text>
+    </g><g transform="translate(20 302)">
+      
+      <circle cx="10" cy="3" r="12" fill="#182236" opacity="1"/>
+      <path d="M3 6h18M3 12h18M3 18h12" transform="translate(2 -5) scale(0.66)" fill="none" stroke="#93A2BC" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+      <text x="32" y="8" font-size="14" font-weight="500" fill="#93A2BC" font-family="Inter,Arial,sans-serif">CRM</text>
+    </g><g transform="translate(20 348)">
+      <rect x="-6" y="-16" width="184" height="38" rx="9" fill="#6366F1" opacity="0.16"/><rect x="-6" y="-16" width="3" height="38" rx="1.5" fill="#6366F1"/>
+      <circle cx="10" cy="3" r="12" fill="#6366F1" opacity="0.25"/>
+      <path d="M12 3l9 6-9 6-9-6z" transform="translate(2 -5) scale(0.66)" fill="none" stroke="#6366F1" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+      <text x="32" y="8" font-size="14" font-weight="700" fill="#E6EDF7" font-family="Inter,Arial,sans-serif">Reports</text>
+    </g>
+  <g transform="translate(20 720)"><circle cx="12" cy="0" r="14" fill="url(#hero)"/><text x="12" y="5" text-anchor="middle" font-size="12" font-weight="700" fill="#fff">RM</text>
+    <text x="34" y="-2" font-size="12" font-weight="600" fill="#E6EDF7">Riverside Motors</text>
+    <text x="34" y="14" font-size="10.5" fill="#5B6B86">Dealer Admin</text></g>
+  <!-- top bar -->
+  <text x="240" y="92" font-size="23" font-weight="800" fill="#E6EDF7">Equity Mining</text>
+  <rect x="413" y="74" width="137" height="24" rx="12" fill="#6366F1" opacity="0.16"/>
+  <text x="426" y="90" font-size="12" font-weight="700" fill="#A78BFA">RETAIN · EQUITY</text>
+  <rect x="980" y="70" width="236" height="34" rx="10" fill="#131A2C" stroke="#1F2A3D"/>
+  <circle cx="1000" cy="87" r="6" fill="none" stroke="#5B6B86" stroke-width="2"/><line x1="1005" y1="92" x2="1010" y2="97" stroke="#5B6B86" stroke-width="2"/>
+  <text x="1018" y="91" font-size="12" fill="#5B6B86">Search VIN, customer…</text>
+  <line x1="208" y1="120" x2="1240" y2="120" stroke="#1F2A3D"/>
+  <rect x="236" y="144" width="222" height="96" rx="14" fill="#131A2C" stroke="#1F2A3D"/><text x="258" y="180" font-size="12" fill="#93A2BC" font-weight="500">Positive equity</text><text x="258" y="218" font-size="26" fill="#10B981" font-weight="800">38</text><circle cx="428" cy="172" r="16" fill="#10B981" opacity="0.16"/><rect x="482" y="144" width="222" height="96" rx="14" fill="#131A2C" stroke="#1F2A3D"/><text x="504" y="180" font-size="12" fill="#93A2BC" font-weight="500">Lease-end &lt; 90d</text><text x="504" y="218" font-size="26" fill="#F59E0B" font-weight="800">12</text><circle cx="674" cy="172" r="16" fill="#F59E0B" opacity="0.16"/><rect x="728" y="144" width="222" height="96" rx="14" fill="#131A2C" stroke="#1F2A3D"/><text x="750" y="180" font-size="12" fill="#93A2BC" font-weight="500">Pull-ahead ready</text><text x="750" y="218" font-size="26" fill="#A78BFA" font-weight="800">21</text><circle cx="920" cy="172" r="16" fill="#A78BFA" opacity="0.16"/><rect x="974" y="144" width="222" height="96" rx="14" fill="#131A2C" stroke="#1F2A3D"/><text x="996" y="180" font-size="12" fill="#93A2BC" font-weight="500">Est. gross</text><text x="996" y="218" font-size="26" fill="#6366F1" font-weight="800">$164K</text><circle cx="1166" cy="172" r="16" fill="#6366F1" opacity="0.16"/><rect x="236" y="264" width="980" height="350" rx="14" fill="#131A2C" stroke="#1F2A3D"/><text x="260" y="298" font-size="15" fill="#E6EDF7" font-weight="700">Equity radar · delivered customers ready to trade up</text><text x="1192" y="298" font-size="11" fill="#5B6B86" font-weight="500" text-anchor="end">Auto-surfaced daily</text><line x1="260" y1="316" x2="1192" y2="316" stroke="#1F2A3D"/><text x="280" y="338" font-size="10" fill="#5B6B86" font-weight="700">CUSTOMER</text><text x="470" y="338" font-size="10" fill="#5B6B86" font-weight="700">VEHICLE</text><text x="720" y="338" font-size="10" fill="#5B6B86" font-weight="700">PAYOFF</text><text x="820" y="338" font-size="10" fill="#5B6B86" font-weight="700">VALUE</text><text x="920" y="338" font-size="10" fill="#5B6B86" font-weight="700">EQUITY</text><text x="1050" y="338" font-size="10" fill="#5B6B86" font-weight="700">STATUS</text><rect x="264" y="350" width="924" height="40" rx="9" fill="transparent"/><circle cx="288" cy="369" r="11" fill="#10B981" opacity="0.2"/><text x="288" y="373" text-anchor="middle" font-size="10" font-weight="700" fill="#10B981">D</text><text x="308" y="373" font-size="12.5" fill="#E6EDF7" font-weight="700">Dana Whitfield</text><text x="470" y="373" font-size="12" fill="#93A2BC" font-weight="500">2021 RAV4 XLE</text><text x="720" y="373" font-size="12" fill="#93A2BC" font-weight="600">$18,240</text><text x="820" y="373" font-size="12" fill="#E6EDF7" font-weight="600">$23,900</text><text x="920" y="373" font-size="12.5" fill="#10B981" font-weight="800">+$5,660</text><rect x="1050" y="357" width="123" height="22" rx="11" fill="#10B981" opacity="0.18"/><text x="1111.5" y="372" text-anchor="middle" font-size="11" font-weight="700" fill="#10B981">Positive equity</text><rect x="640" y="368" width="64" height="6" rx="3" fill="#1A2438"/><rect x="640" y="368" width="55" height="6" rx="3" fill="#10B981"/><rect x="264" y="396" width="924" height="40" rx="9" fill="#101828"/><circle cx="288" cy="415" r="11" fill="#A78BFA" opacity="0.2"/><text x="288" y="419" text-anchor="middle" font-size="10" font-weight="700" fill="#A78BFA">M</text><text x="308" y="419" font-size="12.5" fill="#E6EDF7" font-weight="700">Marcus Lee</text><text x="470" y="419" font-size="12" fill="#93A2BC" font-weight="500">2020 F-150 XLT</text><text x="720" y="419" font-size="12" fill="#93A2BC" font-weight="600">$29,100</text><text x="820" y="419" font-size="12" fill="#E6EDF7" font-weight="600">$31,800</text><text x="920" y="419" font-size="12.5" fill="#10B981" font-weight="800">+$2,700</text><rect x="1050" y="403" width="88" height="22" rx="11" fill="#A78BFA" opacity="0.18"/><text x="1094" y="418" text-anchor="middle" font-size="11" font-weight="700" fill="#A78BFA">Pull-ahead</text><rect x="640" y="414" width="64" height="6" rx="3" fill="#1A2438"/><rect x="640" y="414" width="40" height="6" rx="3" fill="#A78BFA"/><rect x="264" y="442" width="924" height="40" rx="9" fill="transparent"/><circle cx="288" cy="461" r="11" fill="#F59E0B" opacity="0.2"/><text x="288" y="465" text-anchor="middle" font-size="10" font-weight="700" fill="#F59E0B">P</text><text x="308" y="465" font-size="12.5" fill="#E6EDF7" font-weight="700">Priya Anand</text><text x="470" y="465" font-size="12" fill="#93A2BC" font-weight="500">2022 Civic Sport (lease)</text><text x="720" y="465" font-size="12" fill="#93A2BC" font-weight="600">—</text><text x="820" y="465" font-size="12" fill="#E6EDF7" font-weight="600">62 days</text><text x="920" y="465" font-size="12.5" fill="#F59E0B" font-weight="800">Lease-end</text><rect x="1050" y="449" width="81" height="22" rx="11" fill="#F59E0B" opacity="0.18"/><text x="1090.5" y="464" text-anchor="middle" font-size="11" font-weight="700" fill="#F59E0B">Lease-end</text><rect x="640" y="460" width="64" height="6" rx="3" fill="#1A2438"/><rect x="640" y="460" width="32" height="6" rx="3" fill="#F59E0B"/><rect x="264" y="488" width="924" height="40" rx="9" fill="#101828"/><circle cx="288" cy="507" r="11" fill="#10B981" opacity="0.2"/><text x="288" y="511" text-anchor="middle" font-size="10" font-weight="700" fill="#10B981">T</text><text x="308" y="511" font-size="12.5" fill="#E6EDF7" font-weight="700">Terrence Boyd</text><text x="470" y="511" font-size="12" fill="#93A2BC" font-weight="500">2019 Model 3</text><text x="720" y="511" font-size="12" fill="#93A2BC" font-weight="600">$21,050</text><text x="820" y="511" font-size="12" fill="#E6EDF7" font-weight="600">$24,600</text><text x="920" y="511" font-size="12.5" fill="#10B981" font-weight="800">+$3,550</text><rect x="1050" y="495" width="123" height="22" rx="11" fill="#10B981" opacity="0.18"/><text x="1111.5" y="510" text-anchor="middle" font-size="11" font-weight="700" fill="#10B981">Positive equity</text><rect x="640" y="506" width="64" height="6" rx="3" fill="#1A2438"/><rect x="640" y="506" width="45" height="6" rx="3" fill="#10B981"/><rect x="264" y="534" width="924" height="40" rx="9" fill="transparent"/><circle cx="288" cy="553" r="11" fill="#38BDF8" opacity="0.2"/><text x="288" y="557" text-anchor="middle" font-size="10" font-weight="700" fill="#38BDF8">S</text><text x="308" y="557" font-size="12.5" fill="#E6EDF7" font-weight="700">Sofia Ramos</text><text x="470" y="557" font-size="12" fill="#93A2BC" font-weight="500">2021 CX-5 GT</text><text x="720" y="557" font-size="12" fill="#93A2BC" font-weight="600">$22,700</text><text x="820" y="557" font-size="12" fill="#E6EDF7" font-weight="600">$24,050</text><text x="920" y="557" font-size="12.5" fill="#10B981" font-weight="800">+$1,350</text><rect x="1050" y="541" width="53" height="22" rx="11" fill="#38BDF8" opacity="0.18"/><text x="1076.5" y="556" text-anchor="middle" font-size="11" font-weight="700" fill="#38BDF8">Watch</text><rect x="640" y="552" width="64" height="6" rx="3" fill="#1A2438"/><rect x="640" y="552" width="26" height="6" rx="3" fill="#38BDF8"/>
+</svg>

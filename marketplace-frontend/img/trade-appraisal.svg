@@ -1,0 +1,65 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1240 780" font-family="Inter,Segoe UI,Arial,sans-serif">
+  <defs>
+    <linearGradient id="hero" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#6366F1"/><stop offset="1" stop-color="#A78BFA"/>
+    </linearGradient>
+    <filter id="sh" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="10" stdDeviation="16" flood-color="#000" flood-opacity="0.35"/>
+    </filter>
+  </defs>
+  <rect width="1240" height="780" rx="18" fill="#0B0F19"/>
+  <!-- window chrome -->
+  <rect width="1240" height="46" rx="18" fill="#0F1626"/>
+  <rect y="30" width="1240" height="16" fill="#0F1626"/>
+  <circle cx="28" cy="23" r="6" fill="#FF5F57"/><circle cx="50" cy="23" r="6" fill="#FEBC2E"/><circle cx="72" cy="23" r="6" fill="#28C840"/>
+  <rect x="470" y="13" width="300" height="20" rx="10" fill="#0A0F1B"/>
+  <text x="620" y="27" text-anchor="middle" font-size="11" fill="#5B6B86">app.marketsync.link</text>
+  <!-- sidebar -->
+  <rect x="0" y="46" width="208" height="734" fill="#0E1424"/>
+  <line x1="208" y1="46" x2="208" y2="780" stroke="#1F2A3D"/>
+  <text x="24" y="82" font-size="20" fill="#fff" font-weight="400">|</text>
+  <text x="40" y="84" font-size="17" font-weight="800" fill="#fff">Market<tspan fill="#6366F1">Sync</tspan></text>
+  <g transform="translate(20 118)">
+      
+      <circle cx="10" cy="3" r="12" fill="#182236" opacity="1"/>
+      <path d="M3 12l9-9 9 9M5 10v9h5v-6h4v6h5v-9" transform="translate(2 -5) scale(0.66)" fill="none" stroke="#93A2BC" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+      <text x="32" y="8" font-size="14" font-weight="500" fill="#93A2BC" font-family="Inter,Arial,sans-serif">Dashboard</text>
+    </g><g transform="translate(20 164)">
+      
+      <circle cx="10" cy="3" r="12" fill="#182236" opacity="1"/>
+      <path d="M4 5h16v4H4zM4 11h16v8H4" transform="translate(2 -5) scale(0.66)" fill="none" stroke="#93A2BC" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+      <text x="32" y="8" font-size="14" font-weight="500" fill="#93A2BC" font-family="Inter,Arial,sans-serif">Inventory</text>
+    </g><g transform="translate(20 210)">
+      <rect x="-6" y="-16" width="184" height="38" rx="9" fill="#6366F1" opacity="0.16"/><rect x="-6" y="-16" width="3" height="38" rx="1.5" fill="#6366F1"/>
+      <circle cx="10" cy="3" r="12" fill="#6366F1" opacity="0.25"/>
+      <path d="M12 2a10 10 0 1010 10" transform="translate(2 -5) scale(0.66)" fill="none" stroke="#6366F1" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+      <text x="32" y="8" font-size="14" font-weight="700" fill="#E6EDF7" font-family="Inter,Arial,sans-serif">Intelligence</text>
+    </g><g transform="translate(20 256)">
+      
+      <circle cx="10" cy="3" r="12" fill="#182236" opacity="1"/>
+      <path d="M4 4h16v12H4zM8 20h8" transform="translate(2 -5) scale(0.66)" fill="none" stroke="#93A2BC" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+      <text x="32" y="8" font-size="14" font-weight="500" fill="#93A2BC" font-family="Inter,Arial,sans-serif">Deals</text>
+    </g><g transform="translate(20 302)">
+      
+      <circle cx="10" cy="3" r="12" fill="#182236" opacity="1"/>
+      <path d="M3 6h18M3 12h18M3 18h12" transform="translate(2 -5) scale(0.66)" fill="none" stroke="#93A2BC" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+      <text x="32" y="8" font-size="14" font-weight="500" fill="#93A2BC" font-family="Inter,Arial,sans-serif">CRM</text>
+    </g><g transform="translate(20 348)">
+      
+      <circle cx="10" cy="3" r="12" fill="#182236" opacity="1"/>
+      <path d="M12 3l9 6-9 6-9-6z" transform="translate(2 -5) scale(0.66)" fill="none" stroke="#93A2BC" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+      <text x="32" y="8" font-size="14" font-weight="500" fill="#93A2BC" font-family="Inter,Arial,sans-serif">Reports</text>
+    </g>
+  <g transform="translate(20 720)"><circle cx="12" cy="0" r="14" fill="url(#hero)"/><text x="12" y="5" text-anchor="middle" font-size="12" font-weight="700" fill="#fff">RM</text>
+    <text x="34" y="-2" font-size="12" font-weight="600" fill="#E6EDF7">Riverside Motors</text>
+    <text x="34" y="14" font-size="10.5" fill="#5B6B86">Dealer Admin</text></g>
+  <!-- top bar -->
+  <text x="240" y="92" font-size="23" font-weight="800" fill="#E6EDF7">Trade Appraisal</text>
+  <rect x="439" y="74" width="77.80000000000001" height="24" rx="12" fill="#6366F1" opacity="0.16"/>
+  <text x="452" y="90" font-size="12" font-weight="700" fill="#A78BFA">ACQUIRE</text>
+  <rect x="980" y="70" width="236" height="34" rx="10" fill="#131A2C" stroke="#1F2A3D"/>
+  <circle cx="1000" cy="87" r="6" fill="none" stroke="#5B6B86" stroke-width="2"/><line x1="1005" y1="92" x2="1010" y2="97" stroke="#5B6B86" stroke-width="2"/>
+  <text x="1018" y="91" font-size="12" fill="#5B6B86">Search VIN, customer…</text>
+  <line x1="208" y1="120" x2="1240" y2="120" stroke="#1F2A3D"/>
+  <rect x="236" y="144" width="560" height="180" rx="14" fill="#131A2C" stroke="#1F2A3D"/><text x="260" y="178" font-size="16" fill="#E6EDF7" font-weight="800">2021 Toyota RAV4 XLE AWD</text><rect x="260" y="196" width="120" height="22" rx="11" fill="#10B981" opacity="0.18"/><text x="320" y="211" text-anchor="middle" font-size="11" font-weight="700" fill="#10B981">VIN DECODED ✓</text><rect x="392" y="196" width="96" height="22" rx="11" fill="#F59E0B" opacity="0.18"/><text x="440" y="211" text-anchor="middle" font-size="11" font-weight="700" fill="#F59E0B">2 RECALLS</text><text x="260" y="258" font-size="11" fill="#5B6B86" font-weight="500">Mileage</text><text x="260" y="280" font-size="13.5" fill="#E6EDF7" font-weight="700">48,210 km</text><text x="392" y="258" font-size="11" fill="#5B6B86" font-weight="500">Engine</text><text x="392" y="280" font-size="13.5" fill="#E6EDF7" font-weight="700">2.5L I4</text><text x="524" y="258" font-size="11" fill="#5B6B86" font-weight="500">Drivetrain</text><text x="524" y="280" font-size="13.5" fill="#E6EDF7" font-weight="700">AWD</text><text x="656" y="258" font-size="11" fill="#5B6B86" font-weight="500">Fuel</text><text x="656" y="280" font-size="13.5" fill="#E6EDF7" font-weight="700">29 mpg comb.</text><rect x="236" y="340" width="560" height="274" rx="14" fill="#131A2C" stroke="#1F2A3D"/><text x="260" y="374" font-size="15" fill="#E6EDF7" font-weight="700">Live market value</text><text x="772" y="374" font-size="11" fill="#5B6B86" font-weight="500" text-anchor="end">MarketCheck + CarAPI</text><text x="260" y="428" font-size="12" fill="#93A2BC" font-weight="500">Mileage-adjusted retail</text><text x="260" y="462" font-size="30" fill="#A78BFA" font-weight="800">$31,480</text><text x="430" y="462" font-size="12" fill="#5B6B86" font-weight="500">range $29,900 – $32,750</text><text x="260" y="506" font-size="12" fill="#93A2BC" font-weight="600">Comparable listings nearby</text><rect x="260" y="524" width="360" height="8" rx="4" fill="#1A2438"/><rect x="260" y="524" width="295" height="8" rx="4" fill="#2A3A57"/><text x="636" y="532" font-size="11" fill="#93A2BC" font-weight="600">$33,900</text><rect x="260" y="541" width="360" height="8" rx="4" fill="#1A2438"/><rect x="260" y="541" width="238" height="8" rx="4" fill="#2A3A57"/><text x="636" y="549" font-size="11" fill="#93A2BC" font-weight="600">$32,910</text><rect x="260" y="558" width="360" height="8" rx="4" fill="#1A2438"/><rect x="260" y="558" width="324" height="8" rx="4" fill="#6366F1"/><text x="636" y="566" font-size="11" fill="#93A2BC" font-weight="600">$34,920</text><rect x="260" y="575" width="360" height="8" rx="4" fill="#1A2438"/><rect x="260" y="575" width="266" height="8" rx="4" fill="#2A3A57"/><text x="636" y="583" font-size="11" fill="#93A2BC" font-weight="600">$33,930</text><rect x="260" y="592" width="360" height="8" rx="4" fill="#1A2438"/><rect x="260" y="592" width="209" height="8" rx="4" fill="#2A3A57"/><text x="636" y="600" font-size="11" fill="#93A2BC" font-weight="600">$32,940</text><rect x="820" y="144" width="396" height="470" rx="14" fill="#131A2C" stroke="#1F2A3D"/><text x="844" y="178" font-size="15" fill="#E6EDF7" font-weight="700">Internal offer</text><rect x="844" y="196" width="150" height="22" rx="11" fill="#F43F5E" opacity="0.18"/><text x="919" y="211" text-anchor="middle" font-size="11" font-weight="700" fill="#F43F5E">REP-ONLY · NOT ON SITE</text><text x="844" y="250" font-size="12" fill="#93A2BC" font-weight="500">Suggested cash offer</text><text x="844" y="292" font-size="30" fill="#10B981" font-weight="800">$24,750</text><text x="844" y="326" font-size="12" fill="#93A2BC" font-weight="500">Trade-in value</text><text x="844" y="356" font-size="22" fill="#E6EDF7" font-weight="800">$26,200</text><line x1="844" y1="380" x2="1192" y2="380" stroke="#1F2A3D"/><text x="844" y="410" font-size="12" fill="#93A2BC" font-weight="600">Accident / history</text><rect x="844" y="422" width="164" height="24" rx="7" fill="#10B981" opacity="0.18" stroke="none"/><text x="856" y="438" font-size="11.5" font-weight="700" fill="#10B981">None</text><rect x="1020" y="422" width="164" height="24" rx="7" fill="#141C2E" opacity="1" stroke="#1F2A3D"/><text x="1032" y="438" font-size="11.5" font-weight="500" fill="#93A2BC">Salvage</text><rect x="844" y="452" width="164" height="24" rx="7" fill="#141C2E" opacity="1" stroke="#1F2A3D"/><text x="856" y="468" font-size="11.5" font-weight="500" fill="#93A2BC">Irreparable</text><rect x="1020" y="452" width="164" height="24" rx="7" fill="#141C2E" opacity="1" stroke="#1F2A3D"/><text x="1032" y="468" font-size="11.5" font-weight="500" fill="#93A2BC">Rebuilt</text><rect x="844" y="530" width="348" height="38" rx="10" fill="url(#hero)"/><text x="1018" y="554" text-anchor="middle" font-size="13" font-weight="700" fill="#fff">Print customer summary</text>
+</svg>

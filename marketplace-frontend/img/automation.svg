@@ -1,0 +1,65 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1240 780" font-family="Inter,Segoe UI,Arial,sans-serif">
+  <defs>
+    <linearGradient id="hero" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#6366F1"/><stop offset="1" stop-color="#A78BFA"/>
+    </linearGradient>
+    <filter id="sh" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="10" stdDeviation="16" flood-color="#000" flood-opacity="0.35"/>
+    </filter>
+  </defs>
+  <rect width="1240" height="780" rx="18" fill="#0B0F19"/>
+  <!-- window chrome -->
+  <rect width="1240" height="46" rx="18" fill="#0F1626"/>
+  <rect y="30" width="1240" height="16" fill="#0F1626"/>
+  <circle cx="28" cy="23" r="6" fill="#FF5F57"/><circle cx="50" cy="23" r="6" fill="#FEBC2E"/><circle cx="72" cy="23" r="6" fill="#28C840"/>
+  <rect x="470" y="13" width="300" height="20" rx="10" fill="#0A0F1B"/>
+  <text x="620" y="27" text-anchor="middle" font-size="11" fill="#5B6B86">app.marketsync.link</text>
+  <!-- sidebar -->
+  <rect x="0" y="46" width="208" height="734" fill="#0E1424"/>
+  <line x1="208" y1="46" x2="208" y2="780" stroke="#1F2A3D"/>
+  <text x="24" y="82" font-size="20" fill="#fff" font-weight="400">|</text>
+  <text x="40" y="84" font-size="17" font-weight="800" fill="#fff">Market<tspan fill="#6366F1">Sync</tspan></text>
+  <g transform="translate(20 118)">
+      
+      <circle cx="10" cy="3" r="12" fill="#182236" opacity="1"/>
+      <path d="M3 12l9-9 9 9M5 10v9h5v-6h4v6h5v-9" transform="translate(2 -5) scale(0.66)" fill="none" stroke="#93A2BC" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+      <text x="32" y="8" font-size="14" font-weight="500" fill="#93A2BC" font-family="Inter,Arial,sans-serif">Dashboard</text>
+    </g><g transform="translate(20 164)">
+      
+      <circle cx="10" cy="3" r="12" fill="#182236" opacity="1"/>
+      <path d="M4 5h16v4H4zM4 11h16v8H4" transform="translate(2 -5) scale(0.66)" fill="none" stroke="#93A2BC" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+      <text x="32" y="8" font-size="14" font-weight="500" fill="#93A2BC" font-family="Inter,Arial,sans-serif">Inventory</text>
+    </g><g transform="translate(20 210)">
+      
+      <circle cx="10" cy="3" r="12" fill="#182236" opacity="1"/>
+      <path d="M12 2a10 10 0 1010 10" transform="translate(2 -5) scale(0.66)" fill="none" stroke="#93A2BC" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+      <text x="32" y="8" font-size="14" font-weight="500" fill="#93A2BC" font-family="Inter,Arial,sans-serif">Intelligence</text>
+    </g><g transform="translate(20 256)">
+      
+      <circle cx="10" cy="3" r="12" fill="#182236" opacity="1"/>
+      <path d="M4 4h16v12H4zM8 20h8" transform="translate(2 -5) scale(0.66)" fill="none" stroke="#93A2BC" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+      <text x="32" y="8" font-size="14" font-weight="500" fill="#93A2BC" font-family="Inter,Arial,sans-serif">Deals</text>
+    </g><g transform="translate(20 302)">
+      <rect x="-6" y="-16" width="184" height="38" rx="9" fill="#6366F1" opacity="0.16"/><rect x="-6" y="-16" width="3" height="38" rx="1.5" fill="#6366F1"/>
+      <circle cx="10" cy="3" r="12" fill="#6366F1" opacity="0.25"/>
+      <path d="M3 6h18M3 12h18M3 18h12" transform="translate(2 -5) scale(0.66)" fill="none" stroke="#6366F1" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+      <text x="32" y="8" font-size="14" font-weight="700" fill="#E6EDF7" font-family="Inter,Arial,sans-serif">CRM</text>
+    </g><g transform="translate(20 348)">
+      
+      <circle cx="10" cy="3" r="12" fill="#182236" opacity="1"/>
+      <path d="M12 3l9 6-9 6-9-6z" transform="translate(2 -5) scale(0.66)" fill="none" stroke="#93A2BC" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+      <text x="32" y="8" font-size="14" font-weight="500" fill="#93A2BC" font-family="Inter,Arial,sans-serif">Reports</text>
+    </g>
+  <g transform="translate(20 720)"><circle cx="12" cy="0" r="14" fill="url(#hero)"/><text x="12" y="5" text-anchor="middle" font-size="12" font-weight="700" fill="#fff">RM</text>
+    <text x="34" y="-2" font-size="12" font-weight="600" fill="#E6EDF7">Riverside Motors</text>
+    <text x="34" y="14" font-size="10.5" fill="#5B6B86">Dealer Admin</text></g>
+  <!-- top bar -->
+  <text x="240" y="92" font-size="23" font-weight="800" fill="#E6EDF7">Follow-up Automation</text>
+  <rect x="504" y="74" width="70.4" height="24" rx="12" fill="#6366F1" opacity="0.16"/>
+  <text x="517" y="90" font-size="12" font-weight="700" fill="#A78BFA">RETAIN</text>
+  <rect x="980" y="70" width="236" height="34" rx="10" fill="#131A2C" stroke="#1F2A3D"/>
+  <circle cx="1000" cy="87" r="6" fill="none" stroke="#5B6B86" stroke-width="2"/><line x1="1005" y1="92" x2="1010" y2="97" stroke="#5B6B86" stroke-width="2"/>
+  <text x="1018" y="91" font-size="12" fill="#5B6B86">Search VIN, customer…</text>
+  <line x1="208" y1="120" x2="1240" y2="120" stroke="#1F2A3D"/>
+  <rect x="236" y="144" width="620" height="470" rx="14" fill="#131A2C" stroke="#1F2A3D"/><text x="260" y="178" font-size="15" fill="#E6EDF7" font-weight="700">Follow-up sequence · New internet lead</text><rect x="700" y="162" width="80" height="22" rx="11" fill="#10B981" opacity="0.18"/><text x="740" y="177" text-anchor="middle" font-size="11" font-weight="700" fill="#10B981">● ACTIVE</text><rect x="260" y="214" width="572" height="48" rx="12" fill="#111A2B" stroke="#6366F1" stroke-opacity="0.5"/><circle cx="300" cy="238" r="15" fill="#6366F1" opacity="0.2"/><circle cx="300" cy="238" r="6" fill="#6366F1"/><text x="332" y="236" font-size="13" fill="#E6EDF7" font-weight="700">Trigger</text><text x="332" y="254" font-size="11.5" fill="#93A2BC" font-weight="500">New lead</text><rect x="756" y="228" width="60" height="20" rx="6" fill="#0A0F1B"/><text x="786" y="242" text-anchor="middle" font-size="10" fill="#5B6B86">edit</text><line x1="300" y1="260" x2="300" y2="276" stroke="#1F2A3D" stroke-width="2"/><rect x="260" y="278" width="572" height="48" rx="12" fill="#111A2B" stroke="#1F2A3D" stroke-opacity="1"/><circle cx="300" cy="302" r="15" fill="#5B6B86" opacity="0.2"/><circle cx="300" cy="302" r="6" fill="#5B6B86"/><text x="332" y="300" font-size="13" fill="#E6EDF7" font-weight="700">Wait</text><text x="332" y="318" font-size="11.5" fill="#93A2BC" font-weight="500">5 minutes</text><rect x="756" y="292" width="60" height="20" rx="6" fill="#0A0F1B"/><text x="786" y="306" text-anchor="middle" font-size="10" fill="#5B6B86">edit</text><line x1="300" y1="324" x2="300" y2="340" stroke="#1F2A3D" stroke-width="2"/><rect x="260" y="342" width="572" height="48" rx="12" fill="#111A2B" stroke="#A78BFA" stroke-opacity="0.5"/><circle cx="300" cy="366" r="15" fill="#A78BFA" opacity="0.2"/><circle cx="300" cy="366" r="6" fill="#A78BFA"/><text x="332" y="364" font-size="13" fill="#E6EDF7" font-weight="700">Email</text><text x="332" y="382" font-size="11.5" fill="#93A2BC" font-weight="500">AI-written intro</text><rect x="756" y="356" width="60" height="20" rx="6" fill="#0A0F1B"/><text x="786" y="370" text-anchor="middle" font-size="10" fill="#5B6B86">edit</text><line x1="300" y1="388" x2="300" y2="404" stroke="#1F2A3D" stroke-width="2"/><rect x="260" y="406" width="572" height="48" rx="12" fill="#111A2B" stroke="#1F2A3D" stroke-opacity="1"/><circle cx="300" cy="430" r="15" fill="#5B6B86" opacity="0.2"/><circle cx="300" cy="430" r="6" fill="#5B6B86"/><text x="332" y="428" font-size="13" fill="#E6EDF7" font-weight="700">Wait</text><text x="332" y="446" font-size="11.5" fill="#93A2BC" font-weight="500">1 day</text><rect x="756" y="420" width="60" height="20" rx="6" fill="#0A0F1B"/><text x="786" y="434" text-anchor="middle" font-size="10" fill="#5B6B86">edit</text><line x1="300" y1="452" x2="300" y2="468" stroke="#1F2A3D" stroke-width="2"/><rect x="260" y="470" width="572" height="48" rx="12" fill="#111A2B" stroke="#38BDF8" stroke-opacity="0.5"/><circle cx="300" cy="494" r="15" fill="#38BDF8" opacity="0.2"/><circle cx="300" cy="494" r="6" fill="#38BDF8"/><text x="332" y="492" font-size="13" fill="#E6EDF7" font-weight="700">SMS</text><text x="332" y="510" font-size="11.5" fill="#93A2BC" font-weight="500">Text + inventory link</text><rect x="756" y="484" width="60" height="20" rx="6" fill="#0A0F1B"/><text x="786" y="498" text-anchor="middle" font-size="10" fill="#5B6B86">edit</text><line x1="300" y1="516" x2="300" y2="532" stroke="#1F2A3D" stroke-width="2"/><rect x="260" y="534" width="572" height="48" rx="12" fill="#111A2B" stroke="#F59E0B" stroke-opacity="0.5"/><circle cx="300" cy="558" r="15" fill="#F59E0B" opacity="0.2"/><circle cx="300" cy="558" r="6" fill="#F59E0B"/><text x="332" y="556" font-size="13" fill="#E6EDF7" font-weight="700">Task</text><text x="332" y="574" font-size="11.5" fill="#93A2BC" font-weight="500">Rep call reminder</text><rect x="756" y="548" width="60" height="20" rx="6" fill="#0A0F1B"/><text x="786" y="562" text-anchor="middle" font-size="10" fill="#5B6B86">edit</text><rect x="880" y="144" width="336" height="300" rx="14" fill="#131A2C" stroke="#1F2A3D"/><text x="904" y="178" font-size="14" fill="#E6EDF7" font-weight="700">Template packs</text><rect x="904" y="204" width="288" height="44" rx="10" fill="#111A2B" stroke="#1F2A3D"/><rect x="916" y="215" width="22" height="22" rx="6" fill="#6366F1" opacity="0.2"/><path d="M921 226 l4 4 l8 -9" fill="none" stroke="#6366F1" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><text x="950" y="225" font-size="12.5" fill="#E6EDF7" font-weight="700">Leads</text><text x="950" y="241" font-size="11" fill="#5B6B86" font-weight="500">10 emails</text><rect x="1130" y="216" width="50" height="20" rx="10" fill="#10B981" opacity="0.18"/><text x="1155" y="230" text-anchor="middle" font-size="10" font-weight="700" fill="#10B981">ON</text><rect x="904" y="258" width="288" height="44" rx="10" fill="#111A2B" stroke="#1F2A3D"/><rect x="916" y="269" width="22" height="22" rx="6" fill="#10B981" opacity="0.2"/><path d="M921 280 l4 4 l8 -9" fill="none" stroke="#10B981" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><text x="950" y="279" font-size="12.5" fill="#E6EDF7" font-weight="700">Delivery</text><text x="950" y="295" font-size="11" fill="#5B6B86" font-weight="500">10 emails</text><rect x="1130" y="270" width="50" height="20" rx="10" fill="#10B981" opacity="0.18"/><text x="1155" y="284" text-anchor="middle" font-size="10" font-weight="700" fill="#10B981">ON</text><rect x="904" y="312" width="288" height="44" rx="10" fill="#111A2B" stroke="#1F2A3D"/><rect x="916" y="323" width="22" height="22" rx="6" fill="#F59E0B" opacity="0.2"/><path d="M921 334 l4 4 l8 -9" fill="none" stroke="#F59E0B" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><text x="950" y="333" font-size="12.5" fill="#E6EDF7" font-weight="700">Holidays</text><text x="950" y="349" font-size="11" fill="#5B6B86" font-weight="500">10 emails</text><rect x="1130" y="324" width="50" height="20" rx="10" fill="#10B981" opacity="0.18"/><text x="1155" y="338" text-anchor="middle" font-size="10" font-weight="700" fill="#10B981">ON</text><rect x="904" y="366" width="288" height="44" rx="10" fill="#111A2B" stroke="#1F2A3D"/><rect x="916" y="377" width="22" height="22" rx="6" fill="#A78BFA" opacity="0.2"/><path d="M921 388 l4 4 l8 -9" fill="none" stroke="#A78BFA" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><text x="950" y="387" font-size="12.5" fill="#E6EDF7" font-weight="700">Reviews &amp; referrals</text><text x="950" y="403" font-size="11" fill="#5B6B86" font-weight="500">8 emails</text><rect x="1130" y="378" width="50" height="20" rx="10" fill="#10B981" opacity="0.18"/><text x="1155" y="392" text-anchor="middle" font-size="10" font-weight="700" fill="#10B981">ON</text><rect x="880" y="462" width="336" height="152" rx="14" fill="#131A2C" stroke="#1F2A3D"/><text x="904" y="496" font-size="14" fill="#E6EDF7" font-weight="700">Compliance</text><circle cx="912" cy="520" r="8" fill="#10B981" opacity="0.18"/><path d="M908 520 l3 3 l6 -7" fill="none" stroke="#10B981" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><text x="930" y="524" font-size="12" fill="#E6EDF7" font-weight="500">Consent checked before send</text><circle cx="912" cy="550" r="8" fill="#10B981" opacity="0.18"/><path d="M908 550 l3 3 l6 -7" fill="none" stroke="#10B981" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><text x="930" y="554" font-size="12" fill="#E6EDF7" font-weight="500">DNC + quiet hours respected</text><circle cx="912" cy="580" r="8" fill="#10B981" opacity="0.18"/><path d="M908 580 l3 3 l6 -7" fill="none" stroke="#10B981" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><text x="930" y="584" font-size="12" fill="#E6EDF7" font-weight="500">Logs to customer timeline</text>
+</svg>
