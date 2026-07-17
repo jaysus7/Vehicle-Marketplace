@@ -75,6 +75,14 @@
     <priority>0.3</priority>
   </url>
 
+  <!-- Full lifecycle workflow (spine) -->
+  <url>
+    <loc>https://marketsync.link/workflow.html</loc>
+    <lastmod>2026-07-17</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.9</priority>
+  </url>
+
   <!-- Feature & comparison pages (SEO/AEO) -->
   <url>
     <loc>https://marketsync.link/features.html</loc>
@@ -164,6 +172,38 @@
   <url>
     <loc>https://marketsync.link/marketsync-vs-shiftly-auto.html</loc>
     <lastmod>2026-07-06</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+  </url>
+
+  <!-- Sell, desk & retain product pages -->
+  <url>
+    <loc>https://marketsync.link/dealer-website.html</loc>
+    <lastmod>2026-07-17</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://marketsync.link/deal-desk.html</loc>
+    <lastmod>2026-07-17</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://marketsync.link/trade-appraisal.html</loc>
+    <lastmod>2026-07-17</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://marketsync.link/automation-followups.html</loc>
+    <lastmod>2026-07-17</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://marketsync.link/equity-mining.html</loc>
+    <lastmod>2026-07-17</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.8</priority>
   </url>
