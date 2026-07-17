@@ -9618,7 +9618,10 @@ function renderCatalog() {
     return `
       <${tag} ${linkAttrs} class="relative bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded p-3 flex flex-col gap-2 ${href ? 'hover:border-indigo-400 dark:hover:border-indigo-500 transition no-underline' : ''}">
         ${catalogIsMine(v) ? `<button onclick="event.preventDefault();event.stopPropagation();editVehicle('${v.id}')" title="Edit vehicle" class="absolute top-1.5 right-1.5 z-10 bg-white/90 dark:bg-slate-800/90 hover:bg-white dark:hover:bg-slate-700 rounded-md p-1 shadow border border-slate-200 dark:border-slate-700"><svg class="w-3.5 h-3.5 text-slate-600 dark:text-slate-300" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M11 4H4a1 1 0 00-1 1v14a1 1 0 001 1h14a1 1 0 001-1v-7M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>`
-          : `<button type="button" onclick="event.preventDefault();event.stopPropagation();msPostVehicle('${v.id}',this)" title="Post this vehicle on Facebook Marketplace — the MarketSync extension auto-fills the listing" class="absolute top-1.5 right-1.5 z-10 bg-[#1877F2] hover:bg-[#0f6ae0] text-white rounded-md px-1.5 py-1 shadow text-[10px] font-bold flex items-center gap-1">Post ↗</button>`}
+          : `<div class="absolute top-1.5 right-1.5 z-10 flex items-center gap-1">
+              ${v.status === 'posted' ? `<span title="Live on Facebook Marketplace" class="bg-emerald-600 text-white rounded-md px-1.5 py-1 shadow text-[10px] font-bold flex items-center gap-0.5">✓ Posted</span>` : ''}
+              <button type="button" onclick="event.preventDefault();event.stopPropagation();msPostVehicle('${v.id}',this)" title="${v.status === 'posted' ? 'Re-post this vehicle' : 'Post this vehicle on Facebook Marketplace'} — the MarketSync extension auto-fills the listing" class="bg-[#1877F2] hover:bg-[#0f6ae0] text-white rounded-md px-1.5 py-1 shadow text-[10px] font-bold flex items-center gap-1">${v.status === 'posted' ? 'Repost ↗' : 'Post ↗'}</button>
+            </div>`}
         ${img}
         <div class="text-xs font-bold text-slate-900 dark:text-white truncate" title="${v.year} ${v.make} ${v.model} ${v.trim || ''}">${v.year} ${v.make} ${v.model}</div>
         <div class="flex items-center gap-1 flex-wrap">
@@ -14021,6 +14024,13 @@ function wireReportRail() {
     } else if (kind === 'weekly') {
       switchPage('profile');
       setTimeout(() => flash('weekly-report-btn'), 120);
+    } else if (kind === 'speed') {
+      switchPage('leads');
+      setTimeout(() => flash('leads-metrics'), 200);
+    } else if (kind === 'equity') {
+      switchPage('equity');
+    } else if (kind === 'all') {
+      switchPage('reports');
     }
   });
 }
