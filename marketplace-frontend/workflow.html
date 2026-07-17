@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#6366F1">
+    <link rel="preconnect" href="https://cdn.tailwindcss.com" crossorigin>
+    <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin>
+    <link rel="icon" type="image/png" href="/favicon.png">
+    <link rel="apple-touch-icon" href="/favicon.png">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>tailwind.config = { darkMode: 'class' }</script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        .sync-color { color: #6366F1; }
+        .gradient-text { background: linear-gradient(135deg, #A78BFA 0%, #6366F1 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        html { font-size: 17px; scroll-behavior: smooth; scroll-padding-top: 96px; }
+        @media (max-width:640px){ html { font-size: 16px; } }
+        .stage-img { box-shadow: 0 20px 45px -20px rgba(15,23,42,.45); }
+    </style>
+    <title>The MarketSync Workflow — One Car, From Lot-In to Lot-Out | MarketSync</title>
+    <meta name="description" content="See the whole MarketSync workflow: every stage a car travels from the moment it hits your lot to the moment it's delivered — appraise, stock, recon, merchandise, price, market, capture, sell, F&I, deliver, and mine equity. One platform, one database.">
+    <meta name="keywords" content="car dealership workflow software, vehicle lifecycle platform, dealership operating system, all-in-one dealer software, appraisal to delivery">
+    <meta name="robots" content="index, follow, max-image-preview:large">
+    <link rel="canonical" href="https://marketsync.link/workflow.html">
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="MarketSync">
+    <meta property="og:title" content="The MarketSync Workflow — One Car, From Lot-In to Lot-Out">
+    <meta property="og:description" content="Every stage a car travels — appraise, stock, recon, merchandise, price, market, capture, sell, F&I, deliver, mine equity. One platform, one database.">
+    <meta property="og:url" content="https://marketsync.link/workflow.html">
+    <meta property="og:image" content="https://marketsync.link/img/dashboard-overview.png">
+    <meta name="twitter:card" content="summary_large_image">
+</head>
+<body class="bg-slate-50 dark:bg-[#0B0F19] text-slate-900 dark:text-gray-200 antialiased">
+    <div class="w-full bg-indigo-600/10 border-b border-indigo-500/20 py-2 text-center text-sm font-medium text-indigo-600 dark:text-indigo-400">
+        30-day free trial · No credit card required
+    </div>
+    <header class="sticky top-0 z-40 bg-slate-50/80 dark:bg-[#0B0F19]/80 backdrop-blur-md border-b border-slate-200/60 dark:border-gray-800/60">
+      <div class="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
+        <a href="/" class="flex items-center space-x-3">
+            <span class="text-3xl font-normal text-slate-900 dark:text-white">|</span>
+            <span class="text-xl font-bold tracking-tight text-slate-900 dark:text-white">Market<span class="sync-color">Sync</span></span>
+        </a>
+        <nav class="hidden md:flex items-center space-x-8 text-sm font-medium text-slate-600 dark:text-gray-400" aria-label="Primary">
+            <a href="https://marketsync.link/workflow.html" class="text-indigo-600 dark:text-white transition">Workflow</a>
+            <a href="https://marketsync.link/features.html" class="hover:text-indigo-600 dark:hover:text-white transition">Features</a>
+            <a href="https://marketsync.link/compare.html" class="hover:text-indigo-600 dark:hover:text-white transition">Compare</a>
+            <a href="https://marketsync.link/#pricing" class="hover:text-indigo-600 dark:hover:text-white transition">Pricing</a>
+            <a href="https://marketsync.link/faq.html" class="hover:text-indigo-600 dark:hover:text-white transition">FAQ</a>
+        </nav>
+        <div class="flex items-center space-x-3">
+            <a href="https://marketsync.link/login.html" class="hidden sm:inline-flex text-sm font-semibold text-slate-700 dark:text-gray-300 hover:text-indigo-600 dark:hover:text-white px-3 py-2 transition">Log in</a>
+            <a href="https://marketsync.link/register.html" class="hidden sm:inline-flex bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold px-4 py-2 rounded-lg transition">Sign up free</a>
+            <button id="ms-menu-btn" type="button" class="md:hidden inline-flex items-center justify-center w-10 h-10 rounded-lg border border-slate-200 dark:border-gray-800 text-slate-700 dark:text-gray-300" aria-label="Open menu" aria-expanded="false" aria-controls="ms-mobile-menu" onclick="msToggleMenu()">
+                <i class="fa-solid fa-bars text-lg" id="ms-menu-icon"></i>
+            </button>
+        </div>
+      </div>
+      <nav id="ms-mobile-menu" class="md:hidden hidden border-t border-slate-200/60 dark:border-gray-800/60 bg-slate-50 dark:bg-[#0B0F19] px-6 py-4 space-y-1 text-sm font-medium text-slate-600 dark:text-gray-400" aria-label="Mobile">
+        <a href="https://marketsync.link/workflow.html" class="block py-2.5 hover:text-indigo-600 dark:hover:text-white transition">Workflow</a>
+        <a href="https://marketsync.link/features.html" class="block py-2.5 hover:text-indigo-600 dark:hover:text-white transition">Features</a>
+        <a href="https://marketsync.link/compare.html" class="block py-2.5 hover:text-indigo-600 dark:hover:text-white transition">Compare</a>
+        <a href="https://marketsync.link/#pricing" class="block py-2.5 hover:text-indigo-600 dark:hover:text-white transition">Pricing</a>
+        <a href="https://marketsync.link/faq.html" class="block py-2.5 hover:text-indigo-600 dark:hover:text-white transition">FAQ</a>
+        <div class="pt-3 mt-2 border-t border-slate-200 dark:border-gray-800 flex flex-col gap-2">
+            <a href="https://marketsync.link/login.html" class="text-center py-2.5 font-semibold text-slate-700 dark:text-gray-300 hover:text-indigo-600 dark:hover:text-white transition">Log in</a>
+            <a href="https://marketsync.link/register.html" class="text-center py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold rounded-lg transition">Sign up free</a>
+        </div>
+      </nav>
+    </header>
+
+    <!-- HERO -->
+    <section class="max-w-4xl mx-auto px-6 pt-16 pb-10 text-center">
+        <span class="inline-flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-indigo-600 dark:text-indigo-400 bg-indigo-500/10 px-3 py-1 rounded-full">The full workflow</span>
+        <h1 class="mt-5 text-4xl sm:text-6xl font-extrabold tracking-tight text-slate-900 dark:text-white leading-[1.05]">One car. <span class="gradient-text">One loop.</span> One platform.</h1>
+        <p class="mt-5 text-lg text-slate-600 dark:text-gray-400 max-w-2xl mx-auto">From the second a car hits your lot to the day it's delivered — and the day that customer comes back for the next one. Every stage below runs on the same database, so nothing is re-typed and nothing falls through the cracks.</p>
+        <div class="mt-8 flex flex-col sm:flex-row items-center justify-center gap-3">
+            <a href="https://marketsync.link/register.html" class="w-full sm:w-auto bg-indigo-600 hover:bg-indigo-500 text-white font-semibold px-7 py-3.5 rounded-xl transition shadow-lg shadow-indigo-500/30">Start your 30-day free trial</a>
+            <a href="#loop" class="w-full sm:w-auto font-semibold text-slate-700 dark:text-gray-300 px-7 py-3.5 rounded-xl border border-slate-300 dark:border-gray-700 hover:border-indigo-400 transition">See the 11 stages ↓</a>
+        </div>
+    </section>
+
+    <!-- THE LOOP -->
+    <section id="loop" class="max-w-6xl mx-auto px-6 py-8">
+      <div class="relative">
+        <!-- vertical spine (desktop) -->
+        <div class="hidden md:block absolute left-1/2 top-0 bottom-0 -translate-x-1/2 w-px bg-gradient-to-b from-indigo-300/0 via-indigo-400/50 to-indigo-300/0"></div>
+        <div id="stages" class="space-y-6 md:space-y-2"></div>
+      </div>
+    </section>
+
+    <!-- LOOP BACK -->
+    <section class="max-w-3xl mx-auto px-6 pb-4 text-center">
+        <div class="inline-flex items-center gap-3 text-indigo-600 dark:text-indigo-400 font-bold"><i class="fa-solid fa-arrows-rotate"></i> …and the loop starts again with their next car.</div>
+        <p class="mt-2 text-sm text-slate-500 dark:text-gray-500">Every delivered customer flows into equity mining and automated follow-ups — so your best source of the next sale is the last one.</p>
+    </section>
+
+    <!-- ADD-ONS -->
+    <section class="max-w-6xl mx-auto px-6 py-14">
+        <h2 class="text-2xl sm:text-3xl font-extrabold text-center text-slate-900 dark:text-white">Add-ons that supercharge the loop</h2>
+        <p class="text-center text-slate-600 dark:text-gray-400 mt-2 max-w-2xl mx-auto">The core platform runs the whole workflow. Turn these on when you want more firepower.</p>
+        <div class="mt-8 grid sm:grid-cols-3 gap-5">
+            <a href="https://marketsync.link/ai-listing-copy.html" class="group block bg-white dark:bg-gray-900/60 border border-slate-200 dark:border-gray-800 rounded-2xl p-6 hover:border-indigo-400 transition">
+                <div class="w-11 h-11 rounded-xl bg-violet-500/15 text-violet-600 dark:text-violet-400 flex items-center justify-center text-lg"><i class="fa-solid fa-wand-magic-sparkles"></i></div>
+                <h3 class="mt-4 font-bold text-slate-900 dark:text-white">AI Boost</h3>
+                <p class="mt-1.5 text-sm text-slate-600 dark:text-gray-400">Writes descriptions, sales pitches, SEO, meta and listing copy across every field. Boost / short / long / fresh / SEO — in your store's voice.</p>
+                <span class="mt-3 inline-block text-sm font-semibold text-indigo-600 dark:text-indigo-400 group-hover:underline">Learn more →</span>
+            </a>
+            <a href="https://marketsync.link/inventory-intelligence.html" class="group block bg-white dark:bg-gray-900/60 border border-slate-200 dark:border-gray-800 rounded-2xl p-6 hover:border-indigo-400 transition">
+                <div class="w-11 h-11 rounded-xl bg-cyan-500/15 text-cyan-600 dark:text-cyan-400 flex items-center justify-center text-lg"><i class="fa-solid fa-chart-column"></i></div>
+                <h3 class="mt-4 font-bold text-slate-900 dark:text-white">Inventory Intelligence</h3>
+                <p class="mt-1.5 text-sm text-slate-600 dark:text-gray-400">Live price-to-market, health scores, turn rate and aging — plus the VIN decoder and factory window stickers.</p>
+                <span class="mt-3 inline-block text-sm font-semibold text-indigo-600 dark:text-indigo-400 group-hover:underline">Learn more →</span>
+            </a>
+            <a href="https://marketsync.link/vin-decoder-window-stickers.html" class="group block bg-white dark:bg-gray-900/60 border border-slate-200 dark:border-gray-800 rounded-2xl p-6 hover:border-indigo-400 transition">
+                <div class="w-11 h-11 rounded-xl bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 flex items-center justify-center text-lg"><i class="fa-solid fa-barcode"></i></div>
+                <h3 class="mt-4 font-bold text-slate-900 dark:text-white">VIN Decoder &amp; Stickers</h3>
+                <p class="mt-1.5 text-sm text-slate-600 dark:text-gray-400">Full VIN decode with recalls, plus authentic factory (OEM) window stickers and brochures on demand.</p>
+                <span class="mt-3 inline-block text-sm font-semibold text-indigo-600 dark:text-indigo-400 group-hover:underline">Learn more →</span>
+            </a>
+        </div>
+        <div class="mt-6 text-center">
+            <a href="https://marketsync.link/dealer-groups.html" class="inline-flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-gray-300 hover:text-indigo-600 dark:hover:text-white transition">Running multiple rooftops? See MarketSync for Dealer Groups <i class="fa-solid fa-arrow-right text-xs"></i></a>
+        </div>
+    </section>
+
+    <!-- CTA -->
+    <section class="max-w-4xl mx-auto px-6 py-16 text-center">
+        <div class="bg-gradient-to-br from-indigo-600 to-violet-600 rounded-3xl px-8 py-14 text-white">
+            <h2 class="text-3xl sm:text-4xl font-extrabold">Run the whole loop on one platform.</h2>
+            <p class="mt-3 text-indigo-100 max-w-xl mx-auto">Replace your website vendor, CRM, inventory tool, marketing tool and appraisal book with one login — and one database.</p>
+            <a href="https://marketsync.link/register.html" class="mt-8 inline-block bg-white text-indigo-700 font-bold px-8 py-3.5 rounded-xl hover:bg-indigo-50 transition">Start free — 30 days</a>
+        </div>
+    </section>
+
+    <footer class="max-w-7xl mx-auto px-6 py-12 mt-12 border-t border-slate-200 dark:border-gray-900 text-center sm:text-left flex flex-col sm:flex-row items-center justify-between gap-6 text-xs text-slate-500">
+        <div><p>© 2026 MarketSync Technologies Inc. All rights reserved.</p></div>
+        <div class="flex flex-wrap items-center justify-center gap-6 font-medium text-slate-600 dark:text-gray-400">
+            <a href="https://marketsync.link/workflow.html" class="hover:text-slate-900 dark:hover:text-white transition">Workflow</a>
+            <a href="https://marketsync.link/features.html" class="hover:text-slate-900 dark:hover:text-white transition">Features</a>
+            <a href="https://marketsync.link/compare.html" class="hover:text-slate-900 dark:hover:text-white transition">Compare</a>
+            <a href="https://marketsync.link/upgrade.html" class="hover:text-slate-900 dark:hover:text-white transition">Pricing</a>
+            <a href="https://marketsync.link/faq.html" class="hover:text-slate-900 dark:hover:text-white transition">FAQ</a>
+            <a href="https://marketsync.link/support.html" class="hover:text-slate-900 dark:hover:text-white transition">Support</a>
+            <a href="https://marketsync.link/terms.html" class="hover:text-slate-900 dark:hover:text-white transition">Terms</a>
+            <a href="https://marketsync.link/privacy-policy.html" class="hover:text-slate-900 dark:hover:text-white transition">Privacy</a>
+        </div>
+    </footer>
+
+    <script>
+      function msToggleMenu(){ const m=document.getElementById('ms-mobile-menu'),b=document.getElementById('ms-menu-btn'),i=document.getElementById('ms-menu-icon'); const o=!m.classList.contains('hidden'); m.classList.toggle('hidden'); b.setAttribute('aria-expanded',String(!o)); i.className=o?'fa-solid fa-bars text-lg':'fa-solid fa-xmark text-lg'; }
+
+      // The loop — one source of truth, rendered as an alternating timeline.
+      const STAGES = [
+        { n:'01', tag:'Acquire', icon:'fa-scale-balanced', color:'amber', title:'A car comes in', body:'Appraise the trade against the live market and decode the VIN for specs, options and open recalls. Every customer gets a unique customer number the moment they walk in.', img:'img/vin-decode.png', link:'trade-appraisal.html', linkText:'Trade appraisal' },
+        { n:'02', tag:'Stock in', icon:'fa-warehouse', color:'sky', title:'It lands in your inventory', body:'Pull your existing feed or add it by VIN — MarketSync auto-fills specs, checks recalls and drops it into one clean catalog. Cloudflare-protected sites sync through the browser extension.', img:'img/dashboard-overview.png', link:'dealer-inventory-sync.html', linkText:'Inventory sync' },
+        { n:'03', tag:'Recon &amp; Cleanup', icon:'fa-screwdriver-wrench', color:'orange', title:'You get it front-line ready', body:'Track recon and cleanup so nothing goes live half-done. Health scores flag the weakest units first, so your team knows exactly what to fix before it hits the lot.', img:'img/lot-health-report.png', link:'inventory-intelligence.html', linkText:'Health &amp; aging' },
+        { n:'04', tag:'Merchandise', icon:'fa-wand-magic-sparkles', color:'violet', title:'It gets merchandised', body:'AI Vision scores every photo and picks the best hero. AI writes the description and sales pitch. Print a factory or branded window sticker and brochure in a click.', img:'img/window-sticker.png', link:'ai-vision-photo-scoring.html', linkText:'AI Vision &amp; copy' },
+        { n:'05', tag:'Price', icon:'fa-chart-line', color:'cyan', title:'It gets priced to the live market', body:'Mileage-adjusted price-to-market on every car, with comparable listings, a health score, turn rate and aging buckets. Know exactly what to price, promote and cut.', img:'img/market-price-report.png', link:'market-price-reports.html', linkText:'Market reports' },
+        { n:'06', tag:'Market', icon:'fa-bullhorn', color:'blue', title:'It goes everywhere at once', body:'It publishes to your own MarketSync website and posts to Facebook Marketplace with AI-written copy — SEO and lead forms wired straight to your CRM. One car, every channel.', img:'img/extension-poster.png', link:'dealer-website.html', linkText:'Website builder' },
+        { n:'07', tag:'Capture', icon:'fa-inbox', color:'emerald', title:'Leads land in your CRM', body:'Every lead auto-assigns to a rep, an AI sales concierge answers shoppers from your live stock 24/7, and follow-up tasks fire so nothing goes cold.', img:'img/dashboard-crm.png', link:'crm-lead-delivery.html', linkText:'CRM &amp; leads' },
+        { n:'08', tag:'Sell', icon:'fa-file-signature', color:'indigo', title:'You desk the deal', body:'Structure the full deal — retail, rebates, trade, taxes and payments — then print a clean estimate. A pipeline and a live leaderboard keep the floor moving and competitive.', img:'img/dashboard-intelligence.png', link:'deal-desk.html', linkText:'Deal desk' },
+        { n:'09', tag:'F&amp;I', icon:'fa-shield-halved', color:'rose', title:'F&amp;I closes it', body:'Add F&I products, run the numbers, and print a 6-page OMVIC-style bill of sale with the rep’s registration and signature lines. Credit-app, cash and financed paths built in.', img:'img/dashboard-intelligence.png', link:'deal-desk.html', linkText:'Bill of sale' },
+        { n:'10', tag:'Deliver', icon:'fa-key', color:'teal', title:'It leaves the lot', body:'Mark it Sold — then Delivered — and it flows to your Sold list, updates the car status automatically, and closes out the Facebook listing. Everything logged on the customer.', img:'img/dashboard-crm.png', link:'sales-pipeline.html', linkText:'Sales pipeline' },
+        { n:'11', tag:'Retain &amp; mine equity', icon:'fa-arrows-rotate', color:'fuchsia', title:'They come back', body:'Automated follow-ups keep the relationship warm, and equity mining watches every delivered customer for the moment they can trade up — kicking off the loop again.', img:'img/brochure.png', link:'equity-mining.html', linkText:'Equity mining' },
+      ];
+      const C = {
+        amber:'bg-amber-500/15 text-amber-600 dark:text-amber-400', sky:'bg-sky-500/15 text-sky-600 dark:text-sky-400',
+        orange:'bg-orange-500/15 text-orange-600 dark:text-orange-400', violet:'bg-violet-500/15 text-violet-600 dark:text-violet-400',
+        cyan:'bg-cyan-500/15 text-cyan-600 dark:text-cyan-400', blue:'bg-blue-500/15 text-blue-600 dark:text-blue-400',
+        emerald:'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400', indigo:'bg-indigo-500/15 text-indigo-600 dark:text-indigo-400',
+        rose:'bg-rose-500/15 text-rose-600 dark:text-rose-400', teal:'bg-teal-500/15 text-teal-600 dark:text-teal-400',
+        fuchsia:'bg-fuchsia-500/15 text-fuchsia-600 dark:text-fuchsia-400',
+      };
+      document.getElementById('stages').innerHTML = STAGES.map((s, i) => {
+        const left = i % 2 === 0;
+        const card = `<div class="bg-white dark:bg-gray-900/60 border border-slate-200 dark:border-gray-800 rounded-2xl p-6 sm:p-7">
+            <div class="flex items-center gap-3">
+              <span class="w-10 h-10 rounded-xl ${C[s.color]} flex items-center justify-center text-lg"><i class="fa-solid ${s.icon}"></i></span>
+              <div><div class="text-[11px] font-bold uppercase tracking-wider text-slate-400">Stage ${s.n} · ${s.tag}</div>
+              <h3 class="text-lg font-extrabold text-slate-900 dark:text-white leading-tight">${s.title}</h3></div>
+            </div>
+            <p class="mt-3 text-[15px] text-slate-600 dark:text-gray-400 leading-relaxed">${s.body}</p>
+            <a href="https://marketsync.link/${s.link}" class="mt-4 inline-flex items-center gap-1.5 text-sm font-semibold text-indigo-600 dark:text-indigo-400 hover:underline">${s.linkText} <i class="fa-solid fa-arrow-right text-xs"></i></a>
+          </div>`;
+        const shot = `<div class="rounded-2xl overflow-hidden border border-slate-200 dark:border-gray-800 stage-img"><img src="${s.img}" alt="${s.tag} — MarketSync" loading="lazy" class="w-full h-full object-cover"></div>`;
+        return `<div class="relative md:grid md:grid-cols-2 md:gap-10 md:items-center py-6">
+            <span class="hidden md:flex absolute left-1/2 -translate-x-1/2 w-8 h-8 rounded-full bg-indigo-600 text-white text-xs font-black items-center justify-center ring-4 ring-slate-50 dark:ring-[#0B0F19] z-10">${s.n}</span>
+            <div class="${left ? 'md:order-1' : 'md:order-2'} mb-4 md:mb-0">${card}</div>
+            <div class="${left ? 'md:order-2' : 'md:order-1'}">${shot}</div>
+          </div>`;
+      }).join('');
+    </script>
+</body>
+</html>
