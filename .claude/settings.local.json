@@ -10,7 +10,12 @@
       "mcp__b4a5b15c-553c-478d-a856-c45bd9f55aa1__apply_migration",
       "mcp__b4a5b15c-553c-478d-a856-c45bd9f55aa1__list_tables",
       "Bash(git commit -m ' *)",
-      "Bash(node --check marketplace-backend/routes/leads.js)"
+      "Bash(node --check marketplace-backend/routes/leads.js)",
+      "mcp__b4a5b15c-553c-478d-a856-c45bd9f55aa1__execute_sql",
+      "Bash(node --check marketplace-backend/routes/recon.js)",
+      "Bash(sed -i '' 's/\"version\": \"1.16.10\"/\"version\": \"1.16.11\"/' marketplace-extension/manifest.json)",
+      "Bash(sed -i '' 's/dashboard.js?v=20260716z/dashboard.js?v=20260717a/' marketplace-frontend/dashboard.html)",
+      "Bash(sed -i '' 's/\"version\": \"1.21\"/\"version\": \"1.22\"/' marketplace-extension/manifest.json)"
     ]
   }
 }
