@@ -593,6 +593,23 @@
             </div>
           </div>
 
+          <!-- ─── Sales (appraisals + equity mining) ─── -->
+          <div class="nav-group" data-group="sales">
+            <div class="flex items-center">
+              <button type="button" onclick="toggleNavGroup('sales')" title="Sales" class="flex-1 flex items-center gap-2.5 px-3 py-2 rounded font-bold text-slate-800 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition">
+                <svg class="w-4 h-4 flex-shrink-0 text-amber-600 dark:text-amber-400" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                <span>Sales</span>
+              </button>
+              <button type="button" onclick="toggleNavGroup('sales')" aria-label="Toggle Sales" class="px-2 py-2 rounded text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"><svg id="chev-sales" class="w-3.5 h-3.5 transition-transform -rotate-90" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg></button>
+            </div>
+            <div id="grp-sales" class="nav-group-body space-y-0.5 mt-0.5 hidden">
+              <!-- Appraisal (hidden until Inventory Intelligence active) -->
+              <button type="button" id="nav-appraisal" data-page="appraisal" title="Appraisal" class="nav-item nav-sub hidden w-full flex items-center gap-2 pl-9 pr-3 py-1.5 rounded text-[13px] font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition"><span class="w-1.5 h-1.5 rounded-full bg-slate-300 dark:bg-slate-600 flex-shrink-0"></span>Appraisals</button>
+              <!-- Equity (admin) -->
+              <button type="button" data-page="equity" data-admin-nav title="Equity" class="nav-item nav-sub w-full flex items-center gap-2 pl-9 pr-3 py-1.5 rounded text-[13px] font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition"><span class="w-1.5 h-1.5 rounded-full bg-slate-300 dark:bg-slate-600 flex-shrink-0"></span>Equity</button>
+            </div>
+          </div>
+
           <!-- ─── Inventory Intelligence (admin) ─── -->
           <div class="nav-group" data-group="ii" data-admin-nav>
             <div class="flex items-center">
@@ -620,11 +637,6 @@
             <svg class="w-4 h-4 flex-shrink-0 text-red-600 dark:text-red-400" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 17v-6m3 6V7m3 10v-4"/><rect x="3.5" y="3.5" width="17" height="17" rx="2"/></svg>
             <span>Reports</span>
           </button>
-
-          <!-- Appraisal (hidden until Inventory Intelligence active) -->
-          <button type="button" id="nav-appraisal" data-page="appraisal" title="Appraisal" class="nav-item hidden w-full flex items-center gap-2.5 px-3 py-2 rounded font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition">
-            <svg class="w-4 h-4 flex-shrink-0 opacity-60" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 3v18M8 21h8M5 7l7-2 7 2M5 7l-2 5a3 3 0 006 0L5 7zm14 0l-2 5a3 3 0 006 0l-2-5z"/></svg>
-            <span>Appraisals</span>          </button>
 
           <!-- ─── Website (admin) ─── -->
           <div class="nav-group" data-group="web" data-admin-nav>
@@ -654,11 +666,6 @@
               <button type="button" data-page="automation" title="Settings" class="nav-item nav-sub w-full flex items-center gap-2 pl-9 pr-3 py-1.5 rounded text-[13px] font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition"><span class="w-1.5 h-1.5 rounded-full bg-slate-300 dark:bg-slate-600 flex-shrink-0"></span>Settings</button>
             </div>
           </div>
-
-          <!-- Equity (admin) -->
-          <button type="button" data-page="equity" data-admin-nav title="Equity" class="nav-item w-full flex items-center gap-2.5 px-3 py-2 rounded font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition">
-            <svg class="w-4 h-4 flex-shrink-0 text-orange-600 dark:text-orange-400" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 3v18h18M7 15l3-3 3 3 5-6"/></svg>
-            <span>Equity</span>          </button>
 
 
         </div>
@@ -2773,7 +2780,7 @@
     </div>
   </div>
 
-  <script src="dashboard.js?v=20260717e"></script>
+  <script src="dashboard.js?v=20260717f"></script>
   <!-- Google Translate widget (per-rep dashboard translation) -->
   <script>
     window.googleTranslateElementInit = function () {

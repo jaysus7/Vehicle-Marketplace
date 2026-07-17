@@ -511,7 +511,7 @@ async function initializeDashboardEcosystem() {
     // Intelligence, Website, Equity, Automation, Reports, Desking, Appraisals)
     // and the dealer Settings tabs would otherwise show. Hide them explicitly.
     if (isSolo) {
-      document.querySelectorAll('.nav-group[data-group="ii"], .nav-group[data-group="web"], [data-page="equity"], [data-page="automation"], #nav-reports, #nav-reports-m, #nav-desk, #nav-appraisal')
+      document.querySelectorAll('.nav-group[data-group="ii"], .nav-group[data-group="web"], .nav-group[data-group="sales"], [data-page="equity"], [data-page="automation"], #nav-reports, #nav-reports-m, #nav-desk, #nav-appraisal')
         .forEach(el => el.classList.add('hidden'));
       // Dealer-only Settings tabs + their section cards.
       ['team', 'branding', 'aiboost', 'group', 'dealermgmt'].forEach(t =>
@@ -527,6 +527,7 @@ async function initializeDashboardEcosystem() {
     // browser paints the correct nav in one go.
     document.body.classList.add('ms-role-ready');
     personalizeSalesNav();
+    syncNavGroupVisibility();
     document.getElementById('insights-skeleton')?.classList.add('hidden');
 
     // Team leaderboard is for actual teams (admin + reps in a real dealership).
@@ -634,6 +635,8 @@ async function applyFeatureFlags(force) {
     const off = __featureFlags[k] === false;
     document.querySelectorAll(sel).forEach(el => el.classList.toggle('ff-off', off));
   }
+  // Collapse the Sales group if turning a feature off left it with nothing to show.
+  if (typeof syncNavGroupVisibility === 'function') syncNavGroupVisibility();
 }
 window.applyFeatureFlags = applyFeatureFlags;
 
@@ -665,6 +668,20 @@ function toggleNavGroup(id) {
   chev?.classList.toggle('-rotate-90', collapsed);
 }
 window.toggleNavGroup = toggleNavGroup;
+
+// Show/hide a nav group by whether it has any visible destination (e.g. Sales,
+// which holds Appraisals + Equity). Only touches groups WITHOUT their own admin
+// gating (`data-admin-nav`), so it can never reveal an admin-only group.
+function syncNavGroupVisibility() {
+  document.querySelectorAll('#nav-desktop .nav-group').forEach(g => {
+    if (g.hasAttribute('data-admin-nav')) return;   // its own gating owns visibility
+    const leaves = [...g.querySelectorAll('.nav-group-body .nav-item')];
+    if (!leaves.length) return;
+    const anyVisible = leaves.some(el => !el.classList.contains('hidden') && !el.classList.contains('ff-off'));
+    g.classList.toggle('hidden', !anyVisible);
+  });
+}
+window.syncNavGroupVisibility = syncNavGroupVisibility;
 
 // The Sales menu reads differently by role: a rep sees "My Tasks / My Appointments"
 // and no Leads item; a manager/dealer-admin sees "All Tasks / All Appointments" plus
@@ -11565,6 +11582,8 @@ async function loadAIBoostSection() {
     __bgProviderReady = !!cfg.background_provider_ready;
     // Trade Appraisal is part of the Inventory Intelligence add-on — hide otherwise.
     document.getElementById('nav-appraisal')?.classList.toggle('hidden', !__invIntelActive);
+    // Re-sync the Sales group now Appraisals' visibility is known.
+    if (typeof syncNavGroupVisibility === 'function') syncNavGroupVisibility();
     // Paint the nav "Paid" badges: green when the dealer is entitled, grey when not.
     applyPaidBadges();
     applyFeatureFlags();   // re-hide any feature the dealer switched off (e.g. Appraisals)
