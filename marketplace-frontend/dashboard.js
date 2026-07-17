@@ -7678,6 +7678,93 @@ async function openCarfax(id, vin) {
   }
 }
 
+// ── Vehicle history: Carfax deep-link + stored reports (VHR / lien / valuation) ──
+async function openVehicleHistory(opts = {}) {
+  const { inventory_id = null, vin = '', label = 'Vehicle', contact_id = null, deal_id = null } = opts;
+  const modal = document.createElement('div');
+  modal.className = 'fixed inset-0 z-[72] bg-black/70 flex items-start justify-center p-4 overflow-y-auto';
+  const CI = 'bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1.5 text-sm text-slate-900 dark:text-white';
+  modal.innerHTML = `<div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl w-full max-w-lg my-10 shadow-2xl">
+    <div class="flex items-center justify-between gap-3 p-5 border-b border-slate-200 dark:border-slate-800">
+      <div><h3 class="text-base font-bold text-slate-900 dark:text-white">Vehicle history</h3><div class="text-xs text-slate-400">${esc(label)}${vin ? ' · VIN ' + esc(vin) : ''}</div></div>
+      <button data-x class="text-slate-400 hover:text-slate-700 dark:hover:text-white text-2xl leading-none">&times;</button>
+    </div>
+    <div class="p-5 space-y-4">
+      <div class="flex flex-wrap items-center gap-2">
+        <span class="text-[11px] uppercase tracking-wider text-slate-400 font-bold">Pull Carfax</span>
+        <a href="https://www.carfax.ca/vehicle-history-reports?vin=${encodeURIComponent(vin)}" target="_blank" rel="noopener" class="text-xs font-bold bg-[#0a1e3f] hover:bg-[#122a52] text-white px-3 py-1.5 rounded-lg">Carfax Canada 🍁</a>
+        <a href="https://www.carfax.com/vehicle/${encodeURIComponent(vin)}" target="_blank" rel="noopener" class="text-xs font-bold bg-slate-700 hover:bg-slate-600 text-white px-3 py-1.5 rounded-lg">Carfax US</a>
+        <span class="text-[11px] text-slate-400">then attach the report below</span>
+      </div>
+      <div class="rounded-lg border border-slate-200 dark:border-slate-800 p-3 space-y-2">
+        <div class="text-[11px] uppercase tracking-wider text-slate-400 font-bold">Attach a report</div>
+        <div class="grid grid-cols-2 gap-2">
+          <select data-type class="${CI}"><option value="vhr">History (VHR)</option><option value="lien">Lien check</option><option value="valuation">Valuation</option><option value="other">Other</option></select>
+          <input data-provider value="carfax" class="${CI}" placeholder="Provider">
+        </div>
+        <input data-file type="file" accept="application/pdf,image/*" class="${CI} w-full text-xs">
+        <input data-link class="${CI} w-full" placeholder="…or paste a report link (URL)">
+        <button data-save class="w-full text-sm font-bold bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg">Save report</button>
+      </div>
+      <div><div class="text-[11px] uppercase tracking-wider text-slate-400 font-bold mb-1.5">Stored reports</div><div data-list class="space-y-1.5 text-sm"><div class="text-slate-400 italic text-xs py-2">Loading…</div></div></div>
+    </div>
+  </div>`;
+  document.body.appendChild(modal);
+  const close = () => modal.remove();
+  modal.addEventListener('click', e => { if (e.target === modal || e.target.closest('[data-x]')) close(); });
+  const listEl = modal.querySelector('[data-list]');
+
+  const load = async () => {
+    const p = new URLSearchParams();
+    if (inventory_id) p.set('inventory_id', inventory_id);
+    else if (deal_id) p.set('deal_id', deal_id);
+    else if (contact_id) p.set('contact_id', contact_id);
+    else if (vin) p.set('vin', vin);
+    try {
+      const d = await apiGetJson(`/history?${p}`);
+      const rows = d?.reports || [];
+      listEl.innerHTML = rows.length ? rows.map(r => {
+        const link = r.file_url || r.external_url;
+        const when = r.created_at ? new Date(r.created_at).toLocaleDateString() : '';
+        return `<div class="flex items-center justify-between gap-2 border border-slate-200 dark:border-slate-800 rounded-lg px-3 py-2">
+          <div class="min-w-0"><div class="font-semibold text-slate-800 dark:text-slate-100 truncate">${esc((r.report_type || 'vhr').toUpperCase())} · ${esc(r.provider || 'carfax')}</div><div class="text-[11px] text-slate-400">${when}</div></div>
+          <div class="flex items-center gap-2 shrink-0">${link ? `<a href="${esc(link)}" target="_blank" rel="noopener" class="text-xs font-bold text-indigo-600 dark:text-indigo-400">Open</a>` : ''}<button data-del="${r.id}" class="text-xs font-bold text-rose-500 hover:text-rose-600">Delete</button></div>
+        </div>`;
+      }).join('') : '<div class="text-slate-400 italic text-xs py-2">No reports stored yet.</div>';
+      listEl.querySelectorAll('[data-del]').forEach(b => b.addEventListener('click', async () => {
+        try { await fetch(`${API}/history/${b.dataset.del}`, { method: 'DELETE', headers: { 'Authorization': `Bearer ${token}` } }); load(); }
+        catch { showToast('Could not delete', 'error'); }
+      }));
+    } catch (e) { listEl.innerHTML = `<div class="text-rose-400 text-xs py-2">${esc(e.message || 'Could not load')}</div>`; }
+  };
+
+  modal.querySelector('[data-save]').addEventListener('click', async (ev) => {
+    const btn = ev.currentTarget;
+    const file = modal.querySelector('[data-file]').files[0];
+    const linkUrl = modal.querySelector('[data-link]').value.trim();
+    if (!file && !linkUrl) { showToast('Attach a file or paste a report link.', 'error'); return; }
+    btn.disabled = true; btn.textContent = 'Saving…';
+    try {
+      const fd = new FormData();
+      if (file) fd.append('file', file);
+      if (linkUrl) fd.append('external_url', linkUrl);
+      fd.append('vin', vin || '');
+      fd.append('report_type', modal.querySelector('[data-type]').value);
+      fd.append('provider', modal.querySelector('[data-provider]').value.trim() || 'carfax');
+      if (inventory_id) fd.append('inventory_id', inventory_id);
+      if (contact_id) fd.append('contact_id', contact_id);
+      if (deal_id) fd.append('deal_id', deal_id);
+      const r = await fetch(`${API}/history`, { method: 'POST', headers: { 'Authorization': `Bearer ${token}` }, body: fd });
+      const j = await r.json(); if (!r.ok) throw new Error(j.error || 'Save failed');
+      modal.querySelector('[data-file]').value = ''; modal.querySelector('[data-link]').value = '';
+      showToast('Report saved.', 'success'); load();
+    } catch (e) { showToast(e.message || 'Save failed', 'error'); }
+    btn.disabled = false; btn.textContent = 'Save report';
+  });
+  load();
+}
+window.openVehicleHistory = openVehicleHistory;
+
 // ══ Manual inventory: add/edit a vehicle with photos ═════════════════════════
 // MarketSync as the source of truth — dealers load units here, photos and all,
 // and everything (website, syndication) reads from this.
@@ -10233,6 +10320,7 @@ function renderCatalog() {
                 <button class="inv-sticker-btn ${b} bg-emerald-600 hover:bg-emerald-500 text-white" data-id="${v.id}" data-label="${lbl}" data-oem-url="${v.window_sticker_oem_url || ''}" data-gen-url="${v.window_sticker_gen_url || ''}">Sticker ▾</button>
                 <button class="inv-brochure-btn ${b} bg-indigo-600 hover:bg-indigo-500 text-white" data-id="${v.id}" data-label="${lbl}" data-oem-url="${v.brochure_oem_url || ''}" data-gen-url="${v.brochure_gen_url || ''}">Brochure ▾</button>
                 <button type="button" onclick="event.preventDefault();event.stopPropagation();openCarfax('${v.id}','${v.vin}')" class="${b} bg-[#0a1e3f] hover:bg-[#122a52] text-white flex items-center gap-1 tracking-tight" title="Pull the Carfax report for this VIN">CARFAX<span class="text-red-500 leading-none">🍁</span></button>
+                <button type="button" onclick="event.preventDefault();event.stopPropagation();openVehicleHistory({inventory_id:'${v.id}',vin:'${esc(v.vin)}',label:'${esc(lbl)}'})" class="${b} bg-slate-600 hover:bg-slate-500 text-white" title="Carfax history & stored reports">History</button>
               </div>` : `<div class="text-[10px] text-slate-400 italic">No VIN on file — can't decode or build docs.</div>`}
             </div>`;
         })() : ''}
