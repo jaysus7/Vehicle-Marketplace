@@ -6308,79 +6308,152 @@ function reconStageMeta(stage) {
 // A unit sitting too long in a stage (excluding the terminal frontline) is a bottleneck.
 function reconIsStuck(card) { return card.stage !== 'frontline' && card.hours_in_stage >= 72; }
 
+// Delivery date → display text + colour + sort key. Overdue = red, today = amber.
+function reconDelivery(iso) {
+  if (!iso) return { txt: 'Not scheduled', cls: 'text-slate-400', order: Infinity };
+  const d = new Date(iso), now = new Date();
+  const txt = d.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+  const cls = d < now ? 'text-red-500' : d.toDateString() === now.toDateString() ? 'text-amber-600 dark:text-amber-400' : 'text-slate-700 dark:text-slate-200';
+  return { txt, cls, order: d.getTime() };
+}
+function reconToLocalInput(iso) {
+  const d = new Date(iso), p = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+const reconChkDone = (c) => (c.checklist || []).filter(i => i.done).length;
+const reconChkTotal = (c) => (c.checklist || []).length;
+const reconIsReady = (c) => c.stage === 'frontline' || (reconChkTotal(c) > 0 && reconChkDone(c) === reconChkTotal(c));
+
 function renderReconBoard() {
   const root = document.getElementById('recon-root');
   if (!root || !__reconData) return;
-  const stages = __reconData.stages || [];
   const cards = __reconData.cards || [];
   const esc = (s) => String(s == null ? '' : s).replace(/"/g, '&quot;').replace(/</g, '&lt;');
 
   if (!cards.length) {
-    root.innerHTML = '<div class="py-16 text-center text-sm text-slate-500 dark:text-slate-400">No vehicles in recon yet. Click <b>“Add vehicle to recon”</b> to start tracking a unit from arrival to frontline-ready.</div>';
+    root.innerHTML = '<div class="py-16 text-center text-sm text-slate-500 dark:text-slate-400">No vehicles in cleanup yet. Add one with <b>“Add vehicle”</b> — or they land here automatically when a deal is approved in FNI.</div>';
     return;
   }
 
-  const byStage = {};
-  stages.forEach(s => { byStage[s] = []; });
-  cards.forEach(c => { (byStage[c.stage] = byStage[c.stage] || []).push(c); });
+  const sorted = [...cards].sort((a, b) => reconDelivery(a.delivery_at).order - reconDelivery(b.delivery_at).order);
+  const today = new Date().toDateString();
+  const deliveringToday = cards.filter(c => c.delivery_at && new Date(c.delivery_at).toDateString() === today).length;
+  const readyCount = cards.filter(reconIsReady).length;
 
-  const stuckCount = cards.filter(reconIsStuck).length;
-  const readyCount = (byStage.frontline || []).length;
-  const summary = `<div class="flex items-center gap-3 text-xs mb-3">
-    <span class="text-slate-500 dark:text-slate-400">${cards.length} in recon</span>
-    <span class="text-emerald-600 dark:text-emerald-400 font-semibold">${readyCount} frontline-ready</span>
-    ${stuckCount ? `<span class="text-red-500 font-semibold">⚠ ${stuckCount} stuck (72h+ in a stage)</span>` : ''}
-  </div>`;
-
-  const columns = stages.map(stage => {
-    const meta = reconStageMeta(stage);
-    const list = byStage[stage] || [];
-    const cardsHtml = list.map(c => reconCardHtml(c, stages, esc)).join('')
-      || '<div class="text-[11px] text-slate-400 italic px-1 py-4 text-center">—</div>';
-    return `<div class="flex-shrink-0 w-64 bg-slate-50 dark:bg-slate-900/50 rounded-xl p-2.5">
-      <div class="flex items-center gap-2 px-1 mb-2">
-        <span class="w-2 h-2 rounded-full ${meta.dot}"></span>
-        <span class="text-xs font-bold text-slate-700 dark:text-slate-200">${meta.label}</span>
-        <span class="text-[10px] text-slate-400 font-semibold ml-auto">${list.length}</span>
-      </div>
-      <div class="space-y-2">${cardsHtml}</div>
-    </div>`;
+  const rows = sorted.map(c => {
+    const d = reconDelivery(c.delivery_at);
+    const done = reconChkDone(c), tot = reconChkTotal(c), ready = reconIsReady(c);
+    const img = c.photo
+      ? `<img src="${API}/proxy-image?url=${encodeURIComponent(c.photo)}" loading="lazy" class="w-12 h-9 object-cover rounded bg-slate-100 dark:bg-slate-800 flex-shrink-0">`
+      : `<div class="w-12 h-9 rounded bg-slate-100 dark:bg-slate-800 flex-shrink-0"></div>`;
+    return `<tr class="border-b border-slate-100 dark:border-slate-800/60 hover:bg-slate-50 dark:hover:bg-slate-800/40 cursor-pointer" data-recon-open="${c.inventory_id}">
+      <td class="py-2.5 px-3"><div class="flex items-center gap-2">${img}<div class="min-w-0"><div class="text-sm font-semibold text-slate-900 dark:text-white truncate">${esc(c.label)}</div><div class="text-[11px] text-slate-400">${c.stocknumber ? '#' + esc(c.stocknumber) : ''}</div></div></div></td>
+      <td class="py-2.5 px-3 text-sm font-semibold ${d.cls} whitespace-nowrap">${d.txt}</td>
+      <td class="py-2.5 px-3 text-sm text-slate-600 dark:text-slate-300">${c.salesperson_name ? esc(c.salesperson_name) : '<span class="text-slate-400">—</span>'}</td>
+      <td class="py-2.5 px-3 text-sm">${tot ? `<span class="font-bold ${ready ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-600 dark:text-slate-300'}">${done}/${tot}</span>` : '<span class="text-slate-400">No list</span>'}</td>
+      <td class="py-2.5 px-3">${ready ? '<span class="text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300">Ready</span>' : '<span class="text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-amber-100 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300">In progress</span>'}</td>
+      <td class="py-2.5 px-3 text-right whitespace-nowrap"><span class="text-indigo-500 text-xs font-bold">Stock card ›</span></td>
+    </tr>`;
   }).join('');
 
-  root.innerHTML = summary + `<div class="flex gap-3 overflow-x-auto pb-2">${columns}</div>`;
+  root.innerHTML = `
+    <div class="flex items-center gap-3 text-xs mb-3">
+      <span class="text-slate-500 dark:text-slate-400">${cards.length} in cleanup</span>
+      <span class="text-amber-600 dark:text-amber-400 font-semibold">${deliveringToday} delivering today</span>
+      <span class="text-emerald-600 dark:text-emerald-400 font-semibold">${readyCount} ready</span>
+    </div>
+    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden">
+      <div class="overflow-x-auto"><table class="w-full text-left min-w-[720px]">
+        <thead><tr class="border-b border-slate-200 dark:border-slate-800 text-slate-500 dark:text-slate-400 uppercase text-xs tracking-wider">
+          <th class="py-3 px-3">Vehicle</th><th class="py-3 px-3">Delivery</th><th class="py-3 px-3">Salesperson</th><th class="py-3 px-3">Checklist</th><th class="py-3 px-3">Status</th><th class="py-3 px-3 text-right">Stock card</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table></div>
+    </div>`;
 
-  root.querySelectorAll('[data-recon-move]').forEach(b => b.addEventListener('click', () =>
-    reconMove(b.dataset.reconMove, b.dataset.dir)));
-  root.querySelectorAll('[data-recon-post]').forEach(b => b.addEventListener('click', () =>
-    msPostVehicle(b.dataset.reconPost, b)));
-  root.querySelectorAll('[data-recon-remove]').forEach(b => b.addEventListener('click', () =>
-    reconRemove(b.dataset.reconRemove)));
+  root.querySelectorAll('[data-recon-open]').forEach(tr => tr.addEventListener('click', () => openReconCard(tr.dataset.reconOpen)));
 }
 
-function reconCardHtml(c, stages, esc) {
-  const idx = stages.indexOf(c.stage);
-  const stuck = reconIsStuck(c);
-  const timeTxt = c.hours_in_stage < 24 ? `${c.hours_in_stage}h in stage` : `${Math.floor(c.hours_in_stage / 24)}d in stage`;
-  const img = c.photo
-    ? `<img src="${API}/proxy-image?url=${encodeURIComponent(c.photo)}" loading="lazy" class="w-full h-20 object-cover rounded-md bg-slate-100 dark:bg-slate-800">`
-    : `<div class="w-full h-20 rounded-md bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-[10px] text-slate-400">No photo</div>`;
-  const back = idx > 0 ? `<button data-recon-move="${c.inventory_id}" data-dir="back" title="Move back" class="text-xs px-2 py-1 rounded bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-300 dark:hover:bg-slate-600">‹</button>` : '';
-  const fwd = idx < stages.length - 1
-    ? `<button data-recon-move="${c.inventory_id}" data-dir="fwd" title="Advance stage" class="flex-1 text-xs font-semibold px-2 py-1 rounded bg-indigo-600 hover:bg-indigo-500 text-white">Advance ›</button>`
-    : `<button data-recon-post="${c.inventory_id}" title="Post to Facebook" class="flex-1 text-xs font-bold px-2 py-1 rounded bg-[#1877F2] hover:bg-[#0f6ae0] text-white">Post ↗</button>`;
-  return `<div class="bg-white dark:bg-slate-950 border ${stuck ? 'border-red-400/60' : 'border-slate-200 dark:border-slate-800'} rounded-lg p-2 space-y-1.5">
-    ${img}
-    <div class="text-xs font-bold text-slate-900 dark:text-white truncate" title="${esc(c.label)}">${esc(c.label)}</div>
-    <div class="flex items-center justify-between text-[10px] text-slate-400">
-      <span>${c.stocknumber ? '#' + esc(c.stocknumber) : ''}</span>
-      <span>${c.photo_count} photo${c.photo_count === 1 ? '' : 's'}</span>
+// Stock card modal — the full get-ready card for one vehicle: delivery date/time,
+// salesperson, F&I products, special notes, and the checklist of what the car needs
+// with done toggles. Saves each change; refreshes the table on close.
+function openReconCard(inventoryId) {
+  const c = (__reconData?.cards || []).find(x => x.inventory_id === inventoryId);
+  if (!c) return;
+  const esc = (s) => String(s == null ? '' : s).replace(/"/g, '&quot;').replace(/</g, '&lt;');
+  let checklist = (c.checklist || []).map(i => ({ label: i.label, done: !!i.done }));
+  let dirty = false;
+
+  const modal = document.createElement('div');
+  modal.className = 'fixed inset-0 z-[70] bg-black/70 flex items-start justify-center p-4 overflow-y-auto';
+  modal.innerHTML = `<div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl w-full max-w-lg mt-12 shadow-2xl">
+    <div class="flex items-start justify-between gap-3 p-5 border-b border-slate-200 dark:border-slate-800">
+      <div>
+        <h3 class="text-base font-bold text-slate-900 dark:text-white">${esc(c.label)}</h3>
+        <div class="text-xs text-slate-400">${c.stocknumber ? '#' + esc(c.stocknumber) : ''}${c.salesperson_name ? ' · ' + esc(c.salesperson_name) : ''}</div>
+      </div>
+      <button data-x class="text-slate-400 hover:text-slate-700 dark:hover:text-white text-2xl leading-none">&times;</button>
     </div>
-    <div class="text-[10px] font-semibold ${stuck ? 'text-red-500' : 'text-slate-400'}">${stuck ? '⚠ ' : ''}${timeTxt}</div>
-    <div class="flex items-center gap-1 pt-0.5">
-      ${back}${fwd}
-      <button data-recon-remove="${c.inventory_id}" title="Remove from recon" class="text-xs px-1.5 py-1 rounded text-slate-400 hover:text-red-500 hover:bg-red-500/10">✕</button>
+    <div class="p-5 space-y-4">
+      <div>
+        <label class="block text-[11px] uppercase tracking-wider text-slate-400 font-bold mb-1">Delivery date &amp; time</label>
+        <input data-delivery type="datetime-local" value="${c.delivery_at ? reconToLocalInput(c.delivery_at) : ''}" class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white">
+      </div>
+      ${c.fni_products ? `<div><div class="text-[11px] uppercase tracking-wider text-slate-400 font-bold mb-1">F&amp;I products</div><div class="text-sm text-slate-700 dark:text-slate-200 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg px-3 py-2 whitespace-pre-wrap">${esc(c.fni_products)}</div></div>` : ''}
+      <div>
+        <div class="flex items-center justify-between mb-1">
+          <label class="block text-[11px] uppercase tracking-wider text-slate-400 font-bold">What this car needs</label>
+          <span data-chk-count class="text-[11px] font-bold text-slate-400"></span>
+        </div>
+        <div data-checklist class="mb-2"></div>
+        <div class="flex gap-2">
+          <input data-chk-new type="text" placeholder="Add an item (e.g. Full detail, Touch-up bumper)" class="flex-1 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-1.5 text-sm text-slate-900 dark:text-white">
+          <button data-chk-add class="text-sm font-bold bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-1.5 rounded-lg">Add</button>
+        </div>
+      </div>
+      <div>
+        <label class="block text-[11px] uppercase tracking-wider text-slate-400 font-bold mb-1">Special notes</label>
+        <textarea data-notes rows="3" class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white" placeholder="Anything the cleanup / service team should know…">${esc(c.notes || '')}</textarea>
+      </div>
     </div>
   </div>`;
+  document.body.appendChild(modal);
+
+  const chkBox = modal.querySelector('[data-checklist]');
+  const renderChk = () => {
+    const done = checklist.filter(i => i.done).length;
+    chkBox.innerHTML = checklist.map((it, i) => `
+      <label class="flex items-center gap-2 py-1.5 border-b border-slate-100 dark:border-slate-800/60">
+        <input type="checkbox" data-chk="${i}" ${it.done ? 'checked' : ''} class="accent-emerald-600 w-4 h-4 flex-shrink-0">
+        <span class="text-sm flex-1 ${it.done ? 'line-through text-slate-400' : 'text-slate-700 dark:text-slate-200'}">${esc(it.label)}</span>
+        <button data-chk-del="${i}" class="text-slate-400 hover:text-red-500 text-xs px-1">✕</button>
+      </label>`).join('') || '<div class="text-xs text-slate-400 italic py-2">No items yet — add what this car needs.</div>';
+    modal.querySelector('[data-chk-count]').textContent = checklist.length ? `${done}/${checklist.length} done` : '';
+    chkBox.querySelectorAll('[data-chk]').forEach(cb => cb.addEventListener('change', () => { checklist[+cb.dataset.chk].done = cb.checked; dirty = true; saveChk(); renderChk(); }));
+    chkBox.querySelectorAll('[data-chk-del]').forEach(x => x.addEventListener('click', () => { checklist.splice(+x.dataset.chkDel, 1); dirty = true; saveChk(); renderChk(); }));
+  };
+  const saveChk = () => reconApi(`/recon/${inventoryId}/checklist`, 'POST', { checklist }).catch(() => {});
+  renderChk();
+
+  const addItem = () => {
+    const inp = modal.querySelector('[data-chk-new]');
+    const v = inp.value.trim(); if (!v) return;
+    checklist.push({ label: v, done: false }); inp.value = ''; dirty = true; saveChk(); renderChk();
+  };
+  modal.querySelector('[data-chk-add]').addEventListener('click', addItem);
+  modal.querySelector('[data-chk-new]').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); addItem(); } });
+
+  modal.querySelector('[data-delivery]').addEventListener('change', (e) => {
+    dirty = true;
+    reconApi(`/recon/${inventoryId}/delivery`, 'POST', { delivery_at: e.target.value || null }).catch(() => {});
+  });
+  modal.querySelector('[data-notes]').addEventListener('blur', (e) => {
+    dirty = true;
+    reconApi(`/recon/${inventoryId}/notes`, 'POST', { notes: e.target.value }).catch(() => {});
+  });
+
+  const close = () => { modal.remove(); if (dirty) loadReconPage(); };
+  modal.addEventListener('click', e => { if (e.target === modal || e.target.closest('[data-x]')) close(); });
 }
 
 async function reconMove(inventoryId, dir) {

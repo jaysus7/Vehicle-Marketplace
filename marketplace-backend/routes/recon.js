@@ -19,13 +19,13 @@ export function registerRecon(app) {
 
     const { data: rows, error } = await supabaseAdmin
       .from('recon')
-      .select('id, inventory_id, stage, assigned_to, notes, started_at, stage_since, done_at, updated_at, inventory:inventory_id(year, make, model, trim, stocknumber, image_urls, price, status, condition)')
+      .select('id, inventory_id, stage, assigned_to, notes, started_at, stage_since, done_at, updated_at, delivery_at, checklist, salesperson_id, fni_products, deal_id, inventory:inventory_id(year, make, model, trim, stocknumber, image_urls, price, status, condition)')
       .eq('dealership_id', req.dealershipId)
-      .order('stage_since', { ascending: true })
+      .order('delivery_at', { ascending: true, nullsFirst: false })
     if (error) return res.status(500).json({ error: error.message })
 
-    // Resolve assignee display names in one query.
-    const repIds = [...new Set((rows || []).map(r => r.assigned_to).filter(Boolean))]
+    // Resolve assignee + salesperson display names in one query.
+    const repIds = [...new Set([...(rows || []).map(r => r.assigned_to), ...(rows || []).map(r => r.salesperson_id)].filter(Boolean))]
     const repById = {}
     if (repIds.length) {
       const { data: reps } = await supabaseAdmin
@@ -53,6 +53,13 @@ export function registerRecon(app) {
           hours_in_stage: hoursInStage,
           days_in_recon: r.started_at ? Math.floor((now - new Date(r.started_at)) / 86400000) : 0,
           done_at: r.done_at || null,
+          // Get-ready / cleanup fields
+          delivery_at: r.delivery_at || null,
+          checklist: Array.isArray(r.checklist) ? r.checklist : [],
+          salesperson_id: r.salesperson_id || null,
+          salesperson_name: r.salesperson_id ? (repById[r.salesperson_id] || null) : null,
+          fni_products: r.fni_products || null,
+          deal_id: r.deal_id || null,
         }
       })
 
@@ -134,6 +141,41 @@ export function registerRecon(app) {
       .eq('inventory_id', inventory_id).eq('dealership_id', req.dealershipId)
     if (error) return res.status(500).json({ error: error.message })
     res.json({ ok: true })
+  })
+
+  // Set (or clear) the scheduled delivery date/time — when the car is going out.
+  app.post('/recon/:inventory_id/delivery', requireAuth, async (req, res) => {
+    if (!req.dealershipId) return res.status(400).json({ error: 'No dealership associated' })
+    const raw = req.body?.delivery_at
+    let delivery_at = null
+    if (raw) { const d = new Date(raw); if (isNaN(d)) return res.status(400).json({ error: 'Invalid date' }); delivery_at = d.toISOString() }
+    const { error } = await supabaseAdmin
+      .from('recon').update({ delivery_at, updated_at: new Date().toISOString() })
+      .eq('inventory_id', req.params.inventory_id).eq('dealership_id', req.dealershipId)
+    if (error) return res.status(500).json({ error: error.message })
+    res.json({ ok: true, delivery_at })
+  })
+
+  // Replace the get-ready checklist (list of what the car needs, each done/not).
+  // The stock-card modal sends the whole array back on every change.
+  app.post('/recon/:inventory_id/checklist', requireAuth, async (req, res) => {
+    if (!req.dealershipId) return res.status(400).json({ error: 'No dealership associated' })
+    const items = Array.isArray(req.body?.checklist) ? req.body.checklist : null
+    if (!items) return res.status(400).json({ error: 'checklist must be an array' })
+    const checklist = items.slice(0, 100).map(it => ({
+      label: String(it?.label || '').slice(0, 200),
+      done: !!it?.done,
+    })).filter(it => it.label)
+    // A card is "done" when it has items and they're all checked → mark frontline-ready.
+    const allDone = checklist.length > 0 && checklist.every(it => it.done)
+    const now = new Date().toISOString()
+    const patch = { checklist, updated_at: now }
+    if (allDone) { patch.stage = 'frontline'; patch.done_at = now }
+    const { error } = await supabaseAdmin
+      .from('recon').update(patch)
+      .eq('inventory_id', req.params.inventory_id).eq('dealership_id', req.dealershipId)
+    if (error) return res.status(500).json({ error: error.message })
+    res.json({ ok: true, checklist, all_done: allDone })
   })
 
   // Remove a vehicle from the recon board.
