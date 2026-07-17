@@ -4063,10 +4063,11 @@ function deskRenderForm(contactId) {
     <div class="grid lg:grid-cols-[minmax(0,1fr)_320px] gap-4 items-start">
       <div>
         ${card('Vehicle', `
-          <div class="relative mb-3">
+          <div class="relative mb-2">
             <input id="desk-veh-search" type="text" autocomplete="off" placeholder="Search inventory by VIN, stock # or name…" class="${iCls}">
             <div id="desk-veh-results" class="absolute z-20 left-0 right-0 mt-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg shadow-lg overflow-hidden hidden max-h-64 overflow-y-auto"></div>
           </div>
+          <div id="desk-veh-link" class="mb-3 text-[12px]"></div>
           <div class="grid grid-cols-2 sm:grid-cols-3 gap-3">
             ${fld('Year', txt('dk-veh-year', veh.year, '2022'))}
             ${fld('Make', txt('dk-veh-make', veh.make, 'Chevrolet'))}
@@ -4167,6 +4168,10 @@ function deskRenderForm(contactId) {
   // Wire inventory search for the vehicle block.
   const vs = document.getElementById('desk-veh-search');
   vs?.addEventListener('input', () => { clearTimeout(__deskVehTimer); __deskVehTimer = setTimeout(() => deskVehSearch(vs.value.trim()), 220); });
+  // Auto-link by VIN / stock # on blur, and show the link status badge.
+  document.getElementById('dk-veh-vin')?.addEventListener('blur', deskTryAutolink);
+  document.getElementById('dk-veh-stock')?.addEventListener('blur', deskTryAutolink);
+  deskUpdateLinkBadge();
   deskRenderLines();
   deskRenderSummary();
 }
@@ -4224,7 +4229,37 @@ function deskPickVehicle(json) {
   set('dk-veh-mileage', v.mileage); set('dk-veh-color', v.color); set('dk-veh-vin', v.vin); set('dk-veh-stock', v.stock);
   if (v.price != null) set('dk-selling_price', v.price);
   const vs = document.getElementById('desk-veh-search'); if (vs) vs.value = '';
+  deskUpdateLinkBadge();
   deskRenderSummary();
+}
+
+// Show whether the deal is linked to a stocked unit — get-ready/Cleanup only works
+// when it is. Managers can pick from the search or auto-link by VIN / stock #.
+function deskUpdateLinkBadge() {
+  const el = document.getElementById('desk-veh-link'); if (!el) return;
+  const stock = (document.getElementById('dk-veh-stock')?.value || '').trim();
+  if (__deskDeal.inventory_id) {
+    el.innerHTML = `<span class="inline-flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400 font-semibold">✓ Linked to inventory${stock ? ' · stock #' + esc(stock) : ''} <button type="button" onclick="deskUnlinkVehicle()" class="text-slate-400 hover:text-rose-500 underline font-normal">unlink</button></span><span class="block text-[11px] text-slate-400">Cleanup / F&amp;I get-ready is enabled for this deal.</span>`;
+  } else {
+    el.innerHTML = `<span class="inline-flex items-center gap-1.5 text-amber-600 dark:text-amber-400 font-semibold">⚠ Not linked to a stocked vehicle</span><span class="block text-[11px] text-slate-400">Pick the unit from the search above (or enter a matching VIN/stock #) so F&amp;I get-ready can send it to Cleanup.</span>`;
+  }
+}
+function deskUnlinkVehicle() { __deskDeal.inventory_id = null; deskUpdateLinkBadge(); }
+
+// If a VIN or stock # is typed that exactly matches a stocked unit, link it.
+async function deskTryAutolink() {
+  if (__deskDeal.inventory_id) return;
+  const vin = (document.getElementById('dk-veh-vin')?.value || '').trim();
+  const stock = (document.getElementById('dk-veh-stock')?.value || '').trim();
+  const q = vin || stock;
+  if (!q || q.length < 3) return;
+  try {
+    const d = await apiGetJson(`/deals/vehicles?q=${encodeURIComponent(q)}`, { retries: 1 });
+    const rows = d?.rows || [];
+    const match = (vin && rows.find(v => String(v.vin || '').toUpperCase() === vin.toUpperCase()))
+               || (stock && rows.find(v => String(v.stocknumber || '').toLowerCase() === stock.toLowerCase()));
+    if (match) { __deskDeal.inventory_id = match.id; deskUpdateLinkBadge(); }
+  } catch {}
 }
 
 // Pull the customer's saved trade appraisal(s) into the trade-in section.
@@ -6484,6 +6519,7 @@ function openFniApprove(dealId) {
       <button data-x class="text-slate-400 hover:text-slate-700 dark:hover:text-white text-2xl leading-none">&times;</button>
     </div>
     <div class="p-5 space-y-4">
+      ${d.inventory_id ? '' : `<div class="flex items-start gap-2 rounded-lg bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800 px-3 py-2.5 text-[12.5px] text-amber-800 dark:text-amber-300"><span>⚠️</span><span>This deal isn't linked to a stocked vehicle, so approving won't send anything to <strong>Cleanup</strong>. Open the deal, use the Vehicle search to pick the unit from inventory, then approve.</span></div>`}
       <div class="grid grid-cols-2 gap-3">
         <div><label class="block text-[11px] uppercase tracking-wider text-slate-400 font-bold mb-1">Delivery date</label><input data-dd type="date" value="${d.delivery_date || ''}" class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white"></div>
         <div><label class="block text-[11px] uppercase tracking-wider text-slate-400 font-bold mb-1">Delivery time</label><input data-dt type="time" value="${d.delivery_time || ''}" class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white"></div>
@@ -6510,7 +6546,11 @@ function openFniApprove(dealId) {
       };
       const r = await fetch(`${API}/fni/deals/${dealId}/approve`, { method: 'POST', headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
       if (!r.ok) throw new Error((await r.json()).error || 'Failed');
-      close(); showToast('Approved — get-ready sent to cleanup & service.', 'success'); loadFniPage();
+      const j = await r.json().catch(() => ({}));
+      close();
+      if (j.cleanup === false) showToast("Approved — but this deal has no stocked vehicle linked, so nothing went to Cleanup. Link the unit on the deal to use get-ready.", 'error');
+      else showToast('Approved — get-ready sent to cleanup & service.', 'success');
+      loadFniPage();
     } catch (e) { showToast(e.message || 'Could not approve', 'error'); btn.disabled = false; btn.textContent = 'Approve & send get-ready'; }
   });
 }

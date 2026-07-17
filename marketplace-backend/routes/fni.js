@@ -271,7 +271,9 @@ export function registerFni(app) {
     sendGetReadyEmails(req.dealershipId, deal, { delivery_date, delivery_time, fni_products, notes })
       .catch(e => console.warn('[fni] get-ready email failed:', e.message))
 
-    res.json({ ok: true, approved_at: now })
+    // `cleanup` tells the UI whether a Cleanup/get-ready card was actually created —
+    // it can only happen when the deal is linked to a stocked vehicle.
+    res.json({ ok: true, approved_at: now, cleanup: !!deal.inventory_id })
   })
 
   // Delivered → deal delivered, vehicle sold, customer marked delivered; off the list.
