@@ -7,3 +7,6 @@ alter table deals add column if not exists tax_province      text;
 alter table deals add column if not exists buy_rate          numeric;
 alter table deals add column if not exists residual_amount   numeric;
 alter table deals add column if not exists mileage_allowance numeric;
+
+-- Split tax engine: also remember the country (tax_province holds the region/state code).
+alter table deals add column if not exists tax_country text;

@@ -4134,8 +4134,9 @@ function deskRenderForm(contactId) {
             ${fld('Cash down', money('dk-down_payment', d.down_payment))}
             ${fld('Deposit', money('dk-deposit_amount', d.deposit_amount))}
             ${fld('Rebate (after tax)', money('dk-rebate', d.rebate))}
-            ${fld('Province (auto tax)', `<select id="dk-tax_province" onchange="deskSetProvince()" class="${iCls}"><option value="">— Select —</option>${Object.entries(DESK_TAX_PROVINCES).map(([code, p]) => `<option value="${code}" ${d.tax_province === code ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}</select>`)}
-            ${fld('Tax rate %', `<input id="dk-tax_rate" type="number" step="0.001" value="${rate}" oninput="deskRenderSummary()" class="${iCls}">`)}
+            ${fld('Country', `<select id="dk-tax_country" onchange="deskSetCountry()" class="${iCls}">${Object.entries(DESK_TAX).map(([code, j]) => `<option value="${code}" ${(d.tax_country || 'CA') === code ? 'selected' : ''}>${esc(j.label)}</option>`).join('')}</select>`)}
+            ${fld('State / Province (auto tax)', `<select id="dk-tax_province" onchange="deskSetJurisdiction()" class="${iCls}"><option value="">— Select —</option>${Object.entries((DESK_TAX[d.tax_country || 'CA'] || DESK_TAX.CA).regions).map(([code, r]) => `<option value="${code}" ${d.tax_province === code ? 'selected' : ''}>${esc(r.label)}</option>`).join('')}</select>`)}
+            ${fld('Tax rate % (total)', `<input id="dk-tax_rate" type="number" step="0.001" value="${rate}" oninput="deskRenderSummary()" class="${iCls}">`)}
             <div class="flex items-end pb-2"><label class="inline-flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-200 cursor-pointer"><input type="checkbox" id="dk-tax_on_difference" ${taxOnDiff ? 'checked' : ''} onchange="deskRenderSummary()" class="rounded"> Tax on the difference</label></div>
           </div>`)}
 
@@ -4508,9 +4509,21 @@ function deskCompute(d) {
   const feesTotal = (d.fees || []).reduce((s, f) => s + n(f.amount), 0);
   const tradeValue = n(d.trade_value), tradePayoff = n(d.trade_payoff);
   const rate = n(d.tax_rate);
-  let taxableBase = sellingPrice + addonsTotal + fniTotal + taxableFees;
-  if (d.tax_on_difference) taxableBase = Math.max(0, taxableBase - tradeValue);
-  const taxAmount = taxableBase * rate / 100;
+  // Component-based tax: a known jurisdiction itemises GST/PST/HST or state tax, each
+  // on its own base ('diff' = trade-in reduces it). Unknown/custom → single manual rate.
+  const baseFull = sellingPrice + addonsTotal + fniTotal + taxableFees;
+  const baseDiff = Math.max(0, baseFull - tradeValue);
+  const comps = (typeof deskTaxComps === 'function') ? deskTaxComps(d.tax_country, d.tax_province) : null;
+  let taxAmount = 0; const taxBreakdown = [];
+  if (comps && comps.length) {
+    for (const c of comps) { const b = c.base === 'full' ? baseFull : baseDiff; const amt = b * c.rate / 100; taxAmount += amt; taxBreakdown.push({ label: c.label, rate: c.rate, amount: amt }); }
+  } else {
+    const b = d.tax_on_difference ? baseDiff : baseFull;
+    taxAmount = b * rate / 100;
+    taxBreakdown.push({ label: 'Tax', rate, amount: taxAmount });
+  }
+  const anyDiff = comps ? comps.some(c => c.base === 'diff') : !!d.tax_on_difference;
+  const taxableBase = anyDiff ? baseDiff : baseFull;
   const cashPrice = sellingPrice + addonsTotal + fniTotal + feesTotal;
   const total = cashPrice + taxAmount;
   const down = n(d.down_payment), deposit = n(d.deposit_amount), rebate = n(d.rebate);
@@ -4564,31 +4577,76 @@ function deskCompute(d) {
     }
   }
 
-  return { sellingPrice, retail, rebateBeforeTax, adjustment, addonsTotal, fniTotal, taxableFees, feesTotal, taxableBase, taxAmount, cashPrice, total, tradeValue, tradePayoff, tradeEquity, down, deposit, rebate, balloon, amountFinanced, apr, term, freq, perYear, nPer, payment, costOfBorrowing, totalPayment, dueOnDelivery, deferralDays, rate, buyRate, reserve, isLease, residual, adjCap, leasePayment, leaseDepreciation, leaseFinance, leaseTaxAmt };
+  return { sellingPrice, retail, rebateBeforeTax, adjustment, addonsTotal, fniTotal, taxableFees, feesTotal, taxableBase, taxAmount, taxBreakdown, cashPrice, total, tradeValue, tradePayoff, tradeEquity, down, deposit, rebate, balloon, amountFinanced, apr, term, freq, perYear, nPer, payment, costOfBorrowing, totalPayment, dueOnDelivery, deferralDays, rate, buyRate, reserve, isLease, residual, adjCap, leasePayment, leaseDepreciation, leaseFinance, leaseTaxAmt };
 }
 
-// Canadian combined sales-tax rates (GST + PST/HST) for auto-filling the desk. These
-// are a convenience — the manager should verify GST vs PST treatment (esp. how a
-// trade-in reduces the taxable amount) for their province. Rates as of 2026.
-const DESK_TAX_PROVINCES = {
-  AB: { name: 'Alberta', rate: 5, diff: true }, BC: { name: 'British Columbia', rate: 12, diff: true },
-  MB: { name: 'Manitoba', rate: 12, diff: true }, NB: { name: 'New Brunswick', rate: 15, diff: true },
-  NL: { name: 'Newfoundland & Labrador', rate: 15, diff: true }, NS: { name: 'Nova Scotia', rate: 14, diff: true },
-  NT: { name: 'Northwest Territories', rate: 5, diff: true }, NU: { name: 'Nunavut', rate: 5, diff: true },
-  ON: { name: 'Ontario', rate: 13, diff: true }, PE: { name: 'Prince Edward Island', rate: 15, diff: true },
-  QC: { name: 'Quebec', rate: 14.975, diff: true }, SK: { name: 'Saskatchewan', rate: 11, diff: true },
-  YT: { name: 'Yukon', rate: 5, diff: true },
+// Multi-jurisdiction sales-tax engine. Each region lists its tax COMPONENTS
+// [label, rate%, base] where base 'diff' = trade-in reduces the taxable amount,
+// 'full' = taxed on the whole price. Canada is modelled precisely (GST + PST/QST or
+// HST, itemised on the bill of sale). U.S. entries are the STATE base rate — add your
+// local/county rate and verify the vehicle-specific rate + trade-in rule.
+const US_STATE_TAX = [
+  // code, name, state base rate %, trade-in credit? (true = tax on difference)
+  ['AL', 'Alabama', 2, true], ['AK', 'Alaska', 0, true], ['AZ', 'Arizona', 5.6, true], ['AR', 'Arkansas', 6.5, true],
+  ['CA', 'California', 7.25, false], ['CO', 'Colorado', 2.9, true], ['CT', 'Connecticut', 6.35, true], ['DE', 'Delaware', 0, true],
+  ['DC', 'District of Columbia', 6, false], ['FL', 'Florida', 6, true], ['GA', 'Georgia', 6.6, true], ['HI', 'Hawaii', 4, false],
+  ['ID', 'Idaho', 6, true], ['IL', 'Illinois', 6.25, true], ['IN', 'Indiana', 7, true], ['IA', 'Iowa', 5, true],
+  ['KS', 'Kansas', 6.5, true], ['KY', 'Kentucky', 6, false], ['LA', 'Louisiana', 4.45, true], ['ME', 'Maine', 5.5, true],
+  ['MD', 'Maryland', 6, false], ['MA', 'Massachusetts', 6.25, true], ['MI', 'Michigan', 6, false], ['MN', 'Minnesota', 6.5, true],
+  ['MS', 'Mississippi', 5, true], ['MO', 'Missouri', 4.225, true], ['MT', 'Montana', 0, true], ['NE', 'Nebraska', 5.5, true],
+  ['NV', 'Nevada', 6.85, true], ['NH', 'New Hampshire', 0, true], ['NJ', 'New Jersey', 6.625, true], ['NM', 'New Mexico', 4, true],
+  ['NY', 'New York', 4, true], ['NC', 'North Carolina', 3, true], ['ND', 'North Dakota', 5, true], ['OH', 'Ohio', 5.75, true],
+  ['OK', 'Oklahoma', 4.5, true], ['OR', 'Oregon', 0, true], ['PA', 'Pennsylvania', 6, true], ['RI', 'Rhode Island', 7, true],
+  ['SC', 'South Carolina', 5, true], ['SD', 'South Dakota', 4, true], ['TN', 'Tennessee', 7, true], ['TX', 'Texas', 6.25, true],
+  ['UT', 'Utah', 6.1, true], ['VT', 'Vermont', 6, true], ['VA', 'Virginia', 4.15, false], ['WA', 'Washington', 6.5, true],
+  ['WV', 'West Virginia', 6, true], ['WI', 'Wisconsin', 5, true], ['WY', 'Wyoming', 4, true],
+];
+const DESK_TAX = {
+  CA: { label: 'Canada', regions: {
+    AB: { label: 'Alberta', comp: [['GST', 5, 'diff']] },
+    BC: { label: 'British Columbia', comp: [['GST', 5, 'diff'], ['PST', 7, 'diff']] },
+    MB: { label: 'Manitoba', comp: [['GST', 5, 'diff'], ['RST', 7, 'diff']] },
+    NB: { label: 'New Brunswick', comp: [['HST', 15, 'diff']] },
+    NL: { label: 'Newfoundland & Labrador', comp: [['HST', 15, 'diff']] },
+    NS: { label: 'Nova Scotia', comp: [['HST', 14, 'diff']] },
+    NT: { label: 'Northwest Territories', comp: [['GST', 5, 'diff']] },
+    NU: { label: 'Nunavut', comp: [['GST', 5, 'diff']] },
+    ON: { label: 'Ontario', comp: [['HST', 13, 'diff']] },
+    PE: { label: 'Prince Edward Island', comp: [['HST', 15, 'diff']] },
+    QC: { label: 'Quebec', comp: [['GST', 5, 'diff'], ['QST', 9.975, 'diff']] },
+    SK: { label: 'Saskatchewan', comp: [['GST', 5, 'diff'], ['PST', 6, 'diff']] },
+    YT: { label: 'Yukon', comp: [['GST', 5, 'diff']] },
+  } },
+  US: { label: 'United States', regions: Object.fromEntries(US_STATE_TAX.map(([c, n, r, credit]) =>
+    [c, { label: n, comp: [['Sales tax', r, credit ? 'diff' : 'full']] }])) },
 };
-function deskSetProvince() {
-  const code = document.getElementById('dk-tax_province')?.value;
-  const p = DESK_TAX_PROVINCES[code];
-  if (p) {
-    const rt = document.getElementById('dk-tax_rate'); if (rt) rt.value = p.rate;
-    const td = document.getElementById('dk-tax_on_difference'); if (td) td.checked = p.diff;
+function deskTaxComps(country, region) {
+  const j = DESK_TAX[country]; const r = j && j.regions[region];
+  return r ? r.comp.map(([label, rate, base]) => ({ label, rate, base: base === 'full' ? 'full' : 'diff' })) : null;
+}
+// Country change rebuilds the region list; region change auto-fills the combined rate.
+function deskSetCountry() {
+  const country = document.getElementById('dk-tax_country')?.value || '';
+  const sel = document.getElementById('dk-tax_province');
+  if (sel) {
+    const regions = DESK_TAX[country]?.regions || {};
+    sel.innerHTML = '<option value="">— Select —</option>' + Object.entries(regions).map(([code, r]) => `<option value="${code}">${esc(r.label)}</option>`).join('');
+  }
+  deskSetJurisdiction();
+}
+window.deskSetCountry = deskSetCountry;
+function deskSetJurisdiction() {
+  const country = document.getElementById('dk-tax_country')?.value || '';
+  const region = document.getElementById('dk-tax_province')?.value || '';
+  const comps = deskTaxComps(country, region);
+  if (comps && comps.length) {
+    const sum = comps.reduce((s, c) => s + c.rate, 0);
+    const rt = document.getElementById('dk-tax_rate'); if (rt) rt.value = Math.round(sum * 1000) / 1000;
+    const td = document.getElementById('dk-tax_on_difference'); if (td) td.checked = comps.every(c => c.base === 'diff');
   }
   deskRenderSummary();
 }
-window.deskSetProvince = deskSetProvince;
+window.deskSetJurisdiction = deskSetJurisdiction;
 function deskRenderSummary() {
   const box = document.getElementById('desk-summary');
   if (!box) return;
@@ -4609,7 +4667,7 @@ function deskRenderSummary() {
       ${c.tradeValue ? row('Trade allowance', '−' + deskM(c.tradeValue)) : ''}
       <div class="border-t border-slate-200 dark:border-slate-800 my-1.5"></div>
       ${row(`Taxable amount`, deskM(c.taxableBase))}
-      ${row(`Tax (${c.rate}%)`, deskM(c.taxAmount))}
+      ${(c.taxBreakdown || []).map(t => row(`${esc(t.label)} (${t.rate}%)`, deskM(t.amount))).join('')}
       ${row('Total', deskM(c.total), true)}
       <div class="border-t border-slate-200 dark:border-slate-800 my-1.5"></div>
       ${c.down ? row('Cash down', '−' + deskM(c.down)) : ''}
@@ -4634,7 +4692,7 @@ function deskRenderSummary() {
       <div class="bg-slate-50 dark:bg-slate-800/60 rounded-lg px-3 py-2"><div class="text-[10px] uppercase tracking-wider text-slate-400 font-bold">Deposit</div><div class="font-black text-slate-900 dark:text-white">${deskM(c.deposit)}</div></div>
       <div class="bg-emerald-50 dark:bg-emerald-950/30 rounded-lg px-3 py-2"><div class="text-[10px] uppercase tracking-wider text-emerald-600 dark:text-emerald-400 font-bold">Due on delivery</div><div class="font-black text-emerald-700 dark:text-emerald-300">${deskM(c.dueOnDelivery)}</div></div>
     </div>
-    <p class="text-[10px] text-slate-400 mt-2 leading-snug">Estimate only, on approved credit. Rate is an example, not a lender commitment. Tax auto-filled from the selected province — verify GST/PST treatment before contract.</p>`;
+    <p class="text-[10px] text-slate-400 mt-2 leading-snug">Estimate only, on approved credit. Rate is an example, not a lender commitment. Tax auto-filled from the selected jurisdiction (U.S. = state base rate — add local/county rate); verify vehicle-specific rates and trade-in rules before contract.</p>`;
 }
 // Retail/MSRP → Selling price: keep the selling-price input in sync as the manager
 // types Retail, before-tax rebate or adjustment (matches a DMS deal screen).
@@ -4801,7 +4859,7 @@ function deskPrint(kind) {
     <table class="ptbl"><tbody>
       ${taxRows.join('')}
       ${priceRow('Subtotal (taxable)', money(c.taxableBase), { top: true })}
-      ${priceRow(`HST (${c.rate}%)`, money(c.taxAmount))}
+      ${(c.taxBreakdown || []).map(t => priceRow(`${esc(t.label)} (${t.rate}%)`, money(t.amount))).join('')}
       ${priceRow('Subtotal', money(c.taxableBase + c.taxAmount), { top: true })}
       ${nonTaxFees.map(f => priceRow(esc(f.name) + ' <span class="mut">(no tax)</span>', money(f.amount))).join('')}
       ${priceRow('Total', money(c.total), { strong: true, top: true })}

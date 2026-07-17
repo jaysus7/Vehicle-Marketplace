@@ -1239,7 +1239,7 @@ export function registerRoutes(app) {
   const DEAL_BOOL_FIELDS = ['google_review', 'gm_survey', 'fni_gross_1500', 'split_deal', 'tax_on_difference']
   const DEAL_TEXT_FIELDS = ['inventory_id', 'delivery_date', 'delivery_time', 'fni_manager', 'deal_type', 'plates',
     'fni_products', 'split_with', 'notes', 'deal_status', 'payment_freq', 'trade_desc', 'trade_vin',
-    'finance_company', 'first_payment_date', 'sale_type', 'program', 'co_buyer', 'tax_province']
+    'finance_company', 'first_payment_date', 'sale_type', 'program', 'co_buyer', 'tax_province', 'tax_country']
   // JSONB line-item / block fields — the full deal detail for the estimate + bill of sale.
   const DEAL_JSON_FIELDS = ['addons', 'fni_items', 'fees', 'insurance', 'vehicle']
 
