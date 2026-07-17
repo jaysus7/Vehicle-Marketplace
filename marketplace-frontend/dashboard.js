@@ -6519,7 +6519,14 @@ function openFniApprove(dealId) {
       <button data-x class="text-slate-400 hover:text-slate-700 dark:hover:text-white text-2xl leading-none">&times;</button>
     </div>
     <div class="p-5 space-y-4">
-      ${d.inventory_id ? '' : `<div class="flex items-start gap-2 rounded-lg bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800 px-3 py-2.5 text-[12.5px] text-amber-800 dark:text-amber-300"><span>⚠️</span><span>This deal isn't linked to a stocked vehicle, so approving won't send anything to <strong>Cleanup</strong>. Open the deal, use the Vehicle search to pick the unit from inventory, then approve.</span></div>`}
+      ${d.inventory_id ? '' : `<div class="rounded-lg bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800 p-3 space-y-2">
+        <div class="flex items-start gap-2 text-[12.5px] text-amber-800 dark:text-amber-300"><span>⚠️</span><span>No stocked vehicle is linked to this deal. Attach the unit below so it goes to <strong>Cleanup</strong> when you approve.</span></div>
+        <div class="relative">
+          <input data-veh-search type="text" autocomplete="off" placeholder="Search inventory by VIN, stock # or name…" class="w-full bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white">
+          <div data-veh-results class="absolute z-30 left-0 right-0 mt-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg shadow-lg overflow-hidden hidden max-h-56 overflow-y-auto"></div>
+        </div>
+        <div data-veh-chosen class="hidden items-center gap-2 text-[12.5px] font-semibold text-emerald-600 dark:text-emerald-400"></div>
+      </div>`}
       <div class="grid grid-cols-2 gap-3">
         <div><label class="block text-[11px] uppercase tracking-wider text-slate-400 font-bold mb-1">Delivery date</label><input data-dd type="date" value="${d.delivery_date || ''}" class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white"></div>
         <div><label class="block text-[11px] uppercase tracking-wider text-slate-400 font-bold mb-1">Delivery time</label><input data-dt type="time" value="${d.delivery_time || ''}" class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white"></div>
@@ -6535,6 +6542,42 @@ function openFniApprove(dealId) {
   document.body.appendChild(modal);
   const close = () => modal.remove();
   modal.addEventListener('click', e => { if (e.target === modal || e.target.closest('[data-x]')) close(); });
+
+  // Inline vehicle attach for deals with no stocked unit.
+  let chosenInv = null;
+  const vsearch = modal.querySelector('[data-veh-search]');
+  const vresults = modal.querySelector('[data-veh-results]');
+  const vchosen = modal.querySelector('[data-veh-chosen]');
+  if (vsearch) {
+    let vtimer;
+    vsearch.addEventListener('input', () => {
+      clearTimeout(vtimer);
+      vtimer = setTimeout(async () => {
+        const q = vsearch.value.trim();
+        if (q.length < 2) { vresults.classList.add('hidden'); return; }
+        try {
+          const dd = await apiGetJson(`/deals/vehicles?q=${encodeURIComponent(q)}`, { retries: 1 });
+          const rows = dd?.rows || [];
+          if (!rows.length) { vresults.innerHTML = '<div class="px-3 py-2 text-xs text-slate-400">No matching inventory.</div>'; vresults.classList.remove('hidden'); return; }
+          vresults.innerHTML = rows.map(v => {
+            const label = [v.year, v.make, v.model, v.trim].filter(Boolean).join(' ');
+            const sub = [v.stocknumber ? '#' + v.stocknumber : '', v.vin, v.price ? deskM(v.price) : ''].filter(Boolean).map(esc).join(' · ');
+            return `<button type="button" data-pick="${esc(v.id)}" data-label="${esc(label)}" class="w-full text-left px-3 py-2 hover:bg-slate-100 dark:hover:bg-slate-800 border-b border-slate-100 dark:border-slate-800 last:border-0"><div class="text-sm font-bold text-slate-900 dark:text-white">${esc(label)}</div><div class="text-xs text-slate-500 dark:text-slate-400">${sub}</div></button>`;
+          }).join('');
+          vresults.classList.remove('hidden');
+        } catch { vresults.classList.add('hidden'); }
+      }, 220);
+    });
+    vresults.addEventListener('click', (e) => {
+      const b = e.target.closest('[data-pick]'); if (!b) return;
+      chosenInv = b.dataset.pick;
+      vchosen.innerHTML = `✓ Will attach: ${esc(b.dataset.label)} <button type="button" data-veh-clear class="text-slate-400 hover:text-rose-500 underline font-normal ml-1">change</button>`;
+      vchosen.classList.remove('hidden'); vchosen.classList.add('flex');
+      vresults.classList.add('hidden'); vsearch.value = '';
+    });
+    vchosen.addEventListener('click', (e) => { if (e.target.closest('[data-veh-clear]')) { chosenInv = null; vchosen.classList.add('hidden'); vchosen.classList.remove('flex'); } });
+  }
+
   modal.querySelector('[data-approve]').addEventListener('click', async (ev) => {
     const btn = ev.currentTarget; btn.disabled = true; btn.textContent = 'Sending…';
     try {
@@ -6543,6 +6586,7 @@ function openFniApprove(dealId) {
         delivery_time: modal.querySelector('[data-dt]').value || null,
         fni_products: modal.querySelector('[data-fp]').value,
         notes: modal.querySelector('[data-nt]').value,
+        inventory_id: chosenInv || undefined,
       };
       const r = await fetch(`${API}/fni/deals/${dealId}/approve`, { method: 'POST', headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
       if (!r.ok) throw new Error((await r.json()).error || 'Failed');

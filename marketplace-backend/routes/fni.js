@@ -242,8 +242,19 @@ export function registerFni(app) {
     const fni_products = typeof b.fni_products === 'string' ? b.fni_products.slice(0, 2000) : null
     const notes = typeof b.notes === 'string' ? b.notes.slice(0, 2000) : null
 
+    // The approve dialog can attach a stocked vehicle for deals that were desked
+    // without one — required for the car to reach Cleanup. Validate it's ours.
+    let invId = deal.inventory_id || null
+    const pickedInv = typeof b.inventory_id === 'string' ? b.inventory_id.trim() : ''
+    if (pickedInv && pickedInv !== invId) {
+      const { data: veh } = await supabaseAdmin.from('inventory')
+        .select('id').eq('id', pickedInv).eq('dealership_id', req.dealershipId).maybeSingle()
+      if (veh) invId = veh.id
+    }
+
     await supabaseAdmin.from('deals')
-      .update({ delivery_date, delivery_time, fni_products, notes, approved_at: now, updated_at: now })
+      .update({ delivery_date, delivery_time, fni_products, notes, approved_at: now, updated_at: now,
+        ...(invId && invId !== deal.inventory_id ? { inventory_id: invId } : {}) })
       .eq('id', deal.id).eq('dealership_id', req.dealershipId)
 
     // Combine date + time into the Cleanup card's delivery timestamp.
@@ -251,17 +262,17 @@ export function registerFni(app) {
     if (delivery_date) { const d = new Date(`${delivery_date}T${delivery_time || '09:00'}`); if (!isNaN(d)) delivery_at = d.toISOString() }
 
     // Create or refresh the Cleanup (recon) card for the vehicle.
-    if (deal.inventory_id) {
+    if (invId) {
       const patch = {
         delivery_at, salesperson_id: deal.created_by || null, fni_products, notes, deal_id: deal.id, updated_at: now,
       }
       const { data: existing } = await supabaseAdmin.from('recon')
-        .select('id').eq('inventory_id', deal.inventory_id).eq('dealership_id', req.dealershipId).maybeSingle()
+        .select('id').eq('inventory_id', invId).eq('dealership_id', req.dealershipId).maybeSingle()
       if (existing) {
         await supabaseAdmin.from('recon').update(patch).eq('id', existing.id)
       } else {
         await supabaseAdmin.from('recon').insert({
-          dealership_id: req.dealershipId, inventory_id: deal.inventory_id,
+          dealership_id: req.dealershipId, inventory_id: invId,
           stage: 'arrived', started_at: now, stage_since: now, checklist: [], ...patch,
         })
       }
@@ -273,7 +284,7 @@ export function registerFni(app) {
 
     // `cleanup` tells the UI whether a Cleanup/get-ready card was actually created —
     // it can only happen when the deal is linked to a stocked vehicle.
-    res.json({ ok: true, approved_at: now, cleanup: !!deal.inventory_id })
+    res.json({ ok: true, approved_at: now, cleanup: !!invId })
   })
 
   // Delivered → deal delivered, vehicle sold, customer marked delivered; off the list.
