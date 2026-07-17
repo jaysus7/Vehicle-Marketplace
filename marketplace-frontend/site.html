@@ -659,8 +659,9 @@
       const cfx=carfaxUrl(v);
       const docs=(cfx||v.window_sticker_url||v.brochure_url||v.recall_count)?`<div class="flex flex-wrap gap-2 mb-4">${cfx?`<a href="${esc(cfx)}" target="_blank" rel="noopener" class="text-xs font-bold border border-slate-300 rounded-lg px-3 py-1.5 hover:bg-slate-50 flex items-center gap-1">CARFAX<span class="text-red-500">🍁</span> ↗</a>`:''}${v.window_sticker_url?`<a href="${esc(v.window_sticker_url)}" target="_blank" rel="noopener" class="text-xs font-bold border border-slate-300 rounded-lg px-3 py-1.5 hover:bg-slate-50">Window sticker ↗</a>`:''}${v.brochure_url?`<a href="${esc(v.brochure_url)}" target="_blank" rel="noopener" class="text-xs font-bold border border-slate-300 rounded-lg px-3 py-1.5 hover:bg-slate-50">Brochure ↗</a>`:''}${v.recall_count?`<span class="text-xs font-bold text-amber-800 bg-amber-100 rounded-lg px-3 py-1.5">⚠ ${v.recall_count} open recall${v.recall_count>1?'s':''}</span>`:''}</div>`:'';
       const ov=document.createElement('div'); ov.className='fixed inset-0 z-40 bg-black/60 overflow-y-auto'; ov.onclick=(e)=>{if(e.target===ov)ov.remove();};
-      ov.innerHTML=`<div class="min-h-full flex items-start justify-center p-3"><div class="bg-white rounded-2xl w-full max-w-3xl my-4"><div class="flex items-center justify-between px-4 py-3 border-b sticky top-0 bg-white rounded-t-2xl z-10"><div class="flex items-center gap-2 min-w-0"><div class="font-black truncate">${esc([v.year,v.make,v.model,v.trim].filter(Boolean).join(' '))}</div>${v.market_status==='pending'?'<span class="shrink-0 text-[10px] font-black uppercase text-white bg-amber-500 rounded px-2 py-0.5">Sale Pending</span>':v.market_status==='demo'?'<span class="shrink-0 text-[10px] font-black uppercase text-white bg-slate-700 rounded px-2 py-0.5">Demo</span>':''}</div><button onclick="this.closest('.fixed').remove()" class="text-slate-400 text-2xl leading-none shrink-0">&times;</button></div><div class="p-4"><div class="mb-4">${gallery}</div><div class="flex items-center justify-between mb-1"><div class="text-2xl font-black brand-text">${money(v.price)}</div>${v.mileage?`<div class="text-sm text-slate-500">${km(v.mileage)}</div>`:''}</div>${v.price?`<div class="text-xs text-slate-500 mb-3">Price is plus ${taxLabel()} &amp; licensing.</div>`:'<div class="mb-3"></div>'}${docs}${v.description?`<div class="mb-5 text-sm text-slate-700 leading-relaxed whitespace-pre-line">${esc(v.description)}</div>`:''}${specSheet(v)}<div class="grid grid-cols-2 gap-2 mt-2"><button onclick="this.closest('.fixed').remove();go('inquiry','${v.id}','I\\'m interested in the ${label} (stock ${esc(v.stocknumber||v.id.slice(0,6))}).')" class="brand-bg text-white font-bold py-2.5 rounded-lg">Ask about this</button><button onclick="this.closest('.fixed').remove();go('finance')" class="border-2 brand-border brand-text font-bold py-2.5 rounded-lg">Get financing</button></div></div></div></div>`;
+      ov.innerHTML=`<div class="min-h-full flex items-start justify-center p-3"><div class="bg-white rounded-2xl w-full max-w-3xl my-4"><div class="flex items-center justify-between px-4 py-3 border-b sticky top-0 bg-white rounded-t-2xl z-10"><div class="flex items-center gap-2 min-w-0"><div class="font-black truncate">${esc([v.year,v.make,v.model,v.trim].filter(Boolean).join(' '))}</div>${v.market_status==='pending'?'<span class="shrink-0 text-[10px] font-black uppercase text-white bg-amber-500 rounded px-2 py-0.5">Sale Pending</span>':v.market_status==='demo'?'<span class="shrink-0 text-[10px] font-black uppercase text-white bg-slate-700 rounded px-2 py-0.5">Demo</span>':''}</div><button onclick="this.closest('.fixed').remove()" class="text-slate-400 text-2xl leading-none shrink-0">&times;</button></div><div class="p-4"><div class="mb-4">${gallery}</div><div class="flex items-center justify-between mb-1"><div class="text-2xl font-black brand-text">${money(v.price)}</div>${v.mileage?`<div class="text-sm text-slate-500">${km(v.mileage)}</div>`:''}</div>${v.price?`<div class="text-xs text-slate-500 mb-3">Price is plus ${taxLabel()} &amp; licensing.</div>`:'<div class="mb-3"></div>'}${docs}${v.description?`<div class="mb-5 text-sm text-slate-700 leading-relaxed whitespace-pre-line">${esc(v.description)}</div>`:''}${specSheet(v)}${drVdpPanel(v)}</div></div></div>`;
       document.body.appendChild(ov);
+      calcVdp();
     }
     // Brochure-style deep spec sheet from the NHTSA VIN decode (only shows fields we have).
     function specSheet(v){
@@ -697,6 +698,56 @@
     function closeLightbox(){ const lb=document.getElementById('lightbox'); if(lb) lb.remove(); }
     document.addEventListener('keydown',e=>{ if(!document.getElementById('lightbox')) return; if(e.key==='Escape') closeLightbox(); else if(e.key==='ArrowRight') lbNext(1); else if(e.key==='ArrowLeft') lbNext(-1); });
 
+    // ── Digital retailing: per-vehicle payment calc, pre-approval, reserve ──────
+    // Example APRs by credit tier (used-car ballpark; a finance specialist confirms).
+    const DR_TIERS=[['Excellent (750+)',6.99],['Good (700–749)',8.99],['Fair (640–699)',11.99],['Rebuilding (under 640)',15.99]];
+    let __drCtx=null, __drReserve=false;
+    function drVdpPanel(v){ window.__dvCar=v; const tax=taxRate();
+      const termOpts=[36,48,60,72,84,96].map(t=>`<option value="${t}" ${t===72?'selected':''}>${t} mo</option>`).join('');
+      const tierOpts=DR_TIERS.map((t,i)=>`<option value="${t[1]}" ${i===0?'selected':''}>${esc(t[0])}</option>`).join('');
+      const fld=(id,label,val)=>`<div><label class="block text-[10px] uppercase font-bold text-slate-400 mb-0.5">${label}</label><input id="${id}" type="number" inputmode="decimal" value="${val==null?'':val}" oninput="calcVdp()" class="w-full border border-slate-300 rounded-lg px-2 py-1.5 text-sm"></div>`;
+      const label=esc([v.year,v.make,v.model,v.trim].filter(Boolean).join(' '));
+      return `<div class="border-t border-slate-100 pt-4 mt-2">
+        <div class="text-sm font-black mb-2">Calculate your payment</div>
+        <div class="grid grid-cols-2 gap-2">
+          ${fld('dv-price','Vehicle price',v.price||'')}
+          ${fld('dv-down','Cash down',0)}
+          <div><label class="block text-[10px] uppercase font-bold text-slate-400 mb-0.5">Term</label><select id="dv-term" onchange="calcVdp()" class="w-full border border-slate-300 rounded-lg px-2 py-1.5 text-sm">${termOpts}</select></div>
+          <div><label class="block text-[10px] uppercase font-bold text-slate-400 mb-0.5">Your credit</label><select id="dv-tier" onchange="calcVdp()" class="w-full border border-slate-300 rounded-lg px-2 py-1.5 text-sm">${tierOpts}</select></div>
+        </div>
+        <div class="mt-3 bg-slate-50 rounded-xl p-3 flex items-center justify-between gap-3 flex-wrap">
+          <div><div class="text-[11px] text-slate-500">Estimated payment</div><div id="dv-out" class="text-2xl font-black brand-text">$0 /mo</div><div id="dv-note" class="text-[10px] text-slate-400"></div></div>
+          <button onclick="drPreapprove()" class="brand-bg text-white font-bold px-4 py-2 rounded-lg text-sm">Get pre-approved</button>
+        </div>
+        <div class="grid grid-cols-3 gap-2 mt-2">
+          <button onclick="this.closest('.fixed').remove();go('trade')" class="border border-slate-300 font-bold py-2 rounded-lg text-sm">Value my trade</button>
+          <button onclick="drReserve()" class="border border-slate-300 font-bold py-2 rounded-lg text-sm">Reserve</button>
+          <button onclick="this.closest('.fixed').remove();go('inquiry','${v.id}','I\\'m interested in the ${label} (stock ${esc(v.stocknumber||v.id.slice(0,6))}).')" class="brand-bg text-white font-bold py-2 rounded-lg text-sm">Ask about this</button>
+        </div>
+        <p class="text-[10px] text-slate-400 mt-2">Estimate only, on approved credit — example rate by credit tier. Your real rate is confirmed after a soft, no-impact pre-approval.</p>
+      </div>`;
+    }
+    function calcVdp(){ const n=id=>{const x=parseFloat(document.getElementById(id)?.value);return isFinite(x)?x:0;};
+      const price=n('dv-price'), down=n('dv-down'); const term=parseInt(document.getElementById('dv-term')?.value)||72;
+      const tierEl=document.getElementById('dv-tier'); const rate=parseFloat(tierEl?.value)||8.99; const tax=taxRate();
+      const financed=Math.max(0, price+price*tax/100-down); const r=rate/100/12;
+      const monthly=r?financed*r/(1-Math.pow(1+r,-term)):(term?financed/term:0);
+      const out=document.getElementById('dv-out'); if(out) out.textContent=(monthly>0?money(Math.round(monthly)):'$0')+' /mo';
+      const note=document.getElementById('dv-note'); if(note) note.textContent=`${term} mo · ${rate}% example APR · est. ${money(Math.round(financed))} financed`;
+      window.__dvEst={ price, payment:Math.round(monthly), rate, term, tierLabel:(tierEl?.selectedOptions[0]?.textContent||'') };
+    }
+    function drPreapprove(){ const v=window.__dvCar, est=window.__dvEst||{};
+      __drCtx={ vehicleId:v?.id||null, label:v?[v.year,v.make,v.model,v.trim].filter(Boolean).join(' '):'', tier:est.tierLabel||'', payment:est.payment||null };
+      const m=document.querySelector('.fixed'); if(m) m.remove(); go('finance'); }
+    function drReserve(){ const v=window.__dvCar; const label=v?[v.year,v.make,v.model,v.trim].filter(Boolean).join(' '):'this vehicle';
+      __drReserve=true; const m=document.querySelector('.fixed'); if(m) m.remove(); go('inquiry', v?.id||'', `I'd like to reserve the ${label} and place a deposit. Please contact me to arrange it.`); }
+    function calcBuyingPower(){ const inc=parseFloat(document.getElementById('c-income')?.value)||0; const tier=(document.getElementById('c-tier')?.value||'');
+      const rateMap={Excellent:6.99,Good:8.99,Fair:11.99,Rebuilding:15.99}; const rate=rateMap[tier.split(' ')[0]]||9.99;
+      const maxPay=Math.round(inc*0.15), term=72, r=rate/100/12; const maxFin=r?maxPay*(1-Math.pow(1+r,-term))/r:maxPay*term;
+      const el=document.getElementById('c-power'); if(!el) return;
+      if(inc>0){ el.classList.remove('hidden'); el.innerHTML=`Estimated buying power: up to <b>${money(maxPay)}/mo</b> · about <b>${money(Math.round(maxFin))}</b> financed <span class="text-slate-400">(example ${rate}% APR over ${term} mo — final terms on approval)</span>`; }
+      else el.classList.add('hidden'); }
+
     // ── Shell forms (Trade / Finance / Inquiry) → CRM ──────────────────────────
     const field=(id,ph,type='text')=>`<input id="${id}" type="${type}" placeholder="${esc(ph)}" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm">`;
     function formShell(title,sub,inner,onsubmit){ return `<section class="max-w-2xl mx-auto px-4 py-10"><h1 class="text-3xl font-black">${esc(title)}</h1><p class="text-slate-500 mt-1 mb-5">${esc(sub)}</p><form onsubmit="${onsubmit}" class="bg-white rounded-2xl cshadow p-5 space-y-3">${inner}<button class="w-full brand-bg text-white font-bold py-2.5 rounded-lg">Submit</button><p class="text-[11px] text-slate-400 text-center">By submitting you agree to be contacted. We'll never share your info.</p></form></section>`; }
@@ -709,13 +760,22 @@
       <div class="grid grid-cols-2 gap-2">${field('t-name','Your name')}${field('t-phone','Phone','tel')}</div>
       ${field('t-email','Email','email')}
       <textarea id="t-notes" rows="2" placeholder="Anything else?" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm"></textarea>`,'submitTrade(event)'); }
-    function viewFinance(){ return formShell('Get pre-approved','Quick and secure. A finance specialist will follow up — this does not affect your credit score.',`
+    function viewFinance(){ const ctx=__drCtx||{};
+      const tierNames=['Excellent (750+)','Good (700–749)','Fair (640–699)','Rebuilding (under 640)','Not sure'];
+      const tierOpts=tierNames.map(t=>`<option ${ctx.tier&&ctx.tier.split(' ')[0]===t.split(' ')[0]?'selected':''}>${t}</option>`).join('');
+      return formShell('Check your buying power','Quick and secure. A soft inquiry — this does NOT affect your credit score. A finance specialist follows up with real numbers.',`
+      ${ctx.label?`<div class="bg-slate-50 rounded-lg p-2.5 text-xs text-slate-600">Pre-approving for <b>${esc(ctx.label)}</b>${ctx.payment?` · about ${money(ctx.payment)}/mo`:''}</div>`:''}
       <div class="grid grid-cols-2 gap-2">${field('c-name','Full name')}${field('c-phone','Phone','tel')}</div>
       ${field('c-email','Email','email')}
       ${field('c-address','Home address')}
       <div class="grid grid-cols-2 gap-2">${field('c-employer','Employer')}${field('c-job','Job title')}</div>
-      <div class="grid grid-cols-2 gap-2">${field('c-income','Monthly income ($)')}${field('c-vehicle','Vehicle of interest')}</div>
-      <label class="flex items-start gap-2 text-xs text-slate-500"><input id="c-consent" type="checkbox" class="mt-0.5"> I consent to be contacted about financing options.</label>`,'submitFinance(event)'); }
+      <div class="grid grid-cols-2 gap-2">
+        <div><label class="block text-xs font-semibold text-slate-500 mb-1">Monthly income ($)</label><input id="c-income" type="number" inputmode="decimal" oninput="calcBuyingPower()" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm"></div>
+        <div><label class="block text-xs font-semibold text-slate-500 mb-1">Your credit</label><select id="c-tier" onchange="calcBuyingPower()" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm">${tierOpts}</select></div>
+      </div>
+      <div id="c-power" class="hidden bg-emerald-50 border border-emerald-200 rounded-lg p-3 text-sm text-slate-700"></div>
+      <input id="c-vehicle" value="${esc(ctx.label||'')}" placeholder="Vehicle of interest" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm">
+      <label class="flex items-start gap-2 text-xs text-slate-500"><input id="c-consent" type="checkbox" class="mt-0.5"> I consent to be contacted about financing options. This is a soft inquiry and does not affect my credit score.</label>`,'submitFinance(event)'); }
     function viewInquiry(){ return formShell('Contact us','Send us a message and we\'ll get right back to you.',`
       ${field('i-name','Your name')}
       <div class="grid grid-cols-2 gap-2">${field('i-phone','Phone','tel')}${field('i-email','Email','email')}</div>
@@ -866,10 +926,14 @@
     function submitFinance(e){ e.preventDefault(); const btn=e.target.querySelector('button');
       if(!document.getElementById('c-consent')?.checked){alert('Please consent to be contacted.');return;}
       if(!V('c-name')&&!V('c-phone')&&!V('c-email')){alert('Add a name, phone, or email.');return;}
-      postLead({form_type:'credit',name:V('c-name'),phone:V('c-phone'),email:V('c-email'),fields:{Address:V('c-address'),Employer:V('c-employer'),'Job title':V('c-job'),'Monthly income':V('c-income'),'Vehicle of interest':V('c-vehicle')}},e.target,btn); }
+      const ctx=__drCtx||{}; const power=(document.getElementById('c-power')?.textContent||'').replace(/\s+/g,' ').trim();
+      postLead({form_type:'credit',name:V('c-name'),phone:V('c-phone'),email:V('c-email'),consent:true,vehicle_id:ctx.vehicleId||null,
+        fields:{Address:V('c-address'),Employer:V('c-employer'),'Job title':V('c-job'),'Monthly income':V('c-income'),'Vehicle of interest':V('c-vehicle')||ctx.label||'','Credit tier':V('c-tier'),'Estimated payment':ctx.payment?('$'+ctx.payment+'/mo'):'','Buying power':power}},e.target,btn);
+      __drCtx=null; }
     function submitInquiry(e){ e.preventDefault(); const btn=e.target.querySelector('button');
       if(!V('i-name')&&!V('i-phone')&&!V('i-email')){alert('Add a name, phone, or email.');return;}
-      postLead({form_type:'inquiry',name:V('i-name'),phone:V('i-phone'),email:V('i-email'),message:V('i-msg'),vehicle_id:V('i-vehicle')||null},e.target,btn); }
+      const ft=__drReserve?'reserve':'inquiry'; __drReserve=false;
+      postLead({form_type:ft,name:V('i-name'),phone:V('i-phone'),email:V('i-email'),message:V('i-msg'),vehicle_id:V('i-vehicle')||null},e.target,btn); }
 
     function toggleMobileNav(){ const m=document.getElementById('mnav'); if(m) m.classList.toggle('hidden'); }
 
@@ -958,6 +1022,7 @@
     Object.assign(window,{ chatToggle, chatSend, chatSubmitLead });
 
     window.go=go; window.setCond=setCond; window.setBody=setBody; window.openVehicle=openVehicle; window.toggleMobileNav=toggleMobileNav;
+    window.calcVdp=calcVdp; window.drPreapprove=drPreapprove; window.drReserve=drReserve; window.calcBuyingPower=calcBuyingPower;
     window.openLightbox=openLightbox; window.lbNext=lbNext; window.closeLightbox=closeLightbox;
     Object.assign(window,{ invToggle, invCollapse, invMore, invSort, invSearch, invClear, invToggleFilters, homeSearch, buildSet, submitBuild });
     window.submitTrade=submitTrade; window.submitFinance=submitFinance; window.submitInquiry=submitInquiry;

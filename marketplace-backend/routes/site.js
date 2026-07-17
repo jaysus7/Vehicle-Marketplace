@@ -7,7 +7,7 @@ import { enqueueForTrigger } from './automation.js'
 import { routeAndNotifyLead } from '../lead-routing.js'
 import { createNotification } from '../notifications.js'
 import { aiAllowed, recordUsage } from '../usage.js'
-import { rateLimit } from '../security.js'
+import { rateLimit, getClientIp } from '../security.js'
 
 const SITE_ADMINS = ['DEALER_ADMIN', 'OWNER', 'MANAGER']
 const isSiteAdmin = (req) => SITE_ADMINS.includes(req.profile?.role)
@@ -377,7 +377,7 @@ export function registerSite(app) {
     if (!name && !email && !phone) return res.status(400).json({ error: 'Enter a name, phone, or email' })
 
     // Which shell form: general Inquiry, Trade-In quote, or Credit Application.
-    const FORMS = { trade: 'Trade-In', credit: 'Credit Application', inquiry: 'Website', build: 'Build & Price', chat: 'Website Chat' }
+    const FORMS = { trade: 'Trade-In', credit: 'Credit Application', inquiry: 'Website', build: 'Build & Price', chat: 'Website Chat', reserve: 'Reserve / Deposit', payment: 'Payment Quote' }
     const source = FORMS[String(b.form_type || '').toLowerCase()] || 'Website'
     // Fold any extra shell fields (trade vehicle, employment, etc.) into the comments.
     let comments = message
@@ -435,6 +435,39 @@ export function registerSite(app) {
               linkPage: 'crm', targetUserId: routed?.assignee || null,
             })
           }
+        }
+
+        // Digital-retailing credit application → seed a DRAFT in the F&I credit
+        // pipeline (no SIN collected online — soft/pre-approval), with consent stamped.
+        const formType = String(b.form_type || '').toLowerCase()
+        if (formType === 'credit') {
+          try {
+            const f = b.fields || {}
+            const parts = String(name || '').trim().split(/\s+/)
+            const incomeM = parseFloat(String(f['Monthly income'] || '').replace(/[^0-9.]/g, '')) || null
+            await supabaseAdmin.from('credit_applications').insert({
+              dealership_id: d.id, contact_id: contactId, status: 'draft',
+              applicant: {
+                first: parts[0] || null, last: parts.slice(1).join(' ') || null, email: email || null, phone: phone || null,
+                address: { street: f.Address || null },
+                employment: { employer: f.Employer || null, occupation: f['Job title'] || null, income_monthly: incomeM },
+              },
+              vehicle: inventory_id ? { inventory_id } : (f['Vehicle of interest'] ? { note: f['Vehicle of interest'] } : {}),
+              financing: f['Credit tier'] ? { credit_tier: f['Credit tier'] } : {},
+              consent: !!b.consent, consent_at: b.consent ? new Date().toISOString() : null,
+              consent_ip: b.consent ? getClientIp(req) : null, consent_method: b.consent ? 'e-sign' : null,
+            })
+          } catch (err) { console.warn('[site] credit draft failed:', err.message) }
+        }
+
+        // High-intent alerts for reserve / deposit requests.
+        if (formType === 'reserve') {
+          await createNotification({
+            dealershipId: d.id, type: 'new_lead',
+            title: `Reserve request${name ? ': ' + name : ''}`,
+            body: `A shopper wants to reserve a vehicle online — follow up fast to take the deposit.`,
+            linkPage: 'crm', targetUserId: routed?.assignee || null,
+          })
         }
       }
       res.json({ ok: true })
