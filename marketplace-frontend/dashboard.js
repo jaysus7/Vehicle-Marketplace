@@ -546,8 +546,13 @@ async function initializeDashboardEcosystem() {
     document.querySelectorAll('#dashboard-nav .nav-item').forEach(btn => {
       btn.addEventListener('click', () => {
         const page = btn.dataset.page, tab = btn.dataset.tab;
-        // The Customers page can be pre-filtered (e.g. Sold Customers).
-        if (page === 'crm') __crmStatusFilter = btn.dataset.filter === 'sold' ? 'sold,fni,delivered' : '';
+        // The Customers page can be pre-filtered (Sold view), scoped to the rep's own
+        // book ("My Customer Database"), or opened straight into the Add form.
+        if (page === 'crm') {
+          __crmStatusFilter = btn.dataset.filter === 'sold' ? 'sold,fni,delivered' : '';
+          __crmInitRep = btn.dataset.crmView === 'mine' ? (profileContext?.id || '') : '';
+          __crmPendingAdd = btn.dataset.crmAction === 'add';
+        }
         // The Inventory page renders differently for the Facebook posting hub vs
         // the manual (Inventory Intelligence) list — the nav leaf carries the mode.
         if (page === 'inventory' && btn.dataset.invmode) __inventoryMode = btn.dataset.invmode;
@@ -1460,7 +1465,9 @@ async function crmEnsureLookups() {
 // Tasks). This page renders just the Customers (contacts) view.
 async function loadCrmPage() {
   if (!document.getElementById('crm-body')) return;
-  crmLoadContacts();
+  await crmLoadContacts();
+  // "Add Customer" nav leaf → drop straight into the New-contact form.
+  if (__crmPendingAdd) { __crmPendingAdd = false; if (typeof crmOpenForm === 'function') crmOpenForm(); }
 }
 // Legacy shim: old callers that flipped a CRM tab now navigate to that page.
 function crmSetTab(t) { switchPage(t === 'contacts' ? 'crm' : t); }
@@ -1528,6 +1535,8 @@ window.crmInsightsRange = crmInsightsRange;
 
 let __crmCanSeeAll = false;
 let __crmStatusFilter = '';   // set by the "Sold Customers" nav leaf (comma list)
+let __crmInitRep = '';        // "My Customer Database" nav leaf pre-filters to the current user
+let __crmPendingAdd = false;  // "Add Customer" nav leaf opens the New-contact form on load
 const crmIsSoldView = () => !!__crmStatusFilter;
 function crmClearStatusFilter() { __crmStatusFilter = ''; crmLoadContacts(); }
 window.crmClearStatusFilter = crmClearStatusFilter;
@@ -1568,7 +1577,9 @@ function crmSearchDebounced() { clearTimeout(__crmSearchTimer); __crmSearchTimer
 async function crmRefreshContacts() {
   if (!document.getElementById('crm-list')) return;
   const q = (document.getElementById('crm-search')?.value || '').trim();
-  const rep = document.getElementById('crm-rep')?.value || '';
+  // On first render the "by rep" select doesn't exist yet — fall back to the rep the
+  // "My Customer Database" nav leaf pre-selected, so the first fetch is already scoped.
+  const rep = document.getElementById('crm-rep')?.value ?? __crmInitRep;
   const params = new URLSearchParams();
   if (q) params.set('q', q);
   if (rep) params.set('rep', rep);
@@ -1583,7 +1594,7 @@ async function crmRefreshContacts() {
     if (rf && d.can_see_all && !document.getElementById('crm-rep')) {
       rf.innerHTML = `<select id="crm-rep" onchange="crmRefreshContacts()" class="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm">
         <option value="">All reps</option>
-        ${(__crmReps || []).map(r => `<option value="${r.id}">${esc(r.name)}</option>`).join('')}
+        ${(__crmReps || []).map(r => `<option value="${r.id}" ${r.id === __crmInitRep ? 'selected' : ''}>${esc(r.name)}</option>`).join('')}
       </select>`;
     }
     const contacts = d.contacts || [];
