@@ -8,6 +8,7 @@ import { fontFaceCss } from '../utils/brochureFonts.js'
 import { withHeadlessGuard } from '../puppeteerRenderer.js'
 import { recordUsage, marketcheckAllowed, recordMarketcheckCall } from '../usage.js'
 import { marketcheckEnabled, marketcheckDecodeVin } from '../marketcheck.js'
+import { carapiEnabled, carapiDecodeVin } from '../carapi.js'
 import multer from 'multer'
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 3 * 1024 * 1024 } })
@@ -1249,12 +1250,12 @@ export function registerRoutes(app) {
       // first in the modal's full field list.
       try {
         const isOwner = (req.user.email || '').toLowerCase() === (process.env.OWNER_EMAIL || 'massiejay@gmail.com').toLowerCase()
+        const extra = []
+        const push = (label, val) => { if (val != null && String(val).trim() !== '') extra.push({ label, value: String(val).trim() }) }
         if (marketcheckEnabled() && vin.length === 17 && await marketcheckAllowed(req.dealershipId, isOwner)) {
           const specs = await marketcheckDecodeVin(vin)
           await recordMarketcheckCall(req.dealershipId)
           if (specs && typeof specs === 'object') {
-            const extra = []
-            const push = (label, val) => { if (val != null && String(val).trim() !== '') extra.push({ label, value: String(val).trim() }) }
             push('City MPG', specs.city_mpg ?? specs.epa_city_mpg)
             push('Highway MPG', specs.highway_mpg ?? specs.epa_highway_mpg)
             push('Combined MPG', specs.combined_mpg ?? specs.epa_combined_mpg)
@@ -1264,9 +1265,26 @@ export function registerRoutes(app) {
             const opts = specs.options ?? specs.high_value_features ?? specs.installed_options
             if (Array.isArray(opts) && opts.length) push('Factory options', opts.map(o => o?.name || o).filter(Boolean).slice(0, 30).join(', '))
             else if (typeof opts === 'string') push('Factory options', opts)
-            if (extra.length) allFields = extra.concat(allFields)
           }
         }
+        // Fallback: if MarketCheck was off / over-cap / returned nothing, try CarAPI.
+        if (!extra.length && carapiEnabled() && vin.length === 17) {
+          const cs = await carapiDecodeVin(vin)
+          if (cs) {
+            push('City MPG', cs.city_mpg)
+            push('Highway MPG', cs.highway_mpg)
+            push('Combined MPG', cs.combined_mpg)
+            push('MSRP', cs.msrp != null ? '$' + Number(cs.msrp).toLocaleString() : null)
+            push('Drivetrain (CarAPI)', cs.drivetrain)
+            if (cs.options && cs.options.length) push('Factory options', cs.options.join(', '))
+            // Backfill core decoded fields NHTSA may have left blank.
+            if (cs.engine && !decoded.engine) decoded.engine = cs.engine
+            if (cs.fuel_type && !decoded.fuel_type) decoded.fuel_type = cs.fuel_type
+            if (cs.doors && !decoded.doors) decoded.doors = cs.doors
+            if (cs.body_type && !decoded.body_style) decoded.body_style = cs.body_type
+          }
+        }
+        if (extra.length) allFields = extra.concat(allFields)
       } catch { /* enrichment is a bonus — never fail the decode for it */ }
 
       res.json({ decoded, recalls, recall_count: recalls.length, all_fields: allFields })
