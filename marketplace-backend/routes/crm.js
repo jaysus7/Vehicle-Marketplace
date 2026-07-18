@@ -140,7 +140,7 @@ export function registerCrm(app) {
     const dealer = isDealerLevel(req)
     const searching = q.length > 0
     let query = supabaseAdmin.from('contacts')
-      .select('id, full_name, email, phone, phone_mobile, assigned_rep, source, sold_source, status, tags, dnc, last_activity_at, created_at')
+      .select('id, full_name, first_name, last_name, email, phone, phone_mobile, phone_home, address, city, province, postal_code, assigned_rep, source, sold_source, status, tags, dnc, last_activity_at, created_at')
       .eq('dealership_id', req.dealershipId)
       .order('last_activity_at', { ascending: false, nullsFirst: false })
       .limit(limit)

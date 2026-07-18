@@ -1491,13 +1491,23 @@ ACV / wholesale take-in (what the dealer buys it for): ${cur} $${suggestedOffer.
     try {
       const cust = row.customer || {}
       const cname = [cust.first_name, cust.last_name].filter(Boolean).join(' ').trim() || cust.name || null
-      if (cname || cust.email || cust.phone) {
-        const contactId = await findOrCreateContact({
-          dealershipId: req.dealershipId, name: cname, email: cust.email, phone: cust.phone,
+      // Prefer an explicit contact chosen via "Search customers" — link exactly. Only
+      // trust an id that belongs to this dealership.
+      let contactId = null
+      const wantId = (b.contact_id || cust.contact_id || '').toString().trim()
+      if (wantId) {
+        const { data: c } = await supabaseAdmin.from('contacts')
+          .select('id').eq('id', wantId).eq('dealership_id', req.dealershipId).maybeSingle()
+        if (c) contactId = c.id
+      }
+      if (!contactId && (cname || cust.email || cust.phone || cust.mobile_phone || cust.home_phone)) {
+        contactId = await findOrCreateContact({
+          dealershipId: req.dealershipId, name: cname,
+          email: cust.email, phone: cust.phone || cust.mobile_phone || cust.home_phone,
           repId: req.user.id, source: 'Trade Appraisal',
         })
-        if (contactId) await supabaseAdmin.from('trade_appraisals').update({ contact_id: contactId }).eq('id', savedId)
       }
+      if (contactId) await supabaseAdmin.from('trade_appraisals').update({ contact_id: contactId }).eq('id', savedId)
     } catch (e) { console.warn('[appraisals] contact link failed:', e.message) }
 
     // Notify selected appraisers (managers) — one targeted notification each.

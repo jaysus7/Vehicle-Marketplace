@@ -776,8 +776,77 @@ function switchPage(pageId) {
 
 // ── Trade Appraisal ──────────────────────────────────────────────────────────
 let __apprWired = false;
+// ── VIN barcode scanner (camera) ─────────────────────────────────────────────
+// Reads the Code 39 / Code 128 / Data-Matrix VIN barcode printed on the driver's
+// door jamb or lower windshield using the browser's built-in BarcodeDetector
+// (Chromium desktop + Android Chrome). On a match it fills the target input,
+// fires an `input` event, and runs the optional afterFill(vin) callback.
+function cleanVin(raw) {
+  const s = String(raw || '').toUpperCase().replace(/[^A-HJ-NPR-Z0-9]/g, ''); // VINs exclude I/O/Q
+  const m = s.match(/[A-HJ-NPR-Z0-9]{17}/);
+  return m ? m[0] : null;
+}
+async function openVinScanner(targetId, afterFill) {
+  const target = document.getElementById(targetId);
+  if (!('BarcodeDetector' in window)) {
+    showToast('Barcode scanning isn’t supported on this browser — type the VIN, or try Chrome on your phone.', 'error');
+    return;
+  }
+  let stream;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' } } });
+  } catch {
+    showToast('Camera access was blocked. Allow the camera to scan a VIN.', 'error');
+    return;
+  }
+  let formats = ['code_39', 'code_128', 'data_matrix', 'qr_code'];
+  try { const sup = await BarcodeDetector.getSupportedFormats(); const f = formats.filter(x => sup.includes(x)); formats = f.length ? f : sup; } catch {}
+  const detector = new BarcodeDetector({ formats });
+  const ov = document.createElement('div');
+  ov.className = 'fixed inset-0 z-[80] bg-black/90 flex flex-col items-center justify-center p-4';
+  ov.innerHTML = `
+    <div class="relative w-full max-w-md">
+      <video autoplay playsinline muted class="w-full rounded-xl bg-black"></video>
+      <div class="absolute inset-x-6 top-1/2 -translate-y-1/2 h-24 border-2 border-emerald-400 rounded-lg pointer-events-none"></div>
+    </div>
+    <p class="text-white/80 text-sm mt-3 text-center">Point the camera at the VIN barcode<br><span class="text-white/50 text-xs">on the driver’s door jamb or lower windshield</span></p>
+    <button id="vinscan-cancel" class="mt-4 bg-white/15 hover:bg-white/25 text-white text-sm font-bold px-5 py-2.5 rounded-lg">Cancel</button>`;
+  document.body.appendChild(ov);
+  const video = ov.querySelector('video');
+  video.srcObject = stream;
+  let stopped = false;
+  const stop = () => { if (stopped) return; stopped = true; stream.getTracks().forEach(t => t.stop()); ov.remove(); };
+  ov.querySelector('#vinscan-cancel').onclick = stop;
+  ov.addEventListener('click', (e) => { if (e.target === ov) stop(); });
+  const tick = async () => {
+    if (stopped) return;
+    try {
+      const codes = await detector.detect(video);
+      for (const c of codes) {
+        const vin = cleanVin(c.rawValue);
+        if (vin) {
+          if (target) { target.value = vin; target.dispatchEvent(new Event('input', { bubbles: true })); }
+          if (navigator.vibrate) navigator.vibrate(60);
+          stop();
+          showToast('VIN scanned: ' + vin, 'success');
+          if (typeof afterFill === 'function') afterFill(vin);
+          return;
+        }
+      }
+    } catch {}
+    requestAnimationFrame(tick);
+  };
+  video.onloadedmetadata = () => requestAnimationFrame(tick);
+}
+window.openVinScanner = openVinScanner;
+// Small camera "Scan" button markup that drives openVinScanner for a given input.
+function vinScanBtn(targetId, afterFillExpr = '') {
+  return `<button type="button" title="Scan VIN barcode" onclick="openVinScanner('${targetId}'${afterFillExpr ? ', ' + afterFillExpr : ''})" class="flex items-center gap-1 text-xs font-bold bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 px-2.5 rounded-lg"><svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 7V5a2 2 0 012-2h2M17 3h2a2 2 0 012 2v2M21 17v2a2 2 0 01-2 2h-2M7 21H5a2 2 0 01-2-2v-2M7 12h10"/></svg>Scan</button>`;
+}
+
 let __apprData = null;   // last appraisal result, for the PDF export
 let __apprDealId = null; // id of the saved trade_appraisals record (for updates)
+let __apprContactId = null; // CRM contact linked to this appraisal (via "Search customers")
 let __apprDecodedSpecs = null; // engine/trans/drivetrain/body/fuel from the last VIN decode
 let __apprSalesperson = null;  // salesperson name for the CURRENT deal (record's creator, or logged-in)
 let __apprBranding = null;     // { logo_url, primary_color, ... } for PDF branding
@@ -798,6 +867,18 @@ function initAppraisal() {
   };
   lookupBtn?.addEventListener('click', runVinLookup);
   lookupInput?.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); runVinLookup(); } });
+
+  // Customer search — pull an existing CRM customer into the appraisal, or start new.
+  const custSearch = $('appr-cust-search');
+  if (custSearch) {
+    let t = null;
+    custSearch.addEventListener('input', () => { clearTimeout(t); t = setTimeout(() => apprSearchCustomers(custSearch.value), 220); });
+    custSearch.addEventListener('focus', () => { if (custSearch.value.trim().length >= 2) apprSearchCustomers(custSearch.value); });
+    document.addEventListener('click', (e) => {
+      const box = $('appr-cust-results');
+      if (box && !box.contains(e.target) && e.target !== custSearch) box.classList.add('hidden');
+    });
+  }
 
   // OEM factory docs (no AI) — decode for the build, then pull the factory PDF.
   const oemMsg = (t, err) => { const el = $('appr-oem-msg'); if (el) { el.textContent = t; el.className = 'text-xs ' + (err ? 'text-rose-500' : 'text-slate-400'); } };
@@ -907,6 +988,65 @@ function initAppraisal() {
   initApprDeal();
 }
 
+// ── Appraisal ⇄ CRM customer link ────────────────────────────────────────────
+async function apprSearchCustomers(q) {
+  const box = document.getElementById('appr-cust-results');
+  if (!box) return;
+  q = (q || '').trim();
+  if (q.length < 2) { box.classList.add('hidden'); box.innerHTML = ''; return; }
+  try {
+    const d = await apiGetJson(`/crm/contacts?q=${encodeURIComponent(q)}&limit=8`, { retries: 1 });
+    const rows = d.contacts || [];
+    if (!rows.length) {
+      box.innerHTML = `<div class="px-3 py-2.5 text-xs text-slate-400 italic">No match — fill the fields below to add a new customer.</div>`;
+    } else {
+      box.innerHTML = rows.map(c => {
+        const name = esc(c.full_name || [c.first_name, c.last_name].filter(Boolean).join(' ') || 'Customer');
+        const sub = [c.phone || c.phone_mobile, c.email].filter(Boolean).map(esc).join(' · ');
+        return `<button type="button" onclick='apprPickCustomer(${JSON.stringify(c).replace(/'/g, "&#39;")})' class="w-full text-left px-3 py-2 hover:bg-slate-50 dark:hover:bg-slate-800 border-b border-slate-100 dark:border-slate-800 last:border-0">
+          <div class="text-sm font-semibold text-slate-800 dark:text-slate-100">${name}</div>
+          ${sub ? `<div class="text-xs text-slate-400">${sub}</div>` : ''}</button>`;
+      }).join('');
+    }
+    box.classList.remove('hidden');
+  } catch (e) { box.classList.add('hidden'); }
+}
+function apprPickCustomer(c) {
+  const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v || ''; };
+  const nameParts = (c.full_name || '').trim().split(/\s+/);
+  set('cust-first', c.first_name || nameParts[0] || '');
+  set('cust-last', c.last_name || (nameParts.length > 1 ? nameParts.slice(1).join(' ') : ''));
+  set('cust-home-phone', c.phone_home || '');
+  set('cust-mobile-phone', c.phone_mobile || c.phone || '');
+  set('cust-email', c.email || '');
+  set('cust-address', c.address || '');
+  set('cust-postal', c.postal_code || '');
+  __apprContactId = c.id || null;
+  const badge = document.getElementById('appr-cust-linked');
+  if (badge) { badge.classList.remove('hidden'); badge.classList.add('inline-flex'); }
+  const nm = document.getElementById('appr-cust-linked-name');
+  if (nm) nm.textContent = c.full_name || [c.first_name, c.last_name].filter(Boolean).join(' ') || 'Linked';
+  const box = document.getElementById('appr-cust-results'); if (box) box.classList.add('hidden');
+  const search = document.getElementById('appr-cust-search'); if (search) search.value = '';
+  showToast('Customer linked to this appraisal', 'success');
+}
+function apprUnlinkCustomer() {
+  __apprContactId = null;
+  const badge = document.getElementById('appr-cust-linked');
+  if (badge) { badge.classList.add('hidden'); badge.classList.remove('inline-flex'); }
+}
+// "New customer" — clear the linked contact + customer fields to start fresh.
+function apprClearCustomer() {
+  apprUnlinkCustomer();
+  ['cust-first', 'cust-last', 'cust-home-phone', 'cust-mobile-phone', 'cust-email', 'cust-address', 'cust-postal']
+    .forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+  const box = document.getElementById('appr-cust-results'); if (box) box.classList.add('hidden');
+  const search = document.getElementById('appr-cust-search'); if (search) { search.value = ''; search.focus(); }
+}
+window.apprPickCustomer = apprPickCustomer;
+window.apprUnlinkCustomer = apprUnlinkCustomer;
+window.apprClearCustomer = apprClearCustomer;
+
 function apprTile(label, value, sub) {
   return `<div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4">
     <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400">${esc(label)}</div>
@@ -934,6 +1074,9 @@ function resetAppraisal() {
   document.querySelectorAll('#appr-features input[type=checkbox]').forEach(c => { c.checked = false; });
   // Wipe state → next appraisal is a brand-new record, attributed to the logged-in rep.
   __apprData = null; __apprDealId = null; __apprDecodedSpecs = null; __apprSalesperson = null;
+  apprUnlinkCustomer();
+  const csr = document.getElementById('appr-cust-results'); if (csr) csr.classList.add('hidden');
+  const cs = document.getElementById('appr-cust-search'); if (cs) cs.value = '';
   document.getElementById('appr-vin')?.focus();
   if (typeof showToast === 'function') showToast('Cleared — ready for a new appraisal', 'info');
 }
@@ -2249,6 +2392,7 @@ async function crmOpenForm(id) {
     ${sect('Trade vehicle (decode from VIN)')}
     <div class="flex gap-2">
       ${inp('crm-f-tradevin', __crmTradeDecoded?.vin, '17-char VIN', 'flex-1 uppercase')}
+      ${vinScanBtn('crm-f-tradevin', '() => crmDecodeTrade()')}
       <button type="button" onclick="crmDecodeTrade()" class="text-xs font-bold bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 px-3 rounded-lg">Decode</button>
     </div>
     <div class="grid grid-cols-4 gap-2">
@@ -4079,7 +4223,7 @@ function deskRenderForm(contactId) {
             ${fld('Trim', txt('dk-veh-trim', veh.trim, 'LT'))}
             ${fld('Mileage', txt('dk-veh-mileage', veh.mileage, 'km', 'number'))}
             ${fld('Colour', txt('dk-veh-color', veh.color, ''))}
-            ${fld('VIN', txt('dk-veh-vin', veh.vin, '17-digit VIN'))}
+            ${fld('VIN', `<div class="flex gap-1">${txt('dk-veh-vin', veh.vin, '17-digit VIN')}${vinScanBtn('dk-veh-vin')}</div>`)}
             ${fld('Stock #', txt('dk-veh-stock', veh.stock, ''))}
             ${fld('Sale type', `<select id="dk-sale_type" class="${iCls}">${['Retail', 'Wholesale', 'Fleet', 'Lease return'].map(o => `<option ${((d.sale_type || 'Retail') === o) ? 'selected' : ''}>${o}</option>`).join('')}</select>`)}
           </div>
@@ -8003,6 +8147,7 @@ function openVehicleForm(vehicle) {
     </div>
     <div class="flex gap-2">
       ${inp('veh-vin', v.vin, '17-char VIN (optional — auto-fills specs)', 'flex-1 uppercase')}
+      ${vinScanBtn('veh-vin', '() => vehDecode()')}
       <button type="button" onclick="vehDecode()" class="text-xs font-bold bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 px-3 rounded-lg">Decode</button>
     </div>
     <div class="grid grid-cols-4 gap-2">
@@ -15174,6 +15319,7 @@ async function apprSaveDeal() {
     appraisal: __apprData?.appraisal ? { ...__apprData.appraisal } : null,
     currency: __apprData?.currency || null,
     disposition: deal.disposition, customer: deal.customer, disclosure: deal.disclosure,
+    contact_id: __apprContactId || undefined,
     notify,
     salesperson_name: (document.getElementById('appr-salesperson-input')?.value || '').trim() || null,
   };
@@ -15476,6 +15622,12 @@ async function loadAppraisalRecord(id) {
     });
     setv('disc-notes', disc.notes || '');
     __apprDealId = row.id;
+    // Restore the linked-customer badge if this appraisal is tied to a CRM contact.
+    __apprContactId = row.contact_id || null;
+    const linkBadge = document.getElementById('appr-cust-linked');
+    if (linkBadge) { linkBadge.classList.toggle('hidden', !__apprContactId); linkBadge.classList.toggle('inline-flex', !!__apprContactId); }
+    const linkName = document.getElementById('appr-cust-linked-name');
+    if (linkName && __apprContactId) linkName.textContent = [c.first_name, c.last_name].filter(Boolean).join(' ') || 'Linked';
     __apprSalesperson = row.salesperson_name || null;  // print the record's salesperson, not the viewer
     const spEl = document.getElementById('appr-salesperson-input');
     if (spEl) spEl.value = row.salesperson_name || '';

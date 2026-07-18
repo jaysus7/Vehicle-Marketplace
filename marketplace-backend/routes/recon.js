@@ -11,6 +11,44 @@ const STAGE_LABELS = {
   detail: 'Detail', photos: 'Photos', frontline: 'Frontline-Ready',
 }
 
+/**
+ * Ensure a "get-ready" Cleanup card exists for a sold deal's vehicle, so the car
+ * shows on the Cleanup board the moment the deal is marked sold — whether that came
+ * from F&I Approve, the desk status buttons, or CRM. Idempotent: refreshes the card
+ * in place if one already exists for the vehicle (e.g. a plain recon card gets linked
+ * to the deal). Without linking a deal_id/delivery_at, a sold unit is filtered off the
+ * board, which is exactly the "car disappeared from Cleanup" bug this prevents.
+ */
+export async function ensureGetReadyCard(dealershipId, { inventoryId, dealId = null, deliveryAt = null, salespersonId = null, fniProducts = null, notes = null } = {}) {
+  if (!dealershipId || !inventoryId) return null
+  const now = new Date().toISOString()
+  try {
+    const { data: existing } = await supabaseAdmin.from('recon')
+      .select('id, delivery_at, salesperson_id, fni_products, notes')
+      .eq('inventory_id', inventoryId).eq('dealership_id', dealershipId).maybeSingle()
+    // Only overwrite fields we were actually given, so we don't clobber richer data
+    // captured by F&I Approve when a later plain "mark sold" comes through.
+    const patch = { deal_id: dealId, updated_at: now }
+    if (deliveryAt != null) patch.delivery_at = deliveryAt
+    if (salespersonId != null) patch.salesperson_id = salespersonId
+    if (fniProducts != null) patch.fni_products = fniProducts
+    if (notes != null) patch.notes = notes
+    if (existing) {
+      // Never null-out an existing deal link on a bare refresh.
+      if (dealId == null) delete patch.deal_id
+      await supabaseAdmin.from('recon').update(patch).eq('id', existing.id)
+      return existing.id
+    }
+    const { data: created } = await supabaseAdmin.from('recon').insert({
+      dealership_id: dealershipId, inventory_id: inventoryId,
+      stage: 'arrived', started_at: now, stage_since: now, checklist: [],
+      deal_id: dealId, delivery_at: deliveryAt, salesperson_id: salespersonId,
+      fni_products: fniProducts, notes, updated_at: now,
+    }).select('id').maybeSingle()
+    return created?.id || null
+  } catch (e) { console.warn('[recon] ensureGetReadyCard failed:', e.message); return null }
+}
+
 export function registerRecon(app) {
   // Board: every recon record for the dealership, joined to its vehicle. Also
   // returns which available vehicles aren't in recon yet, so the UI can add them.

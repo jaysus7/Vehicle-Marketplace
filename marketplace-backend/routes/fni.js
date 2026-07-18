@@ -5,6 +5,7 @@
 import { supabaseAdmin } from '../shared.js'
 import { requireAuth } from '../middleware.js'
 import { sendEmail } from '../securityAlerts.js'
+import { ensureGetReadyCard } from './recon.js'
 
 const MGR = ['DEALER_ADMIN', 'OWNER', 'MANAGER']
 const isMgr = (req) => MGR.includes(req.profile?.role)
@@ -263,19 +264,10 @@ export function registerFni(app) {
 
     // Create or refresh the Cleanup (recon) card for the vehicle.
     if (invId) {
-      const patch = {
-        delivery_at, salesperson_id: deal.created_by || null, fni_products, notes, deal_id: deal.id, updated_at: now,
-      }
-      const { data: existing } = await supabaseAdmin.from('recon')
-        .select('id').eq('inventory_id', invId).eq('dealership_id', req.dealershipId).maybeSingle()
-      if (existing) {
-        await supabaseAdmin.from('recon').update(patch).eq('id', existing.id)
-      } else {
-        await supabaseAdmin.from('recon').insert({
-          dealership_id: req.dealershipId, inventory_id: invId,
-          stage: 'arrived', started_at: now, stage_since: now, checklist: [], ...patch,
-        })
-      }
+      await ensureGetReadyCard(req.dealershipId, {
+        inventoryId: invId, dealId: deal.id, deliveryAt: delivery_at,
+        salespersonId: deal.created_by || null, fniProducts: fni_products, notes,
+      })
     }
 
     // Best-effort notification email to managers + salesperson + cleanup/service.

@@ -1,6 +1,7 @@
 import { supabaseAdmin } from '../shared.js'
 import { requireAuth } from '../middleware.js'
 import { emitWebhook } from '../webhooks.js'
+import { ensureGetReadyCard } from './recon.js'
 
 async function buildUserStats(userId) {
   const countOf = async (status) => {
@@ -1369,6 +1370,11 @@ export function registerRoutes(app) {
       if (m.inv === 'sold') invPatch.sold_at = now
       if (m.inv === 'available') invPatch.sold_at = null
       await supabaseAdmin.from('inventory').update(invPatch).eq('id', deal.inventory_id).eq('dealership_id', req.dealershipId)
+      // Sold → make sure the car shows on the Cleanup/get-ready board. Marking sold
+      // is enough; the F&I "Approve" step is optional. (Delivered leaves the board.)
+      if (m.deal === 'sold') {
+        await ensureGetReadyCard(req.dealershipId, { inventoryId: deal.inventory_id, dealId: deal.id })
+      }
     }
     // Fire outbound webhooks on the milestone transitions (glue for accounting/Zapier).
     if (m.deal === 'sold' || m.deal === 'delivered') {
