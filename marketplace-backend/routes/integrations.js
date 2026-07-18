@@ -7,6 +7,7 @@ import { supabaseAdmin } from '../shared.js'
 import { requireAuth } from '../middleware.js'
 import { encryptJson, piiConfigured } from '../crypto-pii.js'
 import { emitWebhook, WEBHOOK_EVENTS } from '../webhooks.js'
+import { sendDealerSms, invalidateTwilioCache } from './automation.js'
 
 /**
  * The Integrations Hub catalog. Each entry is a connectable service. `live: true`
@@ -22,7 +23,7 @@ const CATALOG = {
   quickbooks:      { category: 'Accounting',  label: 'QuickBooks Online',    live: false, desc: 'Push sold-deal and F&I income to QuickBooks. Coming soon.' },
   xero:            { category: 'Accounting',  label: 'Xero',                 live: false, desc: 'Push sold-deal and F&I income to Xero. Coming soon.' },
   google_business: { category: 'Marketing',   label: 'Google Business',      live: false, desc: 'Auto-post inventory and request reviews on your Google Business Profile. Coming soon.' },
-  twilio:          { category: 'Messaging',   label: 'Twilio SMS',           live: false, desc: 'Bring your own Twilio number for outbound texts. Coming soon.' },
+  twilio:          { category: 'Messaging',   label: 'Twilio SMS',           live: true,  desc: 'Bring your own Twilio account so automated texts send from your own A2P-registered number.' },
 }
 const PROVIDERS = Object.keys(CATALOG)
 const isMgr = (req) => ['DEALER_ADMIN', 'OWNER', 'MANAGER'].includes(req.profile?.role)
@@ -69,6 +70,19 @@ export function registerIntegrations(app) {
     res.json({ ok: true, url })
   })
 
+  // Send a real test SMS through the dealer's connected Twilio account.
+  app.post('/integrations/twilio/test', requireAuth, async (req, res) => {
+    if (!req.dealershipId) return res.status(400).json({ error: 'No dealership' })
+    if (!isMgr(req)) return res.status(403).json({ error: 'Manager access required' })
+    const to = String(req.body?.to || '').trim()
+    if (!/^\+?[0-9][0-9\s()-]{8,}$/.test(to)) return res.status(400).json({ error: 'Enter a valid phone number to text.' })
+    invalidateTwilioCache(req.dealershipId)   // pick up a just-saved config
+    const r = await sendDealerSms(req.dealershipId, to, 'MarketSync test ✓ — your Twilio number is connected and ready to send.')
+    if (r.simulated) return res.status(400).json({ error: 'Save and enable your Twilio SID, token, and from-number first.' })
+    if (!r.ok) return res.status(400).json({ error: r.error || 'Twilio rejected the message — double-check the SID, token, and from-number.' })
+    res.json({ ok: true })
+  })
+
   // Create/update a provider's config. Only overwrites the secret when new
   // credentials are supplied, so toggling `enabled` doesn't wipe stored creds.
   app.put('/integrations/:provider', requireAuth, async (req, res) => {
@@ -94,6 +108,7 @@ export function registerIntegrations(app) {
     const { error } = await supabaseAdmin.from('dealer_integrations')
       .upsert(patch, { onConflict: 'dealership_id,provider' })
     if (error) { console.error('[integrations] save failed:', error.message); return res.status(500).json({ error: 'Save failed' }) }
+    if (provider === 'twilio') invalidateTwilioCache(req.dealershipId)
     res.json({ ok: true })
   })
 
@@ -104,6 +119,7 @@ export function registerIntegrations(app) {
     const provider = String(req.params.provider || '').toLowerCase()
     await supabaseAdmin.from('dealer_integrations').delete()
       .eq('dealership_id', req.dealershipId).eq('provider', provider)
+    if (provider === 'twilio') invalidateTwilioCache(req.dealershipId)
     res.json({ ok: true })
   })
 }

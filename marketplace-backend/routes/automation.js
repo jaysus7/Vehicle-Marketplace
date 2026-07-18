@@ -14,6 +14,7 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { supabaseAdmin, resend, EMAIL_FROM } from '../shared.js'
 import { requireAuth } from '../middleware.js'
+import { decryptJson } from '../crypto-pii.js'
 
 const DEALER_LEVEL = ['DEALER_ADMIN', 'OWNER', 'MANAGER']
 const isDealerLevel = (req) => DEALER_LEVEL.includes(req.profile?.role)
@@ -333,17 +334,51 @@ async function verify(msg, campaign) {
 }
 
 // ── Dispatch (SMS via Twilio if configured, email via Resend) ─────────────────
-async function sendSms(to, body, from) {
-  const sid = process.env.TWILIO_ACCOUNT_SID, tok = process.env.TWILIO_AUTH_TOKEN
-  if (!sid || !tok || !from || !to) return { ok: false, simulated: true }
+// A dealer can bring their own Twilio account (Settings → Integrations → Twilio):
+// SID + token are stored encrypted, the from-number in lender_code_map. When present,
+// their account/number is used so texts come from their own A2P-registered number;
+// otherwise we fall back to the shared MarketSync Twilio env vars.
+const __twilioCache = new Map()   // dealershipId → { creds, at }
+async function dealerTwilio(dealershipId) {
+  if (!dealershipId) return null
+  const hit = __twilioCache.get(dealershipId)
+  if (hit && Date.now() - hit.at < 60000) return hit.creds
+  let creds = null
   try {
-    const params = new URLSearchParams({ To: to, From: from, Body: body })
+    const { data: row } = await supabaseAdmin.from('dealer_integrations')
+      .select('enabled, credentials_enc, lender_code_map')
+      .eq('dealership_id', dealershipId).eq('provider', 'twilio').maybeSingle()
+    if (row?.enabled && row.credentials_enc) {
+      const dec = decryptJson(row.credentials_enc) || {}
+      if (dec.account_sid && dec.auth_token) {
+        creds = { sid: dec.account_sid, tok: dec.auth_token, from: row.lender_code_map?.from || null }
+      }
+    }
+  } catch (e) { console.warn('[twilio] resolve failed:', e.message) }
+  __twilioCache.set(dealershipId, { creds, at: Date.now() })
+  return creds
+}
+export function invalidateTwilioCache(dealershipId) { if (dealershipId) __twilioCache.delete(dealershipId) }
+
+async function sendSms(to, body, from, creds) {
+  const sid = creds?.sid || process.env.TWILIO_ACCOUNT_SID
+  const tok = creds?.tok || process.env.TWILIO_AUTH_TOKEN
+  const fromNum = from || creds?.from
+  if (!sid || !tok || !fromNum || !to) return { ok: false, simulated: true }
+  try {
+    const params = new URLSearchParams({ To: to, From: fromNum, Body: body })
     const r = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${sid}/Messages.json`, {
       method: 'POST', headers: { Authorization: 'Basic ' + Buffer.from(`${sid}:${tok}`).toString('base64'), 'Content-Type': 'application/x-www-form-urlencoded' }, body: params,
     })
     const j = await r.json().catch(() => ({}))
     return { ok: r.ok, sid: j.sid, error: j.message }
   } catch (e) { return { ok: false, error: e.message } }
+}
+
+// Send an SMS for a dealership using its own Twilio account when connected.
+export async function sendDealerSms(dealershipId, to, body, from = null) {
+  const creds = await dealerTwilio(dealershipId)
+  return sendSms(to, body, from, creds)
 }
 
 async function dispatch(msg, campaign) {
@@ -371,7 +406,8 @@ async function dispatch(msg, campaign) {
   let result = { ok: false }
   if (msg.channel === 'sms') {
     const to = contact.phone || contact.phone_mobile
-    result = await sendSms(to, body, sender.smsFrom)
+    const twilio = await dealerTwilio(msg.dealership_id)
+    result = await sendSms(to, body, sender.smsFrom, twilio)
   } else {
     if (!resend) result = { ok: false, simulated: true }
     else if (contact.email) {

@@ -14,8 +14,13 @@ _Last updated: 2026-07-17_
   Events emitted: `lead.created` (lead-routing), `deal.sold` / `deal.delivered`
   (`/reports/deal/status`), `appointment.booked` (CRM status → appointment). Signed as
   `X-MarketSync-Signature: sha256=…` when a secret is set. Fire-and-forget, never blocks a request.
-- Catalog now surfaces QuickBooks, Xero, Google Business, Twilio as **coming-soon**
-  cards (credential store + provider abstraction ready; flip on when certified).
+- Catalog surfaces QuickBooks, Xero, Google Business as **coming-soon** cards
+  (credential store + provider abstraction ready; flip on when certified).
+- **Twilio SMS — LIVE (bring-your-own account).** A dealer stores their own Twilio
+  SID + token (encrypted) and from-number; when connected, every automated text sends
+  from their own A2P-registered number instead of the shared MarketSync number.
+  "Send test text" sends a real SMS. Falls back to the shared env-var Twilio when not
+  connected. Creds cached 60s per dealership, invalidated on save/disconnect.
 
 ---
 

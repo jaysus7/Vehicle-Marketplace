@@ -5182,7 +5182,7 @@ function renderIntegrations(data) {
   host.innerHTML = cats.map(cat => `
     <div class="mb-5">
       <h3 class="text-xs font-bold uppercase tracking-wide text-slate-400 dark:text-slate-500 mb-2">${esc(cat)}</h3>
-      <div class="space-y-3">${byCat[cat].map(p => p.provider === 'webhook' ? webhookCard(p, events) : providerCard(p)).join('')}</div>
+      <div class="space-y-3">${byCat[cat].map(p => p.provider === 'webhook' ? webhookCard(p, events) : p.provider === 'twilio' ? twilioCard(p) : providerCard(p)).join('')}</div>
     </div>`).join('');
   if (!data.pii_ready) {
     host.insertAdjacentHTML('afterbegin', `<div class="mb-4 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 px-4 py-2.5 text-xs text-amber-700 dark:text-amber-300">Encryption key not set — signing secrets and credentials can't be stored until <code>PII_ENCRYPTION_KEY</code> is configured on the server.</div>`);
@@ -5274,10 +5274,84 @@ async function disconnectWebhook(btn) {
   try { await apiSendJson('/integrations/webhook', 'DELETE'); showToast('Webhook disconnected', 'success'); loadIntegrations(); }
   catch (e) { btn.disabled = false; showToast(e.message || 'Could not disconnect', 'error'); }
 }
+// Twilio (bring-your-own account) — SID + token stored encrypted, from-number in
+// lender_code_map. When connected, all automated texts send from the dealer's number.
+function twilioCard(p) {
+  const cfg = p.lender_code_map || {};
+  const from = cfg.from || '';
+  return `<div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-4">
+    <div class="flex items-start justify-between gap-3 mb-3">
+      <div>
+        <div class="flex items-center gap-2"><span class="font-bold text-sm text-slate-900 dark:text-white">${esc(p.label)}</span>${statusPill(p)}</div>
+        <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">${esc(p.description)}</p>
+      </div>
+      <label class="inline-flex items-center cursor-pointer flex-shrink-0">
+        <input id="tw-enabled" type="checkbox" class="sr-only peer" ${p.enabled ? 'checked' : ''}>
+        <div class="relative w-9 h-5 bg-slate-200 dark:bg-slate-700 peer-checked:bg-emerald-500 rounded-full transition after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-4 after:w-4 after:transition peer-checked:after:translate-x-4"></div>
+      </label>
+    </div>
+    <div class="space-y-2.5">
+      <div>
+        <label class="block text-[11px] font-bold text-slate-500 dark:text-slate-400 mb-1">Account SID</label>
+        <input id="tw-sid" type="text" autocomplete="off" placeholder="${p.configured ? '•••••••• (saved — leave blank to keep)' : 'ACxxxxxxxxxxxxxxxx'}" class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm">
+      </div>
+      <div>
+        <label class="block text-[11px] font-bold text-slate-500 dark:text-slate-400 mb-1">Auth Token</label>
+        <input id="tw-token" type="password" autocomplete="off" placeholder="${p.configured ? '•••••••• (saved — leave blank to keep)' : 'Your Twilio auth token'}" class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm">
+      </div>
+      <div>
+        <label class="block text-[11px] font-bold text-slate-500 dark:text-slate-400 mb-1">From number <span class="font-normal text-slate-400">(your Twilio number, E.164)</span></label>
+        <input id="tw-from" type="tel" value="${esc(from)}" placeholder="+15195551234" class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm">
+      </div>
+      <div class="flex items-center gap-2 pt-1">
+        <button onclick="saveTwilio(this)" class="bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-bold px-4 py-2 rounded-lg transition">Save</button>
+        <button onclick="testTwilio(this)" class="bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-sm font-bold px-4 py-2 rounded-lg transition">Send test text</button>
+        ${p.configured || p.enabled ? '<button onclick="disconnectTwilio(this)" class="ml-auto text-xs text-rose-500 hover:text-rose-400 font-semibold">Disconnect</button>' : ''}
+      </div>
+      <p class="text-[11px] text-slate-400 dark:text-slate-500">Until you connect this, automated texts send from the shared MarketSync number.</p>
+    </div>
+  </div>`;
+}
+async function saveTwilio(btn) {
+  const sid = (document.getElementById('tw-sid')?.value || '').trim();
+  const token = (document.getElementById('tw-token')?.value || '').trim();
+  const from = (document.getElementById('tw-from')?.value || '').trim();
+  const enabled = !!document.getElementById('tw-enabled')?.checked;
+  if (enabled && !from) return showToast('Enter your Twilio from-number', 'error');
+  // SID + token both come as a pair; require both when setting for the first time.
+  if ((sid && !token) || (!sid && token)) return showToast('Enter both the SID and the auth token', 'error');
+  const payload = { enabled, lender_code_map: { from } };
+  if (sid && token) payload.credentials = { account_sid: sid, auth_token: token };
+  const orig = btn.textContent; btn.disabled = true; btn.textContent = 'Saving…';
+  try {
+    await apiSendJson('/integrations/twilio', 'PUT', payload);
+    btn.textContent = 'Saved ✓'; showToast('Twilio settings saved', 'success');
+    setTimeout(() => loadIntegrations(), 700);
+  } catch (e) { btn.disabled = false; btn.textContent = orig; showToast(e.message || 'Could not save', 'error'); }
+}
+async function testTwilio(btn) {
+  const to = prompt('Send a test text to which number? (E.164, e.g. +15195551234)', '');
+  if (!to) return;
+  const orig = btn.textContent; btn.disabled = true; btn.textContent = 'Sending…';
+  try {
+    await apiSendJson('/integrations/twilio/test', 'POST', { to: to.trim() });
+    btn.textContent = 'Sent ✓'; showToast('Test text sent', 'success');
+  } catch (e) { showToast(e.message || 'Could not send — save & enable first', 'error'); }
+  setTimeout(() => { btn.disabled = false; btn.textContent = orig; }, 1400);
+}
+async function disconnectTwilio(btn) {
+  if (!confirm('Disconnect Twilio? Automated texts will go back to the shared MarketSync number.')) return;
+  btn.disabled = true;
+  try { await apiSendJson('/integrations/twilio', 'DELETE'); showToast('Twilio disconnected', 'success'); loadIntegrations(); }
+  catch (e) { btn.disabled = false; showToast(e.message || 'Could not disconnect', 'error'); }
+}
 window.loadIntegrations = loadIntegrations;
 window.saveWebhook = saveWebhook;
 window.testWebhook = testWebhook;
 window.disconnectWebhook = disconnectWebhook;
+window.saveTwilio = saveTwilio;
+window.testTwilio = testTwilio;
+window.disconnectTwilio = disconnectTwilio;
 
 // ── Dealer details for documents (Settings › Dealer Management) ──────────────
 // Same legal identifiers the desk uses on the bill of sale — edited here anytime.
