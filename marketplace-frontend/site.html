@@ -1052,19 +1052,39 @@
       const notifyReady=()=>{ try{ parent.postMessage({type:'ms-preview-ready'},'*'); }catch(e){} };
       window.addEventListener('load',notifyReady); setTimeout(notifyReady,400);
     }
-    // Outline top-level home sections + report clicks (index) to the builder.
+    // Outline top-level home sections, let them be dragged to reorder, and show a
+    // hover toolbar (move/edit/delete) — all reported to the builder via postMessage.
+    let __dragFrom=null;
+    function post(m){ try{ parent.postMessage(m,'*'); }catch(e){} }
     function markPreviewSections(){
       if(!PREVIEW) return;
       const host=document.getElementById('view'); if(!host) return;
       const secs=(DATA.site.sections||[]);
       if(VIEW!=='home'||!secs.length) return;
       [...host.children].forEach((child,i)=>{
+        if(getComputedStyle(child).position==='static') child.style.position='relative';
+        child.setAttribute('draggable','true');
         child.style.outlineOffset='-3px'; child.style.transition='outline-color .12s'; child.style.outline='3px solid transparent';
-        child.addEventListener('mouseenter',()=>{ child.style.outlineColor='var(--brand,#6366f1)'; });
-        child.addEventListener('mouseleave',()=>{ child.style.outlineColor='transparent'; });
-        child.addEventListener('click',(e)=>{ e.preventDefault(); e.stopPropagation(); try{ parent.postMessage({type:'ms-preview-click',index:i},'*'); }catch(err){} },true);
+        child.addEventListener('mouseenter',()=>{ child.style.outlineColor='var(--brand,#6366f1)'; showBar(child,i); });
+        child.addEventListener('mouseleave',()=>{ child.style.outlineColor='transparent'; hideBar(child); });
+        child.addEventListener('click',(e)=>{ if(e.target.closest('.ms-secbar')) return; e.preventDefault(); e.stopPropagation(); post({type:'ms-preview-click',index:i}); },true);
+        child.addEventListener('dragstart',(e)=>{ __dragFrom=i; child.style.opacity='.5'; try{e.dataTransfer.effectAllowed='move';e.dataTransfer.setData('text/plain',String(i));}catch(_){} });
+        child.addEventListener('dragend',()=>{ child.style.opacity=''; [...host.children].forEach(c=>c.style.borderTop=''); });
+        child.addEventListener('dragover',(e)=>{ e.preventDefault(); child.style.borderTop='3px solid var(--brand,#6366f1)'; });
+        child.addEventListener('dragleave',()=>{ child.style.borderTop=''; });
+        child.addEventListener('drop',(e)=>{ e.preventDefault(); child.style.borderTop=''; if(__dragFrom!=null&&__dragFrom!==i) post({type:'ms-preview-reorder',from:__dragFrom,to:i}); __dragFrom=null; });
       });
     }
+    function showBar(child,i){
+      if(child.querySelector('.ms-secbar')) return;
+      const bar=document.createElement('div'); bar.className='ms-secbar';
+      bar.style.cssText='position:absolute;top:8px;right:8px;z-index:60;display:flex;gap:4px;background:rgba(15,23,42,.92);border-radius:9px;padding:4px;box-shadow:0 6px 16px rgba(0,0,0,.35)';
+      const mk=(label,action,bg,fg)=>{ const b=document.createElement('button'); b.textContent=label; b.style.cssText=`width:28px;height:28px;border:0;border-radius:7px;background:${bg||'#fff'};color:${fg||'#0f172a'};font-weight:800;cursor:pointer;font-size:14px;line-height:1`; b.addEventListener('click',(e)=>{ e.preventDefault(); e.stopPropagation(); post({type:'ms-preview-action',action,index:i}); }); return b; };
+      bar.appendChild(mk('↑','up')); bar.appendChild(mk('↓','down')); bar.appendChild(mk('✎','edit'));
+      bar.appendChild(mk('✕','delete','#ef4444','#fff'));
+      child.appendChild(bar);
+    }
+    function hideBar(child){ const b=child.querySelector('.ms-secbar'); if(b) b.remove(); }
 
     boot();
   </script>

@@ -9304,15 +9304,29 @@ function livePreviewPush() {
 window.livePreviewPush = livePreviewPush;
 function wireLiveMessages() {
   if (__liveMsgWired) return; __liveMsgWired = true;
+  const flashCard = (i) => {
+    const box = document.getElementById('ws-sections'); if (!box) return;
+    const card = box.children[i]; if (!card) return;
+    card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    card.classList.add('ring-2', 'ring-indigo-500', 'ring-offset-2', 'dark:ring-offset-slate-900', 'rounded-xl');
+    setTimeout(() => card.classList.remove('ring-2', 'ring-indigo-500', 'ring-offset-2', 'dark:ring-offset-slate-900', 'rounded-xl'), 1800);
+  };
   window.addEventListener('message', (ev) => {
     const m = ev.data || {};
     if (m.type === 'ms-preview-ready') { __livePreviewReady = true; livePreviewPush(); }
-    else if (m.type === 'ms-preview-click' && typeof m.index === 'number') {
-      const box = document.getElementById('ws-sections'); if (!box) return;
-      const card = box.children[m.index]; if (!card) return;
-      card.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      card.classList.add('ring-2', 'ring-indigo-500', 'ring-offset-2', 'dark:ring-offset-slate-900', 'rounded-xl');
-      setTimeout(() => card.classList.remove('ring-2', 'ring-indigo-500', 'ring-offset-2', 'dark:ring-offset-slate-900', 'rounded-xl'), 1800);
+    else if (m.type === 'ms-preview-click' && typeof m.index === 'number') flashCard(m.index);
+    else if (m.type === 'ms-preview-reorder') {
+      const { from, to } = m;
+      if (typeof from === 'number' && typeof to === 'number' && from !== to && __siteSections[from]) {
+        const [s] = __siteSections.splice(from, 1);
+        __siteSections.splice(to, 0, s);
+        renderWsSections();   // re-renders list + pushes the new order to the preview
+      }
+    } else if (m.type === 'ms-preview-action' && typeof m.index === 'number') {
+      if (m.action === 'up') moveSection(m.index, -1);
+      else if (m.action === 'down') moveSection(m.index, 1);
+      else if (m.action === 'delete') delSection(m.index);
+      else if (m.action === 'edit') flashCard(m.index);
     }
   });
 }
