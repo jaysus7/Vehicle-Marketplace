@@ -562,6 +562,7 @@ async function initializeDashboardEcosystem() {
         if (page === 'inventory' && btn.dataset.invmode) __inventoryMode = btn.dataset.invmode;
         if (page === 'profile' && tab) __settingsTab = tab;
         switchPage(page);
+        btn.blur();   // drop the focus outline so it doesn't linger on the old item
       });
     });
     setupMobileMoreMenu();
@@ -715,13 +716,20 @@ function switchPage(pageId) {
     el.classList.toggle('hidden', el.dataset.pageContent !== pageId);
   });
   document.querySelectorAll('#dashboard-nav .nav-item, #nav-vin-sticker, #nav-inv-intel, #nav-ai-vision').forEach(btn => {
-    const active = btn.id === 'nav-inv-intel' ? pageId === 'inv-intel'
+    let active = btn.id === 'nav-inv-intel' ? pageId === 'inv-intel'
                  : btn.id === 'nav-vin-sticker'? pageId === 'vin-sticker'
                  : btn.id === 'nav-ai-vision' ? pageId === 'ai-vision'
                  // Marketplace (facebook) and Inventory List (manual) share data-page
                  // "inventory" — disambiguate by mode so only the active one highlights.
                  : btn.dataset.page === pageId
                    && (pageId !== 'inventory' || !btn.dataset.invmode || btn.dataset.invmode === __inventoryMode);
+    // The Customers page has three nav leaves that all share data-page="crm"
+    // (Add Customer, Search Customers, My Customer Database). Only the one matching
+    // the current view should light up — otherwise they all highlight together.
+    if (active && pageId === 'crm') {
+      if (btn.dataset.crmAction === 'add') active = false;                       // Add is an action, not a view
+      else if (btn.dataset.crmView) active = (btn.dataset.crmView === 'all') === !!__crmSearchAll;
+    }
     btn.classList.toggle('bg-indigo-100', active);
     btn.classList.toggle('dark:bg-indigo-950/50', active);
     btn.classList.toggle('text-indigo-700', active);
@@ -1872,12 +1880,10 @@ async function crmQuickStatus(ev, id) {
   catch (e) { showToast(e.message, 'error'); }
   finally { sel.disabled = false; }
 }
-// Lightweight sold-source prompt (managers can also leave it blank).
-function askSoldSource() {
-  const opts = ['Website', 'Website Chat', 'Facebook Marketplace', 'Walk-in', 'Phone', 'Referral', 'Repeat', 'Other'];
-  const ans = prompt(`Where did this sale come from?\nType one of: ${opts.join(', ')}\n(or leave blank to skip)`, '');
-  return (ans || '').trim().slice(0, 60) || null;
-}
+// Sold-source is no longer prompted on the Sold click (too disruptive). The ROI
+// "sales by source" report falls back to the contact's existing lead source, and it
+// can still be set on the contact record directly.
+function askSoldSource() { return null; }
 window.crmQuickStatus = crmQuickStatus;
 
 // ── Contact detail modal ─────────────────────────────────────────────────────
@@ -4504,8 +4510,31 @@ async function openCreditApp(contactId) {
     : { year: dv('dk-veh-year'), make: dv('dk-veh-make'), model: dv('dk-veh-model'), trim: dv('dk-veh-trim'), vin: dv('dk-veh-vin'), mileage: dv('dk-veh-mileage'), stock: dv('dk-veh-stock'), inventory_id: __deskDeal.inventory_id || null };
   const fin = (app?.financing && Object.keys(app.financing).length) ? app.financing
     : { selling_price: rnd(c.sellingPrice), tax_amount: rnd(c.taxAmount), fees_total: rnd(c.feesTotal), trade_value: rnd(c.tradeValue), trade_payoff: rnd(c.tradePayoff), down_payment: rnd(c.down), rebate: rnd(c.rebate), amount_financed: rnd(c.amountFinanced), apr: c.apr, term: c.term, payment_freq: c.freq, payment: rnd(c.payment), first_payment_date: d.first_payment_date, lender: d.finance_company, program: d.program };
-  const A = app?.applicant || {}, CO = app?.co_applicant || null;
+  let A = app?.applicant || {};
+  const CO = app?.co_applicant || null;
   const hasCo = !!CO;
+  // New application → prefill the applicant with everything we already have on file for
+  // this customer (name, phones, email, address) so the F&I manager isn't re-typing it.
+  if (!A.first && !A.last) {
+    try {
+      const cr = await apiGetJson(`/deals/customer?id=${encodeURIComponent(contactId)}`, { retries: 1 });
+      const b = cr?.contact || {};
+      A = {
+        ...A,
+        first: A.first || b.first_name || '',
+        last: A.last || b.last_name || '',
+        email: A.email || b.email || '',
+        phone: A.phone || b.phone_mobile || b.phone || '',
+        phone_home: A.phone_home || b.phone_home || '',
+        address: {
+          street: b.address || '', city: b.city || '',
+          province: b.province || '', postal: b.postal_code || '',
+          ...(A.address || {}),
+        },
+        employment: A.employment || {}, other_income: A.other_income || {},
+      };
+    } catch {}
+  }
 
   const CI = 'w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1.5 text-sm text-slate-900 dark:text-white';
   const F = (label, inner) => `<label class="block"><span class="block text-[10.5px] uppercase tracking-wider text-slate-400 font-bold mb-0.5">${label}</span>${inner}</label>`;
