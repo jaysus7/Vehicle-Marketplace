@@ -18,8 +18,13 @@ _Last updated: 2026-07-17_
   flow: Settings → Integrations → Connect QuickBooks → Intuit consent → tokens stored
   encrypted per dealer, auto-refreshed; "Test connection" names the linked company.
   Inert until MarketSync provisions its Intuit app — one ops step (see below).
-- Catalog surfaces Xero, Google Business as **coming-soon** cards (same OAuth pattern
-  as QuickBooks will slot in; provider files to follow).
+- **Xero + Google Business — connectors built** on a shared generic OAuth2 engine
+  (`providers/oauth.js`): Connect → provider consent → encrypted per-dealer tokens,
+  auto-refreshed; "Test connection" names the linked org/account. Xero also captures
+  the tenant via /connections. Inert until their app credentials are provisioned.
+- **Integrations Hub polished:** connected/available summary, category sections with
+  blurbs, per-provider icons, live-first ordering, unified Connected/Available/Coming-
+  soon states across webhook, Twilio, and all OAuth connectors.
 - Follow-up: **push sold-deal + F&I income into QuickBooks** on deal.delivered
   (create a SalesReceipt/Invoice). Needs per-dealer account/item mapping in QBO — the
   connector + token plumbing are done; this is the actual sync layer.
@@ -48,10 +53,16 @@ These are done in code + DB but need one-time ops before they run in production:
       `marketplace-backend/migrations/` for the record.)
 - [ ] Extension **v1.16.10** Chrome Web Store repackage (recurring, user-side).
 - [ ] `SITEMAP_LITE_SYNC=1` on Render (feed validation).
-- [ ] **QuickBooks Online:** register one Intuit app, then set `QBO_CLIENT_ID`,
-      `QBO_CLIENT_SECRET`, `QBO_ENV=production` on Render. Add the redirect URI
-      `{API_URL}/integrations/quickbooks/callback` in the Intuit app. The connector
-      shows "coming soon" until these are set, then flips to a live "Connect" button.
+- [ ] **OAuth connectors — one ops step each** (they show "coming soon" until set,
+      then flip to a live "Connect" button). Register one app per provider and set:
+      - **QuickBooks:** `QBO_CLIENT_ID`, `QBO_CLIENT_SECRET`, `QBO_ENV=production`.
+        Redirect URI: `{API_URL}/integrations/quickbooks/callback`.
+      - **Xero:** `XERO_CLIENT_ID`, `XERO_CLIENT_SECRET`.
+        Redirect URI: `{API_URL}/integrations/xero/callback`.
+      - **Google Business:** `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`.
+        Redirect URI: `{API_URL}/integrations/google_business/callback`.
+      - Optional `OAUTH_STATE_SECRET` (defaults to the service-role key) signs the
+        OAuth state.
 
 ---
 

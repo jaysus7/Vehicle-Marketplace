@@ -9,6 +9,7 @@ import { encryptJson, decryptJson, piiConfigured } from '../crypto-pii.js'
 import { emitWebhook, WEBHOOK_EVENTS } from '../webhooks.js'
 import { sendDealerSms, invalidateTwilioCache } from './automation.js'
 import { qboConfigured, qboAuthorizeUrl, signState, verifyState, qboExchangeCode, qboEnsureToken, qboCompanyName } from '../providers/quickbooks.js'
+import { OAUTH_PROVIDERS, oauthConfigured, oauthAuthorizeUrl, oauthExchangeCode, oauthEnsureToken, oauthAfterToken, oauthTest, signState as signOAuthState, verifyState as verifyOAuthState } from '../providers/oauth.js'
 
 /**
  * The Integrations Hub catalog. Each entry is a connectable service. `live: true`
@@ -22,8 +23,8 @@ const CATALOG = {
   routeone:        { category: 'F&I',         label: 'RouteOne',             live: false, desc: 'Submit credit applications to lenders and pull decisions.' },
   dealertrack:     { category: 'F&I',         label: 'Dealertrack',          live: false, desc: 'Dealertrack DealTransfer credit submission.' },
   quickbooks:      { category: 'Accounting',  label: 'QuickBooks Online',    live: false, oauth: true, desc: 'Connect your QuickBooks Online company to sync sold-deal and F&I income.' },
-  xero:            { category: 'Accounting',  label: 'Xero',                 live: false, desc: 'Push sold-deal and F&I income to Xero. Coming soon.' },
-  google_business: { category: 'Marketing',   label: 'Google Business',      live: false, desc: 'Auto-post inventory and request reviews on your Google Business Profile. Coming soon.' },
+  xero:            { category: 'Accounting',  label: 'Xero',                 live: false, oauth: true, desc: 'Connect your Xero organisation to sync sold-deal and F&I income.' },
+  google_business: { category: 'Marketing',   label: 'Google Business',      live: false, oauth: true, desc: 'Connect your Google Business Profile to post inventory and request reviews.' },
   twilio:          { category: 'Messaging',   label: 'Twilio SMS',           live: true,  desc: 'Bring your own Twilio account so automated texts send from your own A2P-registered number.' },
 }
 const PROVIDERS = Object.keys(CATALOG)
@@ -42,8 +43,10 @@ export function registerIntegrations(app) {
     const list = PROVIDERS.map(p => {
       const r = byProvider[p]
       const meta = CATALOG[p] || {}
-      // QuickBooks flips live once the Intuit app credentials are provisioned.
-      const live = p === 'quickbooks' ? qboConfigured() : !!meta.live
+      // OAuth connectors flip live once their app credentials are provisioned.
+      const live = p === 'quickbooks' ? qboConfigured()
+        : OAUTH_PROVIDERS.includes(p) ? oauthConfigured(p)
+        : !!meta.live
       return {
         provider: p,
         label: meta.label || p,
@@ -100,7 +103,7 @@ export function registerIntegrations(app) {
   // Intuit redirects the browser back here (no JWT) — the signed `state` proves which
   // dealership started the flow. Exchange the code, store tokens, bounce to the app.
   app.get('/integrations/quickbooks/callback', async (req, res) => {
-    const backTo = (ok, msg) => res.redirect(`${FRONTEND_URL}/dashboard.html?qbo=${ok ? 'connected' : 'error'}${msg ? '&qbo_msg=' + encodeURIComponent(msg) : ''}`)
+    const backTo = (ok, msg) => res.redirect(`${FRONTEND_URL}/dashboard.html?integration=quickbooks&status=${ok ? 'connected' : 'error'}${msg ? '&msg=' + encodeURIComponent(msg) : ''}`)
     try {
       const { code, state, realmId } = req.query
       const dealershipId = verifyState(state)
@@ -140,6 +143,65 @@ export function registerIntegrations(app) {
       res.json({ ok: true, company: name || 'your QuickBooks company' })
     } catch (e) {
       res.status(400).json({ error: e.message || 'QuickBooks check failed — try reconnecting.' })
+    }
+  })
+
+  // ── Generic OAuth2 connectors (Xero, Google Business) ───────────────────────
+  // Same flow as QuickBooks, driven by the provider registry in providers/oauth.js.
+  // Registered after the QuickBooks-specific routes so those win for `quickbooks`.
+  app.get('/integrations/:provider/connect', requireAuth, async (req, res) => {
+    const provider = String(req.params.provider || '')
+    if (!OAUTH_PROVIDERS.includes(provider)) return res.status(404).json({ error: 'Unknown provider' })
+    if (!req.dealershipId) return res.status(400).json({ error: 'No dealership' })
+    if (!isMgr(req)) return res.status(403).json({ error: 'Manager access required' })
+    if (!oauthConfigured(provider)) return res.status(503).json({ error: `${CATALOG[provider]?.label || provider} isn’t enabled on this MarketSync account yet.` })
+    if (!piiConfigured()) return res.status(400).json({ error: 'Set PII_ENCRYPTION_KEY before connecting.' })
+    res.json({ url: oauthAuthorizeUrl(provider, signOAuthState(req.dealershipId, provider)) })
+  })
+
+  app.get('/integrations/:provider/callback', async (req, res) => {
+    const provider = String(req.params.provider || '')
+    const backTo = (ok, msg) => res.redirect(`${FRONTEND_URL}/dashboard.html?integration=${provider}&status=${ok ? 'connected' : 'error'}${msg ? '&msg=' + encodeURIComponent(msg) : ''}`)
+    if (!OAUTH_PROVIDERS.includes(provider)) return backTo(false, 'Unknown provider')
+    try {
+      const { code, state } = req.query
+      const dealershipId = verifyOAuthState(state, provider)
+      if (!dealershipId || !code) return backTo(false, 'Link expired — try connecting again.')
+      const creds = await oauthExchangeCode(provider, String(code))
+      const tenant = await oauthAfterToken(provider, creds)
+      await supabaseAdmin.from('dealer_integrations').upsert({
+        dealership_id: dealershipId, provider, enabled: true, status: 'connected',
+        credentials_enc: encryptJson(creds),
+        lender_code_map: { ...(tenant || {}), connected_at: new Date().toISOString() },
+        last_status_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+      }, { onConflict: 'dealership_id,provider' })
+      backTo(true)
+    } catch (e) {
+      console.error(`[${provider}] callback failed:`, e.message)
+      backTo(false, e.message)
+    }
+  })
+
+  app.post('/integrations/:provider/test', requireAuth, async (req, res) => {
+    const provider = String(req.params.provider || '')
+    if (!OAUTH_PROVIDERS.includes(provider)) return res.status(404).json({ error: 'Unknown provider' })
+    if (!req.dealershipId) return res.status(400).json({ error: 'No dealership' })
+    if (!isMgr(req)) return res.status(403).json({ error: 'Manager access required' })
+    const { data: row } = await supabaseAdmin.from('dealer_integrations')
+      .select('credentials_enc, lender_code_map').eq('dealership_id', req.dealershipId).eq('provider', provider).maybeSingle()
+    if (!row?.credentials_enc) return res.status(400).json({ error: 'Connect it first.' })
+    try {
+      let creds = decryptJson(row.credentials_enc)
+      const ensured = await oauthEnsureToken(provider, creds)
+      if (ensured.refreshed) {
+        creds = ensured.creds
+        await supabaseAdmin.from('dealer_integrations').update({ credentials_enc: encryptJson(creds), updated_at: new Date().toISOString() })
+          .eq('dealership_id', req.dealershipId).eq('provider', provider)
+      }
+      const msg = await oauthTest(provider, creds, row.lender_code_map || {})
+      res.json({ ok: true, company: msg })
+    } catch (e) {
+      res.status(400).json({ error: e.message || 'Connection check failed — try reconnecting.' })
     }
   })
 

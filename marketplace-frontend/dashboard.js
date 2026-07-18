@@ -5313,34 +5313,76 @@ async function loadIntegrations() {
     host.innerHTML = `<div class="py-8 text-center text-sm text-rose-500">${esc(e.message || 'Could not load integrations')}</div>`;
   }
 }
+// A coloured badge + glyph per provider (CSP-safe emoji — no external logos).
+const INTEGRATION_ICONS = {
+  webhook:         { emoji: '🔗', bg: 'bg-violet-100 dark:bg-violet-950/40' },
+  twilio:          { emoji: '💬', bg: 'bg-rose-100 dark:bg-rose-950/40' },
+  quickbooks:      { emoji: '📗', bg: 'bg-emerald-100 dark:bg-emerald-950/40' },
+  xero:            { emoji: '🔷', bg: 'bg-sky-100 dark:bg-sky-950/40' },
+  google_business: { emoji: '⭐', bg: 'bg-amber-100 dark:bg-amber-950/40' },
+  carfax:          { emoji: '🚗', bg: 'bg-indigo-100 dark:bg-indigo-950/40' },
+  routeone:        { emoji: '🏦', bg: 'bg-slate-100 dark:bg-slate-800' },
+  dealertrack:     { emoji: '🏦', bg: 'bg-slate-100 dark:bg-slate-800' },
+};
+function integrationIcon(provider) {
+  const i = INTEGRATION_ICONS[provider] || { emoji: '🔌', bg: 'bg-slate-100 dark:bg-slate-800' };
+  return `<div class="w-10 h-10 rounded-lg ${i.bg} flex items-center justify-center text-xl flex-shrink-0" aria-hidden="true">${i.emoji}</div>`;
+}
+// Short human blurb per category so the section reads as a map, not a dump.
+const CATEGORY_BLURB = {
+  Automation: 'Push MarketSync events anywhere — Zapier, Make, or your own app.',
+  Messaging: 'Send texts from your own number.',
+  Accounting: 'Sync sold-deal and F&I income to your books.',
+  'F&I': 'Credit and vehicle-history rails (enabled once certified).',
+  Marketing: 'Reviews, listings, and your online presence.',
+  Other: '',
+};
 function renderIntegrations(data) {
   const host = document.getElementById('integrations-list');
   if (!host) return;
   const providers = data.providers || [];
   const events = data.webhook_events || [];
-  // Group by category, webhook (Automation) first.
-  const order = ['Automation', 'F&I', 'Accounting', 'Marketing', 'Messaging', 'Other'];
+  const connected = providers.filter(p => isIntegrationConnected(p)).length;
+  const liveAvail = providers.filter(p => p.live).length;
+  // Group by category, in a sensible order.
+  const order = ['Automation', 'Messaging', 'Accounting', 'Marketing', 'F&I', 'Other'];
   const byCat = {};
   providers.forEach(p => { (byCat[p.category] = byCat[p.category] || []).push(p); });
-  const cats = Object.keys(byCat).sort((a, b) => (order.indexOf(a) + 99) % 100 - (order.indexOf(b) + 99) % 100);
-  host.innerHTML = cats.map(cat => `
-    <div class="mb-5">
-      <h3 class="text-xs font-bold uppercase tracking-wide text-slate-400 dark:text-slate-500 mb-2">${esc(cat)}</h3>
-      <div class="space-y-3">${byCat[cat].map(p => p.provider === 'webhook' ? webhookCard(p, events) : p.provider === 'twilio' ? twilioCard(p) : (p.oauth && p.live) ? oauthCard(p) : providerCard(p)).join('')}</div>
+  const cats = Object.keys(byCat).sort((a, b) => (order.indexOf(a) === -1 ? 99 : order.indexOf(a)) - (order.indexOf(b) === -1 ? 99 : order.indexOf(b)));
+  // Within a category: live first, then connected first.
+  const rank = p => (p.live ? 0 : 10) + (isIntegrationConnected(p) ? -1 : 0);
+  const summary = `<div class="flex items-center gap-4 mb-4 text-xs">
+    <span class="inline-flex items-center gap-1.5 font-bold text-emerald-700 dark:text-emerald-300"><span class="w-2 h-2 rounded-full bg-emerald-500"></span>${connected} connected</span>
+    <span class="inline-flex items-center gap-1.5 font-semibold text-slate-500 dark:text-slate-400"><span class="w-2 h-2 rounded-full bg-slate-400"></span>${liveAvail} available to connect</span>
+  </div>`;
+  host.innerHTML = summary + cats.map(cat => `
+    <div class="mb-6">
+      <div class="mb-2">
+        <h3 class="text-xs font-bold uppercase tracking-wide text-slate-400 dark:text-slate-500">${esc(cat)}</h3>
+        ${CATEGORY_BLURB[cat] ? `<p class="text-[11px] text-slate-400 dark:text-slate-500 mt-0.5">${esc(CATEGORY_BLURB[cat])}</p>` : ''}
+      </div>
+      <div class="space-y-3">${byCat[cat].slice().sort((a, b) => rank(a) - rank(b)).map(p => p.provider === 'webhook' ? webhookCard(p, events) : p.provider === 'twilio' ? twilioCard(p) : (p.oauth && p.live) ? oauthCard(p) : providerCard(p)).join('')}</div>
     </div>`).join('');
   if (!data.pii_ready) {
     host.insertAdjacentHTML('afterbegin', `<div class="mb-4 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 px-4 py-2.5 text-xs text-amber-700 dark:text-amber-300">Encryption key not set — signing secrets and credentials can't be stored until <code>PII_ENCRYPTION_KEY</code> is configured on the server.</div>`);
   }
 }
+function isIntegrationConnected(p) {
+  if (!p.enabled) return false;
+  const m = p.lender_code_map || {};
+  // Connected when a secret is stored OR the non-secret config that makes it work is set.
+  return !!(p.configured || m.url || m.from || m.realm_id || m.tenant_id || m.connected_at);
+}
 function statusPill(p) {
   if (!p.live) return '<span class="text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500">Coming soon</span>';
-  if (p.enabled) return '<span class="text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300">Connected</span>';
-  return '<span class="text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500">Not connected</span>';
+  if (isIntegrationConnected(p)) return '<span class="text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300">Connected</span>';
+  return '<span class="text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300">Available</span>';
 }
 function providerCard(p) {
-  return `<div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-4 flex items-start justify-between gap-3 opacity-70">
-    <div>
-      <div class="flex items-center gap-2"><span class="font-bold text-sm text-slate-900 dark:text-white">${esc(p.label)}</span>${statusPill(p)}</div>
+  return `<div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-4 flex items-start gap-3 opacity-75">
+    ${integrationIcon(p.provider)}
+    <div class="min-w-0">
+      <div class="flex items-center gap-2 flex-wrap"><span class="font-bold text-sm text-slate-900 dark:text-white">${esc(p.label)}</span>${statusPill(p)}</div>
       <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">${esc(p.description)}</p>
     </div>
   </div>`;
@@ -5355,9 +5397,10 @@ function webhookCard(p, events) {
       <input type="checkbox" class="wh-ev accent-indigo-600" value="${esc(ev)}" ${on ? 'checked' : ''}> ${esc(ev)}</label>`;
   }).join('');
   return `<div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-4">
-    <div class="flex items-start justify-between gap-3 mb-3">
-      <div>
-        <div class="flex items-center gap-2"><span class="font-bold text-sm text-slate-900 dark:text-white">${esc(p.label)}</span>${statusPill(p)}</div>
+    <div class="flex items-start gap-3 mb-3">
+      ${integrationIcon(p.provider)}
+      <div class="min-w-0 flex-1">
+        <div class="flex items-center gap-2 flex-wrap"><span class="font-bold text-sm text-slate-900 dark:text-white">${esc(p.label)}</span>${statusPill(p)}</div>
         <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">${esc(p.description)}</p>
       </div>
       <label class="inline-flex items-center cursor-pointer flex-shrink-0">
@@ -5424,9 +5467,10 @@ function twilioCard(p) {
   const cfg = p.lender_code_map || {};
   const from = cfg.from || '';
   return `<div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-4">
-    <div class="flex items-start justify-between gap-3 mb-3">
-      <div>
-        <div class="flex items-center gap-2"><span class="font-bold text-sm text-slate-900 dark:text-white">${esc(p.label)}</span>${statusPill(p)}</div>
+    <div class="flex items-start gap-3 mb-3">
+      ${integrationIcon(p.provider)}
+      <div class="min-w-0 flex-1">
+        <div class="flex items-center gap-2 flex-wrap"><span class="font-bold text-sm text-slate-900 dark:text-white">${esc(p.label)}</span>${statusPill(p)}</div>
         <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">${esc(p.description)}</p>
       </div>
       <label class="inline-flex items-center cursor-pointer flex-shrink-0">
@@ -5489,47 +5533,49 @@ async function disconnectTwilio(btn) {
   try { await apiSendJson('/integrations/twilio', 'DELETE'); showToast('Twilio disconnected', 'success'); loadIntegrations(); }
   catch (e) { btn.disabled = false; showToast(e.message || 'Could not disconnect', 'error'); }
 }
-// OAuth connector card (QuickBooks). "Connect" bounces to the provider's consent
-// screen; once linked we show the company + Test / Disconnect.
+// OAuth connector card (QuickBooks, Xero, Google Business). "Connect" bounces to the
+// provider's consent screen; once linked we show when + Test / Disconnect. One set of
+// handlers drives every OAuth provider via its `provider` key.
 function oauthCard(p) {
   const connected = p.configured && p.enabled;
-  const realm = p.lender_code_map || {};
+  const cfg = p.lender_code_map || {};
   return `<div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-4">
-    <div class="flex items-start justify-between gap-3">
-      <div>
-        <div class="flex items-center gap-2"><span class="font-bold text-sm text-slate-900 dark:text-white">${esc(p.label)}</span>${statusPill(p)}</div>
+    <div class="flex items-start gap-3">
+      ${integrationIcon(p.provider)}
+      <div class="min-w-0 flex-1">
+        <div class="flex items-center gap-2 flex-wrap"><span class="font-bold text-sm text-slate-900 dark:text-white">${esc(p.label)}</span>${statusPill(p)}</div>
         <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">${esc(p.description)}</p>
-        ${connected && realm.connected_at ? `<p class="text-[11px] text-slate-400 mt-1">Connected ${new Date(realm.connected_at).toLocaleDateString()}.</p>` : ''}
+        ${connected && cfg.connected_at ? `<p class="text-[11px] text-slate-400 mt-1">Connected ${new Date(cfg.connected_at).toLocaleDateString()}${cfg.tenant_name ? ' · ' + esc(cfg.tenant_name) : ''}.</p>` : ''}
+        <div class="flex items-center gap-2 mt-3">
+          ${connected
+            ? `<button onclick="testOAuth('${p.provider}', this)" class="bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-sm font-bold px-4 py-2 rounded-lg transition">Test connection</button>
+               <button onclick="disconnectOAuth('${p.provider}', '${esc(p.label)}', this)" class="ml-auto text-xs text-rose-500 hover:text-rose-400 font-semibold">Disconnect</button>`
+            : `<button onclick="connectOAuth('${p.provider}', this)" class="bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-bold px-4 py-2 rounded-lg transition">Connect ${esc(p.label)}</button>`}
+        </div>
       </div>
-    </div>
-    <div class="flex items-center gap-2 mt-3">
-      ${connected
-        ? `<button onclick="testQuickbooks(this)" class="bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-sm font-bold px-4 py-2 rounded-lg transition">Test connection</button>
-           <button onclick="disconnectQuickbooks(this)" class="ml-auto text-xs text-rose-500 hover:text-rose-400 font-semibold">Disconnect</button>`
-        : `<button onclick="connectQuickbooks(this)" class="bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-bold px-4 py-2 rounded-lg transition">Connect QuickBooks</button>`}
     </div>
   </div>`;
 }
-async function connectQuickbooks(btn) {
+async function connectOAuth(provider, btn) {
   const orig = btn.textContent; btn.disabled = true; btn.textContent = 'Opening…';
   try {
-    const d = await apiGetJson('/integrations/quickbooks/connect', { retries: 1 });
-    if (d.url) { window.location.href = d.url; return; }   // full-page redirect into Intuit consent
+    const d = await apiGetJson(`/integrations/${provider}/connect`, { retries: 1 });
+    if (d.url) { window.location.href = d.url; return; }   // full-page redirect into the provider's consent screen
     throw new Error('Could not start the connection.');
   } catch (e) { btn.disabled = false; btn.textContent = orig; showToast(e.message || 'Could not connect', 'error'); }
 }
-async function testQuickbooks(btn) {
+async function testOAuth(provider, btn) {
   const orig = btn.textContent; btn.disabled = true; btn.textContent = 'Checking…';
   try {
-    const d = await apiSendJson('/integrations/quickbooks/test', 'POST', {});
-    btn.textContent = 'Connected ✓'; showToast('Linked to ' + (d.company || 'QuickBooks'), 'success');
-  } catch (e) { showToast(e.message || 'QuickBooks check failed', 'error'); }
+    const d = await apiSendJson(`/integrations/${provider}/test`, 'POST', {});
+    btn.textContent = 'Connected ✓'; showToast(d.company || 'Connection is healthy', 'success');
+  } catch (e) { showToast(e.message || 'Connection check failed', 'error'); }
   setTimeout(() => { btn.disabled = false; btn.textContent = orig; }, 1400);
 }
-async function disconnectQuickbooks(btn) {
-  if (!confirm('Disconnect QuickBooks? MarketSync will stop syncing to your company file.')) return;
+async function disconnectOAuth(provider, label, btn) {
+  if (!confirm(`Disconnect ${label}? MarketSync will stop syncing to it.`)) return;
   btn.disabled = true;
-  try { await apiSendJson('/integrations/quickbooks', 'DELETE'); showToast('QuickBooks disconnected', 'success'); loadIntegrations(); }
+  try { await apiSendJson(`/integrations/${provider}`, 'DELETE'); showToast(`${label} disconnected`, 'success'); loadIntegrations(); }
   catch (e) { btn.disabled = false; showToast(e.message || 'Could not disconnect', 'error'); }
 }
 window.loadIntegrations = loadIntegrations;
@@ -5539,9 +5585,9 @@ window.disconnectWebhook = disconnectWebhook;
 window.saveTwilio = saveTwilio;
 window.testTwilio = testTwilio;
 window.disconnectTwilio = disconnectTwilio;
-window.connectQuickbooks = connectQuickbooks;
-window.testQuickbooks = testQuickbooks;
-window.disconnectQuickbooks = disconnectQuickbooks;
+window.connectOAuth = connectOAuth;
+window.testOAuth = testOAuth;
+window.disconnectOAuth = disconnectOAuth;
 
 // ── Dealer details for documents (Settings › Dealer Management) ──────────────
 // Same legal identifiers the desk uses on the bill of sale — edited here anytime.
@@ -13794,17 +13840,20 @@ async function startVinStickerTrial() {
   } catch {}
 })();
 
-// Handle return from the QuickBooks (Intuit) OAuth consent screen.
+// Handle return from any integration OAuth consent screen (QuickBooks, Xero, Google).
 (() => {
   const params = new URLSearchParams(window.location.search);
-  const qbo = params.get('qbo');
-  if (!qbo) return;
-  const msg = params.get('qbo_msg');
+  const provider = params.get('integration');
+  if (!provider) return;
+  const status = params.get('status');
+  const msg = params.get('msg');
+  const LABELS = { quickbooks: 'QuickBooks', xero: 'Xero', google_business: 'Google Business' };
+  const label = LABELS[provider] || 'Integration';
   history.replaceState({}, '', window.location.pathname);
   const show = () => {
     if (typeof showToast !== 'function') { setTimeout(show, 400); return; }
-    if (qbo === 'connected') showToast('QuickBooks connected ✓', 'success');
-    else showToast(msg || 'QuickBooks connection failed', 'error');
+    if (status === 'connected') showToast(`${label} connected ✓`, 'success');
+    else showToast(msg || `${label} connection failed`, 'error');
     if (typeof switchPage === 'function') { switchPage('profile'); setTimeout(() => { if (typeof settingsTab === 'function') settingsTab('integrations'); }, 250); }
   };
   show();
