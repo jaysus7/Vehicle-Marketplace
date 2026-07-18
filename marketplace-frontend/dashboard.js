@@ -10031,8 +10031,12 @@ async function loadAutoHolidays() {
 }
 function renderHolidaysRoot() {
   const root = document.getElementById('auto-holidays-root'); if (!root) return;
-  root.innerHTML = `<div><h2 class="text-xl font-bold text-slate-900 dark:text-white">Holidays</h2>
-    <p class="text-sm text-slate-500 dark:text-slate-400 mt-1">Auto-filled for your region — flip on the ones you want and edit the wording.</p></div>
+  root.innerHTML = `
+    <div class="flex items-start justify-between gap-3 flex-wrap">
+      <div><h2 class="text-xl font-bold text-slate-900 dark:text-white">Holidays</h2>
+        <p class="text-sm text-slate-500 dark:text-slate-400 mt-1">Dated greetings to your delivered customers — auto-filled for your region. Flip on the ones you want, edit the wording, or add your own.</p></div>
+      <button onclick="autoAddCustom('holidays')" class="flex-shrink-0 flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-bold px-4 py-2 rounded-lg transition"><svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>Add custom</button>
+    </div>
     ${autoHolidaysHtml()}`;
 }
 async function loadAutoLeads() {
@@ -10051,7 +10055,10 @@ function renderAutoBucket(rootId, bucket, title, desc) {
     <div class="flex items-start justify-between gap-3 flex-wrap">
       <div><h2 class="text-xl font-bold text-slate-900 dark:text-white">${title}</h2>
         <p class="text-sm text-slate-500 dark:text-slate-400 mt-1">${desc}</p></div>
-      <button onclick="autoOpenTemplates('${bucket}')" class="flex-shrink-0 flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-bold px-4 py-2 rounded-lg transition"><svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>Add more</button>
+      <div class="flex-shrink-0 flex items-center gap-2">
+        <button onclick="autoAddCustom('${bucket}')" class="flex items-center gap-1.5 bg-white dark:bg-slate-900 border border-indigo-300 dark:border-indigo-800 text-indigo-600 dark:text-indigo-300 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 text-sm font-bold px-3 py-2 rounded-lg transition">✎ Custom</button>
+        <button onclick="autoOpenTemplates('${bucket}')" class="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-bold px-4 py-2 rounded-lg transition"><svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>Add more</button>
+      </div>
     </div>
     ${cards.length ? AUTO_CATS.filter(([k]) => byCat[k]?.length).map(([k, label]) => `<div><div class="text-xs font-black uppercase tracking-wider text-slate-400 mb-2 mt-4">${label}</div><div class="space-y-2">${byCat[k].map(autoCardHtml).join('')}</div></div>`).join('')
       : '<div class="py-12 text-center text-sm text-slate-400 italic">No campaigns here yet — hit <b>Add more</b> to pick from ready-made email templates.</div>'}`;
@@ -10129,6 +10136,77 @@ async function autoAddTemplate(bucket, i, btn) {
     autoRerenderCurrent();   // reflect it on the page behind the modal
   } catch (e) { btn.disabled = false; btn.textContent = orig; showToast(e.message, 'error'); }
 }
+// ── Build-your-own custom follow-up (all three tabs) ─────────────────────────
+// Leads/Delivery → a from-scratch campaign (name, channel, timing, message).
+// Holidays → a custom dated greeting. Everything lands switched on and editable.
+function autoAddCustom(bucket) {
+  if (bucket === 'holidays') return autoAddHolidayModal();
+  const lbl = t => `<label class="block text-[11px] font-semibold text-slate-500 dark:text-slate-400 mb-1">${t}</label>`;
+  const inp = 'w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm';
+  const when = bucket === 'delivery' ? 'after the customer takes delivery' : 'after a new lead comes in';
+  const ov = crmOverlay(`<div class="p-5">
+    <div class="flex items-center justify-between mb-1"><div class="text-lg font-black text-slate-900 dark:text-white">Custom follow-up</div><button onclick="this.closest('.fixed').remove()" class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"><svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+    <p class="text-sm text-slate-500 dark:text-slate-400 mb-3">Build your own automated touch that fires ${when}. Use {{customer.first_name}}, {{vehicle.model}}, {{rep.first_name}}, {{dealership.name}} — they fill in at send time.</p>
+    <div class="space-y-3">
+      <div>${lbl('Name')}<input id="acx-name" placeholder="e.g. 3-day personal video" class="${inp}"></div>
+      <div class="grid grid-cols-3 gap-2">
+        <div>${lbl('Channel')}<select id="acx-ch" class="${inp}"><option value="sms">Text (SMS)</option><option value="email">Email</option><option value="task">Rep task</option></select></div>
+        <div>${lbl('Send after')}<input id="acx-num" type="number" min="0" value="1" class="${inp}"></div>
+        <div>${lbl('Unit')}<select id="acx-unit" class="${inp}"><option value="hours">hours</option><option value="days" selected>days</option></select></div>
+      </div>
+      <div id="acx-subj-wrap">${lbl('Email subject')}<input id="acx-subj" placeholder="Subject line" class="${inp}"></div>
+      <div>${lbl('Message')}<textarea id="acx-body" rows="4" placeholder="Hi {{customer.first_name|there}}, …" class="${inp}"></textarea></div>
+    </div>
+    <button onclick="autoSubmitCustom('${bucket}',this)" class="mt-3 text-sm font-bold bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg">Add follow-up</button>
+  </div>`, 'max-w-lg');
+  const sync = () => { const w = ov.querySelector('#acx-subj-wrap'); if (w) w.style.display = ov.querySelector('#acx-ch').value === 'email' ? '' : 'none'; };
+  ov.querySelector('#acx-ch').addEventListener('change', sync); sync();
+}
+async function autoSubmitCustom(bucket, btn) {
+  const g = id => document.getElementById(id);
+  const name = (g('acx-name').value || '').trim(); if (!name) return showToast('Give it a name', 'error');
+  const ch = g('acx-ch').value;
+  const num = Math.max(0, parseInt(g('acx-num').value) || 0);
+  const delay_minutes = (g('acx-unit').value === 'hours') ? num * 60 : num * 1440;
+  const body = (g('acx-body').value || '').trim(); if (!body) return showToast('Add a message', 'error');
+  const subject = ch === 'email' ? (g('acx-subj').value || '').trim() : '';
+  const category = ch === 'task' ? 'tasks' : (bucket === 'delivery' ? 'retention' : 'pipeline');
+  const trigger_event = bucket === 'delivery' ? 'delivered' : 'internet_lead';
+  const orig = btn.textContent; btn.disabled = true; btn.textContent = 'Adding…';
+  try {
+    const d = await apiSendJson('/automation/campaigns', 'POST', { name, category, trigger_event, channel: ch, subject_template: subject, message_body_template: body, delay_minutes, sender_identity: ch === 'email' ? 'house' : 'rep', is_active: true });
+    if (d.campaign) __autoCfg.campaigns = [...(__autoCfg.campaigns || []), d.campaign];
+    showToast('Custom follow-up added', 'success');
+    btn.closest('.fixed')?.remove();
+    autoRerenderCurrent();
+  } catch (e) { btn.disabled = false; btn.textContent = orig; showToast(e.message, 'error'); }
+}
+// Custom holiday greeting — a proper modal (replaces the old double prompt).
+function autoAddHolidayModal() {
+  const lbl = t => `<label class="block text-[11px] font-semibold text-slate-500 dark:text-slate-400 mb-1">${t}</label>`;
+  const inp = 'w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm';
+  crmOverlay(`<div class="p-5">
+    <div class="flex items-center justify-between mb-1"><div class="text-lg font-black text-slate-900 dark:text-white">Add a custom holiday</div><button onclick="this.closest('.fixed').remove()" class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"><svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+    <p class="text-sm text-slate-500 dark:text-slate-400 mb-3">A dated greeting that sends every year to your delivered customers.</p>
+    <div class="space-y-3">
+      <div>${lbl('Name')}<input id="ahm-name" placeholder="e.g. Customer Appreciation Day" class="${inp}"></div>
+      <div>${lbl('Date (MM-DD)')}<input id="ahm-date" placeholder="10-13" maxlength="5" class="${inp}"></div>
+      <div>${lbl('Message')}<textarea id="ahm-msg" rows="3" placeholder="Happy … from {{dealership.name}}!" class="${inp}"></textarea></div>
+    </div>
+    <button onclick="autoSubmitHoliday(this)" class="mt-3 text-sm font-bold bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg">Add holiday</button>
+  </div>`, 'max-w-lg');
+}
+function autoSubmitHoliday(btn) {
+  const g = id => document.getElementById(id);
+  const name = (g('ahm-name').value || '').trim(); if (!name) return showToast('Name it', 'error');
+  const date = (g('ahm-date').value || '').trim(); if (!/^\d{2}-\d{2}$/.test(date)) return showToast('Use MM-DD (e.g. 10-13)', 'error');
+  const message = (g('ahm-msg').value || '').trim() || `Happy ${name} from {{dealership.name}}!`;
+  __autoHol.push({ name, date, message, subject: `Happy ${name} from {{dealership.name}}`, enabled: true, preset: false });
+  btn.closest('.fixed')?.remove();
+  renderHolidaysRoot();
+  showToast('Holiday added — review, then Save holidays', 'success');
+}
+
 function autoInitHolidays() {
   const saved = Array.isArray(__autoCfg.settings.holidays) ? __autoCfg.settings.holidays : [];
   const presets = HOLIDAY_PRESETS[autoRegionKey()] || HOLIDAY_PRESETS.CA;
@@ -10355,7 +10433,7 @@ function autoHolidaysHtml() {
       <button onclick="autoHolAi(${i},this)" class="text-xs font-bold bg-violet-600 hover:bg-violet-500 text-white px-3 py-1.5 rounded-lg">✨ Rewrite</button>
     </div>
   </div>`).join('');
-  return `<div><div class="flex items-center justify-between mt-4 mb-2"><div class="text-xs font-black uppercase tracking-wider text-slate-400">Holidays <span class="normal-case font-normal text-slate-400">· auto-filled for your region — flip on the ones you want</span></div><button onclick="autoAddHolidayRow()" class="text-xs font-bold text-indigo-600 dark:text-indigo-400">+ Add holiday</button></div>
+  return `<div><div class="flex items-center justify-between mt-4 mb-2"><div class="text-xs font-black uppercase tracking-wider text-slate-400">Holidays <span class="normal-case font-normal text-slate-400">· auto-filled for your region — flip on the ones you want</span></div><button onclick="autoAddCustom('holidays')" class="text-xs font-bold text-indigo-600 dark:text-indigo-400">+ Add holiday</button></div>
     <div class="space-y-2">${rows || '<div class="text-xs text-slate-400 italic">No holidays.</div>'}</div>
     <button onclick="autoSaveHolidays(this)" class="mt-3 text-sm font-bold bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg">Save holidays</button>
     <span id="am-hol-msg" class="hidden text-xs ml-2"></span></div>`;
@@ -10400,7 +10478,7 @@ async function autoSaveGlobals(btn) {
   catch (e) { if (msg) { msg.textContent = e.message; msg.className = 'text-xs ml-2 text-red-500'; msg.classList.remove('hidden'); } }
   finally { btn.disabled = false; btn.textContent = orig; }
 }
-Object.assign(window, { loadAutomationPage, loadAutoHolidays, loadAutoLeads, loadAutoDelivery, autoToggleEngine, autoToggleCard, autoCardField, autoInsertVar, autoSaveCard, autoAiCard, autoHolToggle, autoHolAi, autoAddHolidayRow, autoDeleteHolidayRow, autoHolInsertVar, autoSaveHolidays, autoSaveGlobals, autoSaveEmail, autoOpenTemplates, autoAddTemplate, autoDeleteCard });
+Object.assign(window, { loadAutomationPage, loadAutoHolidays, loadAutoLeads, loadAutoDelivery, autoToggleEngine, autoToggleCard, autoCardField, autoInsertVar, autoSaveCard, autoAiCard, autoHolToggle, autoHolAi, autoAddHolidayRow, autoDeleteHolidayRow, autoHolInsertVar, autoSaveHolidays, autoSaveGlobals, autoSaveEmail, autoOpenTemplates, autoAddTemplate, autoDeleteCard, autoAddCustom, autoSubmitCustom, autoAddHolidayModal, autoSubmitHoliday });
 
 // ══ Equity Radar — lease pull-ahead / equity mining (managers) ═══════════════
 let __equity = { radar: [], leases: [], settings: {}, tab: 'radar' };
