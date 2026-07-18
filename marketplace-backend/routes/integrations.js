@@ -3,11 +3,12 @@
  * Dealertrack). Secrets are encrypted at rest (crypto-pii) and NEVER returned to the
  * client — the UI only learns whether a provider is configured/enabled and its status.
  */
-import { supabaseAdmin } from '../shared.js'
+import { supabaseAdmin, FRONTEND_URL } from '../shared.js'
 import { requireAuth } from '../middleware.js'
-import { encryptJson, piiConfigured } from '../crypto-pii.js'
+import { encryptJson, decryptJson, piiConfigured } from '../crypto-pii.js'
 import { emitWebhook, WEBHOOK_EVENTS } from '../webhooks.js'
 import { sendDealerSms, invalidateTwilioCache } from './automation.js'
+import { qboConfigured, qboAuthorizeUrl, signState, verifyState, qboExchangeCode, qboEnsureToken, qboCompanyName } from '../providers/quickbooks.js'
 
 /**
  * The Integrations Hub catalog. Each entry is a connectable service. `live: true`
@@ -20,7 +21,7 @@ const CATALOG = {
   carfax:          { category: 'F&I',         label: 'CARFAX Canada',        live: false, desc: 'Vehicle history reports, liens and valuations pulled natively into the deal.' },
   routeone:        { category: 'F&I',         label: 'RouteOne',             live: false, desc: 'Submit credit applications to lenders and pull decisions.' },
   dealertrack:     { category: 'F&I',         label: 'Dealertrack',          live: false, desc: 'Dealertrack DealTransfer credit submission.' },
-  quickbooks:      { category: 'Accounting',  label: 'QuickBooks Online',    live: false, desc: 'Push sold-deal and F&I income to QuickBooks. Coming soon.' },
+  quickbooks:      { category: 'Accounting',  label: 'QuickBooks Online',    live: false, oauth: true, desc: 'Connect your QuickBooks Online company to sync sold-deal and F&I income.' },
   xero:            { category: 'Accounting',  label: 'Xero',                 live: false, desc: 'Push sold-deal and F&I income to Xero. Coming soon.' },
   google_business: { category: 'Marketing',   label: 'Google Business',      live: false, desc: 'Auto-post inventory and request reviews on your Google Business Profile. Coming soon.' },
   twilio:          { category: 'Messaging',   label: 'Twilio SMS',           live: true,  desc: 'Bring your own Twilio account so automated texts send from your own A2P-registered number.' },
@@ -41,12 +42,15 @@ export function registerIntegrations(app) {
     const list = PROVIDERS.map(p => {
       const r = byProvider[p]
       const meta = CATALOG[p] || {}
+      // QuickBooks flips live once the Intuit app credentials are provisioned.
+      const live = p === 'quickbooks' ? qboConfigured() : !!meta.live
       return {
         provider: p,
         label: meta.label || p,
         category: meta.category || 'Other',
         description: meta.desc || '',
-        live: !!meta.live,
+        live,
+        oauth: !!meta.oauth,
         enabled: !!r?.enabled,
         status: r?.status || 'not_connected',
         configured: !!r?.credentials_enc,             // has a stored secret (never the secret itself)
@@ -81,6 +85,62 @@ export function registerIntegrations(app) {
     if (r.simulated) return res.status(400).json({ error: 'Save and enable your Twilio SID, token, and from-number first.' })
     if (!r.ok) return res.status(400).json({ error: r.error || 'Twilio rejected the message — double-check the SID, token, and from-number.' })
     res.json({ ok: true })
+  })
+
+  // ── QuickBooks Online (Intuit OAuth2) ───────────────────────────────────────
+  // Start the connect flow: returns the Intuit authorize URL for the dealer to open.
+  app.get('/integrations/quickbooks/connect', requireAuth, async (req, res) => {
+    if (!req.dealershipId) return res.status(400).json({ error: 'No dealership' })
+    if (!isMgr(req)) return res.status(403).json({ error: 'Manager access required' })
+    if (!qboConfigured()) return res.status(503).json({ error: 'QuickBooks isn’t enabled on this MarketSync account yet.' })
+    if (!piiConfigured()) return res.status(400).json({ error: 'Set PII_ENCRYPTION_KEY before connecting QuickBooks.' })
+    res.json({ url: qboAuthorizeUrl(signState(req.dealershipId)) })
+  })
+
+  // Intuit redirects the browser back here (no JWT) — the signed `state` proves which
+  // dealership started the flow. Exchange the code, store tokens, bounce to the app.
+  app.get('/integrations/quickbooks/callback', async (req, res) => {
+    const backTo = (ok, msg) => res.redirect(`${FRONTEND_URL}/dashboard.html?qbo=${ok ? 'connected' : 'error'}${msg ? '&qbo_msg=' + encodeURIComponent(msg) : ''}`)
+    try {
+      const { code, state, realmId } = req.query
+      const dealershipId = verifyState(state)
+      if (!dealershipId || !code || !realmId) return backTo(false, 'Link expired — try connecting again.')
+      const creds = await qboExchangeCode(String(code))
+      await supabaseAdmin.from('dealer_integrations').upsert({
+        dealership_id: dealershipId, provider: 'quickbooks',
+        enabled: true, status: 'connected',
+        credentials_enc: encryptJson(creds),
+        lender_code_map: { realm_id: String(realmId), connected_at: new Date().toISOString() },
+        last_status_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+      }, { onConflict: 'dealership_id,provider' })
+      backTo(true)
+    } catch (e) {
+      console.error('[quickbooks] callback failed:', e.message)
+      backTo(false, e.message)
+    }
+  })
+
+  // Verify the connection by naming the linked QuickBooks company. Refreshes + persists
+  // a rotated token when the access token has expired.
+  app.post('/integrations/quickbooks/test', requireAuth, async (req, res) => {
+    if (!req.dealershipId) return res.status(400).json({ error: 'No dealership' })
+    if (!isMgr(req)) return res.status(403).json({ error: 'Manager access required' })
+    const { data: row } = await supabaseAdmin.from('dealer_integrations')
+      .select('credentials_enc, lender_code_map').eq('dealership_id', req.dealershipId).eq('provider', 'quickbooks').maybeSingle()
+    if (!row?.credentials_enc || !row.lender_code_map?.realm_id) return res.status(400).json({ error: 'Connect QuickBooks first.' })
+    try {
+      let creds = decryptJson(row.credentials_enc)
+      const ensured = await qboEnsureToken(creds)
+      if (ensured.refreshed) {
+        creds = ensured.creds
+        await supabaseAdmin.from('dealer_integrations').update({ credentials_enc: encryptJson(creds), updated_at: new Date().toISOString() })
+          .eq('dealership_id', req.dealershipId).eq('provider', 'quickbooks')
+      }
+      const name = await qboCompanyName({ accessToken: creds.access_token, realmId: row.lender_code_map.realm_id })
+      res.json({ ok: true, company: name || 'your QuickBooks company' })
+    } catch (e) {
+      res.status(400).json({ error: e.message || 'QuickBooks check failed — try reconnecting.' })
+    }
   })
 
   // Create/update a provider's config. Only overwrites the secret when new

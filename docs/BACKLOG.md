@@ -14,8 +14,15 @@ _Last updated: 2026-07-17_
   Events emitted: `lead.created` (lead-routing), `deal.sold` / `deal.delivered`
   (`/reports/deal/status`), `appointment.booked` (CRM status → appointment). Signed as
   `X-MarketSync-Signature: sha256=…` when a secret is set. Fire-and-forget, never blocks a request.
-- Catalog surfaces QuickBooks, Xero, Google Business as **coming-soon** cards
-  (credential store + provider abstraction ready; flip on when certified).
+- **QuickBooks Online — connector built (Intuit OAuth2).** Real authorization-code
+  flow: Settings → Integrations → Connect QuickBooks → Intuit consent → tokens stored
+  encrypted per dealer, auto-refreshed; "Test connection" names the linked company.
+  Inert until MarketSync provisions its Intuit app — one ops step (see below).
+- Catalog surfaces Xero, Google Business as **coming-soon** cards (same OAuth pattern
+  as QuickBooks will slot in; provider files to follow).
+- Follow-up: **push sold-deal + F&I income into QuickBooks** on deal.delivered
+  (create a SalesReceipt/Invoice). Needs per-dealer account/item mapping in QBO — the
+  connector + token plumbing are done; this is the actual sync layer.
 - **Twilio SMS — LIVE (bring-your-own account).** A dealer stores their own Twilio
   SID + token (encrypted) and from-number; when connected, every automated text sends
   from their own A2P-registered number instead of the shared MarketSync number.
@@ -41,6 +48,10 @@ These are done in code + DB but need one-time ops before they run in production:
       `marketplace-backend/migrations/` for the record.)
 - [ ] Extension **v1.16.10** Chrome Web Store repackage (recurring, user-side).
 - [ ] `SITEMAP_LITE_SYNC=1` on Render (feed validation).
+- [ ] **QuickBooks Online:** register one Intuit app, then set `QBO_CLIENT_ID`,
+      `QBO_CLIENT_SECRET`, `QBO_ENV=production` on Render. Add the redirect URI
+      `{API_URL}/integrations/quickbooks/callback` in the Intuit app. The connector
+      shows "coming soon" until these are set, then flips to a live "Connect" button.
 
 ---
 

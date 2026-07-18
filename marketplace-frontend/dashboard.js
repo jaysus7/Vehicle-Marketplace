@@ -5326,7 +5326,7 @@ function renderIntegrations(data) {
   host.innerHTML = cats.map(cat => `
     <div class="mb-5">
       <h3 class="text-xs font-bold uppercase tracking-wide text-slate-400 dark:text-slate-500 mb-2">${esc(cat)}</h3>
-      <div class="space-y-3">${byCat[cat].map(p => p.provider === 'webhook' ? webhookCard(p, events) : p.provider === 'twilio' ? twilioCard(p) : providerCard(p)).join('')}</div>
+      <div class="space-y-3">${byCat[cat].map(p => p.provider === 'webhook' ? webhookCard(p, events) : p.provider === 'twilio' ? twilioCard(p) : (p.oauth && p.live) ? oauthCard(p) : providerCard(p)).join('')}</div>
     </div>`).join('');
   if (!data.pii_ready) {
     host.insertAdjacentHTML('afterbegin', `<div class="mb-4 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 px-4 py-2.5 text-xs text-amber-700 dark:text-amber-300">Encryption key not set — signing secrets and credentials can't be stored until <code>PII_ENCRYPTION_KEY</code> is configured on the server.</div>`);
@@ -5489,6 +5489,49 @@ async function disconnectTwilio(btn) {
   try { await apiSendJson('/integrations/twilio', 'DELETE'); showToast('Twilio disconnected', 'success'); loadIntegrations(); }
   catch (e) { btn.disabled = false; showToast(e.message || 'Could not disconnect', 'error'); }
 }
+// OAuth connector card (QuickBooks). "Connect" bounces to the provider's consent
+// screen; once linked we show the company + Test / Disconnect.
+function oauthCard(p) {
+  const connected = p.configured && p.enabled;
+  const realm = p.lender_code_map || {};
+  return `<div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-4">
+    <div class="flex items-start justify-between gap-3">
+      <div>
+        <div class="flex items-center gap-2"><span class="font-bold text-sm text-slate-900 dark:text-white">${esc(p.label)}</span>${statusPill(p)}</div>
+        <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">${esc(p.description)}</p>
+        ${connected && realm.connected_at ? `<p class="text-[11px] text-slate-400 mt-1">Connected ${new Date(realm.connected_at).toLocaleDateString()}.</p>` : ''}
+      </div>
+    </div>
+    <div class="flex items-center gap-2 mt-3">
+      ${connected
+        ? `<button onclick="testQuickbooks(this)" class="bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-sm font-bold px-4 py-2 rounded-lg transition">Test connection</button>
+           <button onclick="disconnectQuickbooks(this)" class="ml-auto text-xs text-rose-500 hover:text-rose-400 font-semibold">Disconnect</button>`
+        : `<button onclick="connectQuickbooks(this)" class="bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-bold px-4 py-2 rounded-lg transition">Connect QuickBooks</button>`}
+    </div>
+  </div>`;
+}
+async function connectQuickbooks(btn) {
+  const orig = btn.textContent; btn.disabled = true; btn.textContent = 'Opening…';
+  try {
+    const d = await apiGetJson('/integrations/quickbooks/connect', { retries: 1 });
+    if (d.url) { window.location.href = d.url; return; }   // full-page redirect into Intuit consent
+    throw new Error('Could not start the connection.');
+  } catch (e) { btn.disabled = false; btn.textContent = orig; showToast(e.message || 'Could not connect', 'error'); }
+}
+async function testQuickbooks(btn) {
+  const orig = btn.textContent; btn.disabled = true; btn.textContent = 'Checking…';
+  try {
+    const d = await apiSendJson('/integrations/quickbooks/test', 'POST', {});
+    btn.textContent = 'Connected ✓'; showToast('Linked to ' + (d.company || 'QuickBooks'), 'success');
+  } catch (e) { showToast(e.message || 'QuickBooks check failed', 'error'); }
+  setTimeout(() => { btn.disabled = false; btn.textContent = orig; }, 1400);
+}
+async function disconnectQuickbooks(btn) {
+  if (!confirm('Disconnect QuickBooks? MarketSync will stop syncing to your company file.')) return;
+  btn.disabled = true;
+  try { await apiSendJson('/integrations/quickbooks', 'DELETE'); showToast('QuickBooks disconnected', 'success'); loadIntegrations(); }
+  catch (e) { btn.disabled = false; showToast(e.message || 'Could not disconnect', 'error'); }
+}
 window.loadIntegrations = loadIntegrations;
 window.saveWebhook = saveWebhook;
 window.testWebhook = testWebhook;
@@ -5496,6 +5539,9 @@ window.disconnectWebhook = disconnectWebhook;
 window.saveTwilio = saveTwilio;
 window.testTwilio = testTwilio;
 window.disconnectTwilio = disconnectTwilio;
+window.connectQuickbooks = connectQuickbooks;
+window.testQuickbooks = testQuickbooks;
+window.disconnectQuickbooks = disconnectQuickbooks;
 
 // ── Dealer details for documents (Settings › Dealer Management) ──────────────
 // Same legal identifiers the desk uses on the bill of sale — edited here anytime.
@@ -13746,6 +13792,22 @@ async function startVinStickerTrial() {
       switchPage('vin-sticker');
     }
   } catch {}
+})();
+
+// Handle return from the QuickBooks (Intuit) OAuth consent screen.
+(() => {
+  const params = new URLSearchParams(window.location.search);
+  const qbo = params.get('qbo');
+  if (!qbo) return;
+  const msg = params.get('qbo_msg');
+  history.replaceState({}, '', window.location.pathname);
+  const show = () => {
+    if (typeof showToast !== 'function') { setTimeout(show, 400); return; }
+    if (qbo === 'connected') showToast('QuickBooks connected ✓', 'success');
+    else showToast(msg || 'QuickBooks connection failed', 'error');
+    if (typeof switchPage === 'function') { switchPage('profile'); setTimeout(() => { if (typeof settingsTab === 'function') settingsTab('integrations'); }, 250); }
+  };
+  show();
 })();
 
 // Handle return from Stripe Checkout for Inventory Intelligence
