@@ -255,6 +255,10 @@ function siteContent(d) {
     accent_color: b.accent_color || null,
     // AI sales concierge chat bubble on the public site (dealer opt-in).
     sales_chat: !!b.site_sales_chat,
+    // AI concierge tuning: dealer knowledge base, custom instructions, disclaimer.
+    chat_kb: b.site_chat_kb || null,
+    chat_instructions: b.site_chat_instructions || null,
+    chat_disclaimer: b.site_chat_disclaimer || null,
   }
 }
 
@@ -523,13 +527,24 @@ export function registerSite(app) {
       `Financing available: ${can('finance') ? 'yes' : 'ask'}. Trade-in appraisals: ${can('trade') ? 'yes' : 'ask'}.`,
     ].filter(Boolean).join('\n')
 
+    const kb = String(b.site_chat_kb || '').trim().slice(0, 12000)
+    const instr = String(b.site_chat_instructions || '').trim().slice(0, 4000)
+    const disclaimer = String(b.site_chat_disclaimer || '').trim().slice(0, 600)
     const system = `You are the friendly online sales concierge for ${d.name}, a car dealership${loc ? ` in ${loc}` : ''}. Help shoppers find a vehicle, answer questions about the inventory below, and guide them toward the next step: booking a test drive, getting pre-approved for financing, or valuing their trade. Be warm, concise (2–4 sentences), and never pushy.
 
 RULES:
 - Only discuss vehicles from the INVENTORY list. Never invent stock, prices, VINs, or specs. If something isn't listed, say you'll have an advisor confirm and offer to take their info.
 - Quote prices exactly as listed; if a unit shows "call for price", invite them to enquire.
 - When the shopper shows buying intent (a specific vehicle, financing, a test drive, a trade value), invite them to leave their name and phone/email so a product advisor can follow up, and end that message with the token [CAPTURE].
-- Keep it about ${d.name}. Don't mention other dealers or that you are an AI model. Today: ${new Date().toISOString().slice(0, 10)}.
+- Keep it about ${d.name}. Don't mention other dealers or that you are an AI model. Today: ${new Date().toISOString().slice(0, 10)}.${instr ? `
+
+DEALER INSTRUCTIONS (how this dealership wants you to answer — follow these, but never break the RULES above):
+${instr}` : ''}${kb ? `
+
+DEALER KNOWLEDGE BASE (dealer-provided facts about this store — policies, financing, warranty, hours, staff, FAQs. Prefer these answers over guessing; if something isn't here or in inventory, offer to have an advisor confirm):
+${kb}` : ''}${disclaimer ? `
+
+DISCLAIMER: If the shopper asks about pricing accuracy, availability guarantees, legal/financing terms, or when you're unsure, include this dealer disclaimer naturally: "${disclaimer}"` : ''}
 
 DEALERSHIP FACTS:
 ${facts}
@@ -613,12 +628,15 @@ ${lines || '(no vehicles listed right now)'}`
 
     // Merge site content into the shared branding jsonb (don't wipe sticker fields).
     const contentKeys = ['tagline', 'about', 'hours', 'phone', 'email', 'address', 'hero_url', 'primary_color', 'secondary_color', 'accent_color', 'facebook_url', 'instagram_url', 'typography', 'heading_font', 'body_font', 'hero_photos', 'seo_title', 'seo_description', 'seo_keywords', 'seo_image']
-    const touchesContent = contentKeys.some(k => b[k] !== undefined) || b.head_html !== undefined || b.widgets !== undefined || b.pages !== undefined || b.sections !== undefined || b.staff !== undefined || b.build_makes !== undefined || b.builtins !== undefined || b.menu_order !== undefined || b.sales_chat !== undefined
+    const touchesContent = contentKeys.some(k => b[k] !== undefined) || b.head_html !== undefined || b.widgets !== undefined || b.pages !== undefined || b.sections !== undefined || b.staff !== undefined || b.build_makes !== undefined || b.builtins !== undefined || b.menu_order !== undefined || b.sales_chat !== undefined || b.chat_kb !== undefined || b.chat_instructions !== undefined || b.chat_disclaimer !== undefined
     if (touchesContent) {
       const { data: cur } = await supabaseAdmin.from('dealerships').select('branding').eq('id', req.dealershipId).single()
       const branding = { ...(cur?.branding || {}) }
       for (const k of contentKeys) if (b[k] !== undefined) branding[k] = b[k] === '' ? null : b[k]
       if (b.sales_chat !== undefined) branding.site_sales_chat = !!b.sales_chat
+      if (b.chat_kb !== undefined) branding.site_chat_kb = String(b.chat_kb || '').slice(0, 12000) || null
+      if (b.chat_instructions !== undefined) branding.site_chat_instructions = String(b.chat_instructions || '').slice(0, 4000) || null
+      if (b.chat_disclaimer !== undefined) branding.site_chat_disclaimer = String(b.chat_disclaimer || '').slice(0, 600) || null
       if (b.head_html !== undefined) branding.site_head_html = String(b.head_html || '').slice(0, 20000) || null
       if (b.widgets !== undefined) branding.site_widgets = cleanWidgets(b.widgets)
       if (b.pages !== undefined) branding.site_pages = cleanPages(b.pages)

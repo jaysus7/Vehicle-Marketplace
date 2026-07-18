@@ -8765,6 +8765,29 @@ function siteSettingsFields(cfg) {
         </div>
         <label class="flex items-center gap-2 text-sm font-bold whitespace-nowrap"><input id="site-sales-chat" type="checkbox" ${c.sales_chat ? 'checked' : ''} class="accent-indigo-600 w-4 h-4">Enabled</label>
       </div>
+      <div class="mt-4 pt-4 border-t border-slate-200 dark:border-slate-800 space-y-4">
+        <div>
+          <div class="flex items-center justify-between gap-2 mb-1">
+            ${lbl('Knowledge base — facts the concierge can answer from')}
+            <div class="flex items-center gap-2">
+              <input id="site-chat-kb-file" type="file" accept=".txt,.md,.csv,text/plain" class="hidden" onchange="loadChatKbFile(this.files[0])">
+              <button type="button" onclick="document.getElementById('site-chat-kb-file').click()" class="text-[11px] font-bold text-indigo-600 dark:text-indigo-400 hover:text-indigo-500">⬆ Upload .txt/.md</button>
+            </div>
+          </div>
+          <p class="text-[11px] text-slate-400 dark:text-slate-500 mb-1.5">Store policies, financing &amp; warranty details, hours, staff, FAQs — anything a shopper might ask that isn't in your vehicle listings. The AI prefers these answers and won't invent facts. Up to ~12,000 characters.</p>
+          ${ta('site-chat-kb', c.chat_kb, 'e.g. We offer in-house financing for all credit types. Service department open Mon–Sat 7:30–5. 30-day powertrain warranty on all used vehicles. Free CarFax on request. Ask for Jason for fleet pricing.', 6)}
+        </div>
+        <div>
+          ${lbl('Special instructions — how you want the AI to answer')}
+          <p class="text-[11px] text-slate-400 dark:text-slate-500 mb-1.5">Tone, style, what to emphasize or avoid, which vehicles to push, when to hand off to a person. These guide the AI but can never override its core rules (it stays honest about your real inventory).</p>
+          ${ta('site-chat-instructions', c.chat_instructions, 'e.g. Be enthusiastic but low-pressure. Always mention we buy trades even if the customer doesn\'t buy. Push our certified pre-owned units first. If asked about a vehicle we don\'t have, suggest booking an appointment.', 4)}
+        </div>
+        <div>
+          ${lbl('Disclaimer — shown when pricing/terms come up')}
+          <p class="text-[11px] text-slate-400 dark:text-slate-500 mb-1.5">A short line the AI works in when a shopper asks about pricing accuracy, availability, or financing terms. Up to ~600 characters.</p>
+          ${ta('site-chat-disclaimer', c.chat_disclaimer, 'e.g. Prices shown do not include taxes, licensing, or dealer fees and are subject to change. Availability is not guaranteed until confirmed by an advisor.', 2)}
+        </div>
+      </div>
     </div>
     <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-5">
       <h2 class="text-lg font-bold text-slate-900 dark:text-white">Widgets &amp; integrations</h2>
@@ -8817,6 +8840,18 @@ async function uploadSiteImage(targetId, file) {
     const el = document.getElementById(targetId); if (el) el.value = d.url;
     showToast('Image uploaded', 'success');
   } catch (e) { showToast(e.message, 'error'); }
+}
+// Read an uploaded .txt/.md file into the AI chat knowledge-base box (client-side, no upload).
+async function loadChatKbFile(file) {
+  if (!file) return;
+  if (file.size > 2 * 1024 * 1024) { showToast('File too large — keep it under 2 MB of text.', 'error'); return; }
+  try {
+    const text = (await file.text() || '').slice(0, 12000);
+    const el = document.getElementById('site-chat-kb'); if (!el) return;
+    el.value = el.value.trim() ? (el.value.trim() + '\n\n' + text) : text;
+    if (el.value.length > 12000) el.value = el.value.slice(0, 12000);
+    showToast('Loaded — review, then Save', 'success');
+  } catch (e) { showToast('Could not read that file.', 'error'); }
 }
 let __sitePages = [];
 // Built-in pages that ship with every site — dealer can rename or switch off.
@@ -9143,6 +9178,9 @@ async function saveSite(btn) {
     seo_title: val('seo-title'), seo_description: val('seo-desc'), seo_keywords: val('seo-keywords'), seo_image: val('seo-image'),
     head_html: document.getElementById('site-head')?.value || '',
     sales_chat: document.getElementById('site-sales-chat')?.checked || false,
+    chat_kb: document.getElementById('site-chat-kb')?.value || '',
+    chat_instructions: document.getElementById('site-chat-instructions')?.value || '',
+    chat_disclaimer: document.getElementById('site-chat-disclaimer')?.value || '',
     widgets: __siteWidgets.filter(w => (w.html || '').trim()),
   };
   if (document.getElementById('bm-wrap')) body.build_makes = Array.from(document.querySelectorAll('.bm-check:checked')).map(el => el.value);
