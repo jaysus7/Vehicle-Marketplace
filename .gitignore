@@ -9,9 +9,3 @@ test.http
 commit_signing_key
 commit_signing_key.pub
 .claude/worktrees/
-<<<<<<< Updated upstream
-commit_signing_key
-commit_signing_key.pub
-.claude/worktrees/
-=======
->>>>>>> Stashed changes

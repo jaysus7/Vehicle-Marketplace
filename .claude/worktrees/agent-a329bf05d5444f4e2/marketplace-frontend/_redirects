@@ -1,7 +1,0 @@
-# Proxy the dynamic blog sitemap from the backend so it appears under marketsync.link.
-# Render rewrites 200 rules transparently — the client never sees a redirect.
-/blog-sitemap.xml  https://vehicle-marketplace-s0e4.onrender.com/blog-sitemap.xml  200
-
-# Proxy server-rendered blog post pages for crawlers that don't execute JavaScript.
-# The backend /ssr/blog/:slug route returns a full HTML document with all SEO metadata.
-/blog/:slug  https://vehicle-marketplace-s0e4.onrender.com/ssr/blog/:slug  200
