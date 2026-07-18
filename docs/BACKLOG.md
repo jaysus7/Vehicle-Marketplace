@@ -3,36 +3,7 @@
 Running list of things discussed or recommended that are **not yet built**, so nothing
 falls through the cracks. Grouped by theme, roughly in priority order.
 
-_Last updated: 2026-07-17_
-
-## ✅ Phase 2 (Integrations — "the glue") — shipped this round
-
-- **Integrations Hub** (Settings → Integrations, admin-only) — lists every connectable
-  service grouped by category, live vs. coming-soon.
-- **Outbound Webhooks / Zapier** (live now): dealer pastes an endpoint URL + optional
-  HMAC signing secret and picks which events to send. "Send test" fires a `test.ping`.
-  Events emitted: `lead.created` (lead-routing), `deal.sold` / `deal.delivered`
-  (`/reports/deal/status`), `appointment.booked` (CRM status → appointment). Signed as
-  `X-MarketSync-Signature: sha256=…` when a secret is set. Fire-and-forget, never blocks a request.
-- **QuickBooks Online — connector built (Intuit OAuth2).** Real authorization-code
-  flow: Settings → Integrations → Connect QuickBooks → Intuit consent → tokens stored
-  encrypted per dealer, auto-refreshed; "Test connection" names the linked company.
-  Inert until MarketSync provisions its Intuit app — one ops step (see below).
-- **Xero + Google Business — connectors built** on a shared generic OAuth2 engine
-  (`providers/oauth.js`): Connect → provider consent → encrypted per-dealer tokens,
-  auto-refreshed; "Test connection" names the linked org/account. Xero also captures
-  the tenant via /connections. Inert until their app credentials are provisioned.
-- **Integrations Hub polished:** connected/available summary, category sections with
-  blurbs, per-provider icons, live-first ordering, unified Connected/Available/Coming-
-  soon states across webhook, Twilio, and all OAuth connectors.
-- Follow-up: **push sold-deal + F&I income into QuickBooks** on deal.delivered
-  (create a SalesReceipt/Invoice). Needs per-dealer account/item mapping in QBO — the
-  connector + token plumbing are done; this is the actual sync layer.
-- **Twilio SMS — LIVE (bring-your-own account).** A dealer stores their own Twilio
-  SID + token (encrypted) and from-number; when connected, every automated text sends
-  from their own A2P-registered number instead of the shared MarketSync number.
-  "Send test text" sends a real SMS. Falls back to the shared env-var Twilio when not
-  connected. Creds cached 60s per dealership, invalidated on save/disconnect.
+_Last updated: 2026-07-19_
 
 ---
 
@@ -54,15 +25,11 @@ These are done in code + DB but need one-time ops before they run in production:
 - [ ] Extension **v1.16.10** Chrome Web Store repackage (recurring, user-side).
 - [ ] `SITEMAP_LITE_SYNC=1` on Render (feed validation).
 - [ ] **OAuth connectors — one ops step each** (they show "coming soon" until set,
-      then flip to a live "Connect" button). Register one app per provider and set:
-      - **QuickBooks:** `QBO_CLIENT_ID`, `QBO_CLIENT_SECRET`, `QBO_ENV=production`.
-        Redirect URI: `{API_URL}/integrations/quickbooks/callback`.
-      - **Xero:** `XERO_CLIENT_ID`, `XERO_CLIENT_SECRET`.
-        Redirect URI: `{API_URL}/integrations/xero/callback`.
-      - **Google Business:** `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`.
-        Redirect URI: `{API_URL}/integrations/google_business/callback`.
-      - Optional `OAUTH_STATE_SECRET` (defaults to the service-role key) signs the
-        OAuth state.
+      then flip to a live "Connect" button). Register one app per provider and set: - **QuickBooks:** `QBO_CLIENT_ID`, `QBO_CLIENT_SECRET`, `QBO_ENV=production`.
+      Redirect URI: `{API_URL}/integrations/quickbooks/callback`. - **Xero:** `XERO_CLIENT_ID`, `XERO_CLIENT_SECRET`.
+      Redirect URI: `{API_URL}/integrations/xero/callback`. - **Google Business:** `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`.
+      Redirect URI: `{API_URL}/integrations/google_business/callback`. - Optional `OAUTH_STATE_SECRET` (defaults to the service-role key) signs the
+      OAuth state.
 
 ---
 
@@ -120,6 +87,7 @@ recent trade appraisals** — all from the store's own data, manager-gated on th
 financial slices. The base snapshot also carries a month-to-date sales pulse.
 
 Still to deepen:
+
 - [ ] Which cars should I discount today? / wholesale / send to auction (needs the
       market-comp layer joined per-unit into the report, not just aging).
 - [ ] Why did leads drop this month? (period-over-period trend, not just current counts)

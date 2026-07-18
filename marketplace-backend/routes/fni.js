@@ -5,7 +5,6 @@
 import { supabaseAdmin } from '../shared.js'
 import { requireAuth } from '../middleware.js'
 import { sendEmail } from '../securityAlerts.js'
-import { ensureGetReadyCard } from './recon.js'
 
 const MGR = ['DEALER_ADMIN', 'OWNER', 'MANAGER']
 const isMgr = (req) => MGR.includes(req.profile?.role)
@@ -293,6 +292,8 @@ export function registerFni(app) {
       .eq('id', deal.inventory_id).eq('dealership_id', req.dealershipId)
     if (deal.contact_id) await supabaseAdmin.from('contacts').update({ status: 'delivered', updated_at: now })
       .eq('id', deal.contact_id).eq('dealership_id', req.dealershipId)
+    emitWebhook(req.dealershipId, 'deal.delivered', { deal_id: deal.id, contact_id: deal.contact_id || null, inventory_id: deal.inventory_id || null, at: now })
+    syncDealToAccounting(req.dealershipId, deal.id)   // book to QuickBooks/Xero if opted in
     res.json({ ok: true })
   })
 

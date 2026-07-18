@@ -6,3 +6,12 @@ node_modules
 .env.*
 test.http
 *.log
+commit_signing_key
+commit_signing_key.pub
+.claude/worktrees/
+<<<<<<< Updated upstream
+commit_signing_key
+commit_signing_key.pub
+.claude/worktrees/
+=======
+>>>>>>> Stashed changes

@@ -14,6 +14,63 @@ function requireBlogKey(req, res) {
   return true
 }
 
+// --- Duplicate-content guard ------------------------------------------------
+// The daily n8n job publishes one post per run. If its topic source repeats
+// (e.g. the same "Ready" row is pulled again), we end up with several
+// near-identical posts fighting for the same keyword — classic SEO
+// cannibalization that suppresses the whole blog. This rejects a new post that
+// is too similar to a recent one. Re-publishing the SAME slug (an edit) is
+// always allowed; send header `x-blog-force: 1` to override for a genuine
+// exception. Tunable via BLOG_DUP_THRESHOLD (0–1) and BLOG_DUP_WINDOW_DAYS.
+const DUP_STOP = new Set(('a an the and or but for to of in on at by with your you our we us it its this that ' +
+  'how why what when where which who guide guides tip tips best top ways way using use make made get new ' +
+  'marketsync dealer dealers dealership dealerships').split(/\s+/))
+
+// Significant-word token set from the title + slug combined. The slug strips
+// marketing fluff down to the keyword core, so pairing it with the title
+// exposes topic overlap that the title alone (with words like "Unlock",
+// "Seamless") would hide.
+function postTokens(slug, title) {
+  const set = new Set()
+  const add = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9\s]/g, ' ').split(/\s+/)
+    .forEach(w => { if (w.length > 2 && !DUP_STOP.has(w)) set.add(w) })
+  add(title)
+  add(String(slug).replace(/-/g, ' '))
+  return set
+}
+
+function jaccard(a, b) {
+  if (!a.size || !b.size) return 0
+  let inter = 0
+  for (const t of a) if (b.has(t)) inter++
+  return inter / (a.size + b.size - inter)
+}
+
+// Returns the most-similar recent post at/above the threshold, or null.
+async function findNearDuplicate(slug, title) {
+  const threshold = Math.min(Math.max(parseFloat(process.env.BLOG_DUP_THRESHOLD) || 0.35, 0), 1)
+  const windowDays = parseInt(process.env.BLOG_DUP_WINDOW_DAYS) || 45
+  const since = new Date(Date.now() - windowDays * 86400000).toISOString()
+  const { data: recent, error } = await supabaseAdmin
+    .from('blog_posts')
+    .select('slug, title, published_at')
+    .eq('status', 'published')
+    .gte('published_at', since)
+    .order('published_at', { ascending: false })
+    .limit(100)
+  if (error) return null // never block publishing on a lookup failure
+  const newTokens = postTokens(slug, title)
+  let worst = null
+  for (const p of (recent || [])) {
+    if (p.slug === slug) continue // same slug = intentional update, allow it
+    const sim = jaccard(newTokens, postTokens(p.slug, p.title))
+    if (sim >= threshold && (!worst || sim > worst.sim)) {
+      worst = { sim, title: p.title, slug: p.slug, published_at: p.published_at }
+    }
+  }
+  return worst ? { ...worst, threshold } : null
+}
+
 export function registerRoutes(app) {
   // List published posts (newest first). Lightweight — no full body.
   app.get('/blog', async (req, res) => {
@@ -52,6 +109,21 @@ export function registerRoutes(app) {
 
     const slug = slugify(b.slug || title)
     if (!slug) return res.status(400).json({ error: 'Could not derive a slug from the title' })
+
+    // Block near-duplicate topics (SEO cannibalization) unless explicitly forced.
+    const force = /^(1|true|yes)$/i.test(req.get('x-blog-force') || b.force || '')
+    if (!force) {
+      const dup = await findNearDuplicate(slug, title)
+      if (dup) {
+        return res.status(409).json({
+          error: 'Near-duplicate post rejected to avoid SEO keyword cannibalization.',
+          similarity: Math.round(dup.sim * 100) / 100,
+          threshold: dup.threshold,
+          conflicts_with: { slug: dup.slug, title: dup.title, published_at: dup.published_at },
+          hint: 'Pick a distinct topic/angle, or resend with header "x-blog-force: 1" to publish anyway.'
+        })
+      }
+    }
 
     const row = {
       slug,

@@ -126,3 +126,24 @@ export async function oauthEnsureToken(p, creds) {
 }
 export async function oauthAfterToken(p, creds) { const c = REG[p]; return c.afterToken ? c.afterToken(creds) : {} }
 export async function oauthTest(p, creds, cfg) { const c = REG[p]; return c.test ? c.test(creds, cfg) : 'Connected' }
+
+// Book a sold/delivered deal as a Xero ACCREC invoice. Returns the InvoiceID.
+// AccountCode 200 is Xero's default "Sales" revenue account.
+export async function xeroCreateInvoice({ customerName, amount, memo }, { accessToken, tenantId }) {
+  if (!tenantId) throw new Error('Xero organisation not linked — reconnect.')
+  if (!(Number(amount) > 0)) throw new Error('Deal total must be greater than zero to sync.')
+  const r = await fetch('https://api.xero.com/api.xro/2.0/Invoices', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}`, 'Xero-tenant-id': tenantId, Accept: 'application/json', 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      Type: 'ACCREC',
+      Contact: { Name: String(customerName || 'Customer').slice(0, 255) },
+      LineItems: [{ Description: (memo || 'Vehicle sale').slice(0, 4000), Quantity: 1, UnitAmount: Math.round(Number(amount) * 100) / 100, AccountCode: '200' }],
+      Status: 'AUTHORISED',
+    }),
+    signal: AbortSignal.timeout(15000),
+  })
+  const j = await r.json().catch(() => ({}))
+  if (!r.ok) throw new Error(j?.Elements?.[0]?.ValidationErrors?.[0]?.Message || j?.Message || `Xero API error ${r.status}`)
+  return j?.Invoices?.[0]?.InvoiceID || null
+}
