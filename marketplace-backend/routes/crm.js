@@ -1,6 +1,7 @@
 import { supabaseAdmin, resend, EMAIL_FROM } from '../shared.js'
 import { requireAuth } from '../middleware.js'
 import { enqueueForTrigger, markDelivered, freezeSequences } from './automation.js'
+import { emitWebhook } from '../webhooks.js'
 import multer from 'multer'
 
 // CRM attachments: photos, videos and files reps attach to a customer. In-memory,
@@ -307,7 +308,7 @@ export function registerCrm(app) {
     if (patch.status && patch.status !== before?.status) {
       const vehicleId = data.interest_inventory_id || null
       if (patch.status === 'delivered') markDelivered(req.dealershipId, data.id, vehicleId, data.assigned_rep)
-      else if (patch.status === 'appointment') enqueueForTrigger(req.dealershipId, 'appointment_booked', { contactId: data.id, vehicleId, repId: data.assigned_rep })
+      else if (patch.status === 'appointment') { enqueueForTrigger(req.dealershipId, 'appointment_booked', { contactId: data.id, vehicleId, repId: data.assigned_rep }); emitWebhook(req.dealershipId, 'appointment.booked', { contact_id: data.id, vehicle_id: vehicleId, assigned_to: data.assigned_rep || null }) }
       else if (patch.status === 'followup') ensureFollowupTask(req.dealershipId, data, req.user.id)
     }
     res.json({ ok: true, contact: data })

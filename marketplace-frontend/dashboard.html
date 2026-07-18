@@ -730,7 +730,19 @@
           <button data-stab="aiboost" data-admin-only onclick="settingsTab('aiboost')" class="stab-btn whitespace-nowrap px-3.5 py-2 text-sm font-bold border-b-2 border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 transition">AI Boost</button>
           <button data-stab="group" data-admin-only onclick="settingsTab('group')" class="stab-btn whitespace-nowrap px-3.5 py-2 text-sm font-bold border-b-2 border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 transition">Dealer Group</button>
           <button data-stab="dealermgmt" data-admin-only onclick="settingsTab('dealermgmt')" class="stab-btn whitespace-nowrap px-3.5 py-2 text-sm font-bold border-b-2 border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 transition">Dealer Management</button>
+          <button data-stab="integrations" data-admin-only onclick="settingsTab('integrations')" class="stab-btn whitespace-nowrap px-3.5 py-2 text-sm font-bold border-b-2 border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 transition">Integrations</button>
           <button data-stab="security" onclick="settingsTab('security')" class="stab-btn whitespace-nowrap px-3.5 py-2 text-sm font-bold border-b-2 border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 transition">Security</button>
+        </div>
+
+        <!-- Integrations Hub — connect MarketSync to the rest of the dealership stack.
+             Webhooks are our own outbound "glue" (live today); the F&I / accounting
+             rails show as coming-soon until we're certified with the partner. -->
+        <div id="integrations-section" data-admin-only class="stab-hide space-y-4">
+          <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-5">
+            <h2 class="text-lg font-bold text-slate-900 dark:text-white">Integrations</h2>
+            <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Connect MarketSync to the tools you already use. Send events out to Zapier, Make, or your own app — and plug in the F&amp;I and accounting rails as they come online.</p>
+          </div>
+          <div id="integrations-list"><div class="py-10 text-center text-sm text-slate-400 italic">Loading…</div></div>
         </div>
 
         <!-- Team — Sales/Management are login users; Service/Admin/Cleanup/Lot are label rosters -->
@@ -2785,7 +2797,7 @@
     </div>
   </div>
 
-  <script src="dashboard.js?v=20260717n"></script>
+  <script src="dashboard.js?v=20260717o"></script>
   <!-- Google Translate widget (per-rep dashboard translation) -->
   <script>
     window.googleTranslateElementInit = function () {

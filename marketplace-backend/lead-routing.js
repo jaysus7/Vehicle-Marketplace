@@ -9,6 +9,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import { supabaseAdmin } from './shared.js'
 import { createNotifications } from './notifications.js'
+import { emitWebhook } from './webhooks.js'
 
 const MANAGER_ROLES = ['OWNER', 'DEALER_ADMIN', 'MANAGER']
 const pickRandom = (arr) => (arr.length ? arr[Math.floor(Math.random() * arr.length)] : null)
@@ -92,6 +93,12 @@ export async function routeAndNotifyLead(dealershipId, { contactId, vehicleId, n
         })
       }
     } catch (e) { console.warn('[lead-routing] task create failed:', e.message) }
+
+    // 8. Fire the outbound webhook so external tools (Zapier/Make/CRM) hear about it.
+    emitWebhook(dealershipId, 'lead.created', {
+      contact_id: contactId, vehicle_id: vehicleId || null, name: name || null,
+      source: source || null, lead_type: leadType, assigned_to: assignee?.id || null,
+    })
 
     return { assignee: assignee?.id || null, leadType, notified: rows.length }
   } catch (e) { console.warn('[lead-routing] failed:', e.message); return null }

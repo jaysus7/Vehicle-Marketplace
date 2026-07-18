@@ -1,5 +1,6 @@
 import { supabaseAdmin } from '../shared.js'
 import { requireAuth } from '../middleware.js'
+import { emitWebhook } from '../webhooks.js'
 
 async function buildUserStats(userId) {
   const countOf = async (status) => {
@@ -1368,6 +1369,12 @@ export function registerRoutes(app) {
       if (m.inv === 'sold') invPatch.sold_at = now
       if (m.inv === 'available') invPatch.sold_at = null
       await supabaseAdmin.from('inventory').update(invPatch).eq('id', deal.inventory_id).eq('dealership_id', req.dealershipId)
+    }
+    // Fire outbound webhooks on the milestone transitions (glue for accounting/Zapier).
+    if (m.deal === 'sold' || m.deal === 'delivered') {
+      emitWebhook(req.dealershipId, m.deal === 'delivered' ? 'deal.delivered' : 'deal.sold', {
+        deal_id: deal.id, contact_id: contactId, inventory_id: deal.inventory_id || null, at: now,
+      })
     }
     res.json({ ok: true, deal_status: m.deal, vehicle_status: m.inv })
   })

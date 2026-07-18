@@ -6,8 +6,25 @@
 import { supabaseAdmin } from '../shared.js'
 import { requireAuth } from '../middleware.js'
 import { encryptJson, piiConfigured } from '../crypto-pii.js'
+import { emitWebhook, WEBHOOK_EVENTS } from '../webhooks.js'
 
-const PROVIDERS = ['carfax', 'routeone', 'dealertrack']
+/**
+ * The Integrations Hub catalog. Each entry is a connectable service. `live: true`
+ * means it works today (webhooks are our own outbound "glue" — no partner needed);
+ * `live: false` are the gated F&I / history rails whose credential store + provider
+ * abstraction exist but that flip on only once we're DSP-certified with the partner.
+ */
+const CATALOG = {
+  webhook:         { category: 'Automation',  label: 'Webhooks / Zapier',    live: true,  desc: 'Send MarketSync events (new lead, deal sold, delivered) to any URL — Zapier, Make, a spreadsheet, your own app.' },
+  carfax:          { category: 'F&I',         label: 'CARFAX Canada',        live: false, desc: 'Vehicle history reports, liens and valuations pulled natively into the deal.' },
+  routeone:        { category: 'F&I',         label: 'RouteOne',             live: false, desc: 'Submit credit applications to lenders and pull decisions.' },
+  dealertrack:     { category: 'F&I',         label: 'Dealertrack',          live: false, desc: 'Dealertrack DealTransfer credit submission.' },
+  quickbooks:      { category: 'Accounting',  label: 'QuickBooks Online',    live: false, desc: 'Push sold-deal and F&I income to QuickBooks. Coming soon.' },
+  xero:            { category: 'Accounting',  label: 'Xero',                 live: false, desc: 'Push sold-deal and F&I income to Xero. Coming soon.' },
+  google_business: { category: 'Marketing',   label: 'Google Business',      live: false, desc: 'Auto-post inventory and request reviews on your Google Business Profile. Coming soon.' },
+  twilio:          { category: 'Messaging',   label: 'Twilio SMS',           live: false, desc: 'Bring your own Twilio number for outbound texts. Coming soon.' },
+}
+const PROVIDERS = Object.keys(CATALOG)
 const isMgr = (req) => ['DEALER_ADMIN', 'OWNER', 'MANAGER'].includes(req.profile?.role)
 
 export function registerIntegrations(app) {
@@ -22,8 +39,13 @@ export function registerIntegrations(app) {
     for (const r of (rows || [])) byProvider[r.provider] = r
     const list = PROVIDERS.map(p => {
       const r = byProvider[p]
+      const meta = CATALOG[p] || {}
       return {
         provider: p,
+        label: meta.label || p,
+        category: meta.category || 'Other',
+        description: meta.desc || '',
+        live: !!meta.live,
         enabled: !!r?.enabled,
         status: r?.status || 'not_connected',
         configured: !!r?.credentials_enc,             // has a stored secret (never the secret itself)
@@ -31,7 +53,20 @@ export function registerIntegrations(app) {
         updated_at: r?.updated_at || null,
       }
     })
-    res.json({ providers: list, pii_ready: piiConfigured() })
+    res.json({ providers: list, webhook_events: WEBHOOK_EVENTS, pii_ready: piiConfigured() })
+  })
+
+  // Fire a test webhook so the dealer can confirm their endpoint is wired up.
+  app.post('/integrations/webhook/test', requireAuth, async (req, res) => {
+    if (!req.dealershipId) return res.status(400).json({ error: 'No dealership' })
+    if (!isMgr(req)) return res.status(403).json({ error: 'Manager access required' })
+    const { data: row } = await supabaseAdmin.from('dealer_integrations')
+      .select('enabled, lender_code_map')
+      .eq('dealership_id', req.dealershipId).eq('provider', 'webhook').maybeSingle()
+    const url = row?.lender_code_map?.url
+    if (!row?.enabled || !url) return res.status(400).json({ error: 'Save and enable a webhook URL first.' })
+    await emitWebhook(req.dealershipId, 'test.ping', { message: 'Hello from MarketSync', sent_by: req.user?.email || null })
+    res.json({ ok: true, url })
   })
 
   // Create/update a provider's config. Only overwrites the secret when new

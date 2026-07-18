@@ -3,7 +3,19 @@
 Running list of things discussed or recommended that are **not yet built**, so nothing
 falls through the cracks. Grouped by theme, roughly in priority order.
 
-_Last updated: 2026-07-19_
+_Last updated: 2026-07-17_
+
+## ✅ Phase 2 (Integrations — "the glue") — shipped this round
+
+- **Integrations Hub** (Settings → Integrations, admin-only) — lists every connectable
+  service grouped by category, live vs. coming-soon.
+- **Outbound Webhooks / Zapier** (live now): dealer pastes an endpoint URL + optional
+  HMAC signing secret and picks which events to send. "Send test" fires a `test.ping`.
+  Events emitted: `lead.created` (lead-routing), `deal.sold` / `deal.delivered`
+  (`/reports/deal/status`), `appointment.booked` (CRM status → appointment). Signed as
+  `X-MarketSync-Signature: sha256=…` when a secret is set. Fire-and-forget, never blocks a request.
+- Catalog now surfaces QuickBooks, Xero, Google Business, Twilio as **coming-soon**
+  cards (credential store + provider abstraction ready; flip on when certified).
 
 ---
 

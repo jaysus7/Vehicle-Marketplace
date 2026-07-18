@@ -5115,6 +5115,7 @@ const SETTINGS_TAB_SECTIONS = {
   aiboost: ['ai-boost-section', 'inv-intel-section'],
   group: ['groups-settings-section'],
   dealermgmt: ['crm-dms-card', 'dealer-features-card', 'dealer-docs-card', 'desk-fees-card', 'guardrail-settings-section'],
+  integrations: ['integrations-section'],
   security: ['security-section'],
 };
 function settingsTab(tab) {
@@ -5147,8 +5148,136 @@ function settingsTab(tab) {
     if (isAdmin) loadDealerManagementMatrix();
   }
   if (tab === 'dealermgmt') { loadDealerFeatures(); loadDeskFeeSettings(); loadDealerDocs(); }
+  if (tab === 'integrations') loadIntegrations();
 }
 window.settingsTab = settingsTab;
+
+// ── Integrations Hub ─────────────────────────────────────────────────────────
+// Lists every connectable service. "Webhooks" is the live outbound glue — a dealer
+// pastes a URL + optional signing secret and picks which events to send; the rest
+// are the gated F&I / accounting rails, shown as coming-soon until certified.
+let __integrationsCache = null;
+async function loadIntegrations() {
+  const host = document.getElementById('integrations-list');
+  if (!host) return;
+  host.innerHTML = '<div class="py-10 text-center text-sm text-slate-400 italic">Loading…</div>';
+  try {
+    const data = await apiGetJson('/integrations', { retries: 1 });
+    __integrationsCache = data;
+    renderIntegrations(data);
+  } catch (e) {
+    host.innerHTML = `<div class="py-8 text-center text-sm text-rose-500">${esc(e.message || 'Could not load integrations')}</div>`;
+  }
+}
+function renderIntegrations(data) {
+  const host = document.getElementById('integrations-list');
+  if (!host) return;
+  const providers = data.providers || [];
+  const events = data.webhook_events || [];
+  // Group by category, webhook (Automation) first.
+  const order = ['Automation', 'F&I', 'Accounting', 'Marketing', 'Messaging', 'Other'];
+  const byCat = {};
+  providers.forEach(p => { (byCat[p.category] = byCat[p.category] || []).push(p); });
+  const cats = Object.keys(byCat).sort((a, b) => (order.indexOf(a) + 99) % 100 - (order.indexOf(b) + 99) % 100);
+  host.innerHTML = cats.map(cat => `
+    <div class="mb-5">
+      <h3 class="text-xs font-bold uppercase tracking-wide text-slate-400 dark:text-slate-500 mb-2">${esc(cat)}</h3>
+      <div class="space-y-3">${byCat[cat].map(p => p.provider === 'webhook' ? webhookCard(p, events) : providerCard(p)).join('')}</div>
+    </div>`).join('');
+  if (!data.pii_ready) {
+    host.insertAdjacentHTML('afterbegin', `<div class="mb-4 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 px-4 py-2.5 text-xs text-amber-700 dark:text-amber-300">Encryption key not set — signing secrets and credentials can't be stored until <code>PII_ENCRYPTION_KEY</code> is configured on the server.</div>`);
+  }
+}
+function statusPill(p) {
+  if (!p.live) return '<span class="text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500">Coming soon</span>';
+  if (p.enabled) return '<span class="text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300">Connected</span>';
+  return '<span class="text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500">Not connected</span>';
+}
+function providerCard(p) {
+  return `<div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-4 flex items-start justify-between gap-3 opacity-70">
+    <div>
+      <div class="flex items-center gap-2"><span class="font-bold text-sm text-slate-900 dark:text-white">${esc(p.label)}</span>${statusPill(p)}</div>
+      <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">${esc(p.description)}</p>
+    </div>
+  </div>`;
+}
+function webhookCard(p, events) {
+  const cfg = p.lender_code_map || {};
+  const url = cfg.url || '';
+  const subscribed = Array.isArray(cfg.events) ? cfg.events : [];
+  const evBoxes = events.map(ev => {
+    const on = !subscribed.length || subscribed.includes(ev);
+    return `<label class="inline-flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-300 mr-3 mb-1">
+      <input type="checkbox" class="wh-ev accent-indigo-600" value="${esc(ev)}" ${on ? 'checked' : ''}> ${esc(ev)}</label>`;
+  }).join('');
+  return `<div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-4">
+    <div class="flex items-start justify-between gap-3 mb-3">
+      <div>
+        <div class="flex items-center gap-2"><span class="font-bold text-sm text-slate-900 dark:text-white">${esc(p.label)}</span>${statusPill(p)}</div>
+        <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">${esc(p.description)}</p>
+      </div>
+      <label class="inline-flex items-center cursor-pointer flex-shrink-0">
+        <input id="wh-enabled" type="checkbox" class="sr-only peer" ${p.enabled ? 'checked' : ''}>
+        <div class="relative w-9 h-5 bg-slate-200 dark:bg-slate-700 peer-checked:bg-emerald-500 rounded-full transition after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-4 after:w-4 after:transition peer-checked:after:translate-x-4"></div>
+      </label>
+    </div>
+    <div class="space-y-2.5">
+      <div>
+        <label class="block text-[11px] font-bold text-slate-500 dark:text-slate-400 mb-1">Endpoint URL</label>
+        <input id="wh-url" type="url" value="${esc(url)}" placeholder="https://hooks.zapier.com/…" class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm">
+      </div>
+      <div>
+        <label class="block text-[11px] font-bold text-slate-500 dark:text-slate-400 mb-1">Signing secret <span class="font-normal text-slate-400">(optional — signs each request as <code>X-MarketSync-Signature</code>)</span></label>
+        <input id="wh-secret" type="password" placeholder="${p.configured ? '•••••••• (saved — leave blank to keep)' : 'Leave blank for none'}" class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm">
+      </div>
+      <div>
+        <label class="block text-[11px] font-bold text-slate-500 dark:text-slate-400 mb-1">Events to send</label>
+        <div>${evBoxes}</div>
+      </div>
+      <div class="flex items-center gap-2 pt-1">
+        <button onclick="saveWebhook(this)" class="bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-bold px-4 py-2 rounded-lg transition">Save</button>
+        <button onclick="testWebhook(this)" class="bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-sm font-bold px-4 py-2 rounded-lg transition">Send test</button>
+        ${p.configured || p.enabled ? '<button onclick="disconnectWebhook(this)" class="ml-auto text-xs text-rose-500 hover:text-rose-400 font-semibold">Disconnect</button>' : ''}
+      </div>
+    </div>
+  </div>`;
+}
+async function saveWebhook(btn) {
+  const url = (document.getElementById('wh-url')?.value || '').trim();
+  const secret = (document.getElementById('wh-secret')?.value || '').trim();
+  const enabled = !!document.getElementById('wh-enabled')?.checked;
+  const all = [...document.querySelectorAll('.wh-ev')];
+  const checked = all.filter(c => c.checked).map(c => c.value);
+  // Empty list = all events; only send a subset when the user unchecked some.
+  const evs = checked.length === all.length ? [] : checked;
+  if (enabled && !/^https?:\/\//i.test(url)) return showToast('Enter a valid https:// URL', 'error');
+  const payload = { enabled, lender_code_map: { url, events: evs } };
+  if (secret) payload.credentials = { secret };
+  const orig = btn.textContent; btn.disabled = true; btn.textContent = 'Saving…';
+  try {
+    await apiSendJson('/integrations/webhook', 'PUT', payload);
+    btn.textContent = 'Saved ✓'; showToast('Webhook saved', 'success');
+    setTimeout(() => loadIntegrations(), 700);
+  } catch (e) { btn.disabled = false; btn.textContent = orig; showToast(e.message || 'Could not save', 'error'); }
+}
+async function testWebhook(btn) {
+  const orig = btn.textContent; btn.disabled = true; btn.textContent = 'Sending…';
+  try {
+    await apiSendJson('/integrations/webhook/test', 'POST', {});
+    btn.textContent = 'Sent ✓'; showToast('Test event sent to your endpoint', 'success');
+  } catch (e) { showToast(e.message || 'Could not send test — save & enable a URL first', 'error'); }
+  setTimeout(() => { btn.disabled = false; btn.textContent = orig; }, 1400);
+}
+async function disconnectWebhook(btn) {
+  if (!confirm('Disconnect this webhook? The URL and secret will be removed.')) return;
+  btn.disabled = true;
+  try { await apiSendJson('/integrations/webhook', 'DELETE'); showToast('Webhook disconnected', 'success'); loadIntegrations(); }
+  catch (e) { btn.disabled = false; showToast(e.message || 'Could not disconnect', 'error'); }
+}
+window.loadIntegrations = loadIntegrations;
+window.saveWebhook = saveWebhook;
+window.testWebhook = testWebhook;
+window.disconnectWebhook = disconnectWebhook;
 
 // ── Dealer details for documents (Settings › Dealer Management) ──────────────
 // Same legal identifiers the desk uses on the bill of sale — edited here anytime.
