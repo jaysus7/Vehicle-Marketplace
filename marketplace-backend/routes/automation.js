@@ -15,6 +15,7 @@ import Anthropic from '@anthropic-ai/sdk'
 import { supabaseAdmin, resend, EMAIL_FROM } from '../shared.js'
 import { requireAuth } from '../middleware.js'
 import { decryptJson } from '../crypto-pii.js'
+import { createNotification } from '../notifications.js'
 
 const DEALER_LEVEL = ['DEALER_ADMIN', 'OWNER', 'MANAGER']
 const isDealerLevel = (req) => DEALER_LEVEL.includes(req.profile?.role)
@@ -125,6 +126,9 @@ function dealerSettings(dealer) {
     referral_bonus: s.referral_bonus || 'a referral bonus',
     service_url: s.service_url || (dealer?.branding?.email ? null : null),
     holidays: Array.isArray(s.holidays) ? s.holidays : [],
+    // Proactive morning briefing: in-app for managers by default; email opt-in.
+    digest_enabled: s.digest_enabled !== false,
+    digest_email: s.digest_email === true,
     enabled: s.enabled !== false,
     email: (s.email && typeof s.email === 'object') ? {
       from_name: s.email.from_name || null,
@@ -613,6 +617,123 @@ async function runDaily() {
   return { birthdays, holidays }
 }
 
+// ── Proactive morning briefing ───────────────────────────────────────────────
+// Pushes the "what needs attention today" digest to managers instead of waiting to
+// be asked. Same signals the AI brain's `priorities`/`trends` topics surface, kept
+// self-contained here (no cross-import) and cheap. In-app for every manager; a nicely
+// formatted email too when the dealer opted in. Idempotent per dealer per day.
+async function buildDigest(dealershipId) {
+  const now = Date.now(), d = new Date()
+  const nowIso = new Date().toISOString()
+  const monthStart = new Date(d.getFullYear(), d.getMonth(), 1).toISOString()
+  const d7 = new Date(now - 7 * 86400000).toISOString()
+  const d14 = new Date(now - 14 * 86400000).toISOString()
+  const todayEnd = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59).toISOString()
+  const money = n => '$' + Math.round(Number(n) || 0).toLocaleString('en-US')
+
+  const [uncontacted, overdue, appts, inv, soldDeals, mtdDeals, leads] = await Promise.all([
+    supabaseAdmin.from('contacts').select('id', { count: 'exact', head: true }).eq('dealership_id', dealershipId).eq('status', 'uncontacted'),
+    supabaseAdmin.from('crm_tasks').select('id', { count: 'exact', head: true }).eq('dealership_id', dealershipId).eq('done', false).lt('due_at', nowIso),
+    supabaseAdmin.from('crm_tasks').select('id', { count: 'exact', head: true }).eq('dealership_id', dealershipId).eq('done', false).eq('type', 'appointment').gte('due_at', nowIso).lte('due_at', todayEnd),
+    supabaseAdmin.from('inventory').select('created_at, lot_date').eq('dealership_id', dealershipId).eq('status', 'available').limit(2000),
+    supabaseAdmin.from('deals').select('id', { count: 'exact', head: true }).eq('dealership_id', dealershipId).eq('deal_status', 'sold'),
+    supabaseAdmin.from('deals').select('selling_price, sold_at, created_at, deal_status').eq('dealership_id', dealershipId).in('deal_status', ['sold', 'delivered']).gte('sold_at', monthStart).limit(1000),
+    supabaseAdmin.from('leads').select('created_at').eq('dealership_id', dealershipId).gte('created_at', d14).limit(4000),
+  ])
+  const age = v => { const ref = v.lot_date || v.created_at; return ref ? Math.floor((now - new Date(ref)) / 86400000) : 0 }
+  const aged90 = (inv.data || []).filter(v => age(v) >= 90).length
+  const aged60 = (inv.data || []).filter(v => age(v) >= 60 && age(v) < 90).length
+  const mtd = (mtdDeals.data || []).filter(x => (x.sold_at || x.created_at) >= monthStart)
+  const leads7 = (leads.data || []).filter(l => l.created_at >= d7).length
+  const leadsPrev7 = (leads.data || []).filter(l => l.created_at < d7).length
+
+  const items = []   // { emoji, text, priority }
+  if ((uncontacted.count || 0) > 0) items.push({ emoji: '📞', text: `${uncontacted.count} uncontacted lead(s) need a first touch`, priority: 'high' })
+  if ((overdue.count || 0) > 0) items.push({ emoji: '⏰', text: `${overdue.count} overdue follow-up task(s)`, priority: 'high' })
+  if (aged90 > 0) items.push({ emoji: '🚨', text: `${aged90} unit(s) 90+ days old — wholesale/auction candidates`, priority: 'high' })
+  if (aged60 > 0) items.push({ emoji: '📉', text: `${aged60} unit(s) 60–90 days — consider a price drop`, priority: 'medium' })
+  if ((appts.count || 0) > 0) items.push({ emoji: '📅', text: `${appts.count} appointment(s) booked for today`, priority: 'medium' })
+  if ((soldDeals.count || 0) > 0) items.push({ emoji: '🚗', text: `${soldDeals.count} sold deal(s) awaiting delivery`, priority: 'medium' })
+  const rank = { high: 0, medium: 1, low: 2 }
+  items.sort((a, b) => rank[a.priority] - rank[b.priority])
+
+  const leadDelta = leadsPrev7 ? Math.round(((leads7 - leadsPrev7) / leadsPrev7) * 100) : (leads7 ? 100 : 0)
+  const pulse = {
+    units_mtd: mtd.length,
+    revenue_mtd: money(mtd.reduce((s, x) => s + (Number(x.selling_price) || 0), 0)),
+    leads_7d: leads7,
+    leads_delta_pct: leadDelta,
+  }
+  const headline = items.length
+    ? `${items.length} thing(s) need attention — ${items.filter(i => i.priority === 'high').length} high priority`
+    : 'You’re all caught up — lot, leads, recon and tasks are current.'
+  return { items, pulse, headline, hasWork: items.length > 0 }
+}
+
+function digestEmailHtml(dealerName, dg) {
+  const arrow = dg.pulse.leads_delta_pct > 0 ? '▲' : dg.pulse.leads_delta_pct < 0 ? '▼' : '■'
+  const rows = dg.items.length
+    ? dg.items.map(i => `<tr><td style="padding:8px 12px;border-bottom:1px solid #eef2f7;font-size:15px;">${i.emoji} ${i.text}</td></tr>`).join('')
+    : `<tr><td style="padding:14px 12px;font-size:15px;color:#16a34a;">✅ You’re all caught up.</td></tr>`
+  return `<!doctype html><html><body style="margin:0;background:#f1f5f9;font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#f1f5f9;padding:24px 0;"><tr><td align="center">
+  <table width="560" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.08);">
+    <tr><td style="background:#1e3a8a;padding:18px 24px;color:#fff;">
+      <div style="font-size:12px;letter-spacing:.08em;text-transform:uppercase;opacity:.8;">MarketSync · Morning Briefing</div>
+      <div style="font-size:20px;font-weight:800;margin-top:2px;">${dealerName}</div>
+      <div style="font-size:13px;opacity:.85;margin-top:2px;">${new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}</div>
+    </td></tr>
+    <tr><td style="padding:18px 24px 6px;font-size:15px;color:#0f172a;font-weight:600;">${dg.headline}</td></tr>
+    <tr><td style="padding:0 12px;"><table width="100%" cellpadding="0" cellspacing="0">${rows}</table></td></tr>
+    <tr><td style="padding:16px 24px;">
+      <table width="100%" cellpadding="0" cellspacing="0" style="background:#f8fafc;border-radius:8px;">
+        <tr>
+          <td style="padding:12px;text-align:center;border-right:1px solid #eef2f7;"><div style="font-size:22px;font-weight:800;color:#1e3a8a;">${dg.pulse.units_mtd}</div><div style="font-size:11px;color:#64748b;">units MTD</div></td>
+          <td style="padding:12px;text-align:center;border-right:1px solid #eef2f7;"><div style="font-size:22px;font-weight:800;color:#1e3a8a;">${dg.pulse.revenue_mtd}</div><div style="font-size:11px;color:#64748b;">revenue MTD</div></td>
+          <td style="padding:12px;text-align:center;"><div style="font-size:22px;font-weight:800;color:#1e3a8a;">${dg.pulse.leads_7d} <span style="font-size:13px;color:${dg.pulse.leads_delta_pct >= 0 ? '#16a34a' : '#dc2626'};">${arrow}${Math.abs(dg.pulse.leads_delta_pct)}%</span></div><div style="font-size:11px;color:#64748b;">leads last 7d</div></td>
+        </tr>
+      </table>
+    </td></tr>
+    <tr><td style="padding:6px 24px 22px;">
+      <a href="${FRONTEND_URL}/dashboard.html" style="display:inline-block;background:#1e3a8a;color:#fff;text-decoration:none;font-weight:700;font-size:14px;padding:10px 20px;border-radius:8px;">Open MarketSync →</a>
+      <div style="font-size:11px;color:#94a3b8;margin-top:14px;">Ask MarketSync “what should I focus on today?” for the full breakdown. Turn this off in Automation settings.</div>
+    </td></tr>
+  </table></td></tr></table></body></html>`
+}
+
+async function runMorningDigest() {
+  const { data: dealers } = await supabaseAdmin.from('dealerships').select('id, name, automation_settings')
+  let pushed = 0, emailed = 0, skipped = 0
+  for (const dl of (dealers || [])) {
+    const s = dealerSettings(dl)
+    if (!s.enabled || !s.digest_enabled) { skipped++; continue }
+    const { data: mgrs } = await supabaseAdmin.from('profiles')
+      .select('id, email, active').eq('dealership_id', dl.id).in('role', DEALER_LEVEL)
+    const managers = (mgrs || []).filter(m => m.active !== false)
+    if (!managers.length) { skipped++; continue }
+    let dg
+    try { dg = await buildDigest(dl.id) } catch { skipped++; continue }
+    // In-app notification for each manager (their own targeted alert).
+    for (const m of managers) {
+      await createNotification({
+        dealershipId: dl.id, type: 'daily_digest', targetUserId: m.id,
+        title: 'Your morning briefing', body: dg.headline, linkPage: 'ai-insights',
+      })
+      pushed++
+    }
+    // Email (opt-in) — one per manager who has an address.
+    if (s.digest_email) {
+      const html = digestEmailHtml(dl.name || 'Your dealership', dg)
+      const subject = `☀️ Morning briefing — ${dl.name || 'your store'} — ${dg.hasWork ? dg.headline : 'all caught up'}`
+      for (const m of managers) {
+        if (!m.email) continue
+        try { await resend.emails.send({ from: EMAIL_FROM, to: m.email, subject, html }); emailed++ } catch (e) { /* skip a bad address */ }
+      }
+    }
+  }
+  return { pushed, emailed, skipped }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 export function registerAutomation(app) {
   const cronOk = (req) => (req.headers['x-cron-secret'] || '').trim() === (process.env.CRON_SECRET || '').trim() && !!process.env.CRON_SECRET
@@ -642,6 +763,25 @@ export function registerAutomation(app) {
   app.post('/cron/automation-daily', async (req, res) => {
     if (!cronOk(req)) return res.status(401).json({ error: 'unauthorized' })
     try { res.json({ ok: true, ...(await runDaily()) }) } catch (e) { res.status(500).json({ error: e.message }) }
+  })
+  // Proactive morning briefing — schedule this once each morning (e.g. 7am local).
+  app.post('/cron/morning-digest', async (req, res) => {
+    if (!cronOk(req)) return res.status(401).json({ error: 'unauthorized' })
+    try { res.json({ ok: true, ...(await runMorningDigest()) }) } catch (e) { res.status(500).json({ error: e.message }) }
+  })
+  // Manager self-serve: send myself today's briefing right now (for the "preview" button).
+  app.post('/automation/digest/preview', requireAuth, async (req, res) => {
+    if (!req.dealershipId) return res.status(400).json({ error: 'No dealership' })
+    if (!isDealerLevel(req)) return res.status(403).json({ error: 'Manager access required' })
+    try {
+      const dg = await buildDigest(req.dealershipId)
+      const email = req.profile?.email || req.user?.email
+      if (email) {
+        const { data: dl } = await supabaseAdmin.from('dealerships').select('name').eq('id', req.dealershipId).maybeSingle()
+        await resend.emails.send({ from: EMAIL_FROM, to: email, subject: `☀️ Morning briefing (preview) — ${dl?.name || 'your store'}`, html: digestEmailHtml(dl?.name || 'Your dealership', dg) })
+      }
+      res.json({ ok: true, headline: dg.headline, items: dg.items, pulse: dg.pulse, emailed_to: email || null })
+    } catch (e) { res.status(500).json({ error: e.message }) }
   })
 
   // ── Inbound webhook (SMS/email reply) → drop-out freeze + STOP handling ─────
@@ -760,6 +900,8 @@ export function registerAutomation(app) {
     if (b.business_start !== undefined) s.business_start = Math.max(0, Math.min(23, parseInt(b.business_start) || 0))
     if (b.business_end !== undefined) s.business_end = Math.max(0, Math.min(24, parseInt(b.business_end) || 19))
     if (b.enabled !== undefined) s.enabled = !!b.enabled
+    if (b.digest_enabled !== undefined) s.digest_enabled = !!b.digest_enabled
+    if (b.digest_email !== undefined) s.digest_email = !!b.digest_email
     if (Array.isArray(b.holidays)) s.holidays = b.holidays.slice(0, 60).map(h => ({
       name: String(h.name || '').slice(0, 60), date: String(h.date || '').slice(0, 5),
       rule: /^(nth|last|monbefore|easter):/.test(String(h.rule || '')) ? String(h.rule).slice(0, 40) : null,

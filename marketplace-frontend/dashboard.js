@@ -10619,10 +10619,26 @@ function autoGlobalsHtml(s) {
       <div>${lbl('House email')}${inp('ag-email', s.house_email, 'sales@…', 'email')}</div>
       <div class="grid grid-cols-3 gap-2"><div>${lbl('Open (hr)')}${inp('ag-bstart', s.business_start ?? 8, '8', 'number')}</div><div>${lbl('Close (hr)')}${inp('ag-bend', s.business_end ?? 19, '19', 'number')}</div><div>${lbl('TZ')}${inp('ag-tz', s.timezone || 'America/Toronto', 'America/Toronto')}</div></div>
     </div>
+    <div class="mt-4 pt-4 border-t border-slate-100 dark:border-slate-800">
+      <div class="flex items-center gap-2 mb-1"><span class="text-sm font-black text-slate-900 dark:text-white">☀️ Morning briefing</span></div>
+      <p class="text-[11px] text-slate-500 dark:text-slate-400 mb-2">MarketSync pushes a "what needs attention today" summary to your managers each morning — uncontacted leads, overdue tasks, aging units to move, appointments and a sales pulse. No need to ask.</p>
+      <label class="flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-200 mb-1.5"><input type="checkbox" id="ag-digest" ${s.digest_enabled !== false ? 'checked' : ''} class="accent-indigo-600 w-4 h-4">Send the daily briefing to managers (in-app)</label>
+      <label class="flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-200"><input type="checkbox" id="ag-digest-email" ${s.digest_email ? 'checked' : ''} class="accent-indigo-600 w-4 h-4">Also email it to each manager</label>
+      <button onclick="autoDigestPreview(this)" class="mt-2 text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:text-indigo-500">✉️ Email me a preview now</button>
+    </div>
     <button onclick="autoSaveGlobals(this)" class="mt-3 text-sm font-bold bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg">Save settings</button>
     <span id="ag-msg" class="hidden text-xs ml-2"></span>
   </div>`;
 }
+async function autoDigestPreview(btn) {
+  const orig = btn.textContent; btn.disabled = true; btn.textContent = 'Sending…';
+  try {
+    const d = await apiSendJson('/automation/digest/preview', 'POST', {});
+    showToast(d.emailed_to ? `Preview sent to ${d.emailed_to}` : (d.headline || 'Preview ready'), 'success');
+  } catch (e) { showToast(e.message || 'Could not send preview', 'error'); }
+  setTimeout(() => { btn.disabled = false; btn.textContent = orig; }, 1600);
+}
+window.autoDigestPreview = autoDigestPreview;
 function autoVarChips(cid) {
   return `<div class="flex flex-wrap gap-1 mt-1">${AUTO_VARS.map(v => `<button type="button" onclick="autoInsertVar('${cid}','${v}')" class="text-[10px] font-mono bg-slate-100 dark:bg-slate-800 hover:bg-indigo-100 dark:hover:bg-indigo-950/40 rounded px-1.5 py-0.5">{{${v}}}</button>`).join('')}</div>`;
 }
@@ -10769,7 +10785,7 @@ async function autoSaveHolidays(btn) {
 async function autoToggleEngine(on) { try { const d = await apiSendJson('/automation/settings', 'PUT', { enabled: on }); __autoCfg.settings = d.settings; showToast(on ? 'Automation on' : 'Automation paused', 'success'); } catch (e) { showToast(e.message, 'error'); } }
 async function autoSaveGlobals(btn) {
   const val = (i) => (document.getElementById(i)?.value || '').trim();
-  const body = { review_url: val('ag-review'), referral_bonus: val('ag-bonus'), service_url: val('ag-service'), house_sms: val('ag-sms'), house_email: val('ag-email'), timezone: val('ag-tz'), business_start: +val('ag-bstart') || 0, business_end: +val('ag-bend') || 19 };
+  const body = { review_url: val('ag-review'), referral_bonus: val('ag-bonus'), service_url: val('ag-service'), house_sms: val('ag-sms'), house_email: val('ag-email'), timezone: val('ag-tz'), business_start: +val('ag-bstart') || 0, business_end: +val('ag-bend') || 19, digest_enabled: !!document.getElementById('ag-digest')?.checked, digest_email: !!document.getElementById('ag-digest-email')?.checked };
   const msg = document.getElementById('ag-msg'); const orig = btn.textContent; btn.disabled = true; btn.textContent = 'Saving…';
   try { const d = await apiSendJson('/automation/settings', 'PUT', body); __autoCfg.settings = d.settings; if (msg) { msg.textContent = '✓ Saved'; msg.className = 'text-xs ml-2 text-emerald-600 dark:text-emerald-400'; msg.classList.remove('hidden'); } }
   catch (e) { if (msg) { msg.textContent = e.message; msg.className = 'text-xs ml-2 text-red-500'; msg.classList.remove('hidden'); } }

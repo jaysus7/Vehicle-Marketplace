@@ -162,9 +162,13 @@ Still to deepen:
       rank delivered customers in positive-equity / lease-maturing positions with
       phone + rep + tier. Done 2026-07-18.
 - [ ] Which marketing campaign made money? (marketing ROI attribution — no spend data yet)
-- [ ] Proactive digests (push the morning briefing instead of waiting to be asked) —
-      needs a scheduled job + push/email delivery; the `priorities`/`trends` topics are
-      the content, delivery is the remaining piece.
+- [x] Proactive morning briefing — `runMorningDigest()` pushes a "what needs attention
+      today" summary (uncontacted leads, overdue tasks, aging units, appointments, sold-
+      awaiting-delivery + a sales/lead pulse) to managers in-app, and by email when the
+      dealer opts in. Toggles live in Automation → Global settings, with an "email me a
+      preview" button. Done 2026-07-18. ⚠️ OPS: schedule a daily POST to
+      `/cron/morning-digest` (x-cron-secret header), e.g. 7am, next to the existing
+      automation-daily cron.
 
 ---
 
