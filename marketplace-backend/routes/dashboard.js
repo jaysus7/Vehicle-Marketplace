@@ -983,6 +983,25 @@ export function registerRoutes(app) {
     }
     const totalSales = (contactRows || []).filter(soldInRange).length
 
+    // Real revenue + front gross from sold deals (managers). Gross only when the
+    // dealer has cost tracking on — otherwise we don't surface a gross figure.
+    let salesFinance = null
+    if (isMgr) {
+      const { data: dlrCost } = await supabaseAdmin.from('dealerships').select('cost_tracking_enabled').eq('id', did).maybeSingle()
+      const { data: soldDeals } = await supabaseAdmin.from('deals')
+        .select('selling_price, cost, deal_status, sold_at').eq('dealership_id', did).in('deal_status', ['sold', 'delivered']).gte('sold_at', startIso).limit(20000)
+      const sd = soldDeals || []
+      const revenue = sd.reduce((s, x) => s + (Number(x.selling_price) || 0), 0)
+      salesFinance = { units: sd.length, revenue: Math.round(revenue), avg_price: sd.length ? Math.round(revenue / sd.length) : 0 }
+      if (dlrCost?.cost_tracking_enabled) {
+        const costed = sd.filter(x => Number(x.cost) > 0)
+        const gross = costed.reduce((s, x) => s + ((Number(x.selling_price) || 0) - (Number(x.cost) || 0)), 0)
+        salesFinance.front_gross = Math.round(gross)
+        salesFinance.avg_gross = costed.length ? Math.round(gross / costed.length) : 0
+        salesFinance.units_costed = costed.length
+      }
+    }
+
     res.json({
       ok: true, range_days: days, is_manager: isMgr,
       leads: {
@@ -994,6 +1013,7 @@ export function registerRoutes(app) {
       inventory: { marketplace_posted: mkPosted, avg_days_to_sell: avgDaysToSell, days_sold_count: daysSamples.length, repricing_signals: priceFlags || 0 },
       activity: { appraisals: appraisals.length, followup_completion_pct: followupPct, tasks_total: taskTotal, tasks_done: taskDone },
       sales: { total: isMgr ? totalSales : wonRows.length },
+      finance: salesFinance,
       per_rep,
     })
   })

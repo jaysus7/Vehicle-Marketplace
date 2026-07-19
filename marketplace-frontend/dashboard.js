@@ -3810,6 +3810,9 @@ async function loadExecutiveRoi() {
   try { d = await apiGetJson(`/dashboard/executive?range=${encodeURIComponent(__execRoiRange)}`, { retries: 1 }); }
   catch { root.innerHTML = ''; return; }
   if (!d || d.empty) { root.innerHTML = ''; return; }
+  __execData = d;
+  const fin = d.finance || null;
+  const money0 = n => '$' + Number(n || 0).toLocaleString();
 
   const tile = (label, value, sub, accent) => `<div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4">
     <div class="text-[11px] uppercase tracking-wider text-slate-400 font-bold">${esc(label)}</div>
@@ -3852,8 +3855,13 @@ async function loadExecutiveRoi() {
         <h2 class="text-xl font-black text-slate-900 dark:text-white">Executive summary</h2>
         <p class="text-sm text-slate-500 dark:text-slate-400">${d.is_manager ? 'Whole store' : 'Your book'} · what MarketSync moved — last ${d.range_days} days.</p>
       </div>
-      <div class="flex gap-1.5">${rangeBtn('7', '7d')}${rangeBtn('30', '30d')}${rangeBtn('90', '90d')}${rangeBtn('365', '1y')}</div>
+      <div class="flex gap-1.5 items-center">${rangeBtn('7', '7d')}${rangeBtn('30', '30d')}${rangeBtn('90', '90d')}${rangeBtn('365', '1y')}
+        <button onclick="execCsv()" class="ml-1 px-3 py-1.5 text-xs font-bold rounded-lg border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800">⬇ CSV</button></div>
     </div>
+    ${fin ? `<div class="grid grid-cols-2 lg:grid-cols-4 gap-3">
+      ${tile('Revenue', money0(fin.revenue), `${fin.units} sold · avg ${money0(fin.avg_price)}`, 'text-emerald-600 dark:text-emerald-400')}
+      ${fin.front_gross != null ? tile('Front gross', money0(fin.front_gross), `avg ${money0(fin.avg_gross)}/unit · ${fin.units_costed} costed`, 'text-emerald-600 dark:text-emerald-400') : tile('Front gross', '—', 'turn on cost tracking in Settings → AI')}
+    </div>` : ''}
     <div class="grid grid-cols-2 lg:grid-cols-4 gap-3">
       ${tile('Overall sales', d.sales.total, d.is_manager ? 'deals closed store-wide' : 'your deals closed', 'text-emerald-600 dark:text-emerald-400')}
       ${tile('New leads', d.leads.total, trendHtml)}
@@ -3877,6 +3885,39 @@ async function loadExecutiveRoi() {
 function execRoiRange(v) { __execRoiRange = v; loadExecutiveRoi(); }
 window.execRoiRange = execRoiRange;
 
+// ── Shared CSV helpers for the Overview reports ──────────────────────────────
+let __execData = null, __invMixData = null, __salesAnalysisData = null, __marketingRoiData = null;
+function csvCell(v) { const s = (v == null ? '' : String(v)); return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; }
+function csvSections(sections) {
+  const out = [];
+  for (const s of sections) {
+    if (s.title) out.push(s.title);
+    if (s.headers) out.push(s.headers.map(csvCell).join(','));
+    for (const r of (s.rows || [])) out.push(r.map(csvCell).join(','));
+    out.push('');
+  }
+  return out.join('\r\n');
+}
+function msDownloadCsv(name, csv) {
+  const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+const csvDate = () => new Date().toISOString().slice(0, 10);
+function execCsv() {
+  const d = __execData; if (!d) return;
+  const s = [];
+  const sum = [['Overall sales', d.sales?.total], ['New leads', d.leads?.total], ['Responded <5min %', d.leads?.under_5min_pct], ['Median response (min)', d.leads?.median_response_min], ['Conversion %', d.pipeline?.conversion_pct], ['Avg days to sell', d.inventory?.avg_days_to_sell], ['Marketplace posts', d.inventory?.marketplace_posted], ['Trade appraisals', d.activity?.appraisals], ['Follow-up completion %', d.activity?.followup_completion_pct]];
+  if (d.finance) { sum.push(['Revenue', d.finance.revenue], ['Units sold', d.finance.units], ['Avg price', d.finance.avg_price]); if (d.finance.front_gross != null) sum.push(['Front gross', d.finance.front_gross], ['Avg gross/unit', d.finance.avg_gross], ['Units costed', d.finance.units_costed]); }
+  s.push({ title: `Executive summary — last ${d.range_days} days`, headers: ['Metric', 'Value'], rows: sum });
+  if ((d.per_rep || []).length) s.push({ title: 'Sales by salesperson', headers: ['Salesperson', 'Sales', 'Leads', '<5min %', 'Follow-up %', 'Appraisals'], rows: d.per_rep.map(r => [r.name, r.deals, r.leads, r.under_5min_pct, r.followup_pct, r.appraisals]) });
+  if ((d.pipeline?.sold_by_source || []).length) s.push({ title: 'Attributed sales by source', headers: ['Source', 'Sales'], rows: d.pipeline.sold_by_source.map(x => [x.source, x.count]) });
+  msDownloadCsv(`marketsync-executive-${csvDate()}.csv`, csvSections(s));
+}
+window.execCsv = execCsv;
+
 // ── Inventory mix & aging report (managers) ──────────────────────────────────
 async function loadInventoryMix() {
   const root = document.getElementById('inv-mix');
@@ -3887,6 +3928,7 @@ async function loadInventoryMix() {
   try { d = await apiGetJson('/dashboard/inventory-mix', { retries: 1 }); }
   catch { root.innerHTML = ''; return; }
   if (!d || d.empty || !d.summary) { root.innerHTML = ''; return; }
+  __invMixData = d;
   const money = n => n != null ? '$' + Number(n).toLocaleString() : '—';
   const compact = n => n >= 1e6 ? '$' + (n / 1e6).toFixed(1) + 'M' : n >= 1e3 ? '$' + Math.round(n / 1e3) + 'k' : '$' + (n || 0);
 
@@ -3919,8 +3961,9 @@ async function loadInventoryMix() {
   </div>`).join('');
 
   root.innerHTML = `
-    <div class="mb-4"><h2 class="text-xl font-black text-slate-900 dark:text-white">Inventory mix &amp; aging</h2>
+    <div class="mb-4 flex items-start justify-between gap-3 flex-wrap"><div><h2 class="text-xl font-black text-slate-900 dark:text-white">Inventory mix &amp; aging</h2>
       <p class="text-sm text-slate-500 dark:text-slate-400">Your live lot, right now — how it's aging and what it's made of.</p></div>
+      <button onclick="invMixCsv()" class="px-3 py-1.5 text-xs font-bold rounded-lg border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800">⬇ CSV</button></div>
     <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
       ${stat('Units in stock', d.summary.total_units, 'available')}
       ${stat('Lot value', compact(d.summary.total_value), 'total asking')}
@@ -3938,6 +3981,20 @@ async function loadInventoryMix() {
       ${card('By condition', rows(d.by_condition, 'condition', 'bg-teal-500'))}
     </div>`;
 }
+function invMixCsv() {
+  const d = __invMixData; if (!d) return;
+  const grp = (arr) => (arr || []).map(i => [i.key, i.count, i.avg_price ?? '', i.avg_age ?? '']);
+  const s = [
+    { title: 'Inventory mix & aging', headers: ['Metric', 'Value'], rows: [['Units in stock', d.summary.total_units], ['Lot value', d.summary.total_value], ['Avg days on lot', d.summary.avg_age], ['Aged 60+ days', d.summary.aged_over_60]] },
+    { title: 'Aging buckets', headers: ['Days on lot', 'Count', 'Value'], rows: (d.by_age || []).map(i => [i.key, i.count, i.value]) },
+    { title: 'By colour', headers: ['Colour', 'Count', 'Avg price', 'Avg age'], rows: grp(d.by_color) },
+    { title: `By mileage (${d.distance_unit || ''})`, headers: ['Band', 'Count', 'Avg price', 'Avg age'], rows: grp(d.by_mileage) },
+    { title: 'By make', headers: ['Make', 'Count', 'Avg price', 'Avg age'], rows: grp(d.by_make) },
+    { title: 'By condition', headers: ['Condition', 'Count', 'Avg price', 'Avg age'], rows: grp(d.by_condition) },
+  ];
+  msDownloadCsv(`marketsync-inventory-mix-${csvDate()}.csv`, csvSections(s));
+}
+window.invMixCsv = invMixCsv;
 
 // ── Sales analysis (managers): what sold, sliced by attribute ────────────────
 let __salesAnalysisRange = '90';
@@ -3950,6 +4007,7 @@ async function loadSalesAnalysis() {
   try { d = await apiGetJson(`/dashboard/sales-analysis?range=${encodeURIComponent(__salesAnalysisRange)}`, { retries: 1 }); }
   catch { root.innerHTML = ''; return; }
   if (!d || d.empty || !d.summary) { root.innerHTML = ''; return; }
+  __salesAnalysisData = d;
   const money = n => n != null ? '$' + Number(n).toLocaleString() : '—';
   const compact = n => n >= 1e6 ? '$' + (n / 1e6).toFixed(1) + 'M' : n >= 1e3 ? '$' + Math.round(n / 1e3) + 'k' : '$' + (n || 0);
 
@@ -3983,7 +4041,8 @@ async function loadSalesAnalysis() {
     <div class="flex items-center justify-between gap-3 flex-wrap mb-4">
       <div><h2 class="text-xl font-black text-slate-900 dark:text-white">Sales analysis</h2>
         <p class="text-sm text-slate-500 dark:text-slate-400">What left the lot — last ${d.range_days} days.</p></div>
-      <div class="flex gap-1.5">${rangeBtn('30', '30d')}${rangeBtn('90', '90d')}${rangeBtn('180', '6mo')}${rangeBtn('365', '1y')}</div>
+      <div class="flex gap-1.5 items-center">${rangeBtn('30', '30d')}${rangeBtn('90', '90d')}${rangeBtn('180', '6mo')}${rangeBtn('365', '1y')}
+        <button onclick="salesAnalysisCsv()" class="ml-1 px-3 py-1.5 text-xs font-bold rounded-lg border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800">⬇ CSV</button></div>
     </div>
     <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
       ${stat('Units sold', d.summary.units_sold, '')}
@@ -4005,6 +4064,20 @@ async function loadSalesAnalysis() {
 }
 function salesAnalysisRange(v) { __salesAnalysisRange = v; loadSalesAnalysis(); }
 window.salesAnalysisRange = salesAnalysisRange;
+function salesAnalysisCsv() {
+  const d = __salesAnalysisData; if (!d) return;
+  const grp = (arr) => (arr || []).map(i => [i.key, i.count, i.avg_price ?? '', i.avg_days_to_sell ?? '']);
+  const s = [
+    { title: `Sales analysis — last ${d.range_days} days`, headers: ['Metric', 'Value'], rows: [['Units sold', d.summary.units_sold], ['Gross value', d.summary.total_value], ['Avg days to sell', d.summary.avg_days_to_sell], ['Median days to sell', d.summary.median_days_to_sell]] },
+    { title: 'Days to sell', headers: ['Band', 'Count', 'Value'], rows: (d.by_days_to_sell || []).map(i => [i.key, i.count, i.value]) },
+    { title: 'By colour', headers: ['Colour', 'Sold', 'Avg price', 'Avg days'], rows: grp(d.by_color) },
+    { title: `By mileage (${d.distance_unit || ''})`, headers: ['Band', 'Sold', 'Avg price', 'Avg days'], rows: grp(d.by_mileage) },
+    { title: 'By make', headers: ['Make', 'Sold', 'Avg price', 'Avg days'], rows: grp(d.by_make) },
+    { title: 'By condition', headers: ['Condition', 'Sold', 'Avg price', 'Avg days'], rows: grp(d.by_condition) },
+  ];
+  msDownloadCsv(`marketsync-sales-analysis-${csvDate()}.csv`, csvSections(s));
+}
+window.salesAnalysisCsv = salesAnalysisCsv;
 
 // ── Marketing ROI — which ad channel paid off (managers) ────────────────────────
 let __mktRoiRange = '90';
@@ -4021,6 +4094,7 @@ async function loadMarketingRoi() {
   let d, spendRows = [];
   try { d = await apiGetJson(`/marketing/roi?range=${__mktRoiRange}&avg_gross=${__mktAvgGross}`, { retries: 1 }); }
   catch { root.innerHTML = ''; return; }
+  __marketingRoiData = d;
   try { spendRows = (await apiGetJson(`/marketing/spend?period=${__mktSpendPeriod}`, { retries: 1 })).spend || []; } catch {}
   const money = n => n != null ? '$' + Number(n).toLocaleString() : '—';
   const compact = n => n == null ? '—' : (n >= 1e6 ? '$' + (n / 1e6).toFixed(1) + 'M' : n >= 1e3 ? '$' + Math.round(n / 1e3) + 'k' : '$' + Math.round(n || 0));
@@ -4075,7 +4149,8 @@ async function loadMarketingRoi() {
     <div class="flex items-center justify-between gap-3 flex-wrap mb-4">
       <div><h2 class="text-xl font-black text-slate-900 dark:text-white">Marketing ROI</h2>
         <p class="text-sm text-slate-500 dark:text-slate-400">Which channels paid off — spend vs leads, sales & gross, last ${d.range_days} days.</p></div>
-      <div class="flex gap-1.5">${rangeBtn('30', '30d')}${rangeBtn('90', '90d')}${rangeBtn('180', '6mo')}${rangeBtn('365', '1y')}</div>
+      <div class="flex gap-1.5 items-center">${rangeBtn('30', '30d')}${rangeBtn('90', '90d')}${rangeBtn('180', '6mo')}${rangeBtn('365', '1y')}
+        <button onclick="marketingRoiCsv()" class="ml-1 px-3 py-1.5 text-xs font-bold rounded-lg border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800">⬇ CSV</button></div>
     </div>
     ${!d.has_spend ? `<div class="rounded-xl bg-indigo-50 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-900 px-4 py-3 mb-4 text-sm text-indigo-800 dark:text-indigo-200">Add your monthly ad spend per channel below to unlock cost-per-lead, cost-per-sale and ROI. Leads and sales by channel are already tracked from your CRM — no tagging needed.</div>` : ''}
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
@@ -4112,6 +4187,16 @@ async function loadMarketingRoi() {
       </div>
     </div>`;
 }
+function marketingRoiCsv() {
+  const d = __marketingRoiData; if (!d) return;
+  const t = d.totals || {};
+  const s = [
+    { title: `Marketing ROI — last ${d.range_days} days (assumed gross/sale $${d.avg_gross})`, headers: ['Channel', 'Spend', 'Leads', 'Sales', '$/lead', '$/sale', 'Revenue', 'Est gross', 'ROI %'], rows: (d.rows || []).map(r => [r.channel, r.spend, r.leads, r.sales, r.cost_per_lead ?? '', r.cost_per_sale ?? '', r.revenue, r.est_gross, r.roi_pct ?? '']) },
+    { title: 'Total', headers: ['Spend', 'Leads', 'Sales', '$/lead', '$/sale', 'Revenue', 'Est gross', 'ROI %'], rows: [[t.spend, t.leads, t.sales, t.cost_per_lead ?? '', t.cost_per_sale ?? '', t.revenue, t.est_gross, t.roi_pct ?? '']] },
+  ];
+  msDownloadCsv(`marketsync-marketing-roi-${csvDate()}.csv`, csvSections(s));
+}
+window.marketingRoiCsv = marketingRoiCsv;
 function mktRoiRange(v) { __mktRoiRange = v; loadMarketingRoi(); }
 function mktSetAvgGross(v) { const n = Number(v); if (Number.isFinite(n) && n >= 0) { __mktAvgGross = n; loadMarketingRoi(); } }
 function mktSetSpendPeriod(v) { if (/^\d{4}-\d{2}$/.test(v)) { __mktSpendPeriod = v; loadMarketingRoi(); } }
