@@ -7,7 +7,8 @@ import { enqueueForTrigger } from './automation.js'
 import { routeAndNotifyLead } from '../lead-routing.js'
 import { createNotification } from '../notifications.js'
 import { aiAllowed, recordUsage } from '../usage.js'
-import { rateLimit, getClientIp } from '../security.js'
+import { rateLimit, getClientIp, consumeQuota } from '../security.js'
+import { offTopicRefusal, scopeClause, sanitizeTranscript, CHAT_LIMITS } from '../chatGuard.js'
 import { depositConfigForSite } from './deposits.js'
 
 const SITE_ADMINS = ['DEALER_ADMIN', 'OWNER', 'MANAGER']
@@ -588,17 +589,20 @@ export function registerSite(app) {
     const b = d.branding || {}
     if (!b.site_sales_chat) return res.status(403).json({ error: 'Chat is not enabled for this site.' })
 
-    // Graceful degrade: no key or over budget → tell the widget to show the form.
+    // Graceful degrade: no key or over the monthly budget → show the lead form.
     if (!process.env.ANTHROPIC_API_KEY || !(await aiAllowed(d.id, false))) {
       return res.json({ reply: CHAT_FALLBACK, capture: true })
     }
+    // Cost cap: per-dealer DAILY message ceiling (on top of the per-minute IP limit
+    // and the monthly AI budget). Over it → hand off to the form, no model call.
+    const daily = await consumeQuota(`sitechat:${d.id}`, CHAT_LIMITS.perDealerDaily, 86400)
+    if (!daily.allowed) return res.json({ reply: "Our online assistant is taking a quick break — leave your name and number and we'll be right with you.", capture: true })
 
-    const raw = Array.isArray(req.body?.messages) ? req.body.messages : []
-    const messages = raw
-      .filter(m => m && (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string' && m.content.trim())
-      .slice(-8)
-      .map(m => ({ role: m.role, content: m.content.trim().slice(0, 1000) }))
-    if (!messages.length || messages[messages.length - 1].role !== 'user') return res.status(400).json({ error: 'Send a message.' })
+    const { ok, messages, lastUser } = sanitizeTranscript(req.body?.messages)
+    if (!ok) return res.status(400).json({ error: 'Send a message.' })
+    // Scope guard: refuse the clearest off-topic / injection inputs with zero tokens.
+    const refusal = offTopicRefusal(lastUser, { marketing: false })
+    if (refusal) return res.json({ reply: refusal, capture: false })
 
     // Live inventory the concierge answers from (scoped to this dealer, on-lot only).
     const { data: inv } = await supabaseAdmin.from('inventory')
@@ -615,7 +619,7 @@ export function registerSite(app) {
     const bi = cleanBuiltins(b.site_builtins)
     const can = (k) => !bi[k] || bi[k].enabled !== false
     const loc = [d.city, d.province].filter(Boolean).join(', ')
-    const facts = [
+    let facts = [
       `Dealership: ${d.name}${loc ? ` — ${loc}` : ''}.`,
       b.phone ? `Phone: ${b.phone}.` : '',
       b.address ? `Address: ${b.address}.` : '',
@@ -628,7 +632,13 @@ export function registerSite(app) {
     // of the per-site chat knobs. Fetched separately so they never ride SITE_COLS into
     // the public site JSON.
     const { data: aiCfg } = await supabaseAdmin.from('dealerships')
-      .select('ai_customer_style, ai_knowledge, ai_knowledge_name').eq('id', d.id).maybeSingle()
+      .select('ai_customer_style, ai_knowledge, ai_knowledge_name, service_settings').eq('id', d.id).maybeSingle()
+    // Deepen grounding with the dealer's service department (menu + hours) if set up.
+    const svc = (aiCfg?.service_settings && typeof aiCfg.service_settings === 'object') ? aiCfg.service_settings : null
+    if (svc) {
+      const types = Array.isArray(svc.service_types) ? svc.service_types.slice(0, 12).join(', ') : ''
+      facts += `\nService department: ${svc.enabled ? 'books service online' : 'by phone'}${types ? ` — offers ${types}` : ''}${svc.hours ? `. Service hours: ${String(svc.hours).slice(0, 200)}` : ''}.`
+    }
     const kb = [String(b.site_chat_kb || '').trim(), String(aiCfg?.ai_knowledge || '').trim()].filter(Boolean).join('\n\n').slice(0, 12000)
     const instr = [String(aiCfg?.ai_customer_style || '').trim(), String(b.site_chat_instructions || '').trim()].filter(Boolean).join('\n\n').slice(0, 4000)
     const disclaimer = String(b.site_chat_disclaimer || '').trim().slice(0, 600)
@@ -652,7 +662,7 @@ DEALERSHIP FACTS:
 ${facts}
 
 INVENTORY (${list.length} in stock):
-${lines || '(no vehicles listed right now)'}`
+${lines || '(no vehicles listed right now)'}` + scopeClause(`${d.name} — its vehicles, pricing, financing, trades, test drives, service, hours and location`, 'the inventory above, financing, trade-ins, booking a test drive or service visit, and the dealership\'s hours/location/contact')
 
     try {
       const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })

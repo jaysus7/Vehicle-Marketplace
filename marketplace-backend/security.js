@@ -212,6 +212,13 @@ async function checkRateLimit(key, max, windowSecs) {
   return { allowed: true }
 }
 
+// Keyed quota you can call directly (not middleware) — for per-dealer / global daily
+// caps on the public AI chatbots so a bad actor can't run up the Anthropic bill.
+// Returns { allowed, retryAfter }.
+export async function consumeQuota(key, max, windowSecs) {
+  return checkRateLimit(`q:${key}`, max, windowSecs)
+}
+
 export function rateLimit(name, max, windowMs) {
   const windowSecs = Math.ceil(windowMs / 1000)
   return async (req, res, next) => {
