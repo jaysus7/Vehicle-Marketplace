@@ -2814,8 +2814,6 @@ async function loadLeadsPage() {
       </div>
     </div>
 
-    ${!crmSet ? `<div class="bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-lg px-4 py-3 text-sm text-amber-700 dark:text-amber-300 mb-4">No CRM/DMS connection set yet — leads are still saved here, and will send once ${data.can_configure ? 'you add it in <b>Settings → CRM / DMS connection</b>' : 'your admin adds it in Settings'}.</div>` : ''}
-
     <div id="leads-metrics" class="mb-4"></div>
 
     <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden">
