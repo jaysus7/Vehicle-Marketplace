@@ -2894,9 +2894,18 @@ async function loadLeadsPage() {
     }
     return `<div class="text-[11px] font-semibold mt-0.5 inline-flex items-center gap-1 ${l.rep ? 'text-indigo-600 dark:text-indigo-400' : 'text-amber-600 dark:text-amber-400'}"><svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>${l.rep ? esc(l.rep) : 'Unassigned'}</div>`;
   };
-  const rows = (data.leads || []).map(l => `
+  // Hot-lead score badge (🔥 hot / warm / cold) — hover for the biggest driver.
+  const scoreBadge = (l) => {
+    if (l.score == null) return '';
+    const m = { hot: ['🔥', 'bg-rose-100 text-rose-700 dark:bg-rose-950/50 dark:text-rose-300'], warm: ['🌤️', 'bg-amber-100 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300'], cold: ['❄️', 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400'] };
+    const [ic, cls] = m[l.score_tier] || m.cold;
+    return `<span class="text-[10px] font-black uppercase px-1.5 py-0.5 rounded ${cls}" title="Lead score ${l.score}/100${l.score_reason ? ' · ' + esc(l.score_reason) : ''}">${ic} ${l.score}</span>`;
+  };
+  // Surface the hottest leads first — that's the point of scoring.
+  const sortedLeads = (data.leads || []).slice().sort((a, b) => (b.score || 0) - (a.score || 0));
+  const rows = sortedLeads.map(l => `
     <tr class="border-b border-slate-100 dark:border-slate-800/60">
-      <td class="py-3 px-3"><div class="font-semibold text-slate-900 dark:text-white">${esc(l.name || '—')}</div><div class="text-xs text-slate-400">${esc(l.source || '')}</div>${repControl(l)}</td>
+      <td class="py-3 px-3"><div class="flex items-center gap-2"><span class="font-semibold text-slate-900 dark:text-white">${esc(l.name || '—')}</span>${scoreBadge(l)}</div><div class="text-xs text-slate-400">${esc(l.source || '')}</div>${repControl(l)}</td>
       <td class="py-3 px-3 text-slate-600 dark:text-slate-300">${esc(l.phone || '')}${l.phone && l.email ? '<br>' : ''}${esc(l.email || '')}</td>
       <td class="py-3 px-3 text-slate-500 dark:text-slate-400 max-w-[220px]">${esc(l.comments || '')}</td>
       <td class="py-3 px-3 whitespace-nowrap">${sittingBadge(l)}</td>

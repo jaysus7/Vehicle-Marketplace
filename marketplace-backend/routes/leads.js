@@ -88,6 +88,26 @@ function buildAdf(lead, vehicle, dealerName, rep) {
 </adf>`
 }
 
+// Deterministic "how hot is this lead" score (0–100) from signals we already store:
+// recency, source quality, a vehicle of interest, whether the customer has engaged,
+// pipeline stage, and urgency (a fresh lead nobody has answered yet). Explainable —
+// returns the single biggest driver as `reason` — and cheap (no AI, no per-lead calls).
+function scoreLead(lead, { status, hasInbound, hasAny }) {
+  let s = 0; const why = []
+  const ageH = lead.created_at ? (Date.now() - new Date(lead.created_at).getTime()) / 3600000 : 999
+  if (ageH < 1) { s += 30; why.push('brand new') } else if (ageH < 24) { s += 22; why.push('today') } else if (ageH < 72) s += 14; else if (ageH < 168) s += 8; else s += 2
+  const src = String(lead.source || '').toLowerCase()
+  if (/(website|web|site|chat|form|phone|call)/.test(src)) { s += 18; why.push('high-intent source') } else if (/(referr|walk)/.test(src)) s += 14; else if (/(facebook|marketplace|kijiji|autotrader|cargurus|google)/.test(src)) s += 12; else s += 4
+  if (lead.inventory_id) { s += 12; why.push('asked about a specific vehicle') }
+  if (hasInbound) { s += 16; why.push('customer replied') } else if (hasAny) s += 5
+  const st = String(status || '').toLowerCase()
+  if (st === 'appointment') { s += 20; why.push('appointment booked') } else if (st === 'contacted') s += 6; else if (['sold', 'fni', 'delivered', 'lost'].includes(st)) s -= 20; else s += 8
+  if (!lead.responded_at && ageH < 24) { s += 10; why.push('not answered yet') }
+  s = Math.max(0, Math.min(100, Math.round(s)))
+  const tier = s >= 70 ? 'hot' : s >= 40 ? 'warm' : 'cold'
+  return { score: s, tier, reason: why[0] || null }
+}
+
 export function registerLeads(app) {
   // List leads for the dealership (reps see their own; dealer-level sees all).
   app.get('/leads', requireAuth, async (req, res) => {
@@ -116,10 +136,19 @@ export function registerLeads(app) {
     // owner the notification announced), falling back to whoever keyed it in. This
     // keeps the list in step with the "Assigned to …" alert for website leads.
     const contactIds = [...new Set((data || []).map(l => l.contact_id).filter(Boolean))]
-    let assignedByContact = {}
+    let assignedByContact = {}, statusByContact = {}, inboundByContact = {}, anyCommByContact = {}
     if (contactIds.length) {
-      const { data: cs } = await supabaseAdmin.from('contacts').select('id, assigned_rep').in('id', contactIds)
+      const { data: cs } = await supabaseAdmin.from('contacts').select('id, assigned_rep, status').in('id', contactIds)
       assignedByContact = Object.fromEntries((cs || []).map(c => [c.id, c.assigned_rep]).filter(([, r]) => r))
+      statusByContact = Object.fromEntries((cs || []).map(c => [c.id, c.status]))
+      // Engagement signal for scoring: did the customer reply (inbound), any contact at all.
+      const { data: comms } = await supabaseAdmin.from('communications')
+        .select('contact_id, direction').eq('dealership_id', req.dealershipId).in('contact_id', contactIds.slice(0, 2000)).limit(20000)
+      for (const c of (comms || [])) {
+        if (!c.contact_id) continue
+        anyCommByContact[c.contact_id] = true
+        if (['in', 'inbound'].includes(c.direction)) inboundByContact[c.contact_id] = true
+      }
     }
     const repIds = [...new Set([...(data || []).map(l => l.created_by), ...(data || []).map(l => l.responded_by), ...Object.values(assignedByContact)].filter(Boolean))]
     let repNames = {}
@@ -130,7 +159,8 @@ export function registerLeads(app) {
     }
     const leads = (data || []).map(l => {
       const ownerId = assignedByContact[l.contact_id] || l.created_by || null
-      return { ...l, rep: ownerId ? (repNames[ownerId] || null) : null, owner_id: ownerId, responded_by_name: l.responded_by ? (repNames[l.responded_by] || null) : null }
+      const sc = scoreLead(l, { status: statusByContact[l.contact_id], hasInbound: !!inboundByContact[l.contact_id], hasAny: !!anyCommByContact[l.contact_id] })
+      return { ...l, rep: ownerId ? (repNames[ownerId] || null) : null, owner_id: ownerId, responded_by_name: l.responded_by ? (repNames[l.responded_by] || null) : null, score: sc.score, score_tier: sc.tier, score_reason: sc.reason }
     })
 
     const { data: dealer } = await supabaseAdmin
