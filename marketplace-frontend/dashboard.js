@@ -5548,7 +5548,49 @@ function renderIntegrations(data) {
   if (!data.pii_ready) {
     host.insertAdjacentHTML('afterbegin', `<div class="mb-4 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 px-4 py-2.5 text-xs text-amber-700 dark:text-amber-300">Encryption key not set — signing secrets and credentials can't be stored until <code>PII_ENCRYPTION_KEY</code> is configured on the server.</div>`);
   }
+  // Outbound listing syndication (AutoTrader / Trader.ca / Kijiji / Google) — a feed
+  // card the dealer hands to each platform. Loaded async so the hub renders instantly.
+  host.insertAdjacentHTML('beforeend', '<div id="synd-card" class="mb-6"></div>');
+  loadSyndicationCard();
 }
+async function loadSyndicationCard() {
+  const host = document.getElementById('synd-card'); if (!host) return;
+  let cfg; try { cfg = await apiGetJson('/syndication/config', { retries: 1 }); } catch { host.remove(); return; }
+  const copyBtn = (url) => `<button onclick="copySyndUrl(this,'${esc(url)}')" class="shrink-0 text-xs font-bold bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 px-3 rounded-lg">Copy</button>`;
+  const row = (label, url) => `<div class="flex items-center gap-2">
+      <span class="text-[11px] font-bold uppercase tracking-wide text-slate-400 w-10">${label}</span>
+      <input readonly value="${esc(url)}" onclick="this.select()" class="flex-1 min-w-0 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1.5 text-xs font-mono text-slate-600 dark:text-slate-300">
+      ${copyBtn(url)}
+      <a href="${esc(url)}" target="_blank" rel="noopener" class="shrink-0 text-xs font-bold text-indigo-600 dark:text-indigo-400 px-1">Open</a>
+    </div>`;
+  const body = cfg.ready
+    ? `<div class="space-y-2">
+         <p class="text-xs text-slate-500 dark:text-slate-400">Give these live feed links to AutoTrader, Trader.ca, Kijiji Autos or Google — they pull your ${cfg.vehicle_count} in-stock ${cfg.vehicle_count === 1 ? 'vehicle' : 'vehicles'} automatically and stay in sync (${esc(cfg.currency)} pricing). Updates every time a car is added, sold or repriced.</p>
+         ${row('CSV', cfg.csv_url)}
+         ${row('XML', cfg.xml_url)}
+       </div>`
+    : `<p class="text-xs text-slate-500 dark:text-slate-400">${esc(cfg.reason || 'Publish your website to turn on syndication feeds.')}</p>`;
+  host.innerHTML = `
+    <div class="mb-2">
+      <h3 class="text-xs font-bold uppercase tracking-wide text-slate-400 dark:text-slate-500">Listing Syndication</h3>
+      <p class="text-[11px] text-slate-400 dark:text-slate-500 mt-0.5">Push your inventory to the big classifieds via a feed — no re-keying, always current.</p>
+    </div>
+    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-4">
+      <div class="flex items-start gap-3 mb-3">
+        <div class="w-10 h-10 rounded-lg bg-teal-100 dark:bg-teal-950/40 flex items-center justify-center text-xl shrink-0" aria-hidden="true">📡</div>
+        <div class="min-w-0 flex-1">
+          <div class="flex items-center gap-2 flex-wrap"><span class="font-bold text-sm text-slate-900 dark:text-white">Inventory feed</span>${cfg.ready ? '<span class="text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300">Live</span>' : '<span class="text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500">Set up website</span>'}</div>
+          <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">AutoTrader · Trader.ca · Kijiji Autos · Google vehicle listings</p>
+        </div>
+      </div>
+      ${body}
+    </div>`;
+}
+async function copySyndUrl(btn, url) {
+  try { await navigator.clipboard.writeText(url); const t = btn.textContent; btn.textContent = 'Copied ✓'; setTimeout(() => btn.textContent = t, 1400); }
+  catch { showToast('Copy failed — select the text and copy manually', 'error'); }
+}
+window.copySyndUrl = copySyndUrl;
 function isIntegrationConnected(p) {
   if (!p.enabled) return false;
   const m = p.lender_code_map || {};

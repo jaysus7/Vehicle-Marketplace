@@ -195,7 +195,14 @@ Still to deepen:
 
 ## 7. Other "the glue" integrations to consider (front-office)
 
-- [ ] Accounting sync: **QuickBooks / Xero / Sage** (deal + F&I income out)
-- [ ] **AutoTrader / Trader.ca / Kijiji** syndication (beyond Facebook Marketplace)
-- [ ] **Google Business Profile** posting + review request automation (reviews cards exist)
+- [x] Accounting sync: **QuickBooks / Xero** (deal + F&I income out) — shipped (Phase 2).
+- [x] **AutoTrader / Trader.ca / Kijiji** syndication — outbound feed shipped: public
+      per-dealer CSV + XML inventory feeds (`/syndication/:slug/inventory.csv|.xml`)
+      the dealer hands to each platform's portal; auto-current, 30-min cache. Dashboard
+      "Listing Syndication" card surfaces + copies the feed URLs. Done 2026-07-18
+      (routes/syndication.js). Next: a Google-vehicle-listings-specific feed shape +
+      per-platform field mapping if a platform rejects the generic feed.
+- [ ] **Google Business Profile** posting + review request automation — the GBP OAuth
+      connector exists (Phase 2); still to build: auto-post new arrivals/specials to GBP
+      and trigger review requests through it (review cards + links already on the site).
 - [ ] SMS/voice via **Twilio** (confirm current coverage vs. what's live)
