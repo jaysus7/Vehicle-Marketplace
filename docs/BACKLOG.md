@@ -23,6 +23,22 @@ _Last updated: 2026-07-18_
   columns on wide screens; a tab with a single card stays full-width (JS toggles
   `.is-multi` only when >1 card shows). Website settings was already two-column.
 
+## ✅ Shipped 2026-07-19
+
+- **AI chat transcripts on the customer card** — the website concierge's full
+  conversation is saved (communications, meta.kind='ai_chat') and viewable via a
+  "View AI conversation" chat-bubble modal. Generic POST /crm/contacts/:id/chat-log
+  lets the marketplace/extension path attach threads too.
+- **Native demo booking (Calendly removed)** — the marketing site's "Book a 30-min
+  demo" is now a native modal (date + time picker). POST /marketsync/book creates a
+  no-account Jitsi video room, books it onto the MarketSync team's CRM calendar as an
+  appointment, drops the join link on the customer timeline, and emails the customer +
+  the team with the link + add-to-Google-Calendar. faq.html + index.html Calendly links
+  removed. (For a real Google Meet link instead of Jitsi, we'd add the Google Calendar
+  API via the existing Google OAuth connector.)
+- **MarketSync-leads filter fix** — demo/marketing leads (source 'MarketSync …',
+  'Demo …') now show under the filter (prefix-matched).
+
 ## ✅ Phase 2 (Integrations — "the glue") — shipped earlier
 
 - **Integrations Hub** (Settings → Integrations, admin-only) — lists every connectable

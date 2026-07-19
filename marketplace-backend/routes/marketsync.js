@@ -11,7 +11,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import Anthropic from '@anthropic-ai/sdk'
-import { supabaseAdmin } from '../shared.js'
+import { supabaseAdmin, resend, EMAIL_FROM, FRONTEND_URL } from '../shared.js'
 import { rateLimit } from '../security.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -146,6 +146,99 @@ export function registerMarketsync(app) {
     } catch (e) {
       console.warn('[marketsync] lead capture failed:', e.message)
       res.status(500).json({ error: 'Could not save right now.' })
+    }
+  })
+
+  // ── PUBLIC: native demo booking (replaces Calendly) ────────────────────────
+  // Picks a time on the marketing site, spins up a no-account video room (Jitsi),
+  // drops the meeting into the MarketSync team's CRM calendar as an appointment,
+  // and emails the customer + the MarketSync team with the link + add-to-calendar.
+  app.post('/marketsync/book', rateLimit('msbook', 8, 60000), async (req, res) => {
+    const b = req.body || {}
+    const name = String(b.name || '').trim().slice(0, 120)
+    const email = String(b.email || '').trim().toLowerCase().slice(0, 160)
+    const company = String(b.company || b.dealership || '').trim().slice(0, 160)
+    const phone = String(b.phone || '').trim().slice(0, 40)
+    const notes = String(b.notes || b.message || '').trim().slice(0, 1000)
+    if (!name || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return res.status(400).json({ error: 'Please provide a name and a valid email.' })
+    const when = new Date(b.when)
+    if (isNaN(when.getTime())) return res.status(400).json({ error: 'Pick a valid date and time.' })
+    if (when.getTime() < Date.now() + 15 * 60 * 1000) return res.status(400).json({ error: 'Please choose a time at least 15 minutes out.' })
+    if (when.getTime() > Date.now() + 120 * 86400000) return res.status(400).json({ error: 'Please choose a time within the next few months.' })
+    const durationMin = Math.min(120, Math.max(15, parseInt(b.duration_min) || 30))
+
+    const { dealershipId, ownerId } = await jms()
+    if (!dealershipId) { console.warn('[marketsync] booking received but JMS not seeded:', email); return res.json({ ok: true, saved: false }) }
+
+    // No-account video room — instant, native, no Calendly/Google dependency.
+    const rand = Math.random().toString(36).slice(2, 8)
+    const roomSlug = (company || name).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 24) || 'demo'
+    const meetUrl = `https://meet.jit.si/MarketSync-${roomSlug}-${rand}`
+    const endAt = new Date(when.getTime() + durationMin * 60000)
+    const fmt = (dt) => { try { return new Intl.DateTimeFormat('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short', timeZone: b.tz || 'America/Toronto' }).format(dt) } catch { return dt.toISOString() } }
+    const whenLabel = fmt(when)
+
+    try {
+      // Upsert the contact (source keeps it in the MarketSync-leads view) + mark booked.
+      const { data: existing } = await supabaseAdmin.from('contacts')
+        .select('id').eq('dealership_id', dealershipId).ilike('email', email).maybeSingle()
+      const note = [company && `Dealership: ${company}`, `Demo booked for ${whenLabel}`, notes && `“${notes}”`].filter(Boolean).join(' · ')
+      let contactId = existing?.id
+      if (contactId) {
+        await supabaseAdmin.from('contacts').update({ status: 'appointment', phone: phone || undefined, notes: note }).eq('id', contactId)
+      } else {
+        const { data: ins, error } = await supabaseAdmin.from('contacts').insert({
+          dealership_id: dealershipId, full_name: name, email, phone: phone || null,
+          source: 'MarketSync Demo', status: 'appointment', notes: note, consent_email: false,
+          interest_vehicle: { company: company || null, intent: 'demo' },
+        }).select('id').single()
+        if (error) throw error
+        contactId = ins.id
+      }
+      // Appointment on the CRM calendar (date + time).
+      await supabaseAdmin.from('crm_tasks').insert({
+        dealership_id: dealershipId, contact_id: contactId, assigned_to: ownerId, created_by: ownerId,
+        title: `Demo — ${name}${company ? ' (' + company + ')' : ''}`, type: 'appointment', due_at: when.toISOString(),
+      })
+      // Timeline note carries the join link (clickable on the customer card).
+      await supabaseAdmin.from('communications').insert({
+        dealership_id: dealershipId, contact_id: contactId, channel: 'note', direction: 'internal',
+        subject: 'Demo booked', body: `${whenLabel} (${durationMin} min)\nVideo: ${meetUrl}${notes ? '\nNotes: ' + notes : ''}`,
+        meta: { kind: 'appointment', meet_url: meetUrl, when: when.toISOString(), duration_min: durationMin },
+      })
+
+      // Emails: customer + the MarketSync team (owner profile + OWNER_EMAIL).
+      if (resend) {
+        const gcalStart = when.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '')
+        const gcalEnd = endAt.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '')
+        const gcal = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent('MarketSync demo — ' + name)}&dates=${gcalStart}/${gcalEnd}&details=${encodeURIComponent('Join: ' + meetUrl)}`
+        const btn = (href, label, bg) => `<a href="${href}" style="display:inline-block;background:${bg};color:#fff;text-decoration:none;font-weight:700;font-size:14px;padding:10px 18px;border-radius:8px;margin:4px 6px 4px 0">${label}</a>`
+        const shell = (heading, intro) => `<div style="font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;max-width:520px;margin:0 auto">
+          <div style="background:#1e3a8a;color:#fff;padding:16px 20px;border-radius:12px 12px 0 0"><div style="font-size:12px;letter-spacing:.08em;text-transform:uppercase;opacity:.85">MarketSync</div><div style="font-size:19px;font-weight:800;margin-top:2px">${heading}</div></div>
+          <div style="border:1px solid #e2e8f0;border-top:0;border-radius:0 0 12px 12px;padding:20px">
+            <p style="font-size:15px;color:#0f172a;margin:0 0 12px">${intro}</p>
+            <table style="width:100%;font-size:14px;color:#334155;border-collapse:collapse">
+              <tr><td style="padding:6px 0;color:#64748b;width:90px">When</td><td style="padding:6px 0;font-weight:700">${whenLabel}</td></tr>
+              <tr><td style="padding:6px 0;color:#64748b">Duration</td><td style="padding:6px 0">${durationMin} minutes</td></tr>
+              ${company ? `<tr><td style="padding:6px 0;color:#64748b">Dealership</td><td style="padding:6px 0">${company}</td></tr>` : ''}
+              <tr><td style="padding:6px 0;color:#64748b">Video</td><td style="padding:6px 0"><a href="${meetUrl}" style="color:#1e3a8a;font-weight:700">${meetUrl}</a></td></tr>
+            </table>
+            <div style="margin-top:16px">${btn(meetUrl, '▶ Join the meeting', '#16a34a')}${btn(gcal, '+ Add to Google Calendar', '#1e3a8a')}</div>
+          </div></div>`
+        // Customer confirmation
+        resend.emails.send({ from: EMAIL_FROM, to: email, subject: `Your MarketSync demo — ${whenLabel}`, html: shell('Your demo is booked 🎉', `Thanks ${name.split(' ')[0] || ''}! Here are your details. Just click to join at the scheduled time — no download needed.`) }).catch(() => {})
+        // Team notification
+        const team = new Set()
+        if (process.env.OWNER_EMAIL) team.add(process.env.OWNER_EMAIL.toLowerCase())
+        if (ownerId) { const { data: op } = await supabaseAdmin.from('profiles').select('email').eq('id', ownerId).maybeSingle(); if (op?.email) team.add(op.email.toLowerCase()) }
+        for (const to of team) {
+          resend.emails.send({ from: EMAIL_FROM, to, subject: `New demo booked — ${name}${company ? ' (' + company + ')' : ''} — ${whenLabel}`, html: shell('New demo booked', `${name}${company ? ` from ${company}` : ''} booked a demo. It's on your CRM calendar.${notes ? `<br><br><b>Notes:</b> ${notes}` : ''}`) }).catch(() => {})
+        }
+      }
+      res.json({ ok: true, saved: true, when: when.toISOString(), meet_url: meetUrl })
+    } catch (e) {
+      console.warn('[marketsync] booking failed:', e.message)
+      res.status(500).json({ error: 'Could not book that time — please try again.' })
     }
   })
 }

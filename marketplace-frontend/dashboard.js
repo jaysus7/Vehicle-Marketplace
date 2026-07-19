@@ -2112,6 +2112,10 @@ function crmTimelineItem(t, cid) {
     if (cid && t.direction === 'in' && ['sms', 'email', 'call'].includes(t.channel)) {
       reply = `<button onclick="crmReplyForm('${cid}','${t.channel}',${JSON.stringify(t.subject || '').replace(/"/g, '&quot;')})" class="mt-1 inline-flex items-center gap-1 text-[11px] font-bold text-indigo-600 dark:text-indigo-400 hover:underline">${msIco('reply', 'w-3 h-3')} Reply</button>`;
     }
+    // Booked appointment with a video link → one-tap Join.
+    if (t.meta && t.meta.meet_url) {
+      reply = `<a href="${esc(t.meta.meet_url)}" target="_blank" rel="noopener" class="mt-1 inline-flex items-center gap-1 text-[11px] font-bold text-emerald-600 dark:text-emerald-400 hover:underline">${msIco('calendar', 'w-3 h-3')} Join video call</a>` + reply;
+    }
   } else if (t.kind === 'lead') {
     iconName = 'inbox';
     head = `Lead${t.source ? ` · ${esc(t.source)}` : ''}${t.vehicle ? ` — ${esc(t.vehicle)}` : ''}`;
