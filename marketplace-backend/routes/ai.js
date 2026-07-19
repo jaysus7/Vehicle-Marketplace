@@ -89,7 +89,7 @@ const ASSISTANT_TOOLS = [
   },
   {
     name: 'dealership_report',
-    description: "Pull THIS dealership's own live operating data. Use for anything about the store's own numbers or people: sales & units this month, gross, F&I, commissions, which salesperson is ahead or needs coaching, lead volume/sources/conversion, unworked leads, aging inventory, reconditioning/cleanup status, overdue tasks, today's appointments, who to call today, and recent trade appraisals. Power topics: 'trends' compares this period to the prior one (sales this month vs last, leads last 30d vs the 30 before, which lead sources rose or fell — use for 'are we up or down / why did leads drop'); 'priorities' returns a ranked what-to-do-today list; 'pricing' returns per-unit price/aging actions — which specific cars to discount, wholesale, or send to auction (days-on-lot, off-market flags, missing prices — use for 'which cars should I discount/wholesale today'); 'equity' returns the who-to-call upgrade list — delivered customers now in a positive-equity or lease-maturing position, ranked by equity (use for 'who can I put in a new car / who to call for an upgrade / lease pull-ahead'); 'marketing_roi' returns which advertising channel paid off — spend vs leads, sales, cost-per-lead, cost-per-sale, revenue and ROI per channel (use for 'which campaign made money / where should I spend my ad budget / what's my cost per lead'). Prefer this over guessing. Use 'overview' for a general 'how are we doing'.",
+    description: "Pull THIS dealership's own live operating data. Use for anything about the store's own numbers or people: sales & units this month, gross, F&I, commissions, which salesperson is ahead or needs coaching, lead volume/sources/conversion, unworked leads, aging inventory, reconditioning/cleanup status, overdue tasks, today's appointments, who to call today, and recent trade appraisals. Power topics: 'trends' compares this period to the prior one (sales this month vs last, leads last 30d vs the 30 before, which lead sources rose or fell — use for 'are we up or down / why did leads drop'); 'priorities' returns a ranked what-to-do-today list; 'pricing' returns per-unit price/aging actions — which specific cars to discount, wholesale, or send to auction (days-on-lot, off-market flags, missing prices), and for the top reprice candidates a LIVE market median + concrete reprice target and how far each unit sits above/below market (use for 'which cars should I discount/wholesale today' and 'what should I reprice this to'); 'equity' returns the who-to-call upgrade list — delivered customers now in a positive-equity or lease-maturing position, ranked by equity (use for 'who can I put in a new car / who to call for an upgrade / lease pull-ahead'); 'marketing_roi' returns which advertising channel paid off — spend vs leads, sales, cost-per-lead, cost-per-sale, revenue and ROI per channel (use for 'which campaign made money / where should I spend my ad budget / what's my cost per lead'). Prefer this over guessing. Use 'overview' for a general 'how are we doing'.",
     input_schema: { type: 'object', properties: { topic: { type: 'string', enum: ['overview', 'sales', 'commissions', 'reps', 'leads', 'inventory', 'recon', 'tasks', 'appraisals', 'trends', 'priorities', 'pricing', 'equity'], description: 'Which slice of the dealership to report on.' } }, required: ['topic'] },
   },
 ]
@@ -338,12 +338,42 @@ async function buildDealershipReport(dealershipId, topicRaw, { isMgr = true } = 
     const scored = list.map(v => ({ v, a: age(v), r: rec(v) })).filter(x => x.r)
     const pr = { high: 0, medium: 1, low: 2 }
     scored.sort((a, b) => pr[a.r.priority] - pr[b.r.priority] || b.a - a.a)
+
+    // Live market-comp layer: for the top reprice-worthy units (aged or off-market
+    // flagged, with a price + full YMM), pull the live used-market median so the AI
+    // can name a concrete reprice TARGET, not just "consider a drop". Capped + gated
+    // on MarketCheck being enabled/allowed so it stays cheap and never blocks the report.
+    const marketByUnit = {}
+    try {
+      if (marketcheckEnabled() && await marketcheckAllowed(dealershipId)) {
+        const { data: dlr } = await supabaseAdmin.from('dealerships').select('country, postal_code').eq('id', dealershipId).maybeSingle()
+        const isUS = String(dlr?.country || '').toUpperCase() === 'US'
+        const zip = (dlr?.postal_code || '').replace(/\s/g, '') || null
+        const targets = scored.filter(x => x.v.price > 0 && x.v.make && x.v.model && (x.r.action === 'reprice to market' || x.r.action === 'price drop' || x.r.action.startsWith('wholesale'))).slice(0, 6)
+        for (const x of targets) {
+          if (!(await marketcheckAllowed(dealershipId))) break
+          const st = await marketcheckMarketStats({ make: x.v.make, model: x.v.model, year: x.v.year, trim: x.v.trim, zip, radius: 250, isUS }).catch(() => null)
+          await recordMarketcheckCall(dealershipId)
+          const med = st?.price?.median
+          if (med && Number(med) > 0) {
+            const delta = Math.round(Number(x.v.price) - Number(med))
+            marketByUnit[x.v.id] = {
+              comps: st.count, market_median: money(med),
+              vs_market: delta > 0 ? `$${delta.toLocaleString()} above market` : delta < 0 ? `$${Math.abs(delta).toLocaleString()} below market` : 'at market',
+              suggested_target: money(med), avg_days_on_market: st.dom?.median != null ? Math.round(st.dom.median) : null,
+            }
+          }
+        }
+      }
+    } catch { /* market layer is best-effort — never fails the pricing report */ }
+
     out.pricing = {
       available: list.length,
       action_count: scored.length,
       wholesale_candidates: scored.filter(x => x.r.action.startsWith('wholesale')).length,
       discount_candidates: scored.filter(x => x.r.action === 'price drop' || x.r.action === 'reprice to market').length,
-      units: scored.slice(0, 20).map(x => ({ vehicle: label(x.v), days_on_lot: x.a, price: money(x.v.price), action: x.r.action, why: x.r.why, priority: x.r.priority })),
+      market_data: Object.keys(marketByUnit).length ? 'live comps included for top reprice candidates' : (marketcheckEnabled() ? 'no live comps matched' : 'live market comps unavailable (MarketCheck not enabled)'),
+      units: scored.slice(0, 20).map(x => ({ vehicle: label(x.v), days_on_lot: x.a, price: money(x.v.price), action: x.r.action, why: x.r.why, priority: x.r.priority, ...(marketByUnit[x.v.id] ? { market: marketByUnit[x.v.id] } : {}) })),
     }
     if (!scored.length) out.pricing.note = 'No pricing action needed right now — nothing aged or flagged off-market.'
   }
