@@ -46,6 +46,70 @@
     /* Per-dealer feature toggle: hides a nav item independent of role gating. */
     .ff-off { display: none !important; }
 
+    /* ── MarketSync workspace mode ─────────────────────────────────────────────
+       The owner's dashboard flips between a vehicle-dealer DEMO and running
+       MarketSync itself. In MarketSync mode we trim the nav to the SaaS-relevant
+       pages, trim Settings, and repaint the whole UI purple to make the mode
+       unmistakable. The mode switcher itself is hidden unless JS reveals it. */
+    #ms-mode-switch { display: none; }
+    html[data-dash-owner="1"] #ms-mode-switch { display: flex; }
+
+    /* Trimmed nav in MarketSync mode: hide the vehicle-only groups + pages. */
+    html[data-dash-mode="marketsync"] .nav-group[data-group="fb"],
+    html[data-dash-mode="marketsync"] .nav-group[data-group="ii"],
+    html[data-dash-mode="marketsync"] .nav-group[data-group="web"],
+    html[data-dash-mode="marketsync"] .nav-group[data-group="auto"],
+    html[data-dash-mode="marketsync"] #nav-reports,
+    html[data-dash-mode="marketsync"] #nav-reports-m,
+    html[data-dash-mode="marketsync"] .nav-item[data-page="inventory"],
+    html[data-dash-mode="marketsync"] #grp-sales [data-page="appraisal"],
+    html[data-dash-mode="marketsync"] #grp-sales [data-page="recon"],
+    html[data-dash-mode="marketsync"] #grp-sales [data-page="equity"],
+    html[data-dash-mode="marketsync"] #grp-sales [data-page="desk"],
+    html[data-dash-mode="marketsync"] #nav-appraisal,
+    html[data-dash-mode="marketsync"] #nav-desk { display: none !important; }
+    /* Keep the CRM + Sales groups open, and force-show Leads + F&I. */
+    html[data-dash-mode="marketsync"] #grp-crm,
+    html[data-dash-mode="marketsync"] #grp-sales { display: block !important; }
+    html[data-dash-mode="marketsync"] #nav-leads-sales,
+    html[data-dash-mode="marketsync"] #nav-fni-deals { display: flex !important; }
+    /* Trimmed Settings tabs in MarketSync mode (hide vehicle-specific tabs). */
+    html[data-dash-mode="marketsync"] #settings-tabs [data-stab="branding"],
+    html[data-dash-mode="marketsync"] #settings-tabs [data-stab="language"],
+    html[data-dash-mode="marketsync"] #settings-tabs [data-stab="aiboost"],
+    html[data-dash-mode="marketsync"] #settings-tabs [data-stab="dealermgmt"] { display: none !important; }
+
+    /* Repaint indigo → violet across the app while in MarketSync mode. */
+    html[data-dash-mode="marketsync"] .bg-indigo-600{background-color:#7c3aed!important}
+    html[data-dash-mode="marketsync"] .bg-indigo-500{background-color:#8b5cf6!important}
+    html[data-dash-mode="marketsync"] .bg-indigo-700{background-color:#6d28d9!important}
+    html[data-dash-mode="marketsync"] .bg-indigo-50{background-color:#f5f3ff!important}
+    html[data-dash-mode="marketsync"] .hover\:bg-indigo-500:hover{background-color:#8b5cf6!important}
+    html[data-dash-mode="marketsync"] .hover\:bg-indigo-100:hover{background-color:#ede9fe!important}
+    html[data-dash-mode="marketsync"] .text-indigo-600{color:#7c3aed!important}
+    html[data-dash-mode="marketsync"] .text-indigo-700{color:#6d28d9!important}
+    html[data-dash-mode="marketsync"] .text-indigo-400{color:#a78bfa!important}
+    html[data-dash-mode="marketsync"] .text-indigo-300{color:#c4b5fd!important}
+    html[data-dash-mode="marketsync"] .border-indigo-200{border-color:#ddd6fe!important}
+    html[data-dash-mode="marketsync"] .border-indigo-600{border-color:#7c3aed!important}
+    html[data-dash-mode="marketsync"] .border-indigo-800{border-color:#5b21b6!important}
+    html[data-dash-mode="marketsync"] .accent-indigo-600{accent-color:#7c3aed!important}
+    html[data-dash-mode="marketsync"] .ring-indigo-500{--tw-ring-color:#8b5cf6!important}
+    html[data-dash-mode="marketsync"] .from-indigo-600{--tw-gradient-from:#7c3aed var(--tw-gradient-from-position)!important}
+    html[data-dash-mode="marketsync"] .to-indigo-700{--tw-gradient-to:#6d28d9 var(--tw-gradient-to-position)!important}
+    html[data-dash-mode="marketsync"] .dark\:bg-indigo-950\/40{background-color:rgba(46,16,101,.4)!important}
+    html[data-dash-mode="marketsync"] .dark\:text-indigo-300{color:#c4b5fd!important}
+    html[data-dash-mode="marketsync"] .dark\:text-indigo-400{color:#a78bfa!important}
+    html[data-dash-mode="marketsync"] [aria-current="page"]{background-color:#f5f3ff!important;color:#6d28d9!important}
+    html[data-dash-mode="marketsync"].dark [aria-current="page"]{background-color:rgba(76,29,149,.35)!important;color:#c4b5fd!important}
+    /* The mode switch pills. */
+    #ms-mode-switch{align-items:center;gap:2px;background:#eef2f7;border-radius:9px;padding:3px;margin:0 0 8px}
+    html.dark #ms-mode-switch{background:#1e293b}
+    #ms-mode-switch button{flex:1;font-size:12px;font-weight:800;padding:6px 8px;border-radius:7px;border:0;cursor:pointer;color:#64748b;background:transparent}
+    #ms-mode-switch button[data-on="1"]{background:#fff;color:#0f172a;box-shadow:0 1px 2px rgba(0,0,0,.08)}
+    html.dark #ms-mode-switch button[data-on="1"]{background:#0f172a;color:#fff}
+    html[data-dash-mode="marketsync"] #ms-mode-switch button[data-mode="marketsync"][data-on="1"]{background:#7c3aed;color:#fff}
+
     /* Report rail: minimized (icon-only) unless expanded via the toggle. */
     #report-rail:not(.rr-open) button[data-report] span,
     #report-rail:not(.rr-open) .rr-head-label { display: none; }
@@ -555,6 +619,11 @@
 
         <!-- ═══════ DESKTOP grouped sidebar ═══════ -->
         <div id="nav-desktop" class="hidden md:flex md:flex-col md:w-full md:space-y-0.5">
+          <!-- Owner-only workspace switch: vehicle-dealer Demo ↔ running MarketSync. -->
+          <div id="ms-mode-switch" role="tablist" aria-label="Workspace mode">
+            <button type="button" data-mode="demo" data-on="1" onclick="setDashMode('demo')">🚗 Demo</button>
+            <button type="button" data-mode="marketsync" onclick="setDashMode('marketsync')">🟣 MarketSync</button>
+          </div>
 
           <!-- Dashboard -->
           <button type="button" data-page="insights" title="Dashboard" class="nav-item w-full flex items-center gap-2.5 px-3 py-2 rounded font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition">
@@ -2823,7 +2892,7 @@
     </div>
   </div>
 
-  <script src="dashboard.js?v=20260718m"></script>
+  <script src="dashboard.js?v=20260719a"></script>
   <!-- Google Translate widget (per-rep dashboard translation) -->
   <script>
     window.googleTranslateElementInit = function () {

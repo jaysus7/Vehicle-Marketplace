@@ -249,6 +249,41 @@ if (!token) {
 const user = userRaw ? JSON.parse(userRaw) : {};
 let profileContext = null;
 
+// ── Owner workspace mode: vehicle-dealer DEMO ↔ running MarketSync ────────────
+// Only the MarketSync owner sees the switch. MarketSync mode trims the nav to the
+// SaaS pages, trims Settings, and repaints the UI purple (all via CSS driven by the
+// html[data-dash-mode] attribute). Persisted per-browser.
+let __dashMode = localStorage.getItem('ms_dash_mode') === 'marketsync' ? 'marketsync' : 'demo';
+// The pages that remain in MarketSync mode (everything else is vehicle-only).
+const MS_ALLOWED_PAGES = new Set(['insights', 'crm', 'tasks', 'appointments', 'leads', 'fni', 'profile']);
+function applyDashMode(mode) {
+  __dashMode = mode === 'marketsync' ? 'marketsync' : 'demo';
+  document.documentElement.setAttribute('data-dash-mode', __dashMode);
+  document.querySelectorAll('#ms-mode-switch button').forEach(b => b.setAttribute('data-on', b.dataset.mode === __dashMode ? '1' : '0'));
+}
+function setDashMode(mode) {
+  applyDashMode(mode);
+  localStorage.setItem('ms_dash_mode', __dashMode);
+  // Don't strand the user on a now-hidden page.
+  if (__dashMode === 'marketsync') {
+    const cur = document.querySelector('.page-content:not(.hidden)')?.getAttribute('data-page-content');
+    if (typeof switchPage === 'function' && (!cur || !MS_ALLOWED_PAGES.has(cur))) switchPage('insights');
+  }
+  if (typeof showToast === 'function') showToast(__dashMode === 'marketsync' ? '🟣 MarketSync workspace' : '🚗 Demo dealership', 'success');
+}
+window.setDashMode = setDashMode;
+// Reveal the switch + apply the saved mode once we know this is the MarketSync owner.
+function initDashModeForOwner() {
+  const isOwner = profileContext?.is_marketsync === true || profileContext?.dealership?.name === 'JMS Automotive';
+  if (!isOwner) return;
+  document.documentElement.setAttribute('data-dash-owner', '1');
+  applyDashMode(__dashMode);
+  if (__dashMode === 'marketsync') {
+    const cur = document.querySelector('.page-content:not(.hidden)')?.getAttribute('data-page-content');
+    if (typeof switchPage === 'function' && cur && !MS_ALLOWED_PAGES.has(cur)) switchPage('insights');
+  }
+}
+
 // Page permission flags (set after profile loads, read by switchPage to mirror panels into Insights)
 let __canSeeLeaderboard = false;
 let __canSeeTeamInsights = false;
@@ -356,6 +391,8 @@ async function initializeDashboardEcosystem() {
       document.getElementById('ui-profile-name').textContent = personName;
       document.getElementById('ui-dealership-name').textContent = dealershipName;
     }
+    // Owner-only Demo ↔ MarketSync workspace switch.
+    try { initDashModeForOwner(); } catch (e) {}
 
     // Pre-fill profile form
     document.getElementById('prof-name').value = profileContext.full_name || '';
