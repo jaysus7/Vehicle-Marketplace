@@ -4555,6 +4555,9 @@ async function loadDeskDeal() {
       };
       // Management-configured fee schedule; null until a dealer sets one in Settings.
       __deskDealerFees = Array.isArray(cfg.desk_fees) ? cfg.desk_fees : null;
+      // Vehicle-cost tracking (internal gross) — off by default, never on customer docs.
+      __deskDealer.costOn = !!cfg.cost_tracking_enabled;
+      __deskDealer.costRepVisible = !!cfg.cost_rep_visible;
     } catch { __deskDealer = { name: profileContext?.dealership?.name || 'Dealership' }; }
     try { const b = await apiGetJson('/branding', { retries: 1 }); __deskDealer.logo = b?.branding?.logo_url || null; } catch {}
   }
@@ -4760,6 +4763,7 @@ function deskRenderForm(contactId) {
         <details class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden mb-4">
           <summary class="px-5 py-3 cursor-pointer text-sm font-black text-slate-900 dark:text-white">Internal — F&amp;I tracking &amp; delivery</summary>
           <div class="p-5 grid grid-cols-2 gap-3">
+            ${(__deskDealer.costOn && (['DEALER_ADMIN', 'OWNER', 'MANAGER'].includes(profileContext?.role) || __deskDealer.costRepVisible)) ? fld('Vehicle cost <span class="normal-case font-normal text-slate-400">(internal — never shown to customers)</span>', `<input id="dk-cost" type="text" inputmode="decimal" data-money value="${d.cost == null ? '' : msFmtMoney(d.cost)}" placeholder="0.00" oninput="deskRenderSummary()" class="${iCls}">`) : ''}
             ${fld('F&amp;I manager', txt('dk-fni_manager', d.fni_manager, 'Name'))}
             ${fld('Delivery date', txt('dk-delivery_date', d.delivery_date, '', 'date'))}
             ${fld('Delivery time', txt('dk-delivery_time', d.delivery_time, '', 'time'))}
@@ -4952,6 +4956,7 @@ function deskCollect(contactId) {
     insurance: { company: val('dk-ins-company'), policy: val('dk-ins-policy'), agent: val('dk-ins-agent'), phone: val('dk-ins-phone'), expiry: val('dk-ins-expiry') },
     vehicle: { year: val('dk-veh-year'), make: val('dk-veh-make'), model: val('dk-veh-model'), trim: val('dk-veh-trim'), vin: val('dk-veh-vin'), mileage: num('dk-veh-mileage'), color: val('dk-veh-color'), stock: val('dk-veh-stock') },
     // F&I tracking
+    cost: num('dk-cost'),   // internal vehicle cost (only present when the field is shown; backend ignores it unless cost tracking is on)
     fni_manager: val('dk-fni_manager'), delivery_date: val('dk-delivery_date'), delivery_time: val('dk-delivery_time'), plates: val('dk-plates'),
     vehicle_commission: num('dk-vehicle_commission'), fni_commission: num('dk-fni_commission'), split_with: val('dk-split_with'), notes: val('dk-notes'),
     google_review: chk('dk-google_review'), gm_survey: chk('dk-gm_survey'), fni_gross_1500: chk('dk-fni_gross_1500'), split_deal: chk('dk-split_deal'),
@@ -5452,6 +5457,13 @@ function deskRenderSummary() {
       ${(c.tradeValue || c.tradePayoff) ? row('Net trade', (c.tradeEquity >= 0 ? '−' : '+') + deskM(Math.abs(c.tradeEquity))) : ''}
       ${row('Amount financed', deskM(c.amountFinanced), true)}
       ${c.balloon ? row('Balloon / residual', deskM(c.balloon)) : ''}
+      ${(__deskDealer?.costOn && Number(d.cost) > 0) ? `
+      <div class="mt-2 rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900 px-3 py-2 space-y-1">
+        <div class="text-[10px] uppercase tracking-wider text-amber-600 dark:text-amber-400 font-bold">Internal — not shown to customer</div>
+        ${row('Vehicle cost', deskM(Number(d.cost)))}
+        ${row('Front gross', deskM(c.sellingPrice - Number(d.cost)), true)}
+        ${c.fniTotal ? row('Total gross (incl F&I)', deskM(c.sellingPrice - Number(d.cost) + c.fniTotal), true) : ''}
+      </div>` : ''}
     </div>
     ${c.isLease ? `
     <div class="mt-3 bg-violet-600 text-white rounded-lg px-4 py-3">
@@ -6947,6 +6959,7 @@ async function loadDeepReport(key) {
   let d;
   try { d = await apiGetJson(`/reports/${key}?range=${__rptRange}`, { retries: 1 }); }
   catch (e) { host.innerHTML = `<p class="text-sm text-rose-500">${esc(e.message || 'Could not load report')}</p>`; return; }
+  __rptData = d;
   const rangeBtn = (v, l) => `<button onclick="rptRange('${v}')" class="px-3 py-1.5 text-xs font-bold rounded-lg border ${__rptRange === v ? 'bg-indigo-600 text-white border-indigo-600' : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800'}">${l}</button>`;
   // Stat tiles from summary (special-case funnel).
   let tiles = '';
@@ -6965,12 +6978,43 @@ async function loadDeepReport(key) {
     <div class="flex items-center justify-between gap-3 flex-wrap mb-1">
       <div><h2 class="text-xl font-black text-slate-900 dark:text-white">${esc((def?.label || key).replace(/^\S+\s/, ''))}</h2>
         <p class="text-sm text-slate-500 dark:text-slate-400">Last ${d.range_days} days.</p></div>
-      <div class="flex gap-1.5">${rangeBtn('30', '30d')}${rangeBtn('90', '90d')}${rangeBtn('180', '6mo')}${rangeBtn('365', '1y')}</div>
+      <div class="flex gap-1.5 items-center">${rangeBtn('30', '30d')}${rangeBtn('90', '90d')}${rangeBtn('180', '6mo')}${rangeBtn('365', '1y')}
+        <button onclick="exportReportCsv()" class="ml-1 px-3 py-1.5 text-xs font-bold rounded-lg border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800">⬇ CSV</button></div>
     </div>
     ${tiles}${funnel ? '<div class="mt-4">' + funnel + '</div>' : ''}
     <div class="grid grid-cols-1 ${tables.length > 700 ? 'lg:grid-cols-2' : ''} gap-4 mt-4">${tables}</div>`;
 }
 window.loadDeepReport = loadDeepReport;
+let __rptData = null;
+// Export the currently-viewed deep report to CSV: a Summary block, then one block
+// per table the report returned. Built client-side from the fetched JSON.
+function exportReportCsv() {
+  const d = __rptData; if (!d) return;
+  const cell = v => { const s = (v == null ? '' : String(v)); return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
+  const blocks = [];
+  if (d.summary && typeof d.summary === 'object') {
+    blocks.push('Summary'); blocks.push(['Metric', 'Value'].map(cell).join(','));
+    for (const [k, v] of Object.entries(d.summary)) blocks.push([rptLabel(k), v].map(cell).join(','));
+    blocks.push('');
+  }
+  if (d.funnel) { blocks.push('Lead funnel'); blocks.push(['Stage', 'Count'].map(cell).join(',')); for (const [k, v] of Object.entries(d.funnel)) blocks.push([k, v].map(cell).join(',')); blocks.push(''); }
+  for (const [k, v] of Object.entries(d)) {
+    if (!Array.isArray(v) || !v.length) continue;
+    blocks.push(rptLabel(k));
+    const cols = Object.keys(v[0]);
+    blocks.push(cols.map(c => cell(rptLabel(c))).join(','));
+    for (const row of v) blocks.push(cols.map(c => cell(row[c])).join(','));
+    blocks.push('');
+  }
+  const csv = blocks.join('\r\n');
+  const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = `marketsync-${__rptTab}-report-${new Date().toISOString().slice(0, 10)}.csv`;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+window.exportReportCsv = exportReportCsv;
 
 async function loadInsights() {
   loadSyncHealth();
@@ -14276,6 +14320,8 @@ function renderAIBoostSection(cfg) {
     const cuStyle = document.getElementById('ai-customer-style'); if (cuStyle) cuStyle.value = cfg.ai_customer_style || '';
     const kb = document.getElementById('ai-knowledge'); if (kb) kb.value = cfg.ai_knowledge || '';
     const kbName = document.getElementById('ai-kb-name'); if (kbName) kbName.textContent = cfg.ai_knowledge_name ? `Loaded: ${cfg.ai_knowledge_name}` : '';
+    const costEn = document.getElementById('ai-cost-enabled'); if (costEn) costEn.checked = !!cfg.cost_tracking_enabled;
+    const costRep = document.getElementById('ai-cost-rep'); if (costRep) costRep.checked = !!cfg.cost_rep_visible;
   } else {
     badge.textContent = 'Not Active';
     badge.className = 'text-xs font-bold px-2 py-0.5 rounded-full border border-slate-500 bg-slate-800 text-slate-400';
@@ -14432,6 +14478,8 @@ function setupAIBoostListeners() {
       ai_internal_style: document.getElementById('ai-internal-style')?.value.trim() || null,
       ai_customer_style: document.getElementById('ai-customer-style')?.value.trim() || null,
       ai_knowledge: document.getElementById('ai-knowledge')?.value.trim() || null,
+      cost_tracking_enabled: !!document.getElementById('ai-cost-enabled')?.checked,
+      cost_rep_visible: !!document.getElementById('ai-cost-rep')?.checked,
     };
 
     try {

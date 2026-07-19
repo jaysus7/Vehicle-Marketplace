@@ -30,6 +30,10 @@ async function roster(dealershipId) {
   const map = {}; for (const p of (data || [])) map[p.id] = p.full_name || p.display_name || '—'
   return { list: data || [], nameOf: (id) => (id && map[id]) || 'Unassigned' }
 }
+async function costEnabled(dealershipId) {
+  const { data } = await supabaseAdmin.from('dealerships').select('cost_tracking_enabled').eq('id', dealershipId).maybeSingle()
+  return !!data?.cost_tracking_enabled
+}
 const monthKey = (iso) => { const d = new Date(iso); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}` }
 function lastMonths(n) {
   const out = []; const d = new Date()
@@ -45,12 +49,16 @@ export function registerReports(app) {
     if (!guard(req, res)) return
     const days = rangeDays(req.query); const startIso = new Date(Date.now() - days * 86400000).toISOString()
     const { nameOf } = await roster(req.dealershipId)
+    const costOn = await costEnabled(req.dealershipId)
     const { data: deals } = await supabaseAdmin.from('deals')
-      .select('selling_price, deal_type, sale_type, finance_company, program, deal_status, sold_at, delivered_at, created_at, created_by, vehicle_commission, fni_commission, term, apr')
+      .select('selling_price, cost, deal_type, sale_type, finance_company, program, deal_status, sold_at, delivered_at, created_at, created_by, vehicle_commission, fni_commission, term, apr')
       .eq('dealership_id', req.dealershipId).in('deal_status', WON).gte('sold_at', startIso).limit(20000)
     const rows = deals || []
     const units = rows.length
     const revenue = sum(rows, x => x.selling_price)
+    // Front gross = selling price − vehicle cost, over deals that actually have a cost.
+    const grossRows = costOn ? rows.filter(r => Number(r.cost) > 0) : []
+    const totalGross = sum(grossRows, r => (Number(r.selling_price) || 0) - (Number(r.cost) || 0))
     const grouped = (key, label) => {
       const m = {}; for (const r of rows) { const k = (r[key] || 'Unspecified'); m[k] = m[k] || { units: 0, revenue: 0 }; m[k].units++; m[k].revenue += Number(r.selling_price) || 0 }
       return Object.entries(m).sort((a, b) => b[1].units - a[1].units).map(([k, v]) => ({ [label]: k, units: v.units, revenue: money(v.revenue) }))
@@ -59,7 +67,7 @@ export function registerReports(app) {
     const trendM = Object.fromEntries(trendMonths.map(m => [m, { units: 0, revenue: 0 }]))
     for (const r of rows) { const k = monthKey(r.sold_at || r.created_at); if (trendM[k]) { trendM[k].units++; trendM[k].revenue += Number(r.selling_price) || 0 } }
     const byRep = {}
-    for (const r of rows) { const k = r.created_by || 'unassigned'; byRep[k] = byRep[k] || { units: 0, revenue: 0, comm: 0 }; byRep[k].units++; byRep[k].revenue += Number(r.selling_price) || 0; byRep[k].comm += (Number(r.vehicle_commission) || 0) + (Number(r.fni_commission) || 0) }
+    for (const r of rows) { const k = r.created_by || 'unassigned'; byRep[k] = byRep[k] || { units: 0, revenue: 0, comm: 0, gross: 0 }; byRep[k].units++; byRep[k].revenue += Number(r.selling_price) || 0; byRep[k].comm += (Number(r.vehicle_commission) || 0) + (Number(r.fni_commission) || 0); if (costOn && Number(r.cost) > 0) byRep[k].gross += (Number(r.selling_price) || 0) - (Number(r.cost) || 0) }
     res.json({
       ok: true, range_days: days,
       summary: {
@@ -67,12 +75,13 @@ export function registerReports(app) {
         revenue: money(revenue), avg_price: units ? money(revenue / units) : 0,
         avg_term: units ? Math.round(sum(rows, x => x.term) / units) : 0,
         avg_apr: units ? Math.round((sum(rows, x => x.apr) / units) * 100) / 100 : 0,
+        ...(costOn ? { front_gross: money(totalGross), avg_gross: grossRows.length ? money(totalGross / grossRows.length) : 0, units_costed: grossRows.length } : {}),
       },
       by_deal_type: grouped('deal_type', 'type'),
       by_sale_type: grouped('sale_type', 'type'),
       by_finance_company: grouped('finance_company', 'lender').slice(0, 12),
       trend: trendMonths.map(m => ({ month: m, units: trendM[m].units, revenue: money(trendM[m].revenue) })),
-      by_rep: Object.entries(byRep).sort((a, b) => b[1].units - a[1].units).map(([id, v]) => ({ rep: id === 'unassigned' ? 'Unassigned' : nameOf(id), units: v.units, revenue: money(v.revenue), commission: money(v.comm) })),
+      by_rep: Object.entries(byRep).sort((a, b) => b[1].units - a[1].units).map(([id, v]) => ({ rep: id === 'unassigned' ? 'Unassigned' : nameOf(id), units: v.units, revenue: money(v.revenue), ...(costOn ? { gross: money(v.gross) } : {}), commission: money(v.comm) })),
     })
   })
 
@@ -168,22 +177,23 @@ export function registerReports(app) {
     const did = req.dealershipId
     const days = rangeDays(req.query); const startIso = new Date(Date.now() - days * 86400000).toISOString()
     const { list } = await roster(did)
+    const costOn = await costEnabled(did)
     const reps = {}
-    for (const p of list) if (p.active !== false && p.id) reps[p.id] = { rep: p.full_name || p.display_name || '—', role: p.role, leads: 0, units: 0, revenue: 0, appraisals: 0, tasks_done: 0, activities: 0 }
+    for (const p of list) if (p.active !== false && p.id) reps[p.id] = { rep: p.full_name || p.display_name || '—', role: p.role, leads: 0, units: 0, revenue: 0, gross: 0, appraisals: 0, tasks_done: 0, activities: 0 }
     const bump = (id, k, n = 1) => { if (reps[id]) reps[id][k] += n }
     const [{ data: contacts }, { data: deals }, { data: apprs }, { data: tasks }, { data: comms }] = await Promise.all([
       supabaseAdmin.from('contacts').select('assigned_rep, created_at').eq('dealership_id', did).gte('created_at', startIso).limit(50000),
-      supabaseAdmin.from('deals').select('created_by, selling_price, deal_status, sold_at').eq('dealership_id', did).in('deal_status', WON).gte('sold_at', startIso).limit(20000),
+      supabaseAdmin.from('deals').select('created_by, selling_price, cost, deal_status, sold_at').eq('dealership_id', did).in('deal_status', WON).gte('sold_at', startIso).limit(20000),
       supabaseAdmin.from('trade_appraisals').select('created_by, created_at').eq('dealership_id', did).gte('created_at', startIso).limit(20000),
       supabaseAdmin.from('crm_tasks').select('assigned_to, done, done_at').eq('dealership_id', did).eq('done', true).gte('done_at', startIso).limit(50000),
       supabaseAdmin.from('communications').select('rep_id, occurred_at, created_at').eq('dealership_id', did).gte('created_at', startIso).limit(50000),
     ])
     for (const c of (contacts || [])) bump(c.assigned_rep, 'leads')
-    for (const d of (deals || [])) { bump(d.created_by, 'units'); bump(d.created_by, 'revenue', Number(d.selling_price) || 0) }
+    for (const d of (deals || [])) { bump(d.created_by, 'units'); bump(d.created_by, 'revenue', Number(d.selling_price) || 0); if (costOn && Number(d.cost) > 0) bump(d.created_by, 'gross', (Number(d.selling_price) || 0) - (Number(d.cost) || 0)) }
     for (const a of (apprs || [])) bump(a.created_by, 'appraisals')
     for (const t of (tasks || [])) bump(t.assigned_to, 'tasks_done')
     for (const m of (comms || [])) bump(m.rep_id, 'activities')
-    const out = Object.values(reps).map(r => ({ ...r, revenue: money(r.revenue), close_rate_pct: pct(r.units, r.leads) }))
+    const out = Object.values(reps).map(r => { const o = { ...r, revenue: money(r.revenue), gross: money(r.gross), close_rate_pct: pct(r.units, r.leads) }; if (!costOn) delete o.gross; return o })
       .sort((a, b) => b.units - a.units || b.revenue - a.revenue)
     res.json({ ok: true, range_days: days, reps: out })
   })

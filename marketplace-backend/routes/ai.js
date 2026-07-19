@@ -28,7 +28,7 @@ export function registerAI(app) {
     if (!req.dealershipId) return res.status(400).json({ error: 'No dealership associated' })
     const { data, error } = await supabaseAdmin
       .from('dealerships')
-      .select('ai_boost_active, ai_tone, ai_required_fields, ai_manager_email, vin_sticker_active, inv_intel_active, ai_vision_active, ai_boost_paid, inv_intel_paid, full_access_until, photo_background_url, country, province, city, postal_code, daily_digest_enabled, legal_name, street_address, phone, fax, hst_number, omvic_reg, plan, desk_fees, ai_internal_style, ai_customer_style, ai_knowledge, ai_knowledge_name')
+      .select('ai_boost_active, ai_tone, ai_required_fields, ai_manager_email, vin_sticker_active, inv_intel_active, ai_vision_active, ai_boost_paid, inv_intel_paid, full_access_until, photo_background_url, country, province, city, postal_code, daily_digest_enabled, legal_name, street_address, phone, fax, hst_number, omvic_reg, plan, desk_fees, ai_internal_style, ai_customer_style, ai_knowledge, ai_knowledge_name, cost_tracking_enabled, cost_rep_visible')
       .eq('id', req.dealershipId)
       .single()
     if (error) return res.status(500).json({ error: error.message })
@@ -100,6 +100,9 @@ export function registerAI(app) {
     if (fax !== undefined) update.fax = (fax || '').trim() || null
     if (hst_number !== undefined) update.hst_number = (hst_number || '').trim() || null
     if (omvic_reg !== undefined) update.omvic_reg = (omvic_reg || '').trim() || null
+    // Vehicle-cost tracking (internal gross): on/off + whether sales reps can see it.
+    if (req.body.cost_tracking_enabled !== undefined) update.cost_tracking_enabled = !!req.body.cost_tracking_enabled
+    if (req.body.cost_rep_visible !== undefined) update.cost_rep_visible = !!req.body.cost_rep_visible
     // AI persona/style prompts + knowledge base. Style prompts steer tone/voice;
     // the knowledge base is grounding text both the internal assistant and the
     // customer chat can draw on. Bounded so they can't blow up the prompt/cost.
@@ -124,7 +127,7 @@ export function registerAI(app) {
       .from('dealerships')
       .update(update)
       .eq('id', req.dealershipId)
-      .select('ai_boost_active, ai_tone, ai_required_fields, ai_manager_email, country, province, city, postal_code, daily_digest_enabled, legal_name, street_address, phone, fax, hst_number, omvic_reg, desk_fees, ai_internal_style, ai_customer_style, ai_knowledge, ai_knowledge_name')
+      .select('ai_boost_active, ai_tone, ai_required_fields, ai_manager_email, country, province, city, postal_code, daily_digest_enabled, legal_name, street_address, phone, fax, hst_number, omvic_reg, desk_fees, ai_internal_style, ai_customer_style, ai_knowledge, ai_knowledge_name, cost_tracking_enabled, cost_rep_visible')
       .single()
     if (error) return res.status(500).json({ error: error.message })
     res.json(data)

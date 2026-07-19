@@ -1238,7 +1238,7 @@ export function registerRoutes(app) {
     'selling_price', 'trade_value', 'trade_payoff', 'down_payment', 'rebate', 'apr',
     'amount_financed', 'payment', 'tax_rate', 'tax_amount', 'total_price',
     'retail', 'rebate_before_tax', 'adjustment', 'balloon', 'deferral_days',
-    'buy_rate', 'residual_amount', 'mileage_allowance']
+    'buy_rate', 'residual_amount', 'mileage_allowance', 'cost']   // `cost` written only when cost-tracking is on (internal — never on customer docs)
   const DEAL_BOOL_FIELDS = ['google_review', 'gm_survey', 'fni_gross_1500', 'split_deal', 'tax_on_difference']
   const DEAL_TEXT_FIELDS = ['inventory_id', 'delivery_date', 'delivery_time', 'fni_manager', 'deal_type', 'plates',
     'fni_products', 'split_with', 'notes', 'deal_status', 'payment_freq', 'trade_desc', 'trade_vin',
@@ -1253,6 +1253,11 @@ export function registerRoutes(app) {
     if (!contactId) return res.status(400).json({ error: 'contact_id required' })
     const { data } = await supabaseAdmin.from('deals')
       .select('*').eq('dealership_id', req.dealershipId).eq('contact_id', contactId).maybeSingle()
+    // Vehicle cost is internal + feature-flagged. Strip it from the payload unless
+    // cost tracking is on (managers reach this endpoint; the flags drive UI display).
+    const { data: dlr } = await supabaseAdmin.from('dealerships')
+      .select('cost_tracking_enabled, cost_rep_visible').eq('id', req.dealershipId).maybeSingle()
+    if (data && !dlr?.cost_tracking_enabled) delete data.cost
     // Customer # lives on the contact; the deal carries deal #. Surface both plus the
     // salesperson (name + registration/OMVIC #) so the bill of sale can print them.
     const { data: cust } = await supabaseAdmin.from('contacts')
@@ -1263,7 +1268,7 @@ export function registerRoutes(app) {
       const { data: rep } = await supabaseAdmin.from('profiles').select('full_name, registration_id').eq('id', repId).maybeSingle()
       if (rep) salesperson = { name: rep.full_name || null, registration_id: rep.registration_id || null }
     }
-    res.json({ ok: true, deal: data || null, customer_number: cust?.customer_number || null, salesperson })
+    res.json({ ok: true, deal: data || null, customer_number: cust?.customer_number || null, salesperson, cost_tracking_enabled: !!dlr?.cost_tracking_enabled, cost_rep_visible: !!dlr?.cost_rep_visible })
   })
 
   // Next sequential number for a dealership (max+1, base-offset so it reads like a
@@ -1295,6 +1300,12 @@ export function registerRoutes(app) {
     for (const f of DEAL_BOOL_FIELDS) if (f in body) row[f] = bool(body[f])
     for (const f of DEAL_TEXT_FIELDS) if (f in body) row[f] = str(body[f])
     for (const f of DEAL_JSON_FIELDS) if (f in body) row[f] = json(body[f])
+    // Vehicle cost only persists when cost tracking is switched on for the store —
+    // otherwise never touch it (so it can't be set by accident, and stays internal).
+    if ('cost' in row) {
+      const { data: dlrCost } = await supabaseAdmin.from('dealerships').select('cost_tracking_enabled').eq('id', req.dealershipId).maybeSingle()
+      if (!dlrCost?.cost_tracking_enabled) delete row.cost
+    }
 
     // Assign a permanent deal # (once) and make sure the customer has a customer #.
     // Both are per-dealership sequential and stay attached: the deal references the

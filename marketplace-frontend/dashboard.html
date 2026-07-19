@@ -528,6 +528,14 @@
                 </div>
               </div>
 
+              <!-- Vehicle cost & gross — internal only, never shown to customers -->
+              <div class="pt-3 mt-1 border-t border-slate-100 dark:border-slate-800 space-y-2">
+                <label class="block text-[11px] uppercase font-bold text-slate-400 tracking-wider">Vehicle cost &amp; gross</label>
+                <label class="flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-200"><input type="checkbox" id="ai-cost-enabled" class="accent-indigo-600 w-4 h-4">Track vehicle cost on deals &amp; show gross in reports</label>
+                <label class="flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-200"><input type="checkbox" id="ai-cost-rep" class="accent-indigo-600 w-4 h-4">Let sales reps see cost &amp; gross (managers always can)</label>
+                <p class="text-[11px] text-slate-400">Cost and gross are internal — they never appear on any customer estimate, bill of sale or email.</p>
+              </div>
+
               <button id="ai-config-save-btn" class="w-full bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold py-2 rounded transition">Save AI Settings</button>
             </div>
           </div>
@@ -3004,7 +3012,7 @@
     </div>
   </div>
 
-  <script src="dashboard.js?v=20260719p"></script>
+  <script src="dashboard.js?v=20260719q"></script>
   <!-- Google Translate widget (per-rep dashboard translation) -->
   <script>
     window.googleTranslateElementInit = function () {
