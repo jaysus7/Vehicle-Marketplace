@@ -151,11 +151,16 @@ export function registerCrm(app) {
     // "By rep" filter — managers only (a rep can't browse another rep's whole book).
     if (repFilter && dealer) query = query.eq('assigned_rep', repFilter)
     if (status) { const list = status.split(',').map(s => s.trim()).filter(Boolean); query = list.length > 1 ? query.in('status', list) : query.eq('status', list[0]) }
-    // Source filter — `marketsync` expands to every lead that came through our own
-    // website + AI chat + digital-retailing shells (vs. third-party CRM/marketplace feeds).
-    if (source) {
-      const MS = ['Website', 'Website Chat', 'Trade-In', 'Credit Application', 'Build & Price', 'Reserve / Deposit', 'Payment Quote']
-      const list = source === 'marketsync' ? MS : source.split(',').map(s => s.trim()).filter(Boolean)
+    // Source filter — `marketsync` matches every lead that came through our own funnel:
+    // the dealer website + AI chat + digital-retailing shells, AND the MarketSync
+    // product's own demo/chat leads (source 'MarketSync …', 'Demo …'). Prefix-matched
+    // with ilike so 'Website' also catches 'Website Chat', 'Reserve' catches
+    // 'Reserve / Deposit', etc. (vs. third-party CRM/marketplace feeds).
+    if (source === 'marketsync') {
+      const pats = ['Website*', 'Trade-In*', 'Credit Application*', 'Build*', 'Reserve*', 'Payment Quote*', 'MarketSync*', 'Demo*']
+      query = query.or(pats.map(p => `source.ilike.${p}`).join(','))
+    } else if (source) {
+      const list = source.split(',').map(s => s.trim()).filter(Boolean)
       if (list.length) query = list.length > 1 ? query.in('source', list) : query.eq('source', list[0])
     }
     if (q) query = query.or(`full_name.ilike.%${q}%,email.ilike.%${q}%,phone.ilike.%${q}%,phone_mobile.ilike.%${q}%,company_name.ilike.%${q}%`)

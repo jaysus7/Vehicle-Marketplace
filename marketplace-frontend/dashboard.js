@@ -5615,6 +5615,8 @@ async function loadSyndicationCard() {
          <p class="text-xs text-slate-500 dark:text-slate-400">Give these live feed links to AutoTrader, Trader.ca, Kijiji Autos or Google — they pull your ${cfg.vehicle_count} in-stock ${cfg.vehicle_count === 1 ? 'vehicle' : 'vehicles'} automatically and stay in sync (${esc(cfg.currency)} pricing). Updates every time a car is added, sold or repriced.</p>
          ${row('CSV', cfg.csv_url)}
          ${row('XML', cfg.xml_url)}
+         ${cfg.google_url ? row('Google', cfg.google_url) : ''}
+         <p class="text-[11px] text-slate-400 dark:text-slate-500">Most classifieds accept the CSV or XML. Use the <b>Google</b> feed for Google Merchant Center / Vehicle ads.</p>
        </div>`
     : `<p class="text-xs text-slate-500 dark:text-slate-400">${esc(cfg.reason || 'Publish your website to turn on syndication feeds.')}</p>`;
   host.innerHTML = `

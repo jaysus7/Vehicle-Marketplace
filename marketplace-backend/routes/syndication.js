@@ -117,6 +117,53 @@ export function registerSyndication(app) {
     res.send(`<?xml version="1.0" encoding="UTF-8"?>\n<listings dealer="${xmlEsc(d.name)}" generated="${new Date().toISOString()}" count="${rows.length}">\n${body}\n</listings>`)
   })
 
+  // ── PUBLIC: Google vehicle-listings feed (RSS 2.0 + g: namespace). ──────────
+  // The shape Google Merchant Center / Vehicle ads expect, for platforms that reject
+  // the generic feed. Condition/price/mileage follow Google's attribute rules.
+  app.get('/syndication/:slug/google.xml', async (req, res) => {
+    const d = await loadDealerBySlug(req.params.slug)
+    if (!d || !d.site_published) return res.status(404).type('text/plain').send('Feed not available')
+    const currency = currencyFor(d.country)
+    const base = siteBaseFor(d)
+    const rows = (await loadVehicles(d.id)).map(v => toListing(v, d, base, currency))
+    const g = (k, v) => (v === '' || v == null) ? '' : `      <g:${k}>${xmlEsc(v)}</g:${k}>`
+    const items = rows.map(r => {
+      const title = [r.year, r.make, r.model, r.trim].filter(Boolean).join(' ')
+      const imgs = String(r.additional_image_urls || '').split('|').filter(Boolean)
+      const extraImgs = imgs.slice(0, 10).map(u => `      <g:additional_image_link>${xmlEsc(u)}</g:additional_image_link>`).join('\n')
+      return `    <item>
+${[
+        g('id', r.id), g('vin', r.vin),
+        `      <title>${xmlEsc(title)}</title>`,
+        `      <description>${xmlEsc(r.description || title)}</description>`,
+        `      <link>${xmlEsc(r.vehicle_url)}</link>`,
+        r.image_url ? `      <g:image_link>${xmlEsc(r.image_url)}</g:image_link>` : '',
+        r.price !== '' ? g('price', `${r.price}.00 ${r.currency}`) : '',
+        g('condition', r.condition.toLowerCase()),
+        g('brand', r.make), g('model', r.model), g('trim', r.trim),
+        g('year', r.year),
+        r.mileage !== '' ? `      <g:mileage><g:value>${xmlEsc(r.mileage)}</g:value><g:unit>${currency === 'CAD' ? 'km' : 'mi'}</g:unit></g:mileage>` : '',
+        g('color', r.exterior_color), g('body_style', r.body_type),
+        g('fuel_type', r.fuel_type), g('transmission', r.transmission), g('drivetrain', r.drivetrain),
+        g('vehicle_fulfillment', 'in_store'),
+        g('store_code', r.stock_number),
+        g('dealer_name', r.dealer_name), g('city', r.city), g('state', r.province),
+      ].filter(Boolean).join('\n')}
+${extraImgs ? extraImgs + '\n' : ''}    </item>`
+    }).join('\n')
+    res.set('Content-Type', 'application/xml; charset=utf-8')
+    res.set('Cache-Control', 'public, max-age=1800')
+    res.send(`<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:g="http://base.google.com/ns/1.0">
+  <channel>
+    <title>${xmlEsc(d.name)} — Inventory</title>
+    <link>${xmlEsc(base)}</link>
+    <description>Live vehicle inventory for ${xmlEsc(d.name)}.</description>
+${items}
+  </channel>
+</rss>`)
+  })
+
   // ── ADMIN: the dealer's feed URLs + a live count, for the Syndication card. ──
   app.get('/syndication/config', requireAuth, async (req, res) => {
     if (!req.dealershipId) return res.status(400).json({ error: 'No dealership' })
@@ -136,6 +183,7 @@ export function registerSyndication(app) {
       currency: currencyFor(d.country),
       csv_url: `${b}/syndication/${d.site_slug}/inventory.csv`,
       xml_url: `${b}/syndication/${d.site_slug}/inventory.xml`,
+      google_url: `${b}/syndication/${d.site_slug}/google.xml`,
     })
   })
 }
