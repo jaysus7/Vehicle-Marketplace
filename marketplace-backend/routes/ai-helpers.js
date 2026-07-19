@@ -97,6 +97,16 @@ const ASSISTANT_TOOLS = [
     description: "Pull THIS dealership's own live operating data. Use for anything about the store's own numbers or people: sales & units this month, gross, F&I, commissions, which salesperson is ahead or needs coaching, lead volume/sources/conversion, unworked leads, aging inventory, reconditioning/cleanup status, overdue tasks, today's appointments, who to call today, and recent trade appraisals. Power topics: 'trends' compares this period to the prior one (sales this month vs last, leads last 30d vs the 30 before, which lead sources rose or fell — use for 'are we up or down / why did leads drop'); 'priorities' returns a ranked what-to-do-today list; 'pricing' returns per-unit price/aging actions — which specific cars to discount, wholesale, or send to auction (days-on-lot, off-market flags, missing prices), and for the top reprice candidates a LIVE market median + concrete reprice target and how far each unit sits above/below market (use for 'which cars should I discount/wholesale today' and 'what should I reprice this to'); 'equity' returns the who-to-call upgrade list — delivered customers now in a positive-equity or lease-maturing position, ranked by equity (use for 'who can I put in a new car / who to call for an upgrade / lease pull-ahead'); 'marketing_roi' returns which advertising channel paid off — spend vs leads, sales, cost-per-lead, cost-per-sale, revenue and ROI per channel (use for 'which campaign made money / where should I spend my ad budget / what's my cost per lead'). Prefer this over guessing. Use 'overview' for a general 'how are we doing'.",
     input_schema: { type: 'object', properties: { topic: { type: 'string', enum: ['overview', 'sales', 'commissions', 'reps', 'leads', 'inventory', 'recon', 'tasks', 'appraisals', 'trends', 'priorities', 'pricing', 'equity'], description: 'Which slice of the dealership to report on.' } }, required: ['topic'] },
   },
+  {
+    name: 'propose_action',
+    description: "Propose an action for the user to CONFIRM (never executed automatically). Use when the user asks you to DO something, not just report. Two actions: 'create_task' — add a follow-up/reminder task for the user (give a clear title and optional due_hours); 'bulk_outreach' — text or email a group of customers described in plain English (put the full request in `instruction`, e.g. 'text everyone uncontacted for 3 days about our weekend sale'). After proposing, tell the user in one short sentence what you set up and that they can confirm it. Do NOT claim it's done — it only happens once they confirm.",
+    input_schema: { type: 'object', properties: {
+      action: { type: 'string', enum: ['create_task', 'bulk_outreach'] },
+      title: { type: 'string', description: 'create_task: the task title' },
+      due_hours: { type: 'number', description: 'create_task: hours from now the task is due (optional)' },
+      instruction: { type: 'string', description: 'bulk_outreach: the full plain-English outreach request' },
+    }, required: ['action'] },
+  },
 ]
 
 // ── The MarketSync "brain": live operating report from THIS store's own data ──

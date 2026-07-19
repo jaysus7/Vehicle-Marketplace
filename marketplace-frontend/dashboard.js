@@ -11532,19 +11532,21 @@ async function autoSubmitCustom(bucket, btn) {
 // Type what you want ("text everyone uncontacted 3+ days about our sale"); AI drafts
 // the message + audience; you review the count + sample, tweak, then confirm the send.
 let __bulkPlan = null;
-function openBulkOutreach() {
+function openBulkOutreach(prefill) {
   __bulkPlan = null;
   const inp = 'w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm';
   crmOverlay(`<div class="p-5">
     <div class="flex items-center justify-between mb-1"><div class="text-lg font-black text-slate-900 dark:text-white">⚡ Bulk message</div><button onclick="this.closest('.fixed').remove()" class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"><svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" d="M6 6l12 12M18 6L6 18"/></svg></button></div>
     <p class="text-sm text-slate-500 dark:text-slate-400 mb-3">Describe who to reach and what to say — in plain English. Nothing sends until you review and confirm.</p>
-    <textarea id="bulk-instruction" rows="2" placeholder="e.g. Text everyone we haven't contacted in 3 days about our weekend sale event" class="${inp}"></textarea>
+    <textarea id="bulk-instruction" rows="2" placeholder="e.g. Text everyone we haven't contacted in 3 days about our weekend sale event" class="${inp}">${prefill ? esc(prefill) : ''}</textarea>
     <div class="flex flex-wrap gap-1.5 mt-2">
       ${['Text uncontacted leads from the last 7 days','Email positive-equity customers about upgrading','Text customers with a lease maturing in 6 months','Email everyone who came from Facebook this month'].map(s => `<button onclick="document.getElementById('bulk-instruction').value=this.textContent;" class="text-[11px] font-semibold bg-slate-100 dark:bg-slate-800 hover:bg-violet-100 dark:hover:bg-violet-950/40 text-slate-600 dark:text-slate-300 px-2.5 py-1 rounded-lg">${s}</button>`).join('')}
     </div>
-    <button onclick="bulkPlan(this)" class="mt-3 bg-violet-600 hover:bg-violet-500 text-white text-sm font-bold px-4 py-2 rounded-lg transition">Preview audience →</button>
+    <button id="bulk-plan-btn" onclick="bulkPlan(this)" class="mt-3 bg-violet-600 hover:bg-violet-500 text-white text-sm font-bold px-4 py-2 rounded-lg transition">Preview audience →</button>
     <div id="bulk-result" class="mt-4"></div>
   </div>`, 'max-w-xl');
+  // Handed off from the assistant with a ready instruction → jump straight to preview.
+  if (prefill) setTimeout(() => document.getElementById('bulk-plan-btn')?.click(), 60);
 }
 async function bulkPlan(btn) {
   const instruction = document.getElementById('bulk-instruction')?.value.trim();
@@ -17020,17 +17022,33 @@ function renderAiDockMessages() {
       '</div>';
     box.appendChild(intro);
   }
-  for (const m of aiDockMessages) {
+  aiDockMessages.forEach((m, idx) => {
     const row = document.createElement('div');
-    row.className = m.role === 'user' ? 'flex justify-end' : 'flex justify-start';
+    row.className = m.role === 'user' ? 'flex justify-end' : 'flex flex-col items-start';
     const bubble = document.createElement('div');
     bubble.className = m.role === 'user'
       ? 'max-w-[85%] bg-indigo-600 text-white rounded-2xl rounded-br-sm px-3.5 py-2 whitespace-pre-wrap break-words'
       : 'max-w-[85%] bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-100 rounded-2xl rounded-bl-sm px-3.5 py-2 whitespace-pre-wrap break-words';
     bubble.textContent = m.content;
     row.appendChild(bubble);
+    // Agentic action: a confirm chip under the assistant bubble (nothing runs until clicked).
+    if (m.role === 'assistant' && m.action && !m.action_done) {
+      const a = m.action;
+      const label = a.action === 'create_task'
+        ? `✓ Create task: "${a.title}"${a.due_hours ? ` (due in ${a.due_hours}h)` : ''}`
+        : a.action === 'bulk_outreach' ? `✉️ Set up: "${a.instruction}"` : 'Confirm';
+      const wrap = document.createElement('div');
+      wrap.className = 'mt-1.5 flex items-center gap-2';
+      wrap.innerHTML = `<button onclick="aiDockRunAction(${idx})" class="text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-1.5 rounded-lg">${esc(label)}</button><button onclick="aiDockCancelAction(${idx})" class="text-xs font-semibold text-slate-400 hover:text-slate-600 dark:hover:text-slate-200">Cancel</button>`;
+      row.appendChild(wrap);
+    } else if (m.role === 'assistant' && m.action_done) {
+      const done = document.createElement('div');
+      done.className = 'mt-1 text-[11px] font-bold text-emerald-600 dark:text-emerald-400';
+      done.textContent = m.action_done === 'handoff' ? '✓ Opened — review & send' : '✓ Done';
+      row.appendChild(done);
+    }
     box.appendChild(row);
-  }
+  });
   if (aiDockBusy) {
     const row = document.createElement('div');
     row.className = 'flex justify-start';
@@ -17058,7 +17076,7 @@ async function sendAiDock(text) {
       body: JSON.stringify({ messages: aiDockMessages.slice(-10) }),
     });
     const d = await r.json().catch(() => ({}));
-    aiDockMessages.push({ role: 'assistant', content: r.ok ? (d.reply || 'No reply.') : (d.error || 'Something went wrong. Try again.') });
+    aiDockMessages.push({ role: 'assistant', content: r.ok ? (d.reply || 'No reply.') : (d.error || 'Something went wrong. Try again.'), action: r.ok ? (d.action || null) : null });
   } catch {
     aiDockMessages.push({ role: 'assistant', content: 'Network error — please try again.' });
   } finally {
@@ -17066,6 +17084,29 @@ async function sendAiDock(text) {
     renderAiDockMessages();
   }
 }
+
+// Execute an agentic action the assistant proposed (only on the user's click).
+async function aiDockRunAction(idx) {
+  const m = aiDockMessages[idx]; if (!m || !m.action || m.action_done) return;
+  const a = m.action;
+  try {
+    if (a.action === 'create_task') {
+      const due_at = a.due_hours ? new Date(Date.now() + a.due_hours * 3600000).toISOString() : null;
+      await apiSendJson('/crm/tasks', 'POST', { title: a.title, type: 'followup', due_at });
+      m.action_done = 'done';
+      showToast('Task created ✓', 'success');
+    } else if (a.action === 'bulk_outreach') {
+      // Hand off to the safe bulk-outreach flow (its own preview + confirm before send).
+      m.action_done = 'handoff';
+      closeAiDock();
+      openBulkOutreach(a.instruction);
+    }
+  } catch (e) { showToast(e.message || 'Could not do that', 'error'); return; }
+  renderAiDockMessages();
+}
+function aiDockCancelAction(idx) { const m = aiDockMessages[idx]; if (m) { m.action = null; renderAiDockMessages(); } }
+window.aiDockRunAction = aiDockRunAction;
+window.aiDockCancelAction = aiDockCancelAction;
 
 function openAiDock() {
   const p = document.getElementById('ai-dock-panel');

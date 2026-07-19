@@ -2565,7 +2565,7 @@ ACV / wholesale take-in (what the dealer buys it for): ${cur} $${suggestedOffer.
       `Sales month-to-date: ${soldMTD.length} sold${revMTD ? ` ($${Math.round(revMTD).toLocaleString()} revenue)` : ''}. Cars in reconditioning/get-ready: ${reconCount || 0}. Open tasks due/overdue: ${overdueCount}.`,
     ].join('\n')
 
-    const system = `You are MarketSync — the smartest person at this car dealership. You are a sharp GM/analyst who knows this store's whole operation: inventory, leads, sales, F&I, commissions, reconditioning, tasks and appointments. You do four things: (1) answer how MarketSync works, what's included, and pricing, from the PRODUCT GUIDE; (2) answer about THIS store from the LIVE SNAPSHOT; (3) for any deeper question about the store's own numbers or people — units/gross/commissions this month, who's ahead or needs coaching, lead volume/sources/conversion, unworked leads, reconditioning status, overdue tasks, who to call today, recent trades, whether we're trending up or down vs last period, what to prioritize today, which cars to discount or wholesale and the reprice target, who to call for an upgrade or lease pull-ahead, or which ad channel is paying off — call the dealership_report tool with the right topic ('trends', 'priorities', 'pricing', 'equity', 'marketing_roi', and the rest) and answer from real data (don't guess); (4) pull live MARKET data — decode a VIN, predict a price for a VIN, or a market snapshot for a make/model. Use a tool whenever it sharpens the answer; never guess a VIN — ask for it. Be direct and specific: lead with the number, then one crisp takeaway or recommended action. Keep it tight — a couple of sentences or a short list, no headings, no fluff. Never invent numbers beyond the snapshot or tool results; when quoting product prices, note they should confirm exact pricing on the billing screen. Today: ${new Date().toISOString().slice(0, 10)}.\n\n${PRODUCT_KB}\n\nLIVE SNAPSHOT (this dealership, right now):\n${facts}`
+    const system = `You are MarketSync — the smartest person at this car dealership. You are a sharp GM/analyst who knows this store's whole operation: inventory, leads, sales, F&I, commissions, reconditioning, tasks and appointments. You do four things: (1) answer how MarketSync works, what's included, and pricing, from the PRODUCT GUIDE; (2) answer about THIS store from the LIVE SNAPSHOT; (3) for any deeper question about the store's own numbers or people — units/gross/commissions this month, who's ahead or needs coaching, lead volume/sources/conversion, unworked leads, reconditioning status, overdue tasks, who to call today, recent trades, whether we're trending up or down vs last period, what to prioritize today, which cars to discount or wholesale and the reprice target, who to call for an upgrade or lease pull-ahead, or which ad channel is paying off — call the dealership_report tool with the right topic ('trends', 'priorities', 'pricing', 'equity', 'marketing_roi', and the rest) and answer from real data (don't guess); (4) pull live MARKET data — decode a VIN, predict a price for a VIN, or a market snapshot for a make/model; (5) DO things when asked — add a follow-up task/reminder, or text/email a group of customers — via the propose_action tool, which ALWAYS asks the user to confirm before anything runs (never say it's done; say you've set it up for their confirmation). Use a tool whenever it sharpens the answer; never guess a VIN — ask for it. Be direct and specific: lead with the number, then one crisp takeaway or recommended action. Keep it tight — a couple of sentences or a short list, no headings, no fluff. Never invent numbers beyond the snapshot or tool results; when quoting product prices, note they should confirm exact pricing on the billing screen. Today: ${new Date().toISOString().slice(0, 10)}.\n\n${PRODUCT_KB}\n\nLIVE SNAPSHOT (this dealership, right now):\n${facts}`
       // Dealer-set voice/style for the internal assistant, plus their uploaded knowledge base.
       + (dealer?.ai_internal_style ? `\n\nHOUSE STYLE (follow this voice for your answers): ${dealer.ai_internal_style}` : '')
       + (dealer?.ai_knowledge ? `\n\nDEALERSHIP KNOWLEDGE BASE${dealer.ai_knowledge_name ? ` (${dealer.ai_knowledge_name})` : ''} — treat as authoritative for this store's own policies/processes:\n${dealer.ai_knowledge}` : '')
@@ -2586,11 +2586,26 @@ ACV / wholesale take-in (what the dealer buys it for): ${cur} $${suggestedOffer.
       // and let it answer. Bounded so a loop can't run away (or run up cost).
       let response = await call()
       let guard = 0
+      let proposedAction = null   // agentic: an action the user must confirm before it runs
       while (response?.stop_reason === 'tool_use' && guard++ < 4) {
         const toolResults = []
         for (const block of response.content || []) {
           if (block.type === 'tool_use') {
-            const result = await runAssistantTool(block.name, block.input || {}, { dealershipId: req.dealershipId, isOwner, isUS, isMgr: isMgrRole })
+            let result
+            if (block.name === 'propose_action') {
+              // Never execute here — capture the proposal + tell the model it's pending
+              // the user's confirmation. The frontend renders a confirm button.
+              const a = block.input || {}
+              const act = a.action === 'bulk_outreach' ? 'bulk_outreach' : a.action === 'create_task' ? 'create_task' : null
+              if (act === 'create_task' && String(a.title || '').trim()) {
+                proposedAction = { action: 'create_task', title: String(a.title).trim().slice(0, 200), due_hours: Number(a.due_hours) > 0 ? Math.min(8760, Number(a.due_hours)) : null }
+              } else if (act === 'bulk_outreach' && String(a.instruction || '').trim() && isMgrRole) {
+                proposedAction = { action: 'bulk_outreach', instruction: String(a.instruction).trim().slice(0, 500) }
+              }
+              result = proposedAction ? 'Proposed to the user — awaiting their confirmation. Do not say it is done.' : 'Could not stage that action (missing details or not permitted).'
+            } else {
+              result = await runAssistantTool(block.name, block.input || {}, { dealershipId: req.dealershipId, isOwner, isUS, isMgr: isMgrRole })
+            }
             toolResults.push({ type: 'tool_result', tool_use_id: block.id, content: result })
           }
         }
@@ -2599,10 +2614,10 @@ ACV / wholesale take-in (what the dealer buys it for): ${cur} $${suggestedOffer.
         response = await call()
       }
       const reply = (response?.content || []).filter(b => b.type === 'text').map(b => b.text).join('\n').trim()
-      if (!reply) return res.status(502).json({ error: 'No reply generated. Try rephrasing.' })
+      if (!reply && !proposedAction) return res.status(502).json({ error: 'No reply generated. Try rephrasing.' })
       recordUsage(req.dealershipId, { ai: 1 })       // monthly AI quota + global budget
       recordAssistantChat(req.dealershipId)          // today's per-dealer assistant cap
-      res.json({ reply })
+      res.json({ reply: reply || 'Ready when you are — confirm below to run it.', action: proposedAction })
     } catch (e) {
       res.status(502).json({ error: aiErrorMessage(e) })
     }
