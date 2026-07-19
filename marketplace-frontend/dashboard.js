@@ -13969,6 +13969,15 @@ async function loadAIBoostSection() {
     __bgProviderReady = !!cfg.background_provider_ready;
     // Trade Appraisal is part of the Inventory Intelligence add-on — hide otherwise.
     document.getElementById('nav-appraisal')?.classList.toggle('hidden', !__invIntelActive);
+    // Header "Appraise a vehicle" quick-launch — shown for managers (same as Desk a
+    // deal) once Inventory Intelligence is active.
+    const apprHdr = document.getElementById('header-appraise-btn');
+    if (apprHdr) {
+      const deskShown = !document.getElementById('header-desk-btn')?.classList.contains('hidden');
+      const showAppr = __invIntelActive && deskShown;
+      apprHdr.classList.toggle('hidden', !showAppr);
+      apprHdr.classList.toggle('inline-flex', showAppr);
+    }
     // Re-sync the Sales group now Appraisals' visibility is known.
     if (typeof syncNavGroupVisibility === 'function') syncNavGroupVisibility();
     // Paint the nav "Paid" badges: green when the dealer is entitled, grey when not.

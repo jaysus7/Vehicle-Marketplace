@@ -69,7 +69,8 @@
     html[data-dash-mode="marketsync"] #nav-appraisal,
     html[data-dash-mode="marketsync"] #nav-fni-deals,
     html[data-dash-mode="marketsync"] #chev-sales,
-    html[data-dash-mode="marketsync"] #nav-desk { display: none !important; }
+    html[data-dash-mode="marketsync"] #nav-desk,
+    html[data-dash-mode="marketsync"] #header-appraise-btn { display: none !important; }
     /* Keep the CRM group open + force-show Leads. Sales becomes a direct page link
        (JS points the header at the F&I/Sales page and hides the F&I sub-item). */
     html[data-dash-mode="marketsync"] #grp-crm { display: block !important; }
@@ -173,6 +174,10 @@
       <button id="header-desk-btn" onclick="switchPage('desk')" title="Desk a deal" class="hidden items-center gap-1.5 bg-purple-600 hover:bg-purple-500 text-white px-3 py-1.5 rounded-lg text-sm font-bold shadow-sm shadow-purple-500/40 transition whitespace-nowrap">
         <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 17v-6m3 6V7m3 10v-4M4 4h16v16H4z"/></svg>
         <span class="hidden sm:inline">Desk a deal</span>
+      </button>
+      <button id="header-appraise-btn" onclick="switchPage('appraisal')" title="Appraise a vehicle" class="hidden items-center gap-1.5 bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-1.5 rounded-lg text-sm font-bold shadow-sm shadow-indigo-500/40 transition whitespace-nowrap">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+        <span class="hidden sm:inline">Appraise a vehicle</span>
       </button>
     </div>
     <div class="flex items-center gap-2 sm:gap-4 min-w-0">
@@ -729,8 +734,8 @@
               <button type="button" onclick="toggleNavGroup('sales')" aria-label="Toggle Sales" class="px-2 py-2 rounded text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"><svg id="chev-sales" class="w-3.5 h-3.5 transition-transform -rotate-90" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg></button>
             </div>
             <div id="grp-sales" class="nav-group-body space-y-0.5 mt-0.5 hidden">
-              <!-- Appraisals — button at top (hidden until Inventory Intelligence active) -->
-              <button type="button" id="nav-appraisal" data-page="appraisal" title="Appraisals" class="nav-item hidden w-full flex items-center justify-center gap-2 px-3 py-2 my-1 rounded-lg text-[13px] font-bold text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 transition"><svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>Appraisals</button>
+              <!-- Appraisals — regular nav word (hidden until Inventory Intelligence active) -->
+              <button type="button" id="nav-appraisal" data-page="appraisal" title="Appraisals" class="nav-item nav-sub hidden w-full flex items-center gap-2 pl-9 pr-3 py-1.5 rounded text-[13px] font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition"><span class="w-1.5 h-1.5 rounded-full bg-slate-300 dark:bg-slate-600 flex-shrink-0"></span>Appraisals</button>
               <!-- F&I deals list (managers) -->
               <button type="button" id="nav-fni-deals" data-page="fni" title="F&amp;I" class="nav-item nav-sub hidden w-full flex items-center gap-2 pl-9 pr-3 py-1.5 rounded text-[13px] font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition"><span class="w-1.5 h-1.5 rounded-full bg-slate-300 dark:bg-slate-600 flex-shrink-0"></span>F&amp;I</button>
               <button type="button" data-page="recon" title="Cleanup" class="nav-item nav-sub w-full flex items-center gap-2 pl-9 pr-3 py-1.5 rounded text-[13px] font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition"><span class="w-1.5 h-1.5 rounded-full bg-slate-300 dark:bg-slate-600 flex-shrink-0"></span>Cleanup</button>
@@ -2966,7 +2971,7 @@
     </div>
   </div>
 
-  <script src="dashboard.js?v=20260719m"></script>
+  <script src="dashboard.js?v=20260719n"></script>
   <!-- Google Translate widget (per-rep dashboard translation) -->
   <script>
     window.googleTranslateElementInit = function () {
