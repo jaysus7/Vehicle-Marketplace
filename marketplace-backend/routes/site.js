@@ -624,8 +624,13 @@ export function registerSite(app) {
       `Financing available: ${can('finance') ? 'yes' : 'ask'}. Trade-in appraisals: ${can('trade') ? 'yes' : 'ask'}.`,
     ].filter(Boolean).join('\n')
 
-    const kb = String(b.site_chat_kb || '').trim().slice(0, 12000)
-    const instr = String(b.site_chat_instructions || '').trim().slice(0, 4000)
+    // Dealership-level AI persona + knowledge base (set in Settings → AI) layer on top
+    // of the per-site chat knobs. Fetched separately so they never ride SITE_COLS into
+    // the public site JSON.
+    const { data: aiCfg } = await supabaseAdmin.from('dealerships')
+      .select('ai_customer_style, ai_knowledge, ai_knowledge_name').eq('id', d.id).maybeSingle()
+    const kb = [String(b.site_chat_kb || '').trim(), String(aiCfg?.ai_knowledge || '').trim()].filter(Boolean).join('\n\n').slice(0, 12000)
+    const instr = [String(aiCfg?.ai_customer_style || '').trim(), String(b.site_chat_instructions || '').trim()].filter(Boolean).join('\n\n').slice(0, 4000)
     const disclaimer = String(b.site_chat_disclaimer || '').trim().slice(0, 600)
     const system = `You are the friendly online sales concierge for ${d.name}, a car dealership${loc ? ` in ${loc}` : ''}. Help shoppers find a vehicle, answer questions about the inventory below, and guide them toward the next step: booking a test drive, getting pre-approved for financing, or valuing their trade. Be warm, concise (2–4 sentences), and never pushy.
 

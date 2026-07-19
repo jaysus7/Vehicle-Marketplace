@@ -967,6 +967,38 @@ function loadZXing() {
   });
   return __zxingPromise;
 }
+// Lazy-load pdf.js (only when a dealer uploads a PDF knowledge base) to pull text.
+let __pdfjsPromise = null;
+function loadPdfJs() {
+  if (window.pdfjsLib) return Promise.resolve(window.pdfjsLib);
+  if (__pdfjsPromise) return __pdfjsPromise;
+  __pdfjsPromise = new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js';
+    s.onload = () => {
+      try { window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js'; resolve(window.pdfjsLib); }
+      catch (e) { reject(e); }
+    };
+    s.onerror = () => { __pdfjsPromise = null; reject(new Error('pdfjs load failed')); };
+    document.head.appendChild(s);
+  });
+  return __pdfjsPromise;
+}
+async function extractPdfText(file) {
+  const pdfjs = await loadPdfJs();
+  const buf = await file.arrayBuffer();
+  const pdf = await pdfjs.getDocument({ data: buf }).promise;
+  let out = '';
+  const maxPages = Math.min(pdf.numPages, 40);
+  for (let i = 1; i <= maxPages; i++) {
+    const page = await pdf.getPage(i);
+    const tc = await page.getTextContent();
+    out += tc.items.map(it => it.str).join(' ') + '\n';
+    if (out.length > 20000) break;
+  }
+  return out;
+}
+
 async function openVinScanner(targetId, afterFill) {
   const target = document.getElementById(targetId);
   if (!navigator.mediaDevices?.getUserMedia) { showToast('This browser can’t open the camera — type the VIN instead.', 'error'); return; }
@@ -13936,6 +13968,11 @@ function renderAIBoostSection(cfg) {
       const el = document.getElementById(idMap[f]);
       if (el) el.checked = reqFields.includes(f);
     });
+    // AI persona + knowledge base
+    const inStyle = document.getElementById('ai-internal-style'); if (inStyle) inStyle.value = cfg.ai_internal_style || '';
+    const cuStyle = document.getElementById('ai-customer-style'); if (cuStyle) cuStyle.value = cfg.ai_customer_style || '';
+    const kb = document.getElementById('ai-knowledge'); if (kb) kb.value = cfg.ai_knowledge || '';
+    const kbName = document.getElementById('ai-kb-name'); if (kbName) kbName.textContent = cfg.ai_knowledge_name ? `Loaded: ${cfg.ai_knowledge_name}` : '';
   } else {
     badge.textContent = 'Not Active';
     badge.className = 'text-xs font-bold px-2 py-0.5 rounded-full border border-slate-500 bg-slate-800 text-slate-400';
@@ -14089,6 +14126,9 @@ function setupAIBoostListeners() {
       province: document.getElementById('ai-province')?.value.trim() || null,
       city: document.getElementById('ai-city')?.value.trim() || null,
       postal_code: document.getElementById('ai-postal')?.value.trim() || null,
+      ai_internal_style: document.getElementById('ai-internal-style')?.value.trim() || null,
+      ai_customer_style: document.getElementById('ai-customer-style')?.value.trim() || null,
+      ai_knowledge: document.getElementById('ai-knowledge')?.value.trim() || null,
     };
 
     try {
@@ -14111,6 +14151,27 @@ function setupAIBoostListeners() {
       btn.textContent = 'Save AI Settings';
       setTimeout(() => msg.classList.add('hidden'), 4000);
     }
+  });
+
+  // Knowledge-base file upload — extract text client-side (PDF via pdf.js if present,
+  // else plain read) and drop it into the KB textarea for the dealer to review + save.
+  document.getElementById('ai-kb-upload-btn')?.addEventListener('click', () => document.getElementById('ai-kb-file')?.click());
+  document.getElementById('ai-kb-file')?.addEventListener('change', async (e) => {
+    const file = e.target.files?.[0]; if (!file) return;
+    const nameEl = document.getElementById('ai-kb-name');
+    if (file.size > 8 * 1024 * 1024) { showToast('File too large — keep it under 8MB or paste the text.', 'error'); return; }
+    if (nameEl) nameEl.textContent = 'Reading ' + file.name + '…';
+    try {
+      let text = '';
+      if (/\.pdf$/i.test(file.name)) { text = await extractPdfText(file); }
+      else { text = await file.text(); }
+      text = (text || '').trim();
+      if (!text) { if (nameEl) nameEl.textContent = ''; showToast('Couldn’t read text from that file — paste it instead.', 'error'); e.target.value = ''; return; }
+      const kb = document.getElementById('ai-knowledge');
+      if (kb) kb.value = text.slice(0, 12000);
+      if (nameEl) nameEl.textContent = 'Loaded: ' + file.name + ' — review, then Save AI Settings';
+    } catch { if (nameEl) nameEl.textContent = ''; showToast('Could not read that file — paste the text instead.', 'error'); }
+    e.target.value = '';
   });
 
   document.getElementById('ai-enrich-close')?.addEventListener('click', closeAIEnrichModal);

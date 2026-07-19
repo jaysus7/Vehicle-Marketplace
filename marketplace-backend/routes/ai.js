@@ -653,7 +653,7 @@ export function registerAI(app) {
     if (!req.dealershipId) return res.status(400).json({ error: 'No dealership associated' })
     const { data, error } = await supabaseAdmin
       .from('dealerships')
-      .select('ai_boost_active, ai_tone, ai_required_fields, ai_manager_email, vin_sticker_active, inv_intel_active, ai_vision_active, ai_boost_paid, inv_intel_paid, full_access_until, photo_background_url, country, province, city, postal_code, daily_digest_enabled, legal_name, street_address, phone, fax, hst_number, omvic_reg, plan, desk_fees')
+      .select('ai_boost_active, ai_tone, ai_required_fields, ai_manager_email, vin_sticker_active, inv_intel_active, ai_vision_active, ai_boost_paid, inv_intel_paid, full_access_until, photo_background_url, country, province, city, postal_code, daily_digest_enabled, legal_name, street_address, phone, fax, hst_number, omvic_reg, plan, desk_fees, ai_internal_style, ai_customer_style, ai_knowledge, ai_knowledge_name')
       .eq('id', req.dealershipId)
       .single()
     if (error) return res.status(500).json({ error: error.message })
@@ -725,6 +725,13 @@ export function registerAI(app) {
     if (fax !== undefined) update.fax = (fax || '').trim() || null
     if (hst_number !== undefined) update.hst_number = (hst_number || '').trim() || null
     if (omvic_reg !== undefined) update.omvic_reg = (omvic_reg || '').trim() || null
+    // AI persona/style prompts + knowledge base. Style prompts steer tone/voice;
+    // the knowledge base is grounding text both the internal assistant and the
+    // customer chat can draw on. Bounded so they can't blow up the prompt/cost.
+    if (req.body.ai_internal_style !== undefined) update.ai_internal_style = (req.body.ai_internal_style || '').toString().trim().slice(0, 2000) || null
+    if (req.body.ai_customer_style !== undefined) update.ai_customer_style = (req.body.ai_customer_style || '').toString().trim().slice(0, 2000) || null
+    if (req.body.ai_knowledge !== undefined) update.ai_knowledge = (req.body.ai_knowledge || '').toString().trim().slice(0, 12000) || null
+    if (req.body.ai_knowledge_name !== undefined) update.ai_knowledge_name = (req.body.ai_knowledge_name || '').toString().trim().slice(0, 200) || null
     // Deal-desk fee schedule set by management: [{name, amount, taxable, locked}].
     // `locked` fees can't be edited per-deal on the desk; unlocked ones can.
     if (req.body.desk_fees !== undefined) {
@@ -742,10 +749,26 @@ export function registerAI(app) {
       .from('dealerships')
       .update(update)
       .eq('id', req.dealershipId)
-      .select('ai_boost_active, ai_tone, ai_required_fields, ai_manager_email, country, province, city, postal_code, daily_digest_enabled, legal_name, street_address, phone, fax, hst_number, omvic_reg, desk_fees')
+      .select('ai_boost_active, ai_tone, ai_required_fields, ai_manager_email, country, province, city, postal_code, daily_digest_enabled, legal_name, street_address, phone, fax, hst_number, omvic_reg, desk_fees, ai_internal_style, ai_customer_style, ai_knowledge, ai_knowledge_name')
       .single()
     if (error) return res.status(500).json({ error: error.message })
     res.json(data)
+  })
+
+  // POST /ai/knowledge-upload — extract text from an uploaded KB file (txt/md/csv,
+  // or a text-based PDF) and store it as the dealership knowledge base. DEALER_ADMIN.
+  app.post('/ai/knowledge-upload', requireAuth, requireDealerAdmin, async (req, res) => {
+    if (!req.dealershipId) return res.status(400).json({ error: 'No dealership associated' })
+    const name = String(req.body?.name || 'knowledge').slice(0, 200)
+    let text = String(req.body?.text || '')
+    // The client extracts plain text for txt/md/csv and sends it directly. For PDFs it
+    // sends the raw text it could pull; we just store whatever text arrives, trimmed.
+    text = text.replace(/[ \t]{2,}/g, ' ').replace(/\n{3,}/g, '\n\n').trim().slice(0, 12000)
+    if (!text) return res.status(400).json({ error: 'Couldn’t read any text from that file — paste the text instead.' })
+    const { error } = await supabaseAdmin.from('dealerships')
+      .update({ ai_knowledge: text, ai_knowledge_name: name }).eq('id', req.dealershipId)
+    if (error) return res.status(500).json({ error: 'Could not save the knowledge base.' })
+    res.json({ ok: true, name, chars: text.length })
   })
 
   // POST /ai/enrich-listing — run AI enrichment on an inventory item
@@ -4811,7 +4834,7 @@ Units 60d+ on lot: ${stale}`
 
     const { data: dealer } = await supabaseAdmin
       .from('dealerships')
-      .select('name, ai_boost_active, inv_intel_active, city, province, country')
+      .select('name, ai_boost_active, inv_intel_active, city, province, country, ai_internal_style, ai_knowledge, ai_knowledge_name')
       .eq('id', req.dealershipId).maybeSingle()
 
     const entitled = isOwner || !!dealer?.ai_boost_active || !!dealer?.inv_intel_active
@@ -4896,6 +4919,9 @@ Units 60d+ on lot: ${stale}`
     ].join('\n')
 
     const system = `You are MarketSync — the smartest person at this car dealership. You are a sharp GM/analyst who knows this store's whole operation: inventory, leads, sales, F&I, commissions, reconditioning, tasks and appointments. You do four things: (1) answer how MarketSync works, what's included, and pricing, from the PRODUCT GUIDE; (2) answer about THIS store from the LIVE SNAPSHOT; (3) for any deeper question about the store's own numbers or people — units/gross/commissions this month, who's ahead or needs coaching, lead volume/sources/conversion, unworked leads, reconditioning status, overdue tasks, who to call today, recent trades, whether we're trending up or down vs last period, or what to prioritize today — call the dealership_report tool with the right topic (including 'trends' and 'priorities') and answer from real data (don't guess); (4) pull live MARKET data — decode a VIN, predict a price for a VIN, or a market snapshot for a make/model. Use a tool whenever it sharpens the answer; never guess a VIN — ask for it. Be direct and specific: lead with the number, then one crisp takeaway or recommended action. Keep it tight — a couple of sentences or a short list, no headings, no fluff. Never invent numbers beyond the snapshot or tool results; when quoting product prices, note they should confirm exact pricing on the billing screen. Today: ${new Date().toISOString().slice(0, 10)}.\n\n${PRODUCT_KB}\n\nLIVE SNAPSHOT (this dealership, right now):\n${facts}`
+      // Dealer-set voice/style for the internal assistant, plus their uploaded knowledge base.
+      + (dealer?.ai_internal_style ? `\n\nHOUSE STYLE (follow this voice for your answers): ${dealer.ai_internal_style}` : '')
+      + (dealer?.ai_knowledge ? `\n\nDEALERSHIP KNOWLEDGE BASE${dealer.ai_knowledge_name ? ` (${dealer.ai_knowledge_name})` : ''} — treat as authoritative for this store's own policies/processes:\n${dealer.ai_knowledge}` : '')
 
     const isUS = /^(us|usa|united states)$/i.test((dealer?.country || '').trim())
     // Finance topics of the dealership report (revenue, per-rep commissions) are

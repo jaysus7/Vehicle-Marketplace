@@ -498,6 +498,30 @@
                 </div>
               </div>
 
+              <!-- AI persona / voice — steer how the assistant + customer chat speak -->
+              <div class="pt-3 mt-1 border-t border-slate-100 dark:border-slate-800 space-y-3">
+                <div>
+                  <label class="block text-[11px] uppercase font-bold text-slate-400 mb-1 tracking-wider">Internal assistant style</label>
+                  <textarea id="ai-internal-style" rows="2" placeholder="e.g. Talk like a sharp GM. Blunt, numbers first, no fluff. Use our lingo (units, gross, ups)." class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded px-2.5 py-1.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:border-indigo-500"></textarea>
+                  <p class="text-[11px] text-slate-400 mt-1">How “Ask MarketSync” talks to your team.</p>
+                </div>
+                <div>
+                  <label class="block text-[11px] uppercase font-bold text-slate-400 mb-1 tracking-wider">Customer-facing chat style</label>
+                  <textarea id="ai-customer-style" rows="2" placeholder="e.g. Warm, upbeat, concise. Always offer a test drive. Never talk price before value." class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded px-2.5 py-1.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:border-indigo-500"></textarea>
+                  <p class="text-[11px] text-slate-400 mt-1">How the website sales chat speaks to shoppers.</p>
+                </div>
+                <div>
+                  <label class="block text-[11px] uppercase font-bold text-slate-400 mb-1 tracking-wider">Knowledge base</label>
+                  <textarea id="ai-knowledge" rows="4" placeholder="Paste anything the AI should know: policies, warranty terms, financing partners, hours, FAQs, process steps…" class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded px-2.5 py-1.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:border-indigo-500"></textarea>
+                  <div class="flex items-center gap-2 mt-1.5 flex-wrap">
+                    <input type="file" id="ai-kb-file" accept=".txt,.md,.csv,.json,.pdf" class="hidden">
+                    <button type="button" id="ai-kb-upload-btn" class="text-[11px] font-bold bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 px-3 py-1.5 rounded-lg transition">Upload a file</button>
+                    <span id="ai-kb-name" class="text-[11px] text-slate-400"></span>
+                  </div>
+                  <p class="text-[11px] text-slate-400 mt-1">Used by both the internal assistant and your website chat. .txt/.md/.csv/.json, or a text-based PDF.</p>
+                </div>
+              </div>
+
               <button id="ai-config-save-btn" class="w-full bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold py-2 rounded transition">Save AI Settings</button>
             </div>
           </div>
@@ -2936,7 +2960,7 @@
     </div>
   </div>
 
-  <script src="dashboard.js?v=20260719j"></script>
+  <script src="dashboard.js?v=20260719k"></script>
   <!-- Google Translate widget (per-rep dashboard translation) -->
   <script>
     window.googleTranslateElementInit = function () {
