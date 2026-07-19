@@ -256,8 +256,12 @@ export function registerCrm(app) {
       interest_vehicle_label = { label: [v.year, v.make, v.model, v.trim].filter(Boolean).join(' ') || null }
     }
 
+    // Relationship tags: "sales" if they have a deal/lead/appraisal or a sales
+    // status; "service" from the service_customer flag. A customer can be both.
+    const SALES_STATUSES = ['contacted', 'appointment', 'sold', 'fni', 'delivered', 'negotiating', 'working']
+    const is_sales_customer = !!deal || (leads || []).length > 0 || (appraisals || []).length > 0 || SALES_STATUSES.includes(contact.status)
     res.json({
-      contact: { ...contact, rep_name: reps[contact.assigned_rep] || null, interest_vehicle_label },
+      contact: { ...contact, rep_name: reps[contact.assigned_rep] || null, interest_vehicle_label, is_sales_customer, is_service_customer: !!contact.service_customer },
       timeline,
       tasks: (tasks || []).map(t => ({ ...t, assignee_name: reps[t.assigned_to] || null })),
       attachments: attachments || [],

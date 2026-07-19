@@ -229,10 +229,18 @@ Still to deepen:
 
 ## 5. Fixed operations (later — after front office is locked in)
 
-- [ ] Service **appointment scheduling**
-- [ ] **Repair orders** + technicians + inspections
+- [x] Service **appointment scheduling** — light fixed-ops Service area shipped
+      (routes/service.js). New "Service" nav group: Appointments, Equity Mining,
+      Settings. Service appointments are crm_tasks (type=appointment,
+      category=service) attached to the SAME contact as sales history; booking one
+      flips contacts.service_customer=true. Online booking endpoint
+      POST /site/:slug/service-book (dealer opt-in). Customer card shows Sales /
+      Service tags. Done 2026-07-19.
+- [ ] **Repair orders** + technicians + inspections (deferred — DMS-scale build)
 - [ ] Customer **maintenance-history portal**
 - [ ] **Parts inventory**
+- [ ] Service booking **widget on the dealer website** (site.html) — endpoint is
+      live; still to add the front-end booking form (mirror the test-drive flow).
 
 ## 6. Deliberately NOT building (per advisor + agreed)
 

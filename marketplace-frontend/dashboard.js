@@ -928,6 +928,8 @@ function switchPage(pageId) {
   if (pageId === 'crm') loadCrmPage();
   if (pageId === 'leads') loadLeadsPage();
   if (pageId === 'appointments') loadAppointmentsPage();
+  if (pageId === 'service-appointments') loadServiceAppointments();
+  if (pageId === 'service-settings') loadServiceSettings();
   if (pageId === 'tasks') crmLoadTasks();
   if (pageId === 'market') loadMarketPage();
   if (pageId === 'website') loadWebsitePage();
@@ -2191,8 +2193,10 @@ function crmDetailHtml(d) {
     <div class="flex items-center gap-3 min-w-0">
       <div class="w-11 h-11 rounded-full bg-indigo-100 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-300 flex items-center justify-center text-sm font-black flex-shrink-0">${esc(initials || '?')}</div>
       <div class="min-w-0">
-        <div class="flex items-center gap-2"><span class="text-lg font-black text-slate-900 dark:text-white truncate">${esc(c.full_name || 'Unknown')}</span>
-          <span class="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-full ${crmStatusColor(c.status)}">${esc(crmChipText(c.status))}</span></div>
+        <div class="flex items-center gap-2 flex-wrap"><span class="text-lg font-black text-slate-900 dark:text-white truncate">${esc(c.full_name || 'Unknown')}</span>
+          <span class="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-full ${crmStatusColor(c.status)}">${esc(crmChipText(c.status))}</span>
+          ${c.is_sales_customer ? '<span class="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300" title="Has sales history">Sales</span>' : ''}
+          ${c.is_service_customer ? '<span class="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-teal-100 dark:bg-teal-900/40 text-teal-700 dark:text-teal-300" title="Has service history">Service</span>' : ''}</div>
         <div class="text-xs text-slate-500 dark:text-slate-400 truncate">${esc([c.email, c.phone].filter(Boolean).join(' · ') || 'No contact info')}</div>
         ${['DEALER_ADMIN', 'OWNER', 'MANAGER'].includes(profileContext?.role) ? (d.deal
           ? `<button onclick="openDeskForContact('${c.id}')" class="mt-1 inline-flex items-center gap-1.5 text-[11px] font-bold bg-indigo-600 hover:bg-indigo-500 text-white px-2.5 py-1 rounded-lg transition"><svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 17v-6m3 6V7m3 10v-4M4 4h16v16H4z"/></svg>View deal${d.deal.deal_number ? ' #' + d.deal.deal_number : ''}</button>`
@@ -2220,6 +2224,7 @@ function crmDetailHtml(d) {
       <button onclick="crmTaskForm('${c.id}')" class="flex items-center gap-1.5 text-xs font-bold bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 px-3 py-1.5 rounded-lg">Add task</button>
       <button onclick="crmOpenForm('${c.id}')" class="flex items-center gap-1.5 text-xs font-bold bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 px-3 py-1.5 rounded-lg">Edit</button>
       <button onclick="crmApptForm('${c.id}')" class="flex items-center gap-1.5 text-xs font-bold bg-violet-100 dark:bg-violet-950/40 text-violet-700 dark:text-violet-300 hover:bg-violet-200 px-3 py-1.5 rounded-lg"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M8 7V3m8 4V3M4 11h16M5 5h14a1 1 0 011 1v13a1 1 0 01-1 1H5a1 1 0 01-1-1V6a1 1 0 011-1z"/></svg>Book appointment</button>
+      ${['DEALER_ADMIN', 'OWNER', 'MANAGER'].includes(profileContext?.role) ? `<button onclick='openServiceBooking(${JSON.stringify({ contact_id: c.id, name: c.full_name || '', email: c.email || '', phone: c.phone || '' }).replace(/'/g, "&#39;")})' class="flex items-center gap-1.5 text-xs font-bold bg-teal-100 dark:bg-teal-950/40 text-teal-700 dark:text-teal-300 hover:bg-teal-200 px-3 py-1.5 rounded-lg"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M11.42 15.17L17.25 21A2.652 2.652 0 0021 17.25l-5.877-5.877M11.42 15.17l-4.655 5.653a2.548 2.548 0 11-3.586-3.586l6.837-5.63"/></svg>Book service</button>` : ''}
       ${c.status === 'delivered' && ['DEALER_ADMIN', 'OWNER', 'MANAGER'].includes(profileContext?.role) ? `<button onclick="crmLeaseForm('${c.id}')" class="flex items-center gap-1.5 text-xs font-bold bg-emerald-100 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-200 px-3 py-1.5 rounded-lg"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 6l9-3 9 3M4 10v10h16V10M9 21v-6h6v6"/></svg>Deal / equity</button>` : ''}
     </div>
     ${c.notes ? `<div class="text-xs bg-amber-50 dark:bg-amber-950/20 border border-amber-100 dark:border-amber-950/40 rounded-lg p-3 text-slate-700 dark:text-slate-300">${esc(c.notes)}</div>` : ''}
@@ -11350,6 +11355,121 @@ async function bulkSend(btn) {
 window.openBulkOutreach = openBulkOutreach;
 window.bulkPlan = bulkPlan;
 window.bulkSend = bulkSend;
+
+// ══ Service department (fixed ops) ═══════════════════════════════════════════
+let __serviceCfg = null;
+async function loadServiceSettings() {
+  const root = document.getElementById('service-settings-root'); if (!root) return;
+  let d; try { d = await apiGetJson('/service/config', { retries: 1 }); } catch { root.innerHTML = '<p class="text-sm text-rose-500">Could not load service settings.</p>'; return; }
+  __serviceCfg = d.settings;
+  const s = d.settings;
+  const inp = 'w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm';
+  const bookUrl = d.site_slug ? `${API.replace(/\/$/, '')}/site/${d.site_slug}/service-book` : null;
+  root.innerHTML = `
+    <div><h2 class="text-xl font-black text-slate-900 dark:text-white">Service settings</h2>
+      <p class="text-sm text-slate-500 dark:text-slate-400">Set up your service menu and online booking. Service customers share the same record as their sales history.</p></div>
+    <div class="max-w-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-5 space-y-4">
+      <label class="flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-200"><input type="checkbox" id="svc-enabled" ${s.enabled ? 'checked' : ''} class="accent-teal-600 w-4 h-4">Let customers book service online from my website</label>
+      ${!d.site_published ? `<p class="text-[11px] text-amber-600 dark:text-amber-400">Publish your website first (Website settings) for online booking to appear.</p>` : bookUrl ? `<p class="text-[11px] text-slate-400">Booking endpoint: <code class="text-[10px]">${esc(bookUrl)}</code></p>` : ''}
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div><label class="block text-[11px] font-bold text-slate-500 dark:text-slate-400 mb-1">Service desk email (booking alerts)</label><input id="svc-email" type="email" value="${esc(s.desk_email || '')}" placeholder="service@yourstore.com" class="${inp}"></div>
+        <div><label class="block text-[11px] font-bold text-slate-500 dark:text-slate-400 mb-1">Default appointment length (min)</label><input id="svc-duration" type="number" min="15" step="15" value="${s.duration_min || 60}" class="${inp}"></div>
+      </div>
+      <div><label class="block text-[11px] font-bold text-slate-500 dark:text-slate-400 mb-1">Service menu (one per line)</label><textarea id="svc-types" rows="6" class="${inp}">${esc((s.service_types || []).join('\n'))}</textarea></div>
+      <div><label class="block text-[11px] font-bold text-slate-500 dark:text-slate-400 mb-1">Service hours (shown to customers)</label><textarea id="svc-hours" rows="2" placeholder="Mon–Fri 8–5, Sat 9–1" class="${inp}">${esc(s.hours || '')}</textarea></div>
+      <div><label class="block text-[11px] font-bold text-slate-500 dark:text-slate-400 mb-1">Note for customers (optional)</label><textarea id="svc-note" rows="2" placeholder="e.g. Loaner cars available with 48h notice." class="${inp}">${esc(s.note || '')}</textarea></div>
+      <button onclick="saveServiceSettings(this)" class="text-sm font-bold bg-teal-600 hover:bg-teal-500 text-white px-4 py-2 rounded-lg">Save service settings</button>
+      <span id="svc-msg" class="hidden text-xs ml-2"></span>
+    </div>`;
+}
+async function saveServiceSettings(btn) {
+  const v = id => (document.getElementById(id)?.value || '').trim();
+  const body = {
+    enabled: !!document.getElementById('svc-enabled')?.checked,
+    desk_email: v('svc-email'), hours: v('svc-hours'), note: v('svc-note'),
+    duration_min: parseInt(v('svc-duration')) || 60,
+    service_types: v('svc-types').split('\n').map(x => x.trim()).filter(Boolean),
+  };
+  const msg = document.getElementById('svc-msg'); const orig = btn.textContent; btn.disabled = true; btn.textContent = 'Saving…';
+  try { const d = await apiSendJson('/service/config', 'PUT', body); __serviceCfg = d.settings; if (msg) { msg.textContent = '✓ Saved'; msg.className = 'text-xs ml-2 text-emerald-600 dark:text-emerald-400'; msg.classList.remove('hidden'); } }
+  catch (e) { if (msg) { msg.textContent = e.message; msg.className = 'text-xs ml-2 text-rose-500'; msg.classList.remove('hidden'); } }
+  finally { btn.disabled = false; btn.textContent = 'Save service settings'; }
+}
+async function loadServiceAppointments() {
+  const root = document.getElementById('service-appointments-root'); if (!root) return;
+  let d; try { d = await apiGetJson('/service/appointments', { retries: 1 }); } catch { root.innerHTML = '<p class="text-sm text-rose-500">Could not load service appointments.</p>'; return; }
+  const appts = d.appointments || [];
+  const now = Date.now();
+  const upcoming = appts.filter(a => !a.done && (!a.when || new Date(a.when).getTime() >= now - 3600000));
+  const past = appts.filter(a => a.done || (a.when && new Date(a.when).getTime() < now - 3600000));
+  const fmt = w => { if (!w) return 'No time set'; try { return new Date(w).toLocaleString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }); } catch { return w; } };
+  const row = a => `<div class="flex items-center gap-3 py-2.5 px-3 border-b border-slate-100 dark:border-slate-800">
+      <div class="flex-1 min-w-0">
+        <div class="flex items-center gap-2 flex-wrap"><span class="font-bold text-sm text-slate-900 dark:text-white truncate">${esc(a.customer)}</span>${a.service_type ? `<span class="text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded bg-teal-100 dark:bg-teal-900/40 text-teal-700 dark:text-teal-300">${esc(a.service_type)}</span>` : ''}</div>
+        <div class="text-xs text-slate-500 dark:text-slate-400">${fmt(a.when)}${a.rep ? ' · ' + esc(a.rep) : ''}</div>
+      </div>
+      ${a.contact_id ? `<button onclick="switchPage('crm'); openCrmContact('${a.contact_id}')" class="text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:underline shrink-0">View</button>` : ''}
+      ${!a.done ? `<button onclick="serviceApptDone('${a.id}', this)" class="text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white px-2.5 py-1 rounded-lg shrink-0">Done</button>` : '<span class="text-[11px] text-emerald-600 dark:text-emerald-400 font-bold shrink-0">✓ Done</span>'}
+    </div>`;
+  root.innerHTML = `
+    <div class="flex items-center justify-between gap-3 flex-wrap">
+      <div><h2 class="text-xl font-black text-slate-900 dark:text-white">Service appointments</h2>
+        <p class="text-sm text-slate-500 dark:text-slate-400">Every service visit, attached to the customer's record.</p></div>
+      <button onclick="openServiceBooking()" class="flex items-center gap-1.5 bg-teal-600 hover:bg-teal-500 text-white text-sm font-bold px-4 py-2 rounded-lg transition"><svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>Book service</button>
+    </div>
+    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden">
+      <div class="px-3 py-2 text-[11px] font-bold uppercase tracking-wide text-slate-400 bg-slate-50 dark:bg-slate-950/50">Upcoming (${upcoming.length})</div>
+      ${upcoming.length ? upcoming.map(row).join('') : '<div class="py-8 text-center text-xs text-slate-400 italic">No upcoming service appointments.</div>'}
+      ${past.length ? `<div class="px-3 py-2 text-[11px] font-bold uppercase tracking-wide text-slate-400 bg-slate-50 dark:bg-slate-950/50">Past / done (${past.length})</div>${past.slice(0, 50).map(row).join('')}` : ''}
+    </div>`;
+}
+async function serviceApptDone(id, btn) {
+  btn.disabled = true; btn.textContent = '…';
+  try { await apiSendJson(`/service/appointments/${id}`, 'PUT', { done: true }); loadServiceAppointments(); }
+  catch (e) { btn.disabled = false; btn.textContent = 'Done'; showToast(e.message || 'Could not update', 'error'); }
+}
+let __svcBookContactId = null;
+function openServiceBooking(prefill) {
+  __svcBookContactId = prefill?.contact_id || null;
+  const types = (__serviceCfg?.service_types) || ['Oil change', 'Tire change / rotation', 'Brakes', 'Diagnostic', 'Scheduled maintenance', 'Recall', 'Detailing', 'Other'];
+  const inp = 'w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm';
+  crmOverlay(`<div class="p-5">
+    <div class="flex items-center justify-between mb-3"><div class="text-lg font-black text-slate-900 dark:text-white">🔧 Book service</div><button onclick="this.closest('.fixed').remove()" class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"><svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+    <div class="space-y-3">
+      <div><label class="block text-[11px] font-bold text-slate-500 dark:text-slate-400 mb-1">Customer name</label><input id="svcb-name" class="${inp}" placeholder="Full name" value="${esc(prefill?.name || '')}"></div>
+      <div class="grid grid-cols-2 gap-2">
+        <div><label class="block text-[11px] font-bold text-slate-500 dark:text-slate-400 mb-1">Email</label><input id="svcb-email" type="email" class="${inp}" value="${esc(prefill?.email || '')}"></div>
+        <div><label class="block text-[11px] font-bold text-slate-500 dark:text-slate-400 mb-1">Phone</label><input id="svcb-phone" class="${inp}" value="${esc(prefill?.phone || '')}"></div>
+      </div>
+      <p class="text-[11px] text-slate-400">If this customer already exists (by email/phone), the appointment attaches to their record.</p>
+      <div class="grid grid-cols-2 gap-2">
+        <div><label class="block text-[11px] font-bold text-slate-500 dark:text-slate-400 mb-1">Service</label><select id="svcb-type" class="${inp}">${types.map(t => `<option>${esc(t)}</option>`).join('')}</select></div>
+        <div><label class="block text-[11px] font-bold text-slate-500 dark:text-slate-400 mb-1">Date & time</label><input id="svcb-when" type="datetime-local" class="${inp}"></div>
+      </div>
+      <div><label class="block text-[11px] font-bold text-slate-500 dark:text-slate-400 mb-1">Notes</label><textarea id="svcb-notes" rows="2" class="${inp}" placeholder="Concern / requested work"></textarea></div>
+      <button onclick="submitServiceBooking(this)" class="w-full bg-teal-600 hover:bg-teal-500 text-white text-sm font-bold px-4 py-2.5 rounded-lg transition">Book appointment</button>
+    </div>
+  </div>`, 'max-w-lg');
+}
+async function submitServiceBooking(btn) {
+  const g = id => (document.getElementById(id)?.value || '').trim();
+  const name = g('svcb-name'); const when = g('svcb-when');
+  if (!name) { showToast('Enter a customer name', 'error'); return; }
+  if (!when) { showToast('Pick a date and time', 'error'); return; }
+  const orig = btn.textContent; btn.disabled = true; btn.textContent = 'Booking…';
+  try {
+    await apiSendJson('/service/appointments', 'POST', { contact_id: __svcBookContactId || undefined, name, email: g('svcb-email'), phone: g('svcb-phone'), service_type: g('svcb-type'), when: new Date(when).toISOString(), notes: g('svcb-notes') });
+    showToast('Service appointment booked ✓', 'success');
+    btn.closest('.fixed')?.remove();
+    loadServiceAppointments();
+  } catch (e) { btn.disabled = false; btn.textContent = orig; showToast(e.message || 'Could not book', 'error'); }
+}
+window.loadServiceSettings = loadServiceSettings;
+window.saveServiceSettings = saveServiceSettings;
+window.loadServiceAppointments = loadServiceAppointments;
+window.serviceApptDone = serviceApptDone;
+window.openServiceBooking = openServiceBooking;
+window.submitServiceBooking = submitServiceBooking;
 
 function autoAddHolidayModal() {
   const lbl = t => `<label class="block text-[11px] font-semibold text-slate-500 dark:text-slate-400 mb-1">${t}</label>`;

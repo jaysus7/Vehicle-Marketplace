@@ -70,7 +70,8 @@
     html[data-dash-mode="marketsync"] #nav-fni-deals,
     html[data-dash-mode="marketsync"] #chev-sales,
     html[data-dash-mode="marketsync"] #nav-desk,
-    html[data-dash-mode="marketsync"] #header-appraise-btn { display: none !important; }
+    html[data-dash-mode="marketsync"] #header-appraise-btn,
+    html[data-dash-mode="marketsync"] .nav-group[data-group="service"] { display: none !important; }
     /* Keep the CRM group open + force-show Leads. Sales becomes a direct page link
        (JS points the header at the F&I/Sales page and hides the F&I sub-item). */
     html[data-dash-mode="marketsync"] #grp-crm { display: block !important; }
@@ -739,10 +740,24 @@
               <!-- F&I deals list (managers) -->
               <button type="button" id="nav-fni-deals" data-page="fni" title="F&amp;I" class="nav-item nav-sub hidden w-full flex items-center gap-2 pl-9 pr-3 py-1.5 rounded text-[13px] font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition"><span class="w-1.5 h-1.5 rounded-full bg-slate-300 dark:bg-slate-600 flex-shrink-0"></span>F&amp;I</button>
               <button type="button" data-page="recon" title="Cleanup" class="nav-item nav-sub w-full flex items-center gap-2 pl-9 pr-3 py-1.5 rounded text-[13px] font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition"><span class="w-1.5 h-1.5 rounded-full bg-slate-300 dark:bg-slate-600 flex-shrink-0"></span>Cleanup</button>
-              <!-- Equity Mining (admin) -->
-              <button type="button" data-page="equity" data-admin-nav title="Equity Mining" class="nav-item nav-sub w-full flex items-center gap-2 pl-9 pr-3 py-1.5 rounded text-[13px] font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition"><span class="w-1.5 h-1.5 rounded-full bg-slate-300 dark:bg-slate-600 flex-shrink-0"></span>Equity Mining</button>
               <!-- Desk a Deal — button at bottom (managers) -->
               <button type="button" id="nav-desk" data-page="desk" title="Desk a Deal" class="nav-item hidden w-full flex items-center justify-center gap-2 px-3 py-2 mt-1.5 rounded-lg text-[13px] font-bold !text-white bg-indigo-600 hover:bg-indigo-500 border border-indigo-600 shadow-sm transition"><svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8V7m0 1v8m0 0v1"/></svg>Desk a Deal</button>
+            </div>
+          </div>
+
+          <!-- ─── Service (fixed ops: appointments, equity, settings) ─── -->
+          <div class="nav-group" data-group="service" data-admin-nav>
+            <div class="flex items-center">
+              <button type="button" id="nav-service-head" onclick="toggleNavGroup('service')" title="Service" class="flex-1 flex items-center gap-2.5 px-3 py-2 rounded font-bold text-slate-800 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition">
+                <svg class="w-4 h-4 flex-shrink-0 text-teal-600 dark:text-teal-400" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M11.42 15.17L17.25 21A2.652 2.652 0 0021 17.25l-5.877-5.877M11.42 15.17l2.496-3.03c.317-.384.74-.626 1.208-.766M11.42 15.17l-4.655 5.653a2.548 2.548 0 11-3.586-3.586l6.837-5.63m5.108-.233c.55-.164 1.163-.188 1.743-.14a4.5 4.5 0 004.486-6.336l-3.276 3.277a3.004 3.004 0 01-2.25-2.25l3.276-3.276a4.5 4.5 0 00-6.336 4.486c.091 1.076-.071 2.264-.904 2.95l-.102.085m-1.745 1.437L5.909 7.5H4.5L2.25 3.75l1.5-1.5L7.5 4.5v1.409l4.26 4.26m-1.745 1.437l1.745-1.437m6.615 8.206L15.75 15.75M4.867 19.125h.008v.008h-.008v-.008z"/></svg>
+                <span>Service</span>
+              </button>
+              <button type="button" onclick="toggleNavGroup('service')" aria-label="Toggle Service" class="px-2 py-2 rounded text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"><svg id="chev-service" class="w-3.5 h-3.5 transition-transform -rotate-90" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg></button>
+            </div>
+            <div id="grp-service" class="nav-group-body space-y-0.5 mt-0.5 hidden">
+              <button type="button" data-page="service-appointments" title="Service appointments" class="nav-item nav-sub w-full flex items-center gap-2 pl-9 pr-3 py-1.5 rounded text-[13px] font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition"><span class="w-1.5 h-1.5 rounded-full bg-slate-300 dark:bg-slate-600 flex-shrink-0"></span>Appointments</button>
+              <button type="button" data-page="equity" title="Equity Mining" class="nav-item nav-sub w-full flex items-center gap-2 pl-9 pr-3 py-1.5 rounded text-[13px] font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition"><span class="w-1.5 h-1.5 rounded-full bg-slate-300 dark:bg-slate-600 flex-shrink-0"></span>Equity Mining</button>
+              <button type="button" data-page="service-settings" title="Service settings" class="nav-item nav-sub w-full flex items-center gap-2 pl-9 pr-3 py-1.5 rounded text-[13px] font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition"><span class="w-1.5 h-1.5 rounded-full bg-slate-300 dark:bg-slate-600 flex-shrink-0"></span>Settings</button>
             </div>
           </div>
 
@@ -2235,6 +2250,16 @@
         <div id="appointments-root"><div class="py-16 text-center text-sm text-slate-400 italic">Loading appointments…</div></div>
       </div>
 
+      <!-- SERVICE — Appointments -->
+      <div data-page-content="service-appointments" class="page-content hidden space-y-6">
+        <div id="service-appointments-root"><div class="py-16 text-center text-sm text-slate-400 italic">Loading service appointments…</div></div>
+      </div>
+
+      <!-- SERVICE — Settings -->
+      <div data-page-content="service-settings" class="page-content hidden space-y-6">
+        <div id="service-settings-root"><div class="py-16 text-center text-sm text-slate-400 italic">Loading…</div></div>
+      </div>
+
       <!-- CRM — Tasks -->
       <div data-page-content="tasks" class="page-content hidden space-y-6">
         <div>
@@ -2971,7 +2996,7 @@
     </div>
   </div>
 
-  <script src="dashboard.js?v=20260719n"></script>
+  <script src="dashboard.js?v=20260719o"></script>
   <!-- Google Translate widget (per-rep dashboard translation) -->
   <script>
     window.googleTranslateElementInit = function () {
