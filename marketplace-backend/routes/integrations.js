@@ -10,6 +10,7 @@ import { emitWebhook, WEBHOOK_EVENTS } from '../webhooks.js'
 import { sendDealerSms, invalidateTwilioCache } from './automation.js'
 import { qboConfigured, qboAuthorizeUrl, signState, verifyState, qboExchangeCode, qboEnsureToken, qboCompanyName } from '../providers/quickbooks.js'
 import { OAUTH_PROVIDERS, oauthConfigured, oauthAuthorizeUrl, oauthExchangeCode, oauthEnsureToken, oauthAfterToken, oauthTest, signState as signOAuthState, verifyState as verifyOAuthState } from '../providers/oauth.js'
+import { stripeDepositsConfigured } from './deposits.js'
 
 /**
  * The Integrations Hub catalog. Each entry is a connectable service. `live: true`
@@ -46,6 +47,7 @@ const CATALOG = {
   xero:            { category: 'Accounting',  label: 'Xero',                 live: false, oauth: true, desc: 'Connect your Xero organisation to sync sold-deal and F&I income.' },
   google_business: { category: 'Marketing',   label: 'Google Business',      live: false, oauth: true, desc: 'Connect your Google Business Profile to post inventory and request reviews.' },
   twilio:          { category: 'Messaging',   label: 'Twilio SMS',           live: true,  desc: 'Bring your own Twilio account so automated texts send from your own A2P-registered number.' },
+  stripe_deposits: { category: 'Payments',    label: 'Online Deposits (Stripe)', deposits: true, desc: 'Take a real, refundable "reserve this vehicle" deposit on your website — paid straight into your own Stripe account.' },
 }
 const PROVIDERS = Object.keys(CATALOG)
 const isMgr = (req) => ['DEALER_ADMIN', 'OWNER', 'MANAGER'].includes(req.profile?.role)
@@ -66,6 +68,7 @@ export function registerIntegrations(app) {
       // OAuth connectors flip live once their app credentials are provisioned.
       const live = p === 'quickbooks' ? qboConfigured()
         : OAUTH_PROVIDERS.includes(p) ? oauthConfigured(p)
+        : meta.deposits ? stripeDepositsConfigured()
         : !!meta.live
       return {
         provider: p,
@@ -74,6 +77,7 @@ export function registerIntegrations(app) {
         description: meta.desc || '',
         live,
         oauth: !!meta.oauth,
+        deposits: !!meta.deposits,                    // Stripe Connect card (own connect/config endpoints)
         manual: !!meta.manual,                        // connectable now via a credentials form (manual/export mode)
         fields: Array.isArray(meta.fields) ? meta.fields : null,
         enabled: !!r?.enabled,

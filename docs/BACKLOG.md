@@ -111,9 +111,14 @@ certified. All run in **manual/export mode** today.
 
 ## 2. Digital retailing / F&I follow-ups
 
-- [ ] **Online deposit capture** — "Reserve" currently just notifies the rep (by design
-      for now). To actually charge the reserve deposit needs **Stripe Connect on the
-      dealer's account** (consumer payment, not the subscription Stripe we have).
+- [x] **Online deposit capture (Stripe Connect)** — dealers connect their OWN Stripe
+      account (Integrations → Payments), set a refundable deposit amount, and flip it on;
+      the public site's "Reserve" then takes a real deposit via Stripe Checkout
+      (destination charge → funds to the dealer, platform liable). Webhook stamps the
+      contact/lead "paid", tags Deposit, and alerts the rep. Storage in dealer_integrations
+      (no migration). Done 2026-07-18 (routes/deposits.js). ⚠️ OPS: set STRIPE_SECRET_KEY
+      (already set) + ensure the Connect capability is enabled on the platform Stripe
+      account; the same STRIPE_WEBHOOK_SECRET endpoint handles deposit events.
 - [ ] **Filter subscription-type deals out of the F&I worklist** — the JMS demo
       subscription leads show "Vehicle" with no car; optional cleanup.
 - [x] **"MarketSync Leads" view** — a "✨ MarketSync leads" toggle chip on the Customers

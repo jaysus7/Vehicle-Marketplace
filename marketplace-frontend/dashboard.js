@@ -5503,6 +5503,7 @@ const INTEGRATION_ICONS = {
   carfax:          { emoji: '🚗', bg: 'bg-indigo-100 dark:bg-indigo-950/40' },
   routeone:        { emoji: '🏦', bg: 'bg-slate-100 dark:bg-slate-800' },
   dealertrack:     { emoji: '🏦', bg: 'bg-slate-100 dark:bg-slate-800' },
+  stripe_deposits: { emoji: '💳', bg: 'bg-indigo-100 dark:bg-indigo-950/40' },
 };
 function integrationIcon(provider) {
   const i = INTEGRATION_ICONS[provider] || { emoji: '🔌', bg: 'bg-slate-100 dark:bg-slate-800' };
@@ -5511,6 +5512,7 @@ function integrationIcon(provider) {
 // Short human blurb per category so the section reads as a map, not a dump.
 const CATEGORY_BLURB = {
   Automation: 'Push MarketSync events anywhere — Zapier, Make, or your own app.',
+  Payments: 'Take online deposits straight into your own account.',
   Messaging: 'Send texts from your own number.',
   Accounting: 'Sync sold-deal and F&I income to your books.',
   'F&I': 'Credit and vehicle-history rails — stage your credentials now; live pull activates once certified.',
@@ -5525,7 +5527,7 @@ function renderIntegrations(data) {
   const connected = providers.filter(p => isIntegrationConnected(p)).length;
   const liveAvail = providers.filter(p => p.live).length;
   // Group by category, in a sensible order.
-  const order = ['Automation', 'Messaging', 'Accounting', 'Marketing', 'F&I', 'Other'];
+  const order = ['Automation', 'Payments', 'Messaging', 'Accounting', 'Marketing', 'F&I', 'Other'];
   const byCat = {};
   providers.forEach(p => { (byCat[p.category] = byCat[p.category] || []).push(p); });
   const cats = Object.keys(byCat).sort((a, b) => (order.indexOf(a) === -1 ? 99 : order.indexOf(a)) - (order.indexOf(b) === -1 ? 99 : order.indexOf(b)));
@@ -5541,7 +5543,7 @@ function renderIntegrations(data) {
         <h3 class="text-xs font-bold uppercase tracking-wide text-slate-400 dark:text-slate-500">${esc(cat)}</h3>
         ${CATEGORY_BLURB[cat] ? `<p class="text-[11px] text-slate-400 dark:text-slate-500 mt-0.5">${esc(CATEGORY_BLURB[cat])}</p>` : ''}
       </div>
-      <div class="space-y-3">${byCat[cat].slice().sort((a, b) => rank(a) - rank(b)).map(p => p.provider === 'webhook' ? webhookCard(p, events) : p.provider === 'twilio' ? twilioCard(p) : (p.oauth && p.live) ? oauthCard(p) : (p.manual && Array.isArray(p.fields)) ? fniCredsCard(p) : providerCard(p)).join('')}</div>
+      <div class="space-y-3">${byCat[cat].slice().sort((a, b) => rank(a) - rank(b)).map(p => p.provider === 'webhook' ? webhookCard(p, events) : p.provider === 'twilio' ? twilioCard(p) : (p.deposits && p.live) ? depositsCard(p) : (p.oauth && p.live) ? oauthCard(p) : (p.manual && Array.isArray(p.fields)) ? fniCredsCard(p) : providerCard(p)).join('')}</div>
     </div>`).join('');
   if (!data.pii_ready) {
     host.insertAdjacentHTML('afterbegin', `<div class="mb-4 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 px-4 py-2.5 text-xs text-amber-700 dark:text-amber-300">Encryption key not set — signing secrets and credentials can't be stored until <code>PII_ENCRYPTION_KEY</code> is configured on the server.</div>`);
@@ -5551,7 +5553,7 @@ function isIntegrationConnected(p) {
   if (!p.enabled) return false;
   const m = p.lender_code_map || {};
   // Connected when a secret is stored OR the non-secret config that makes it work is set.
-  return !!(p.configured || m.url || m.from || m.realm_id || m.tenant_id || m.connected_at);
+  return !!(p.configured || m.url || m.from || m.realm_id || m.tenant_id || m.connected_at || (m.account_id && m.charges_enabled));
 }
 function statusPill(p) {
   if (isIntegrationConnected(p)) return '<span class="text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300">Connected</span>';
@@ -5853,6 +5855,89 @@ window.connectOAuth = connectOAuth;
 window.testOAuth = testOAuth;
 window.disconnectOAuth = disconnectOAuth;
 window.toggleAccountingAutosync = toggleAccountingAutosync;
+
+// Online deposits (Stripe Connect) card — dealer connects their own Stripe, sets a
+// deposit amount, and flips it on to show a "Reserve with a deposit" button on their site.
+function depositsCard(p) {
+  const m = p.lender_code_map || {};
+  const connected = !!m.account_id;
+  const ready = !!m.charges_enabled;
+  const amount = Number(m.deposit_amount) || 500;
+  const cur = String(m.currency || 'usd').toUpperCase();
+  const on = !!p.enabled && ready;
+  const statusLine = !connected ? ''
+    : ready ? `<p class="text-[11px] text-emerald-600 dark:text-emerald-400 mt-1">Stripe account connected — payouts go straight to you.</p>`
+      : `<p class="text-[11px] text-amber-600 dark:text-amber-400 mt-1">Onboarding started — finish Stripe's steps to start accepting deposits.</p>`;
+  let controls;
+  if (!connected) {
+    controls = `<button onclick="connectDeposits(this)" class="bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-bold px-4 py-2 rounded-lg transition">Connect Stripe</button>
+      <p class="text-[11px] text-slate-400 dark:text-slate-500 mt-2">You'll finish on Stripe's secure onboarding, then set your deposit amount here.</p>`;
+  } else if (!ready) {
+    controls = `<div class="flex items-center gap-2">
+        <button onclick="connectDeposits(this)" class="bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-bold px-4 py-2 rounded-lg transition">Finish Stripe onboarding</button>
+        <button onclick="refreshDeposits(this)" class="bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-sm font-bold px-4 py-2 rounded-lg transition">Re-check status</button>
+      </div>`;
+  } else {
+    controls = `<div class="space-y-2.5">
+        <div class="flex items-end gap-2">
+          <div><label class="block text-[11px] font-bold text-slate-500 dark:text-slate-400 mb-1">Deposit amount (${cur})</label>
+            <input id="dep-amount" type="number" min="1" step="1" value="${amount}" class="w-32 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm"></div>
+          <label class="inline-flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-200 pb-2"><input id="dep-enabled" type="checkbox" ${on ? 'checked' : ''} class="accent-indigo-600 w-4 h-4">Show "Reserve with a deposit" on my site</label>
+        </div>
+        <div class="flex items-center gap-2">
+          <button onclick="saveDeposits(this)" class="bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-bold px-4 py-2 rounded-lg transition">Save</button>
+          <button onclick="disconnectDeposits(this)" class="ml-auto text-xs text-rose-500 hover:text-rose-400 font-semibold">Disconnect</button>
+        </div>
+      </div>`;
+  }
+  return `<div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-4">
+    <div class="flex items-start gap-3 mb-3">
+      ${integrationIcon(p.provider)}
+      <div class="min-w-0 flex-1">
+        <div class="flex items-center gap-2 flex-wrap"><span class="font-bold text-sm text-slate-900 dark:text-white">${esc(p.label)}</span>${statusPill(p)}</div>
+        <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">${esc(p.description)}</p>
+        ${statusLine}
+      </div>
+    </div>
+    ${controls}
+  </div>`;
+}
+async function connectDeposits(btn) {
+  const orig = btn.textContent; btn.disabled = true; btn.textContent = 'Opening…';
+  try {
+    const d = await apiSendJson('/deposits/connect', 'POST', {});
+    if (d.url) { window.location.href = d.url; return; }
+    throw new Error('Could not start onboarding.');
+  } catch (e) { btn.disabled = false; btn.textContent = orig; showToast(e.message || 'Could not connect Stripe', 'error'); }
+}
+async function refreshDeposits(btn) {
+  const orig = btn.textContent; btn.disabled = true; btn.textContent = 'Checking…';
+  try {
+    const d = await apiSendJson('/deposits/refresh', 'POST', {});
+    showToast(d.charges_enabled ? 'Connected — deposits are ready ✓' : 'Still finishing on Stripe — try again shortly.', d.charges_enabled ? 'success' : 'info');
+    loadIntegrations();
+  } catch (e) { btn.disabled = false; btn.textContent = orig; showToast(e.message || 'Could not check status', 'error'); }
+}
+async function saveDeposits(btn) {
+  const amount = Math.max(1, parseInt(document.getElementById('dep-amount')?.value) || 0);
+  const enabled = !!document.getElementById('dep-enabled')?.checked;
+  const orig = btn.textContent; btn.disabled = true; btn.textContent = 'Saving…';
+  try {
+    await apiSendJson('/deposits/config', 'PUT', { deposit_amount: amount, enabled });
+    btn.textContent = 'Saved ✓'; showToast(enabled ? 'Deposits are live on your site' : 'Deposit settings saved', 'success');
+    setTimeout(() => loadIntegrations(), 700);
+  } catch (e) { btn.disabled = false; btn.textContent = orig; showToast(e.message || 'Could not save', 'error'); }
+}
+async function disconnectDeposits(btn) {
+  if (!confirm('Disconnect online deposits? Your website will stop offering a deposit option. (Your Stripe account itself stays intact.)')) return;
+  btn.disabled = true;
+  try { await apiSendJson('/deposits/config', 'DELETE'); showToast('Online deposits disconnected', 'success'); loadIntegrations(); }
+  catch (e) { btn.disabled = false; showToast(e.message || 'Could not disconnect', 'error'); }
+}
+window.connectDeposits = connectDeposits;
+window.refreshDeposits = refreshDeposits;
+window.saveDeposits = saveDeposits;
+window.disconnectDeposits = disconnectDeposits;
 
 // ── Dealer details for documents (Settings › Dealer Management) ──────────────
 // Same legal identifiers the desk uses on the bill of sale — edited here anytime.
@@ -14436,14 +14521,24 @@ async function startVinStickerTrial() {
   if (!provider) return;
   const status = params.get('status');
   const msg = params.get('msg');
-  const LABELS = { quickbooks: 'QuickBooks', xero: 'Xero', google_business: 'Google Business' };
+  const LABELS = { quickbooks: 'QuickBooks', xero: 'Xero', google_business: 'Google Business', stripe_deposits: 'Online Deposits' };
   const label = LABELS[provider] || 'Integration';
   history.replaceState({}, '', window.location.pathname);
+  const openHub = () => { if (typeof switchPage === 'function') { switchPage('profile'); setTimeout(() => { if (typeof settingsTab === 'function') settingsTab('integrations'); }, 250); } };
   const show = () => {
     if (typeof showToast !== 'function') { setTimeout(show, 400); return; }
+    // Stripe Connect returns here after onboarding — re-check the account, then open the hub.
+    if (provider === 'stripe_deposits') {
+      const tk = localStorage.getItem('token');
+      if (status === 'return' && tk) {
+        fetch(`${API}/deposits/refresh`, { method: 'POST', headers: { 'Authorization': `Bearer ${tk}` } })
+          .then(r => r.json()).then(d => showToast(d.charges_enabled ? 'Stripe connected — deposits are ready ✓' : 'Stripe onboarding saved — finish any remaining steps to go live.', d.charges_enabled ? 'success' : 'info')).catch(() => {});
+      } else if (status === 'refresh') { showToast('Stripe onboarding was interrupted — click Connect to resume.', 'info'); }
+      openHub(); return;
+    }
     if (status === 'connected') showToast(`${label} connected ✓`, 'success');
     else showToast(msg || `${label} connection failed`, 'error');
-    if (typeof switchPage === 'function') { switchPage('profile'); setTimeout(() => { if (typeof settingsTab === 'function') settingsTab('integrations'); }, 250); }
+    openHub();
   };
   show();
 })();

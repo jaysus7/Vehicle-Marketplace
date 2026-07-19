@@ -9,6 +9,7 @@ import {
   sendPaymentFailed,
 } from './billing-emails.js'
 import { createNotification } from '../notifications.js'
+import { handleDepositCheckout } from './deposits.js'
 
 // Inventory Intelligence price ID — accept the canonical name OR the
 // STRIPE_INVENTORY_INTELLIGANCE name used in the current Render environment,
@@ -110,6 +111,9 @@ export function registerRoutes(app) {
         case 'checkout.session.completed': {
           const session = event.data.object
           const meta = session.metadata || {}
+
+          // Online deposit (Stripe Connect destination charge) — not a subscription.
+          if (meta.kind === 'deposit') { await handleDepositCheckout(session); break }
 
           // Central dealer-group subscription — covers every store in the group.
           if (meta.group_id) {

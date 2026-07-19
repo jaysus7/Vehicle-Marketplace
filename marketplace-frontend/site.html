@@ -95,9 +95,17 @@
         applyTypography(s);
         renderChrome(); go(hashToView(location.hash));
         if(s.sales_chat) mountSalesChat(s);
+        maybeDepositBanner();
       }catch(e){ document.getElementById('app').innerHTML=errPage(e.message); }
     }
     const errPage=(m)=>`<div class="min-h-screen flex flex-col items-center justify-center gap-2 text-center px-6"><div class="text-lg font-bold text-slate-700">${esc(m)}</div><div class="text-sm text-slate-400">Please check the link.</div></div>`;
+    // Deposit checkout return → confirmation/cancel banner, then clean the URL.
+    function maybeDepositBanner(){ const p=new URLSearchParams(location.search); const dep=p.get('deposit'); if(!dep) return;
+      const ok=dep==='success'; const bar=document.createElement('div');
+      bar.style.cssText='position:fixed;left:0;right:0;top:0;z-index:9999;padding:12px 16px;text-align:center;font-weight:700;color:#fff;background:'+(ok?'#16a34a':'#64748b');
+      bar.textContent=ok?'✓ Deposit received — thank you! A team member will reach out shortly to finish reserving your vehicle.':'Checkout cancelled — no deposit was taken. You can try again anytime.';
+      document.body.appendChild(bar); setTimeout(()=>{bar.style.transition='opacity .5s';bar.style.opacity='0';setTimeout(()=>bar.remove(),600);},7000);
+      const url=location.pathname+location.hash; history.replaceState({},'',url); }
     // Set/replace a <meta> (or <title>) tag by selector.
     function metaTag(sel,attr,val){ if(!val) return; let el=document.head.querySelector(sel); if(!el){ el=document.createElement('meta'); const [k,v]=attr; el.setAttribute(k,v); document.head.appendChild(el);} el.setAttribute('content',val); }
     // SEO: seed the site-wide title/description + social (OG) tags. Per-view/page
@@ -292,7 +300,12 @@
     }
     function go(view,vehId,prefill){ VIEW=view; window.scrollTo(0,0); renderView(); applyViewSeo();
       const h=viewToHash(view); if(location.hash!==h){ location.hash=h; }
-      if(view==='inquiry'){ setTimeout(()=>{ const vf=document.getElementById('i-vehicle'); if(vehId&&vf) vf.value=vehId; const mf=document.getElementById('i-msg'); if(prefill&&mf) mf.value=prefill; },30); } }
+      if(view==='inquiry'){ setTimeout(()=>{ const vf=document.getElementById('i-vehicle'); if(vehId&&vf) vf.value=vehId; const mf=document.getElementById('i-msg'); if(prefill&&mf) mf.value=prefill;
+        // Reserve + online deposits enabled → relabel the CTA to a pay-a-deposit action.
+        if(__drReserve && DATA.deposits && DATA.deposits.enabled){ const b=document.querySelector('#app form button'); if(b) b.textContent=`Reserve with a ${fmtDeposit()} deposit →`;
+          const form=document.querySelector('#app form'); if(form && !form.querySelector('.dep-note')){ const n=document.createElement('p'); n.className='dep-note text-[11px] text-slate-500 text-center'; n.textContent=`You'll pay a refundable ${fmtDeposit()} deposit securely to hold this vehicle.`; form.appendChild(n); } }
+      },30); } }
+    function fmtDeposit(){ const d=DATA.deposits||{}; const amt=Number(d.amount)||0; const cur=(d.currency||'usd').toUpperCase(); return '$'+amt.toLocaleString()+(cur==='CAD'?' CAD':''); }
     // Hash routing: gives every page a distinct, shareable, crawlable URL and lets
     // AI-inserted internal links (href="#finance", "#/page-slug") just work.
     function viewToHash(v){ if(!v||v==='home') return '#home'; if(v.startsWith('page:')) return '#/'+v.slice(5); if(v==='inquiry') return '#contact'; return '#'+v; }
@@ -932,8 +945,17 @@
       __drCtx=null; }
     function submitInquiry(e){ e.preventDefault(); const btn=e.target.querySelector('button');
       if(!V('i-name')&&!V('i-phone')&&!V('i-email')){alert('Add a name, phone, or email.');return;}
-      const ft=__drReserve?'reserve':'inquiry'; __drReserve=false;
-      postLead({form_type:ft,name:V('i-name'),phone:V('i-phone'),email:V('i-email'),message:V('i-msg'),vehicle_id:V('i-vehicle')||null},e.target,btn); }
+      const isReserve=__drReserve; __drReserve=false;
+      // Reserve + deposits enabled → take a real deposit via Stripe Checkout.
+      if(isReserve && DATA.deposits && DATA.deposits.enabled){
+        if(!V('i-email')&&!V('i-phone')){alert('Add an email or phone so we can reach you.');return;}
+        return payDeposit({name:V('i-name'),phone:V('i-phone'),email:V('i-email'),vehicle_id:V('i-vehicle')||null},btn);
+      }
+      postLead({form_type:isReserve?'reserve':'inquiry',name:V('i-name'),phone:V('i-phone'),email:V('i-email'),message:V('i-msg'),vehicle_id:V('i-vehicle')||null},e.target,btn); }
+    async function payDeposit(body,btn){ btn.disabled=true; const t=btn.textContent; btn.textContent='Redirecting to secure checkout…';
+      try{ const r=await fetch(`${API}/site/${encodeURIComponent(SLUG)}/deposit`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...body,return_url:location.href})});
+        const d=await r.json(); if(!r.ok||!d.url) throw new Error(d.error||'x'); window.location.href=d.url;
+      }catch(e){ btn.disabled=false; btn.textContent=t; alert(e.message&&e.message!=='x'?e.message:'Sorry, we couldn\'t start checkout. Please call us.'); } }
 
     function toggleMobileNav(){ const m=document.getElementById('mnav'); if(m) m.classList.toggle('hidden'); }
 

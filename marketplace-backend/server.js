@@ -28,6 +28,7 @@ import { registerMarketsync } from './routes/marketsync.js'
 import { registerIntegrations } from './routes/integrations.js'
 import { registerCredit } from './routes/credit.js'
 import { registerHistory } from './routes/history.js'
+import { registerDeposits } from './routes/deposits.js'
 
 const app = express()
 const PORT = process.env.PORT || 10000
@@ -78,6 +79,7 @@ registerMarketsync(app)
 registerIntegrations(app)
 registerCredit(app)
 registerHistory(app)
+registerDeposits(app)
 
 app.use((err, req, res, next) => {
   console.error('Unhandled Express error:', {

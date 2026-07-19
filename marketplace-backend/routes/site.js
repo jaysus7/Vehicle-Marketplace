@@ -8,6 +8,7 @@ import { routeAndNotifyLead } from '../lead-routing.js'
 import { createNotification } from '../notifications.js'
 import { aiAllowed, recordUsage } from '../usage.js'
 import { rateLimit, getClientIp } from '../security.js'
+import { depositConfigForSite } from './deposits.js'
 
 const SITE_ADMINS = ['DEALER_ADMIN', 'OWNER', 'MANAGER']
 const isSiteAdmin = (req) => SITE_ADMINS.includes(req.profile?.role)
@@ -290,7 +291,8 @@ async function buildSiteResponse(d) {
     .filter(v => v._market_status !== 'delivered')
     .map(publicVehicle)
   const roster = (team || []).filter(p => !p.hide_on_site && (p.display_name || p.full_name)).map(publicRep)
-  return { site: siteContent(d), vehicles, team: roster, count: vehicles.length }
+  const deposits = await depositConfigForSite(d.id).catch(() => ({ enabled: false }))
+  return { site: siteContent(d), vehicles, team: roster, count: vehicles.length, deposits }
 }
 
 export function registerSite(app) {
