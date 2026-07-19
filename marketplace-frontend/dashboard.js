@@ -11458,6 +11458,17 @@ function autoGlobalsHtml(s) {
       <label class="flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-200"><input type="checkbox" id="ag-digest-email" ${s.digest_email ? 'checked' : ''} class="accent-indigo-600 w-4 h-4">Also email it to each manager</label>
       <button onclick="autoDigestPreview(this)" class="mt-2 text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:text-indigo-500">✉️ Email me a preview now</button>
     </div>
+    <div class="mt-4 pt-4 border-t border-slate-100 dark:border-slate-800">
+      <div class="flex items-center gap-2 mb-1"><span class="text-sm font-black text-slate-900 dark:text-white">📊 Weekly briefing</span></div>
+      <p class="text-[11px] text-slate-500 dark:text-slate-400 mb-2">Once a week MarketSync writes a short strategic recap — how the week went vs last week (units, revenue, leads, appraisals), the biggest win, and what to push next week.</p>
+      <label class="flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-200 mb-1.5"><input type="checkbox" id="ag-weekly" ${s.weekly_enabled !== false ? 'checked' : ''} class="accent-indigo-600 w-4 h-4">Send the weekly briefing to managers (in-app)</label>
+      <label class="flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-200 mb-2"><input type="checkbox" id="ag-weekly-email" ${s.weekly_email ? 'checked' : ''} class="accent-indigo-600 w-4 h-4">Also email it to each manager</label>
+      <div class="grid grid-cols-2 gap-2 mb-2">
+        <div>${lbl('Send on')}<select id="ag-weekly-day" class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm">${[['1','Monday'],['2','Tuesday'],['3','Wednesday'],['4','Thursday'],['5','Friday'],['6','Saturday'],['0','Sunday']].map(([v,l]) => `<option value="${v}" ${String(s.weekly_day ?? 1) === v ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
+      </div>
+      <div>${lbl('Focus (optional) — tell the AI what to emphasize')}<textarea id="ag-weekly-focus" rows="2" placeholder="e.g. Push used-truck gross and lease pull-aheads; call out any rep falling behind." class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm">${esc(s.weekly_focus || '')}</textarea></div>
+      <button onclick="autoWeeklyPreview(this)" class="mt-2 text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:text-indigo-500">✉️ Email me a preview now</button>
+    </div>
     <button onclick="autoSaveGlobals(this)" class="mt-3 text-sm font-bold bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg">Save settings</button>
     <span id="ag-msg" class="hidden text-xs ml-2"></span>
   </div>`;
@@ -11471,6 +11482,15 @@ async function autoDigestPreview(btn) {
   setTimeout(() => { btn.disabled = false; btn.textContent = orig; }, 1600);
 }
 window.autoDigestPreview = autoDigestPreview;
+async function autoWeeklyPreview(btn) {
+  const orig = btn.textContent; btn.disabled = true; btn.textContent = 'Building…';
+  try {
+    const d = await apiSendJson('/automation/weekly/preview', 'POST', {});
+    showToast(d.emailed_to ? `Weekly preview sent to ${d.emailed_to}` : (d.headline || 'Preview ready'), 'success');
+  } catch (e) { showToast(e.message || 'Could not send preview', 'error'); }
+  setTimeout(() => { btn.disabled = false; btn.textContent = orig; }, 1600);
+}
+window.autoWeeklyPreview = autoWeeklyPreview;
 function autoVarChips(cid) {
   return `<div class="flex flex-wrap gap-1 mt-1">${AUTO_VARS.map(v => `<button type="button" onclick="autoInsertVar('${cid}','${v}')" class="text-[10px] font-mono bg-slate-100 dark:bg-slate-800 hover:bg-indigo-100 dark:hover:bg-indigo-950/40 rounded px-1.5 py-0.5">{{${v}}}</button>`).join('')}</div>`;
 }
@@ -11617,7 +11637,7 @@ async function autoSaveHolidays(btn) {
 async function autoToggleEngine(on) { try { const d = await apiSendJson('/automation/settings', 'PUT', { enabled: on }); __autoCfg.settings = d.settings; showToast(on ? 'Automation on' : 'Automation paused', 'success'); } catch (e) { showToast(e.message, 'error'); } }
 async function autoSaveGlobals(btn) {
   const val = (i) => (document.getElementById(i)?.value || '').trim();
-  const body = { review_url: val('ag-review'), referral_bonus: val('ag-bonus'), service_url: val('ag-service'), house_sms: val('ag-sms'), house_email: val('ag-email'), timezone: val('ag-tz'), business_start: +val('ag-bstart') || 0, business_end: +val('ag-bend') || 19, digest_enabled: !!document.getElementById('ag-digest')?.checked, digest_email: !!document.getElementById('ag-digest-email')?.checked };
+  const body = { review_url: val('ag-review'), referral_bonus: val('ag-bonus'), service_url: val('ag-service'), house_sms: val('ag-sms'), house_email: val('ag-email'), timezone: val('ag-tz'), business_start: +val('ag-bstart') || 0, business_end: +val('ag-bend') || 19, digest_enabled: !!document.getElementById('ag-digest')?.checked, digest_email: !!document.getElementById('ag-digest-email')?.checked, weekly_enabled: !!document.getElementById('ag-weekly')?.checked, weekly_email: !!document.getElementById('ag-weekly-email')?.checked, weekly_day: parseInt(val('ag-weekly-day')), weekly_focus: val('ag-weekly-focus') };
   const msg = document.getElementById('ag-msg'); const orig = btn.textContent; btn.disabled = true; btn.textContent = 'Saving…';
   try { const d = await apiSendJson('/automation/settings', 'PUT', body); __autoCfg.settings = d.settings; if (msg) { msg.textContent = '✓ Saved'; msg.className = 'text-xs ml-2 text-emerald-600 dark:text-emerald-400'; msg.classList.remove('hidden'); } }
   catch (e) { if (msg) { msg.textContent = e.message; msg.className = 'text-xs ml-2 text-red-500'; msg.classList.remove('hidden'); } }

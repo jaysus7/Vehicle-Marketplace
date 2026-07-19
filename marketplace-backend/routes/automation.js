@@ -12,10 +12,13 @@
 //   • AI copy generation hook                            → /automation/ai-copy
 // ─────────────────────────────────────────────────────────────────────────────
 import Anthropic from '@anthropic-ai/sdk'
-import { supabaseAdmin, resend, EMAIL_FROM } from '../shared.js'
+import { supabaseAdmin, resend, EMAIL_FROM, FRONTEND_URL } from '../shared.js'
 import { requireAuth } from '../middleware.js'
 import { decryptJson } from '../crypto-pii.js'
 import { createNotification } from '../notifications.js'
+import { aiAllowed, recordUsage } from '../usage.js'
+
+const OWNER_EMAIL = (process.env.OWNER_EMAIL || 'massiejay@gmail.com').toLowerCase()
 
 const DEALER_LEVEL = ['DEALER_ADMIN', 'OWNER', 'MANAGER']
 const isDealerLevel = (req) => DEALER_LEVEL.includes(req.profile?.role)
@@ -129,6 +132,11 @@ function dealerSettings(dealer) {
     // Proactive morning briefing: in-app for managers by default; email opt-in.
     digest_enabled: s.digest_enabled !== false,
     digest_email: s.digest_email === true,
+    // Proactive WEEKLY briefing: AI-written strategic recap. Configurable day + email.
+    weekly_enabled: s.weekly_enabled !== false,
+    weekly_email: s.weekly_email === true,
+    weekly_day: Number.isInteger(s.weekly_day) && s.weekly_day >= 0 && s.weekly_day <= 6 ? s.weekly_day : 1,  // 0=Sun … 1=Mon
+    weekly_focus: typeof s.weekly_focus === 'string' ? s.weekly_focus.slice(0, 600) : null,
     enabled: s.enabled !== false,
     email: (s.email && typeof s.email === 'object') ? {
       from_name: s.email.from_name || null,
@@ -734,6 +742,134 @@ async function runMorningDigest() {
   return { pushed, emailed, skipped }
 }
 
+// ── Proactive WEEKLY briefing ───────────────────────────────────────────────
+// A strategic recap: this week vs last (units, revenue, leads, appraisals) plus
+// what's aging / unworked, wrapped in an AI-written GM narrative. The dealer can
+// steer the narrative with a custom "focus" prompt in settings.
+async function buildWeeklyBriefing(dealershipId, focus) {
+  const now = Date.now()
+  const d7 = new Date(now - 7 * 86400000).toISOString()
+  const d14 = new Date(now - 14 * 86400000).toISOString()
+  const nowIso = new Date().toISOString()
+  const money = n => '$' + Math.round(Number(n) || 0).toLocaleString('en-US')
+
+  const [deals, leads, apprs, inv, uncontacted, overdue] = await Promise.all([
+    supabaseAdmin.from('deals').select('selling_price, sold_at, created_at, deal_status').eq('dealership_id', dealershipId).in('deal_status', ['sold', 'delivered']).gte('sold_at', d14).limit(2000),
+    supabaseAdmin.from('leads').select('created_at, source').eq('dealership_id', dealershipId).gte('created_at', d14).limit(8000),
+    supabaseAdmin.from('trade_appraisals').select('created_at').eq('dealership_id', dealershipId).gte('created_at', d14).limit(2000),
+    supabaseAdmin.from('inventory').select('created_at, lot_date').eq('dealership_id', dealershipId).eq('status', 'available').limit(3000),
+    supabaseAdmin.from('contacts').select('id', { count: 'exact', head: true }).eq('dealership_id', dealershipId).eq('status', 'uncontacted'),
+    supabaseAdmin.from('crm_tasks').select('id', { count: 'exact', head: true }).eq('dealership_id', dealershipId).eq('done', false).lt('due_at', nowIso),
+  ])
+  const inWk = (arr, key) => (arr || []).filter(x => (x[key] || x.created_at) >= d7)
+  const inPrev = (arr, key) => (arr || []).filter(x => { const t = x[key] || x.created_at; return t && t >= d14 && t < d7 })
+  const soldWk = inWk(deals.data, 'sold_at'), soldPrev = inPrev(deals.data, 'sold_at')
+  const leadsWk = inWk(leads.data), leadsPrev = inPrev(leads.data)
+  const apprWk = inWk(apprs.data), apprPrev = inPrev(apprs.data)
+  const revWk = soldWk.reduce((s, x) => s + (Number(x.selling_price) || 0), 0)
+  const revPrev = soldPrev.reduce((s, x) => s + (Number(x.selling_price) || 0), 0)
+  const age = v => { const ref = v.lot_date || v.created_at; return ref ? Math.floor((now - new Date(ref)) / 86400000) : 0 }
+  const aged60 = (inv.data || []).filter(v => age(v) >= 60).length
+  const pct = (a, b) => b ? Math.round(((a - b) / b) * 100) : (a ? 100 : 0)
+  // Top lead sources this week.
+  const srcCount = {}; for (const l of leadsWk) { const k = l.source || 'Unknown'; srcCount[k] = (srcCount[k] || 0) + 1 }
+  const topSources = Object.entries(srcCount).sort((a, b) => b[1] - a[1]).slice(0, 4).map(([s, n]) => `${s} (${n})`)
+
+  const stats = {
+    units: { wk: soldWk.length, prev: soldPrev.length, delta: pct(soldWk.length, soldPrev.length) },
+    revenue: { wk: money(revWk), prev: money(revPrev), delta: pct(revWk, revPrev) },
+    leads: { wk: leadsWk.length, prev: leadsPrev.length, delta: pct(leadsWk.length, leadsPrev.length) },
+    appraisals: { wk: apprWk.length, prev: apprPrev.length, delta: pct(apprWk.length, apprPrev.length) },
+    aged_60_plus: aged60, uncontacted: uncontacted.count || 0, overdue_tasks: overdue.count || 0,
+    top_sources: topSources,
+  }
+
+  // AI narrative (gated by AI Boost + budget). Falls back to a templated recap.
+  let narrative = null
+  const { data: dealer } = await supabaseAdmin.from('dealerships').select('name, ai_boost_active, ai_internal_style').eq('id', dealershipId).maybeSingle()
+  const isOwnerless = false
+  if (process.env.ANTHROPIC_API_KEY && (dealer?.ai_boost_active) && await aiAllowed(dealershipId, isOwnerless)) {
+    const facts = `Units sold: ${stats.units.wk} (prev ${stats.units.prev}, ${stats.units.delta >= 0 ? '+' : ''}${stats.units.delta}%). Revenue: ${stats.revenue.wk} (${stats.revenue.delta >= 0 ? '+' : ''}${stats.revenue.delta}%). New leads: ${stats.leads.wk} (${stats.leads.delta >= 0 ? '+' : ''}${stats.leads.delta}%). Appraisals: ${stats.appraisals.wk}. Units 60+ days: ${stats.aged_60_plus}. Uncontacted leads: ${stats.uncontacted}. Overdue tasks: ${stats.overdue_tasks}. Top lead sources: ${topSources.join(', ') || 'n/a'}.`
+    const styleLine = dealer?.ai_internal_style ? ` Voice: ${dealer.ai_internal_style}.` : ''
+    const focusLine = focus ? ` The GM specifically wants this to focus on: ${focus}.` : ''
+    const prompt = `You are the GM's analyst writing this dealership's WEEKLY briefing. Write 3–4 short sentences: how the week went vs last week (lead with the trend), the single biggest win, and the top 1–2 things to fix or push next week. Be direct and specific with the numbers. No markdown, no headings, no greeting.${focusLine}${styleLine}\n\nThis week's data: ${facts}`
+    try {
+      const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
+      const msg = await Promise.race([
+        anthropic.messages.create({ model: 'claude-haiku-4-5-20251001', max_tokens: 300, messages: [{ role: 'user', content: prompt }] }),
+        new Promise((_, rej) => setTimeout(() => rej(new Error('ai timeout')), 20000)),
+      ])
+      narrative = (msg?.content?.[0]?.text || '').trim() || null
+      if (narrative) recordUsage(dealershipId, { ai: 1 })
+    } catch { /* fall through to templated */ }
+  }
+  if (!narrative) {
+    const dir = stats.units.delta >= 0 ? 'up' : 'down'
+    narrative = `${stats.units.wk} units and ${stats.revenue.wk} this week — sales ${dir} ${Math.abs(stats.units.delta)}% vs last week on ${stats.leads.wk} new leads. ${stats.uncontacted} uncontacted lead(s) and ${stats.overdue_tasks} overdue task(s) to clear; ${stats.aged_60_plus} unit(s) are 60+ days old and need a pricing decision.`
+  }
+  const headline = `${stats.units.wk} sold · ${stats.revenue.wk} · ${stats.leads.wk} leads this week`
+  return { stats, narrative, headline, dealer_name: dealer?.name || 'Your dealership' }
+}
+
+function weeklyEmailHtml(dealerName, wk) {
+  const chip = (label, v, delta) => {
+    const col = delta > 0 ? '#16a34a' : delta < 0 ? '#dc2626' : '#64748b'
+    const arrow = delta > 0 ? '▲' : delta < 0 ? '▼' : '■'
+    return `<td style="padding:12px;text-align:center;border-right:1px solid #eef2f7;"><div style="font-size:22px;font-weight:800;color:#4338ca;">${v}</div><div style="font-size:11px;color:#64748b;">${label} <span style="color:${col};">${arrow}${Math.abs(delta)}%</span></div></td>`
+  }
+  return `<!doctype html><html><body style="margin:0;background:#f1f5f9;font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#f1f5f9;padding:24px 0;"><tr><td align="center">
+  <table width="580" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.08);">
+    <tr><td style="background:#4338ca;padding:18px 24px;color:#fff;">
+      <div style="font-size:12px;letter-spacing:.08em;text-transform:uppercase;opacity:.85;">MarketSync · Weekly Briefing</div>
+      <div style="font-size:20px;font-weight:800;margin-top:2px;">${dealerName}</div>
+      <div style="font-size:13px;opacity:.85;margin-top:2px;">Week ending ${new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric' })}</div>
+    </td></tr>
+    <tr><td style="padding:18px 24px 8px;font-size:15px;color:#0f172a;line-height:1.55;">${wk.narrative}</td></tr>
+    <tr><td style="padding:8px 24px 16px;">
+      <table width="100%" cellpadding="0" cellspacing="0" style="background:#f8fafc;border-radius:8px;"><tr>
+        ${chip('units', wk.stats.units.wk, wk.stats.units.delta)}
+        ${chip('revenue', wk.stats.revenue.wk, wk.stats.revenue.delta)}
+        ${chip('leads', wk.stats.leads.wk, wk.stats.leads.delta)}
+        <td style="padding:12px;text-align:center;"><div style="font-size:22px;font-weight:800;color:#4338ca;">${wk.stats.appraisals.wk}</div><div style="font-size:11px;color:#64748b;">appraisals</div></td>
+      </tr></table>
+    </td></tr>
+    <tr><td style="padding:0 24px 8px;font-size:13px;color:#475569;">
+      ${wk.stats.uncontacted} uncontacted · ${wk.stats.overdue_tasks} overdue tasks · ${wk.stats.aged_60_plus} units 60+ days${wk.stats.top_sources.length ? ` · top sources: ${wk.stats.top_sources.join(', ')}` : ''}
+    </td></tr>
+    <tr><td style="padding:10px 24px 22px;">
+      <a href="${FRONTEND_URL}/dashboard.html" style="display:inline-block;background:#4338ca;color:#fff;text-decoration:none;font-weight:700;font-size:14px;padding:10px 20px;border-radius:8px;">Open MarketSync →</a>
+      <div style="font-size:11px;color:#94a3b8;margin-top:14px;">Manage the weekly briefing (day, email, focus) in Automation settings.</div>
+    </td></tr>
+  </table></td></tr></table></body></html>`
+}
+
+async function runWeeklyBriefing(force = false) {
+  const today = new Date().getDay()   // 0=Sun … 6=Sat (server tz)
+  const { data: dealers } = await supabaseAdmin.from('dealerships').select('id, name, automation_settings')
+  let pushed = 0, emailed = 0, skipped = 0
+  for (const dl of (dealers || [])) {
+    const s = dealerSettings(dl)
+    if (!s.enabled || !s.weekly_enabled) { skipped++; continue }
+    if (!force && s.weekly_day !== today) { skipped++; continue }
+    const { data: mgrs } = await supabaseAdmin.from('profiles').select('id, email, active').eq('dealership_id', dl.id).in('role', DEALER_LEVEL)
+    const managers = (mgrs || []).filter(m => m.active !== false)
+    if (!managers.length) { skipped++; continue }
+    let wk
+    try { wk = await buildWeeklyBriefing(dl.id, s.weekly_focus) } catch { skipped++; continue }
+    for (const m of managers) {
+      await createNotification({ dealershipId: dl.id, type: 'weekly_briefing', targetUserId: m.id, title: 'Your weekly briefing', body: wk.headline, linkPage: 'ai-insights' })
+      pushed++
+    }
+    if (s.weekly_email) {
+      const html = weeklyEmailHtml(dl.name || 'Your dealership', wk)
+      const subject = `📊 Weekly briefing — ${dl.name || 'your store'} — ${wk.headline}`
+      for (const m of managers) { if (!m.email) continue; try { await resend.emails.send({ from: EMAIL_FROM, to: m.email, subject, html }); emailed++ } catch {} }
+    }
+  }
+  return { pushed, emailed, skipped, weekday: today }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 export function registerAutomation(app) {
   const cronOk = (req) => (req.headers['x-cron-secret'] || '').trim() === (process.env.CRON_SECRET || '').trim() && !!process.env.CRON_SECRET
@@ -781,6 +917,27 @@ export function registerAutomation(app) {
         await resend.emails.send({ from: EMAIL_FROM, to: email, subject: `☀️ Morning briefing (preview) — ${dl?.name || 'your store'}`, html: digestEmailHtml(dl?.name || 'Your dealership', dg) })
       }
       res.json({ ok: true, headline: dg.headline, items: dg.items, pulse: dg.pulse, emailed_to: email || null })
+    } catch (e) { res.status(500).json({ error: e.message }) }
+  })
+
+  // Proactive weekly briefing — schedule this daily; it only fires for dealers whose
+  // configured weekly_day matches today (so one cron covers everyone's chosen day).
+  app.post('/cron/weekly-briefing', async (req, res) => {
+    if (!cronOk(req)) return res.status(401).json({ error: 'unauthorized' })
+    try { res.json({ ok: true, ...(await runWeeklyBriefing(false)) }) } catch (e) { res.status(500).json({ error: e.message }) }
+  })
+  // Manager self-serve: build + email myself this week's briefing right now.
+  app.post('/automation/weekly/preview', requireAuth, async (req, res) => {
+    if (!req.dealershipId) return res.status(400).json({ error: 'No dealership' })
+    if (!isDealerLevel(req)) return res.status(403).json({ error: 'Manager access required' })
+    try {
+      const { data: dl } = await supabaseAdmin.from('dealerships').select('name, automation_settings').eq('id', req.dealershipId).maybeSingle()
+      const wk = await buildWeeklyBriefing(req.dealershipId, dealerSettings(dl).weekly_focus)
+      const email = req.profile?.email || req.user?.email
+      if (email) {
+        await resend.emails.send({ from: EMAIL_FROM, to: email, subject: `📊 Weekly briefing (preview) — ${dl?.name || 'your store'}`, html: weeklyEmailHtml(dl?.name || 'Your dealership', wk) })
+      }
+      res.json({ ok: true, headline: wk.headline, narrative: wk.narrative, stats: wk.stats, emailed_to: email || null })
     } catch (e) { res.status(500).json({ error: e.message }) }
   })
 
@@ -902,6 +1059,10 @@ export function registerAutomation(app) {
     if (b.enabled !== undefined) s.enabled = !!b.enabled
     if (b.digest_enabled !== undefined) s.digest_enabled = !!b.digest_enabled
     if (b.digest_email !== undefined) s.digest_email = !!b.digest_email
+    if (b.weekly_enabled !== undefined) s.weekly_enabled = !!b.weekly_enabled
+    if (b.weekly_email !== undefined) s.weekly_email = !!b.weekly_email
+    if (b.weekly_day !== undefined) { const n = parseInt(b.weekly_day); if (Number.isInteger(n) && n >= 0 && n <= 6) s.weekly_day = n }
+    if (b.weekly_focus !== undefined) s.weekly_focus = (b.weekly_focus || '').toString().trim().slice(0, 600) || null
     if (Array.isArray(b.holidays)) s.holidays = b.holidays.slice(0, 60).map(h => ({
       name: String(h.name || '').slice(0, 60), date: String(h.date || '').slice(0, 5),
       rule: /^(nth|last|monbefore|easter):/.test(String(h.rule || '')) ? String(h.rule).slice(0, 40) : null,
