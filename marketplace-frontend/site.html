@@ -732,6 +732,7 @@
           <div><div class="text-[11px] text-slate-500">Estimated payment</div><div id="dv-out" class="text-2xl font-black brand-text">$0 /mo</div><div id="dv-note" class="text-[10px] text-slate-400"></div></div>
           <button onclick="drPreapprove()" class="brand-bg text-white font-bold px-4 py-2 rounded-lg text-sm">Get pre-approved</button>
         </div>
+        <button onclick="bookAppt('${v.id}',&quot;${label}&quot;)" class="w-full mt-2 brand-bg text-white font-bold py-2.5 rounded-lg text-sm flex items-center justify-center gap-2"><svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M8 7V3m8 4V3M4 11h16M5 5h14a1 1 0 011 1v13a1 1 0 01-1 1H5a1 1 0 01-1-1V6a1 1 0 011-1z"/></svg>Book a test drive</button>
         <div class="grid grid-cols-3 gap-2 mt-2">
           <button onclick="this.closest('.fixed').remove();go('trade')" class="border border-slate-300 font-bold py-2 rounded-lg text-sm">Value my trade</button>
           <button onclick="drReserve()" class="border border-slate-300 font-bold py-2 rounded-lg text-sm">Reserve</button>
@@ -1044,6 +1045,39 @@
       }catch(_){ btn.disabled=false; alert('Something went wrong — please try again.'); }
     }
     Object.assign(window,{ chatToggle, chatSend, chatSubmitLead });
+
+    // ── Native appointment booking (test drive / consult) ──────────────────────
+    let __bookVeh=null, __bookLabel='';
+    function bookAppt(vehId,label){ __bookVeh=vehId||null; __bookLabel=label||''; const m=document.querySelector('.fixed'); if(m) m.remove();
+      const pad=n=>String(n).padStart(2,'0');
+      const min=new Date(Date.now()+86400000).toISOString().slice(0,10);
+      let times=''; for(let h=9;h<=18;h++){ [0,30].forEach(mm=>{ if(h===18&&mm===30)return; const v=pad(h)+':'+pad(mm); const lbl=((h%12)||12)+':'+pad(mm)+' '+(h<12?'AM':'PM'); times+=`<option value="${v}" ${v==='10:00'?'selected':''}>${lbl}</option>`; }); }
+      const wrap=document.createElement('div'); wrap.className='fixed inset-0 z-[80] bg-black/60 flex items-start justify-center p-4 overflow-auto';
+      wrap.innerHTML=`<div class="bg-white rounded-2xl w-full max-w-md my-8 shadow-2xl" onclick="event.stopPropagation()">
+        <div class="flex items-center justify-between px-5 py-4 border-b border-slate-100"><div><div class="text-lg font-black text-slate-900">Book a test drive</div><div class="text-xs text-slate-500">${label?esc(label):'Pick a time that works for you'}</div></div><button onclick="this.closest('.fixed').remove()" class="text-slate-400 text-2xl leading-none">&times;</button></div>
+        <div id="bk-body" class="p-5 space-y-2.5">
+          <input id="bk-name" placeholder="Your name" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm">
+          <div class="grid grid-cols-2 gap-2"><input id="bk-phone" type="tel" placeholder="Phone" class="border border-slate-300 rounded-lg px-3 py-2 text-sm"><input id="bk-email" type="email" placeholder="Email" class="border border-slate-300 rounded-lg px-3 py-2 text-sm"></div>
+          <div class="grid grid-cols-2 gap-2"><input id="bk-date" type="date" min="${min}" value="${min}" class="border border-slate-300 rounded-lg px-3 py-2 text-sm"><select id="bk-time" class="border border-slate-300 rounded-lg px-3 py-2 text-sm">${times}</select></div>
+          <textarea id="bk-notes" rows="2" placeholder="Anything we should know? (optional)" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm"></textarea>
+          <button onclick="submitBooking(this)" class="w-full brand-bg text-white font-bold py-2.5 rounded-lg text-sm">Confirm booking</button>
+          <p id="bk-err" class="hidden text-xs text-red-600"></p>
+          <p class="text-[11px] text-slate-400 text-center">Times in your local timezone. We'll email you a confirmation.</p>
+        </div></div>`;
+      wrap.addEventListener('click',()=>wrap.remove()); document.body.appendChild(wrap);
+    }
+    async function submitBooking(btn){ const g=id=>(document.getElementById(id)?.value||'').trim(); const err=document.getElementById('bk-err'); err.classList.add('hidden');
+      const name=g('bk-name'),phone=g('bk-phone'),email=g('bk-email'),date=g('bk-date'),time=g('bk-time'),notes=g('bk-notes');
+      if(!name||(!email&&!phone)){ err.textContent='Add your name and an email or phone.'; err.classList.remove('hidden'); return; }
+      if(!date||!time){ err.textContent='Pick a date and time.'; err.classList.remove('hidden'); return; }
+      const when=new Date(date+'T'+time+':00'); if(isNaN(when.getTime())||when.getTime()<Date.now()){ err.textContent='Pick a future time.'; err.classList.remove('hidden'); return; }
+      let tz=''; try{ tz=Intl.DateTimeFormat().resolvedOptions().timeZone; }catch(_){}
+      btn.disabled=true; const t=btn.textContent; btn.textContent='Booking…';
+      try{ const r=await fetch(`${API}/site/${encodeURIComponent(SLUG)}/book`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,phone,email,notes,vehicle_id:__bookVeh,when:when.toISOString(),tz,kind:'Test drive'})});
+        const d=await r.json(); if(!r.ok) throw new Error(d.error||'Could not book that time.');
+        document.getElementById('bk-body').innerHTML=`<div class="text-center py-6"><div class="text-4xl">✅</div><div class="text-lg font-black text-slate-900 mt-2">You're booked!</div><div class="text-sm text-slate-500 mt-1">Check your inbox for the confirmation. See you then!</div>${d.meet_url?`<a href="${d.meet_url}" target="_blank" class="inline-block mt-3 text-sm font-bold brand-text">Join link</a>`:''}<div class="mt-3"><button onclick="this.closest('.fixed').remove()" class="text-slate-500 font-bold text-sm">Close</button></div></div>`;
+      }catch(e){ btn.disabled=false; btn.textContent=t; err.textContent=e.message||'Something went wrong — please call us.'; err.classList.remove('hidden'); } }
+    Object.assign(window,{ bookAppt, submitBooking });
 
     window.go=go; window.setCond=setCond; window.setBody=setBody; window.openVehicle=openVehicle; window.toggleMobileNav=toggleMobileNav;
     window.calcVdp=calcVdp; window.drPreapprove=drPreapprove; window.drReserve=drReserve; window.calcBuyingPower=calcBuyingPower;

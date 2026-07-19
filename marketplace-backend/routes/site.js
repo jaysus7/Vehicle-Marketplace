@@ -1,6 +1,6 @@
 import dns from 'node:dns/promises'
 import Anthropic from '@anthropic-ai/sdk'
-import { supabaseAdmin } from '../shared.js'
+import { supabaseAdmin, resend, EMAIL_FROM } from '../shared.js'
 import { requireAuth } from '../middleware.js'
 import { findOrCreateContact } from './crm.js'
 import { enqueueForTrigger } from './automation.js'
@@ -497,6 +497,82 @@ export function registerSite(app) {
       }
       res.json({ ok: true })
     } catch (e) { res.status(500).json({ error: e.message }) }
+  })
+
+  // ── PUBLIC: native appointment booking (test drive / consult) ───────────────
+  // Shopper picks a date + time on the dealer site → lands on the dealer's CRM
+  // calendar as an appointment, routed + assigned to a rep, with a video-meeting
+  // link, and emails the customer + the assigned rep + the store.
+  app.post('/site/:slug/book', rateLimit('sitebook', 12, 60000), async (req, res) => {
+    const slug = String(req.params.slug || '').toLowerCase().trim()
+    const { data: d } = await supabaseAdmin.from('dealerships').select('id, name, branding, site_published, city, province').ilike('site_slug', slug).maybeSingle()
+    if (!d || !d.site_published) return res.status(404).json({ error: 'Site not found' })
+    const b = req.body || {}
+    const name = String(b.name || '').trim().slice(0, 120)
+    const email = String(b.email || '').trim().slice(0, 160)
+    const phone = String(b.phone || '').trim().slice(0, 40)
+    const notes = String(b.notes || b.message || '').trim().slice(0, 1000)
+    if (!name || (!email && !phone)) return res.status(400).json({ error: 'Add your name and an email or phone.' })
+    const when = new Date(b.when)
+    if (isNaN(when.getTime())) return res.status(400).json({ error: 'Pick a valid date and time.' })
+    if (when.getTime() < Date.now() + 15 * 60 * 1000) return res.status(400).json({ error: 'Please choose a time at least 15 minutes out.' })
+    if (when.getTime() > Date.now() + 120 * 86400000) return res.status(400).json({ error: 'Please choose a time within the next few months.' })
+    const durationMin = 30
+    const kind = String(b.kind || 'Test drive').slice(0, 40)
+
+    let inventory_id = null, vehicleLabel = ''
+    if (b.vehicle_id) {
+      const { data: v } = await supabaseAdmin.from('inventory').select('id, dealership_id, year, make, model, trim').eq('id', b.vehicle_id).maybeSingle()
+      if (v && v.dealership_id === d.id) { inventory_id = v.id; vehicleLabel = [v.year, v.make, v.model, v.trim].filter(Boolean).join(' ') }
+    }
+    const endAt = new Date(when.getTime() + durationMin * 60000)
+    const whenLabel = (() => { try { return new Intl.DateTimeFormat('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short', timeZone: b.tz || 'America/Toronto' }).format(when) } catch { return when.toISOString() } })()
+    const rand = Math.random().toString(36).slice(2, 8)
+    const meetUrl = `https://meet.jit.si/${(d.name || 'dealer').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 24) || 'dealer'}-${rand}`
+
+    try {
+      const { data: lead } = await supabaseAdmin.from('leads').insert({
+        dealership_id: d.id, name: name || null, email: email || null, phone: phone || null,
+        comments: `${kind} booked for ${whenLabel}${vehicleLabel ? ' — ' + vehicleLabel : ''}${notes ? ' · ' + notes : ''}`, source: 'Website', inventory_id,
+      }).select('id').single()
+      const contactId = await findOrCreateContact({ dealershipId: d.id, name, email, phone, source: 'Website' })
+      if (contactId && lead?.id) await supabaseAdmin.from('leads').update({ contact_id: contactId }).eq('id', lead.id)
+      const routed = await routeAndNotifyLead(d.id, { contactId, vehicleId: inventory_id || null, name, source: 'Website' })
+      const repId = routed?.assignee || null
+      await supabaseAdmin.from('contacts').update({ status: 'appointment', updated_at: new Date().toISOString() }).eq('id', contactId)
+      await supabaseAdmin.from('crm_tasks').insert({
+        dealership_id: d.id, contact_id: contactId, assigned_to: repId, created_by: repId,
+        title: `${kind} — ${name}${vehicleLabel ? ' — ' + vehicleLabel : ''}`, type: 'appointment', due_at: when.toISOString(),
+      })
+      await supabaseAdmin.from('communications').insert({
+        dealership_id: d.id, contact_id: contactId, channel: 'note', direction: 'internal',
+        subject: `${kind} booked`, body: `${whenLabel} (${durationMin} min)${vehicleLabel ? '\nVehicle: ' + vehicleLabel : ''}\nVideo: ${meetUrl}${notes ? '\nNotes: ' + notes : ''}`,
+        meta: { kind: 'appointment', meet_url: meetUrl, when: when.toISOString(), duration_min: durationMin },
+      })
+      enqueueForTrigger(d.id, 'appointment_booked', { contactId, vehicleId: inventory_id || null, repId })
+      await createNotification({
+        dealershipId: d.id, type: 'new_lead', title: `📅 ${kind} booked — ${name}`,
+        body: `${whenLabel}${vehicleLabel ? ' · ' + vehicleLabel : ''}. Confirm with the customer.`, linkPage: 'appointments', targetUserId: repId,
+      })
+
+      // Emails: customer + assigned rep + the store's general inbox.
+      if (resend) {
+        const gS = when.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, ''), gE = endAt.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '')
+        const gcal = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(kind + ' — ' + d.name)}&dates=${gS}/${gE}&details=${encodeURIComponent((vehicleLabel ? vehicleLabel + '\n' : '') + 'Join: ' + meetUrl)}`
+        const btn = (h, l, bg) => `<a href="${h}" style="display:inline-block;background:${bg};color:#fff;text-decoration:none;font-weight:700;font-size:14px;padding:10px 18px;border-radius:8px;margin:4px 6px 4px 0">${l}</a>`
+        const shell = (heading, intro) => `<div style="font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;max-width:520px;margin:0 auto"><div style="background:#1e3a8a;color:#fff;padding:16px 20px;border-radius:12px 12px 0 0"><div style="font-size:19px;font-weight:800">${heading}</div></div><div style="border:1px solid #e2e8f0;border-top:0;border-radius:0 0 12px 12px;padding:20px"><p style="font-size:15px;color:#0f172a;margin:0 0 12px">${intro}</p><table style="width:100%;font-size:14px;color:#334155"><tr><td style="padding:6px 0;color:#64748b;width:90px">When</td><td style="padding:6px 0;font-weight:700">${whenLabel}</td></tr>${vehicleLabel ? `<tr><td style="padding:6px 0;color:#64748b">Vehicle</td><td style="padding:6px 0">${vehicleLabel}</td></tr>` : ''}<tr><td style="padding:6px 0;color:#64748b">Video</td><td style="padding:6px 0"><a href="${meetUrl}" style="color:#1e3a8a;font-weight:700">${meetUrl}</a></td></tr></table><div style="margin-top:16px">${btn(meetUrl, '▶ Join', '#16a34a')}${btn(gcal, '+ Add to calendar', '#1e3a8a')}</div></div></div>`
+        if (email) resend.emails.send({ from: EMAIL_FROM, to: email, subject: `Your ${kind.toLowerCase()} at ${d.name} — ${whenLabel}`, html: shell(`${kind} confirmed`, `Thanks ${name.split(' ')[0] || ''}! We've got you down for a ${kind.toLowerCase()}. See you then.`) }).catch(() => {})
+        const inboxes = new Set()
+        const house = d.branding?.email || d.automation_settings?.house_email
+        if (house) inboxes.add(String(house).toLowerCase())
+        if (repId) { const { data: rp } = await supabaseAdmin.from('profiles').select('email').eq('id', repId).maybeSingle(); if (rp?.email) inboxes.add(rp.email.toLowerCase()) }
+        for (const to of inboxes) resend.emails.send({ from: EMAIL_FROM, to, subject: `New ${kind.toLowerCase()} booked — ${name} — ${whenLabel}`, html: shell(`New ${kind.toLowerCase()} booked`, `${name} booked a ${kind.toLowerCase()}${vehicleLabel ? ` for the ${vehicleLabel}` : ''}. It's on the calendar.${notes ? `<br><br><b>Notes:</b> ${notes}` : ''}`) }).catch(() => {})
+      }
+      res.json({ ok: true, when: when.toISOString(), meet_url: meetUrl })
+    } catch (e) {
+      console.warn('[site] booking failed:', e.message)
+      res.status(500).json({ error: 'Could not book that time — please try again.' })
+    }
   })
 
   // ── PUBLIC: AI sales concierge chat for a dealer's website ─────────────────
