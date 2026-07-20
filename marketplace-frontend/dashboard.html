@@ -187,7 +187,8 @@
         <div class="text-xs sm:text-xs text-slate-500 dark:text-slate-400 truncate max-w-[120px] sm:max-w-none" id="ui-dealership-name">---</div>
       </div>
       <!-- Rank/tier chip — always-visible gamification status; opens the leaderboard -->
-      <button id="ui-tier-chip" onclick="switchPage('leaderboard')" title="Your rank & badges — open the leaderboard" class="hidden items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold border transition hover:brightness-110 whitespace-nowrap"></button>
+      <button id="ui-tier-chip" onclick="openLeaderboardOnDash()" title="Your rank & badges — open the leaderboard" class="hidden items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold border transition hover:brightness-110 whitespace-nowrap"></button>
+      <button id="fb-post-btn" onclick="postToFacebook()" title="Post inventory to Facebook Marketplace" class="inline-flex items-center gap-1.5 bg-blue-600 hover:bg-blue-500 text-white px-2.5 sm:px-3 py-1.5 rounded text-sm sm:text-xs font-bold border border-blue-600 shadow-sm shadow-blue-500/40 transition whitespace-nowrap"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>Post to Facebook</button>
       <a id="ext-header-btn" href="https://chromewebstore.google.com/detail/marketsync/mfoaodaoipaalloccolophjhblgikada" target="_blank" rel="noopener" class="hidden bg-purple-600 hover:bg-purple-500 text-white px-2.5 sm:px-3 py-1.5 rounded text-sm sm:text-xs font-bold border border-purple-600 shadow-sm shadow-purple-500/40 transition whitespace-nowrap">Install extension</a>
       <!-- How-to guide -->
       <button type="button" id="guide-btn" onclick="openGuideModal()" title="How-to guide — learn every feature" aria-label="How-to guide" class="p-1.5 rounded-lg text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 transition">
@@ -729,20 +730,8 @@
             <span>Dashboard</span>
           </button>
 
-          <!-- ─── Facebook (Marketplace posting) ─── -->
-          <div class="nav-group" data-group="fb">
-            <div class="flex items-center">
-              <button type="button" onclick="toggleNavGroup('fb')" title="Facebook" class="flex-1 flex items-center gap-2.5 px-3 py-2 rounded font-bold text-slate-800 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition">
-                <svg class="w-4 h-4 flex-shrink-0 text-blue-600 dark:text-blue-400" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
-                <span>Facebook</span>
-              </button>
-              <button type="button" onclick="toggleNavGroup('fb')" aria-label="Toggle Facebook" class="px-2 py-2 rounded text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"><svg id="chev-fb" class="w-3.5 h-3.5 transition-transform -rotate-90" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg></button>
-            </div>
-            <div id="grp-fb" class="nav-group-body space-y-0.5 mt-0.5 hidden">
-              <button type="button" data-page="inventory" data-invmode="facebook" title="Marketplace" class="nav-item nav-sub w-full flex items-center gap-2 pl-9 pr-3 py-1.5 rounded text-[13px] font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition"><span class="w-1.5 h-1.5 rounded-full bg-slate-300 dark:bg-slate-600 flex-shrink-0"></span>Marketplace</button>
-              <button type="button" data-page="leaderboard" title="Leaderboard" class="nav-item nav-sub w-full flex items-center gap-2 pl-9 pr-3 py-1.5 rounded text-[13px] font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition"><span class="w-1.5 h-1.5 rounded-full bg-slate-300 dark:bg-slate-600 flex-shrink-0"></span>Leaderboard</button>
-            </div>
-          </div>
+          <!-- Facebook posting moved to the "Post to Facebook" header button; the
+               Leaderboard now lives on the Dashboard. -->
 
           <!-- ─── CRM ─── -->
           <!-- ─── CRM (customers, tasks, appointments, leads) ─── -->
@@ -1248,6 +1237,12 @@
         </div>
       </div>
 
+      <!-- Dealer-level insights (managers/admins): sales/appointments/e-sign KPIs,
+           marketing ROI snapshot, and the full CRM/lead insight panel. -->
+      <div id="dealer-dash" class="hidden space-y-6"></div>
+
+      <!-- Leaderboard — relocated here from its own nav page so the dashboard is home base. -->
+      <div id="dash-leaderboard-slot" class="space-y-6"></div>
 
       </div>
       <!-- ───────── INVENTORY PAGE ───────── -->
@@ -3044,7 +3039,7 @@
     </div>
   </div>
 
-  <script src="dashboard.js?v=20260719z"></script>
+  <script src="dashboard.js?v=20260720a"></script>
   <!-- Google Translate widget (per-rep dashboard translation) -->
   <script>
     window.googleTranslateElementInit = function () {

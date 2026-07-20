@@ -739,6 +739,14 @@ async function initializeDashboardEcosystem() {
     __canSeeTeamInsights = isAdmin;
     __canSeeSalesTeam = isAdmin;
 
+    // The Dashboard now hosts the leaderboard + dealer-level insight bundles.
+    // Populate them once role flags are known (loadInsights already ran earlier).
+    if (__canSeeLeaderboard && typeof loadLeaderboard === 'function') { try { loadLeaderboard(); } catch {} }
+    if (['DEALER_ADMIN', 'OWNER', 'MANAGER'].includes(role) && typeof loadDealerDash === 'function') {
+      document.getElementById('dealer-dash')?.classList.remove('hidden');
+      loadDealerDash();
+    }
+
     // Wire up the sidebar nav — leaves navigate; some carry a CRM tab to open.
     document.querySelectorAll('#dashboard-nav .nav-item').forEach(btn => {
       btn.addEventListener('click', () => {
@@ -896,6 +904,19 @@ function personalizeSalesNav() {
   document.getElementById('nav-fni-deals')?.classList.toggle('hidden', !isMgr);
 }
 window.personalizeSalesNav = personalizeSalesNav;
+
+// Header "Post to Facebook" button — opens the Marketplace posting hub (the old
+// Facebook › Marketplace nav leaf, now promoted to a one-click header action).
+function postToFacebook() { __inventoryMode = 'facebook'; switchPage('inventory'); }
+window.postToFacebook = postToFacebook;
+
+// The rank chip + old leaderboard deep links land on the Dashboard and scroll to
+// the leaderboard, which now lives there.
+function openLeaderboardOnDash() {
+  switchPage('insights');
+  setTimeout(() => { try { document.getElementById('leaderboard-panel')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch {} }, 120);
+}
+window.openLeaderboardOnDash = openLeaderboardOnDash;
 
 function switchPage(pageId) {
   ensurePanelsInOriginalLocations();
@@ -3789,7 +3810,8 @@ function ensurePanelsInOriginalLocations() {
   const st = document.getElementById('dealer-view-panel');
   const pc = document.getElementById('profile-card');
 
-  const lbWrap = document.querySelector('[data-page-content="leaderboard"]');
+  // Leaderboard now lives on the Dashboard, not its own page.
+  const lbWrap = document.getElementById('dash-leaderboard-slot') || document.querySelector('[data-page-content="leaderboard"]');
   const tiWrap = document.querySelector('[data-page-content="team-insights"]');
   const stWrap = document.querySelector('[data-page-content="sales-team"]');
   const pcWrap = document.querySelector('[data-page-content="profile"]');
@@ -7440,6 +7462,63 @@ async function loadInsights() {
     console.error('Insights load threw:', e);
   }
 }
+
+// ── Dealer-level insight bundles on the Dashboard (managers/admins) ──────────
+// Sales / appointments / e-sign KPIs, a marketing-ROI snapshot, and the full
+// CRM/lead insights panel — all from the same endpoints the Reports hub uses.
+let __dealerDashRange = 30;
+async function loadDealerDash() {
+  const host = document.getElementById('dealer-dash');
+  if (!host) return;
+  const days = __dealerDashRange;
+  const money = n => '$' + Math.round(Number(n) || 0).toLocaleString();
+  // Pull the snapshots in parallel; tolerate any single one failing.
+  const grab = (p) => apiGetJson(`${p}${p.includes('?') ? '&' : '?'}range=${days}`, { retries: 1 }).catch(() => null);
+  const [sales, appts, esign, mkt] = await Promise.all([
+    grab('/reports/sales'), grab('/reports/appointments'), grab('/reports/esign'), grab('/reports/marketing'),
+  ]);
+  const tile = (label, value, sub, color) => `<div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4">
+    <div class="text-[11px] uppercase tracking-wider text-slate-400 font-bold">${esc(label)}</div>
+    <div class="text-2xl font-black mt-1 tabular-nums ${color || 'text-slate-900 dark:text-white'}">${value}</div>
+    ${sub ? `<div class="text-xs text-slate-500 mt-0.5">${sub}</div>` : ''}</div>`;
+  const ss = sales?.summary || {}, as = appts?.summary || {}, es = esign?.summary || {};
+  const costOn = ss.front_gross != null;
+  const kpis = [
+    tile('Units sold', ss.units ?? 0, `${money(ss.revenue || 0)} revenue`, 'text-slate-900 dark:text-white'),
+    costOn ? tile('Front gross', money(ss.front_gross), `${money(ss.avg_gross || 0)} avg`, 'text-emerald-600 dark:text-emerald-400') : tile('Avg sale price', money(ss.avg_price || 0), 'per unit', 'text-slate-900 dark:text-white'),
+    tile('Appt show-rate', (as.show_rate_pct ?? 0) + '%', `${as.showed ?? 0} shown · ${as.no_show ?? 0} no-show`, 'text-sky-600 dark:text-sky-400'),
+    tile('E-sign completion', (es.completion_pct ?? 0) + '%', `${es.signed ?? 0} of ${es.sent ?? 0} signed`, 'text-indigo-600 dark:text-indigo-400'),
+  ].join('');
+
+  // Marketing ROI snapshot — top channels by ROI.
+  let mktBlock = '';
+  const rows = (mkt?.rows || []).filter(r => r.spend || r.sales).sort((a, b) => (b.roi_pct ?? -1e9) - (a.roi_pct ?? -1e9)).slice(0, 4);
+  if (rows.length) {
+    mktBlock = `<div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4">
+      <div class="flex items-center justify-between mb-2"><div class="text-sm font-bold text-slate-900 dark:text-white">Marketing ROI — top channels</div>
+        <button onclick="switchPage('reports')" class="text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:underline">Full report →</button></div>
+      <div class="space-y-1.5">${rows.map(r => {
+        const roi = r.roi_pct == null ? '—' : (r.roi_pct >= 0 ? '+' : '') + r.roi_pct + '%';
+        const cls = (r.roi_pct ?? 0) >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400';
+        return `<div class="flex items-center justify-between text-sm"><span class="text-slate-600 dark:text-slate-300 truncate">${esc(r.channel)}</span><span class="tabular-nums"><span class="text-slate-400 text-xs mr-2">${money(r.spend || 0)} → ${r.sales || 0} sold</span><span class="font-black ${cls}">${roi}</span></span></div>`;
+      }).join('')}</div></div>`;
+  }
+
+  host.innerHTML = `
+    <div class="flex items-center justify-between gap-2 flex-wrap">
+      <h2 class="text-lg font-bold text-slate-900 dark:text-white">Dealership insights <span class="font-normal text-slate-500 text-sm">· last ${days} days</span></h2>
+      <div class="inline-flex bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg p-0.5 text-xs font-bold">
+        ${[30, 90, 180].map(d => `<button onclick="dealerDashRange(${d})" class="px-3 py-1.5 rounded ${days === d ? 'bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400' : 'text-slate-600 dark:text-slate-300'}">${d === 180 ? '6mo' : d + 'd'}</button>`).join('')}
+      </div>
+    </div>
+    <div class="grid grid-cols-2 lg:grid-cols-4 gap-3">${kpis}</div>
+    ${mktBlock}
+    <div id="crm-insights-root"></div>`;
+  // Revive the full CRM/lead insights panel (dormant until now) inside the dashboard.
+  if (typeof loadCrmInsights === 'function') { try { loadCrmInsights(); } catch {} }
+}
+function dealerDashRange(d) { __dealerDashRange = d; loadDealerDash(); }
+window.dealerDashRange = dealerDashRange;
 
 // Range pill click — sync all pills, persist, reload everything insight-related
 document.addEventListener('click', (e) => {
