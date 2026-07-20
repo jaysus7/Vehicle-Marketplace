@@ -531,6 +531,44 @@ Guidelines: under 90 words; answer their question if they asked one; confirm the
     }
   })
 
+  // ── Scan a driver's licence → structured customer fields ───────────────────
+  // A rep snaps the front of a licence; AI Vision reads it and returns the fields
+  // to pre-fill a new customer. Nothing is stored here — the rep reviews and saves
+  // through the normal add-customer flow. The licence image is NOT persisted.
+  app.post('/crm/scan-license', requireAuth, async (req, res) => {
+    if (!req.dealershipId) return res.status(400).json({ error: 'No dealership' })
+    const isOwner = (req.user.email || '').toLowerCase() === OWNER_EMAIL
+    const { data: dealer } = await supabaseAdmin.from('dealerships').select('ai_boost_active').eq('id', req.dealershipId).maybeSingle()
+    if (!isOwner && !dealer?.ai_boost_active) return res.status(403).json({ error: 'AI Boost not active' })
+    if (!process.env.ANTHROPIC_API_KEY) return res.status(503).json({ error: 'AI features not configured' })
+    if (!(await aiAllowed(req.dealershipId, isOwner))) return res.status(429).json({ error: 'Monthly AI limit reached — resets next month.' })
+    const img = String(req.body?.image || '')
+    const m = img.match(/^data:(image\/(png|jpe?g|webp));base64,(.+)$/)
+    if (!m) return res.status(400).json({ error: 'Send the licence photo as a base64 data URL.' })
+    const media_type = m[1] === 'image/jpg' ? 'image/jpeg' : m[1]
+    const data = m[3]
+    if (data.length > 8_000_000) return res.status(400).json({ error: 'Image too large — retake at normal quality.' })
+    const prompt = `You are reading a photo of a driver's licence or government photo ID to help a dealership start a customer record. Extract ONLY what is clearly legible. Return STRICT JSON with these keys (use null when not visible): first_name, last_name, address, city, province_state, postal_code, country, dl_number, date_of_birth (YYYY-MM-DD), expiry (YYYY-MM-DD). Do not guess. Return ONLY the JSON object, no prose.`
+    try {
+      const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
+      const msg = await Promise.race([
+        anthropic.messages.create({ model: 'claude-haiku-4-5-20251001', max_tokens: 400, messages: [{ role: 'user', content: [
+          { type: 'image', source: { type: 'base64', media_type, data } },
+          { type: 'text', text: prompt },
+        ] }] }),
+        new Promise((_, rej) => setTimeout(() => rej(new Error('ai timeout')), 30000)),
+      ])
+      recordUsage(req.dealershipId, { ai: 1 })
+      let txt = (msg?.content?.[0]?.text || '').trim().replace(/^```json\s*|\s*```$/g, '')
+      let fields
+      try { fields = JSON.parse(txt) } catch { return res.status(422).json({ error: 'Could not read the licence clearly — try a sharper, straight-on photo.' }) }
+      const full_name = [fields.first_name, fields.last_name].filter(Boolean).join(' ').trim() || null
+      res.json({ ok: true, fields: { ...fields, full_name } })
+    } catch (e) {
+      res.status(500).json({ error: e.message === 'ai timeout' ? 'Reading the licence took too long — try again.' : 'Could not read the licence.' })
+    }
+  })
+
   // ── AI copy for the website builder (✨ per-section actions) ────────────────
   // task: rewrite | improve | expand | shorten | generate | seo | faq
   // kind: headline | subheadline | cta | about | faq | seo | text

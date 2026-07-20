@@ -2750,10 +2750,15 @@ async function crmOpenForm(id) {
   const isCo = c.contact_type === 'company';
   const sect = (t) => `<div class="text-[11px] font-black uppercase tracking-wider text-indigo-500 pt-1">${t}</div>`;
   crmOverlay(`<div class="p-5 space-y-3">
-    <div class="flex items-center justify-between">
+    <div class="flex items-center justify-between gap-2">
       <div class="text-lg font-black text-slate-900 dark:text-white">${id ? 'Edit contact' : 'New contact'}</div>
-      <button onclick="this.closest('.fixed').remove()" class="text-slate-400 hover:text-slate-600"><svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" d="M6 6l12 12M18 6L6 18"/></svg></button>
+      <div class="flex items-center gap-2">
+        <button type="button" onclick="crmScanLicense()" title="Scan a driver's licence to fill this in" class="inline-flex items-center gap-1.5 text-xs font-bold bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-1.5 rounded-lg transition"><svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="1.9" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/><circle cx="12" cy="13" r="3"/></svg>Scan licence</button>
+        <button onclick="this.closest('.fixed').remove()" class="text-slate-400 hover:text-slate-600"><svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" d="M6 6l12 12M18 6L6 18"/></svg></button>
+      </div>
     </div>
+    <input type="file" id="crm-license-file" accept="image/*" capture="environment" class="hidden">
+    <div id="crm-license-status" class="hidden text-xs rounded-lg px-3 py-2"></div>
     <div class="flex gap-2">
       <label class="flex-1"><input type="radio" name="crm-ctype" value="individual" ${!isCo ? 'checked' : ''} class="peer hidden" onchange="crmToggleCompany(false)"><span class="block text-center text-sm font-bold py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 peer-checked:bg-indigo-600 peer-checked:text-white peer-checked:border-indigo-600 cursor-pointer">Individual</span></label>
       <label class="flex-1"><input type="radio" name="crm-ctype" value="company" ${isCo ? 'checked' : ''} class="peer hidden" onchange="crmToggleCompany(true)"><span class="block text-center text-sm font-bold py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 peer-checked:bg-indigo-600 peer-checked:text-white peer-checked:border-indigo-600 cursor-pointer">Company</span></label>
@@ -2826,6 +2831,51 @@ async function crmOpenForm(id) {
   </div>`, 'max-w-2xl');
 }
 function crmToggleCompany(isCo) { const r = document.getElementById('crm-company-row'); if (r) r.classList.toggle('hidden', !isCo); }
+
+// Scan a driver's licence → AI reads it → prefill the New-contact form. On mobile,
+// capture="environment" opens the rear camera; on desktop it's a file picker. The
+// image is sent for a one-time read and is never stored.
+function crmScanLicense() {
+  const file = document.getElementById('crm-license-file');
+  if (!file) return;
+  file.value = '';
+  file.onchange = async () => {
+    const f = file.files && file.files[0];
+    if (!f) return;
+    const status = document.getElementById('crm-license-status');
+    const show = (msg, kind) => { if (!status) return; status.className = `text-xs rounded-lg px-3 py-2 ${kind === 'error' ? 'bg-rose-50 dark:bg-rose-950/30 text-rose-700 dark:text-rose-300' : kind === 'ok' ? 'bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-300' : 'bg-indigo-50 dark:bg-indigo-950/30 text-indigo-700 dark:text-indigo-300'}`; status.textContent = msg; status.classList.remove('hidden'); };
+    show('Reading the licence…', 'info');
+    try {
+      const dataUrl = await crmDownscaleImage(f, 1600);
+      const r = await apiSendJson('/crm/scan-license', 'POST', { image: dataUrl }, { timeoutMs: 40000 });
+      const x = r.fields || {};
+      const set = (id, v) => { const el = document.getElementById(id); if (el && v) el.value = v; };
+      set('crm-f-first', x.first_name); set('crm-f-last', x.last_name);
+      set('crm-f-address', x.address); set('crm-f-city', x.city);
+      set('crm-f-province', x.province_state); set('crm-f-postal', x.postal_code);
+      set('crm-f-dl', x.dl_number); set('crm-f-birthday', x.date_of_birth); set('crm-f-dlexp', x.expiry);
+      const got = ['first_name','last_name','address','dl_number'].filter(k => x[k]).length;
+      show(got ? 'Licence read — please double-check the fields, then Save.' : 'Couldn’t read much — try a sharper, straight-on photo.', got ? 'ok' : 'error');
+    } catch (e) { show(e.message || 'Could not read the licence.', 'error'); }
+  };
+  file.click();
+}
+// Downscale + JPEG-compress a licence photo in the browser before upload.
+function crmDownscaleImage(fileOrBlob, maxDim) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
+      const w = Math.round(img.width * scale), h = Math.round(img.height * scale);
+      const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
+      cv.getContext('2d').drawImage(img, 0, 0, w, h);
+      resolve(cv.toDataURL('image/jpeg', 0.85));
+    };
+    img.onerror = () => reject(new Error('Could not read that image.'));
+    img.src = URL.createObjectURL(fileOrBlob);
+  });
+}
+window.crmScanLicense = crmScanLicense;
 async function crmDecodeTrade() {
   const vin = (document.getElementById('crm-f-tradevin')?.value || '').trim().toUpperCase();
   if (vin.length !== 17) { showToast('Enter a 17-character VIN', 'error'); return; }
