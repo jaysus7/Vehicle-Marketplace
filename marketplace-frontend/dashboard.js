@@ -17433,7 +17433,7 @@ function wireReportRail() {
       setTimeout(() => flash('leads-metrics'), 200);
     } else if (kind === 'equity') {
       switchPage('equity');
-    } else if (kind === 'marketing' || kind === 'appointments' || kind === 'esign') {
+    } else if (['sales', 'fni', 'leads', 'reps', 'appraisals', 'appointments', 'service', 'esign', 'marketing', 'activity', 'customers'].includes(kind)) {
       // Open the full Reports hub straight on the requested tab.
       switchPage('reports');
       setTimeout(() => { if (typeof reportsTab === 'function') reportsTab(kind); }, 150);
