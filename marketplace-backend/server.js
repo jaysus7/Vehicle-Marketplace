@@ -36,6 +36,7 @@ import { registerBulk } from './routes/bulk.js'
 import { registerService } from './routes/service.js'
 import { registerReports } from './routes/reports.js'
 import { registerEsign } from './routes/esign.js'
+import { registerCalendar } from './routes/calendar.js'
 
 const app = express()
 const PORT = process.env.PORT || 10000
@@ -94,6 +95,7 @@ registerBulk(app)
 registerService(app)
 registerReports(app)
 registerEsign(app)
+registerCalendar(app)
 
 app.use((err, req, res, next) => {
   console.error('Unhandled Express error:', {

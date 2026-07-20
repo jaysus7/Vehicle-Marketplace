@@ -208,6 +208,27 @@ function showToast(message, type = 'info', duration = 4000) {
   } catch {}
 })()
 
+// After a calendar OAuth round-trip the provider redirects back with
+// ?calendar=connected|error. Surface it, land the user on Integrations, then
+// strip the params so a refresh doesn't re-toast.
+;(function bootstrapCalendarReturn() {
+  try {
+    const q = new URLSearchParams(window.location.search)
+    const state = q.get('calendar')
+    if (!state) return
+    const provider = q.get('provider') || ''
+    const label = provider === 'google' ? 'Google Calendar' : provider === 'microsoft' ? 'Outlook Calendar' : 'Calendar'
+    window.addEventListener('DOMContentLoaded', () => {
+      setTimeout(() => {
+        if (state === 'connected') { showToast(`${label} connected`, 'success'); if (typeof switchPage === 'function') { switchPage('profile'); setTimeout(() => { if (typeof settingsTab === 'function') settingsTab('integrations'); }, 250); } }
+        else showToast(`Couldn’t connect ${label}${q.get('msg') ? ': ' + q.get('msg') : ''}`, 'error', 7000)
+      }, 400)
+    })
+    q.delete('calendar'); q.delete('provider'); q.delete('msg')
+    history.replaceState(null, '', window.location.pathname + (q.toString() ? '?' + q.toString() : ''))
+  } catch {}
+})()
+
 // Keys that should survive localStorage.clear() (user-level UI preferences, not session data)
 const PERSIST_KEYS = ['ms_tour_done', 'ms_ext_cta_dismissed'];
 function clearLocalStorage() {
@@ -6232,6 +6253,9 @@ function renderIntegrations(data) {
   if (!data.pii_ready) {
     host.insertAdjacentHTML('afterbegin', `<div class="mb-4 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 px-4 py-2.5 text-xs text-amber-700 dark:text-amber-300">Encryption key not set — signing secrets and credentials can't be stored until <code>PII_ENCRYPTION_KEY</code> is configured on the server.</div>`);
   }
+  // Calendar sync (Google / Outlook) — its own card at the top, loaded async.
+  host.insertAdjacentHTML('afterbegin', '<div id="calsync-card" class="mb-6"></div>');
+  loadCalendarSyncCard();
   // Outbound listing syndication (AutoTrader / Trader.ca / Kijiji / Google) — a feed
   // card the dealer hands to each platform. Loaded async so the hub renders instantly.
   host.insertAdjacentHTML('beforeend', '<div id="synd-card" class="mb-6"></div>');
@@ -6375,6 +6399,73 @@ function syndicationGuide(key) {
   </div>`, 'max-w-lg');
 }
 window.syndicationGuide = syndicationGuide;
+// ── Calendar sync card (Google Calendar / Outlook) ──────────────────────────
+async function loadCalendarSyncCard() {
+  const host = document.getElementById('calsync-card');
+  if (!host) return;
+  let data;
+  try { data = await apiGetJson('/calendar/status', { retries: 1 }); }
+  catch { host.remove(); return; }
+  const icon = { google: '📅', microsoft: '📆' };
+  const rows = (data.providers || []).map(p => {
+    let right;
+    if (!p.configured) {
+      right = '<span class="text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500">Setup pending</span>';
+    } else if (p.connected) {
+      right = `<button onclick="calDisconnect('${p.provider}')" class="text-xs font-bold text-rose-600 dark:text-rose-400 hover:underline">Disconnect</button>`;
+    } else {
+      right = `<button onclick="calConnect('${p.provider}')" class="text-xs font-bold bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-1.5 rounded-lg transition">Connect</button>`;
+    }
+    const sub = p.connected
+      ? `Connected${p.account ? ' · ' + esc(p.account) : ''}${p.last_synced_at ? ' · synced ' + new Date(p.last_synced_at).toLocaleDateString('en-US') : ''}${p.last_error ? ' · <span class="text-rose-500">' + esc(p.last_error.slice(0, 60)) + '</span>' : ''}`
+      : p.configured ? 'Two-way sync for your appointments' : 'Ask your admin to finish the one-time server setup';
+    return `<div class="flex items-center gap-3 py-2.5 border-b border-slate-100 dark:border-slate-800 last:border-0">
+      <div class="w-9 h-9 rounded-lg bg-blue-100 dark:bg-blue-950/40 flex items-center justify-center text-lg shrink-0">${icon[p.provider] || '📅'}</div>
+      <div class="min-w-0 flex-1"><div class="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">${esc(p.label)}${p.connected ? '<span class="text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300">Connected</span>' : ''}</div>
+        <div class="text-xs text-slate-500 dark:text-slate-400 truncate">${sub}</div></div>
+      <div class="shrink-0">${right}</div>
+    </div>`;
+  }).join('');
+  const anyConnected = (data.providers || []).some(p => p.connected);
+  host.innerHTML = `
+    <div class="mb-2">
+      <h3 class="text-xs font-bold uppercase tracking-wide text-slate-400 dark:text-slate-500">Calendar sync</h3>
+      <p class="text-[11px] text-slate-400 dark:text-slate-500 mt-0.5">Appointments booked in MarketSync appear on your calendar, and events on your calendar flow back in — both directions.</p>
+    </div>
+    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-4">
+      ${rows}
+      ${anyConnected ? `<div class="mt-3 pt-3 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between">
+        <span class="text-[11px] text-slate-400">Inbound events also sync automatically in the background.</span>
+        <button onclick="calSyncNow(this)" class="text-xs font-bold bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 px-3 py-1.5 rounded-lg transition">Sync now</button>
+      </div>` : ''}
+      ${!data.any_configured ? '<div class="mt-3 pt-3 border-t border-slate-100 dark:border-slate-800 text-[11px] text-slate-400">Calendar sync turns on once the Google/Microsoft OAuth keys are set on the server.</div>' : ''}
+    </div>`;
+}
+async function calConnect(provider) {
+  try {
+    const d = await apiGetJson(`/calendar/connect/${provider}`, { retries: 1 });
+    if (d.url) window.location.href = d.url;   // hand off to the provider's consent screen
+  } catch (e) { showToast(e.message || 'Could not start the connection', 'error'); }
+}
+async function calDisconnect(provider) {
+  if (!confirm('Disconnect this calendar? Existing events stay put; new appointments just stop syncing.')) return;
+  try { await apiSendJson(`/calendar/disconnect/${provider}`, 'POST'); showToast('Calendar disconnected', 'success'); loadCalendarSyncCard(); }
+  catch (e) { showToast(e.message || 'Could not disconnect', 'error'); }
+}
+async function calSyncNow(btn) {
+  const orig = btn.textContent; btn.disabled = true; btn.textContent = 'Syncing…';
+  try {
+    const r = await apiSendJson('/calendar/sync-now', 'POST');
+    const t = (r.results || []).reduce((a, x) => ({ i: a.i + (x.imported || 0), u: a.u + (x.updated || 0), c: a.c + (x.cancelled || 0) }), { i: 0, u: 0, c: 0 });
+    showToast(`Synced — ${t.i} new, ${t.u} updated, ${t.c} cancelled`, 'success');
+    loadCalendarSyncCard();
+  } catch (e) { showToast(e.message || 'Sync failed', 'error'); }
+  finally { btn.disabled = false; btn.textContent = orig; }
+}
+window.calConnect = calConnect;
+window.calDisconnect = calDisconnect;
+window.calSyncNow = calSyncNow;
+
 function isIntegrationConnected(p) {
   if (!p.enabled) return false;
   const m = p.lender_code_map || {};

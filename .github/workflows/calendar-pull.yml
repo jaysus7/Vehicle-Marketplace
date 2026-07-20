@@ -1,0 +1,19 @@
+name: Calendar inbound sync
+
+# Pulls new/changed events from every connected Google/Outlook calendar into
+# MarketSync. Outbound (MarketSync -> calendar) is instant; this is the inbound
+# half. No-op until calendar OAuth keys are configured on the backend.
+on:
+  schedule:
+    - cron: '*/30 * * * *'   # every 30 minutes
+  workflow_dispatch: {}
+
+jobs:
+  pull:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call /cron/calendar-pull
+        run: |
+          curl -fsS -X POST \
+            "https://vehicle-marketplace-s0e4.onrender.com/cron/calendar-pull" \
+            -H "x-cron-secret: ${{ secrets.CRON_SECRET }}"

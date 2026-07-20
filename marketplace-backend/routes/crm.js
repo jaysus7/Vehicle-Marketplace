@@ -2,6 +2,7 @@ import { supabaseAdmin, resend, EMAIL_FROM } from '../shared.js'
 import { requireAuth } from '../middleware.js'
 import { enqueueForTrigger, markDelivered, freezeSequences } from './automation.js'
 import { emitWebhook } from '../webhooks.js'
+import { syncAppointmentOut } from './calendar.js'
 import multer from 'multer'
 
 // CRM attachments: photos, videos and files reps attach to a customer. In-memory,
@@ -456,6 +457,8 @@ export function registerCrm(app) {
       due_at: b.due_at || null,
     }).select('*').single()
     if (error) return res.status(500).json({ error: error.message })
+    // Mirror new appointments to the rep's connected calendar (fire-and-forget).
+    if (data.type === 'appointment' && data.due_at) syncAppointmentOut(data.id, 'upsert')
     res.json({ ok: true, task: data })
   })
 
@@ -473,6 +476,8 @@ export function registerCrm(app) {
       .update(patch).eq('id', req.params.id).eq('dealership_id', req.dealershipId).select('*').maybeSingle()
     if (error) return res.status(500).json({ error: error.message })
     if (!data) return res.status(404).json({ error: 'Task not found' })
+    // Push time/title/assignment changes (and completions/cancellations) to the calendar.
+    if (data.type === 'appointment') syncAppointmentOut(data.id, data.done ? 'delete' : 'upsert')
     res.json({ ok: true, task: data })
   })
 

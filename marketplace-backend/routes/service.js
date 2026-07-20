@@ -13,6 +13,7 @@ import { requireAuth } from '../middleware.js'
 import { findOrCreateContact } from './crm.js'
 import { createNotification } from '../notifications.js'
 import { rateLimit } from '../security.js'
+import { syncAppointmentOut } from './calendar.js'
 
 const isMgr = (req) => ['DEALER_ADMIN', 'OWNER', 'MANAGER'].includes(req.profile?.role)
 const isDealerLevel = (p) => ['DEALER_ADMIN', 'OWNER', 'MANAGER'].includes(p?.role)
@@ -112,6 +113,7 @@ export function registerService(app) {
       subject: 'Service appointment booked', body: `${serviceType} · ${when.toLocaleString('en-US')}${notes ? '\nNotes: ' + notes : ''}`,
       meta: { kind: 'service_appointment', when: when.toISOString(), service_type: serviceType },
     }).catch(() => {})
+    if (task?.id) syncAppointmentOut(task.id, 'upsert')
     res.json({ ok: true, appointment: task })
   })
 
@@ -126,6 +128,7 @@ export function registerService(app) {
       .eq('id', req.params.id).eq('dealership_id', req.dealershipId).eq('category', 'service').select('*').maybeSingle()
     if (error) return res.status(500).json({ error: error.message })
     if (!data) return res.status(404).json({ error: 'Not found' })
+    syncAppointmentOut(data.id, data.done ? 'delete' : 'upsert')
     res.json({ ok: true, appointment: data })
   })
 
