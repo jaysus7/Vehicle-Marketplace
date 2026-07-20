@@ -38,6 +38,7 @@ import { registerReports } from './routes/reports.js'
 import { registerEsign } from './routes/esign.js'
 import { registerCalendar } from './routes/calendar.js'
 import { registerAdSpend } from './routes/adspend.js'
+import { registerIdentity } from './routes/identity.js'
 
 const app = express()
 const PORT = process.env.PORT || 10000
@@ -98,6 +99,7 @@ registerReports(app)
 registerEsign(app)
 registerCalendar(app)
 registerAdSpend(app)
+registerIdentity(app)
 
 app.use((err, req, res, next) => {
   console.error('Unhandled Express error:', {

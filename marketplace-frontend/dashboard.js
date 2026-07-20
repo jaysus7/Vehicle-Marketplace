@@ -2791,6 +2791,7 @@ async function crmOpenForm(id) {
       <div>${lbl("Driver's licence #")}${inp('crm-f-dl', c.dl_number, 'DL number', 'w-full')}</div>
       <div>${lbl('DL expiry')}<input id="crm-f-dlexp" type="date" value="${esc(c.dl_expiry || '')}" class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm"></div>
     </div>
+    ${id ? idvBlock(c) : ''}
     ${sect('Source & assignment')}
     <div class="grid grid-cols-3 gap-2">
       <div>${lbl('Source')}${(() => {
@@ -2875,7 +2876,82 @@ function crmDownscaleImage(fileOrBlob, maxDim) {
     img.src = URL.createObjectURL(fileOrBlob);
   });
 }
+// ── ID verification (Stripe Identity) ───────────────────────────────────────
+// Real government-ID + selfie/liveness check on a saved customer. Stripe does the
+// document + biometric work on a hosted page; we only track pass/fail here. The ID
+// images never touch our servers. Only shown on an already-saved contact.
+function idvBadge(status, verifiedAt) {
+  const map = {
+    verified: ['bg-emerald-100 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300', 'ID verified'],
+    processing: ['bg-amber-100 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300', 'Checking…'],
+    pending: ['bg-amber-100 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300', 'Awaiting customer'],
+    requires_input: ['bg-rose-100 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300', 'Needs another attempt'],
+    canceled: ['bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300', 'Canceled'],
+  };
+  const [cls, label] = map[status] || ['bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300', 'Not verified'];
+  const when = status === 'verified' && verifiedAt ? ` · ${new Date(verifiedAt).toLocaleDateString()}` : '';
+  return `<span class="inline-flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded-full ${cls}">${label}${when}</span>`;
+}
+function idvBlock(c) {
+  const cid = c.id;
+  const status = c.id_verification_status || 'unstarted';
+  const rep = c.id_verification_report || {};
+  const summary = status === 'verified' && (rep.name || rep.dob)
+    ? `<div class="text-[11px] text-slate-500 dark:text-slate-400 mt-1">Matched: ${esc(rep.name || '')}${rep.dob ? ` · DOB ${esc(rep.dob)}` : ''}${rep.selfie_matched ? ' · selfie matched' : ''}</div>` : '';
+  const lastErr = status === 'requires_input' && rep.last_error
+    ? `<div class="text-[11px] text-rose-500 mt-1">${esc(rep.last_error)}</div>` : '';
+  return `${sect('Identity verification')}
+    <div class="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 p-3">
+      <div class="flex items-center justify-between gap-2">
+        <div>
+          <div class="flex items-center gap-2"><span class="text-sm font-bold text-slate-800 dark:text-slate-100">Government ID + selfie</span> <span id="idv-badge">${idvBadge(status, c.id_verified_at)}</span></div>
+          <div class="text-[11px] text-slate-500 dark:text-slate-400">Verified by Stripe Identity — the customer photographs their ID and takes a selfie. Images stay with Stripe.</div>
+          <div id="idv-summary">${summary}${lastErr}</div>
+        </div>
+        <div class="flex flex-col gap-1.5 shrink-0">
+          <button type="button" onclick="idvStart('${cid}')" class="text-xs font-bold bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-1.5 rounded-lg whitespace-nowrap">${status === 'unstarted' ? 'Start verification' : 'Re-run'}</button>
+          ${status !== 'unstarted' ? `<button type="button" onclick="idvRefresh('${cid}')" class="text-xs font-bold bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 px-3 py-1.5 rounded-lg whitespace-nowrap">Refresh status</button>` : ''}
+        </div>
+      </div>
+      <div id="idv-link" class="hidden mt-2"></div>
+    </div>`;
+}
+async function idvStart(contactId) {
+  const link = document.getElementById('idv-link');
+  if (link) { link.classList.remove('hidden'); link.innerHTML = '<div class="text-xs text-slate-500">Creating a secure verification link…</div>'; }
+  try {
+    const r = await apiSendJson('/identity/start', 'POST', { contact_id: contactId }, { timeoutMs: 30000 });
+    if (!r.url) throw new Error('No verification link returned.');
+    const badge = document.getElementById('idv-badge'); if (badge) badge.innerHTML = idvBadge('pending');
+    if (link) link.innerHTML = `
+      <div class="text-[11px] font-semibold text-slate-500 dark:text-slate-400 mb-1">Send this secure link to the customer, or open it on your device for them:</div>
+      <div class="flex gap-1.5">
+        <input readonly value="${esc(r.url)}" onclick="this.select()" class="flex-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1.5 text-xs">
+        <button type="button" onclick="navigator.clipboard.writeText('${esc(r.url)}');showToast('Link copied','success')" class="text-xs font-bold bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 px-3 rounded-lg">Copy</button>
+        <a href="${esc(r.url)}" target="_blank" rel="noopener" class="text-xs font-bold bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-1.5 rounded-lg">Open</a>
+      </div>
+      <div class="text-[11px] text-slate-400 mt-1">After they finish, press <b>Refresh status</b> to update the result.</div>`;
+  } catch (e) {
+    if (link) link.innerHTML = `<div class="text-xs text-rose-600 dark:text-rose-400">${esc(e.message || 'Could not start verification.')}</div>`;
+  }
+}
+async function idvRefresh(contactId) {
+  const badge = document.getElementById('idv-badge');
+  if (badge) badge.innerHTML = idvBadge('processing');
+  try {
+    const r = await apiGetJson(`/identity/status?contact_id=${encodeURIComponent(contactId)}`);
+    if (badge) badge.innerHTML = idvBadge(r.status, r.verified_at);
+    const sum = document.getElementById('idv-summary');
+    if (sum) {
+      const rep = r.report || {};
+      if (r.status === 'verified' && (rep.name || rep.dob)) sum.innerHTML = `<div class="text-[11px] text-slate-500 dark:text-slate-400 mt-1">Matched: ${esc(rep.name || '')}${rep.dob ? ` · DOB ${esc(rep.dob)}` : ''}${rep.selfie_matched ? ' · selfie matched' : ''}</div>`;
+      else if (r.status === 'requires_input' && rep.last_error) sum.innerHTML = `<div class="text-[11px] text-rose-500 mt-1">${esc(rep.last_error)}</div>`;
+    }
+    if (r.status === 'verified') { showToast('Identity verified', 'success'); const l = document.getElementById('idv-link'); if (l) l.classList.add('hidden'); }
+  } catch (e) { if (badge) badge.innerHTML = idvBadge('requires_input'); showToast(e.message || 'Could not check status', 'error'); }
+}
 window.crmScanLicense = crmScanLicense;
+window.idvStart = idvStart; window.idvRefresh = idvRefresh;
 async function crmDecodeTrade() {
   const vin = (document.getElementById('crm-f-tradevin')?.value || '').trim().toUpperCase();
   if (vin.length !== 17) { showToast('Enter a 17-character VIN', 'error'); return; }
