@@ -2952,6 +2952,14 @@ async function idvRefresh(contactId) {
 }
 window.crmScanLicense = crmScanLicense;
 window.idvStart = idvStart; window.idvRefresh = idvRefresh;
+// Header "Identity scan" button — opens a fresh contact and immediately fires the
+// licence camera scan. After saving, the contact record offers the full Stripe
+// Identity (ID + selfie/liveness) check.
+async function identityScan() {
+  try { await crmOpenForm(); } catch (e) { showToast(e.message || 'Could not open the form', 'error'); return; }
+  setTimeout(() => { try { crmScanLicense(); } catch (e) {} }, 200);
+}
+window.identityScan = identityScan;
 async function crmDecodeTrade() {
   const vin = (document.getElementById('crm-f-tradevin')?.value || '').trim().toUpperCase();
   if (vin.length !== 17) { showToast('Enter a 17-character VIN', 'error'); return; }
@@ -5134,6 +5142,7 @@ function deskRenderForm(contactId) {
           </div>
           <button onclick="openCreditApp('${contactId}')" class="w-full inline-flex items-center justify-center gap-2 bg-violet-600 hover:bg-violet-500 text-white text-sm font-bold px-3 py-2.5 rounded-lg transition"><svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>Credit application</button>
           <button onclick="deskEsign('${contactId}','bill')" class="w-full inline-flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-bold px-3 py-2.5 rounded-lg transition"><svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/></svg>Send for e-signature</button>
+          <button onclick="deskCollectDeposit('${contactId}')" class="w-full inline-flex items-center justify-center gap-2 bg-teal-600 hover:bg-teal-500 text-white text-sm font-bold px-3 py-2.5 rounded-lg transition"><svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z"/></svg>Collect deposit</button>
           <button onclick="openEsignStatus('${contactId}')" class="w-full text-center text-xs font-semibold text-slate-500 hover:text-indigo-600 dark:text-slate-400 dark:hover:text-indigo-400 transition py-1">View signature status →</button>
         </div>
       </div>
@@ -6328,6 +6337,52 @@ async function openEsignDetail(id) {
   } catch (e) { showToast(e.message || 'Could not open the signed document', 'error'); }
 }
 
+// Collect a real, refundable deposit as part of the deal. Generates a Stripe
+// payment link (funds go into the dealer's own connected account) tied to this
+// customer and the desked vehicle. Rep sends/opens it; the webhook stamps the
+// customer record "deposit paid".
+function deskCollectDeposit(contactId) {
+  if (!contactId) { showToast('Pick a customer first', 'error'); return; }
+  crmOverlay(`<div class="p-5 space-y-4">
+    <div class="flex items-center justify-between">
+      <div class="text-lg font-black text-slate-900 dark:text-white">Collect a deposit</div>
+      <button onclick="this.closest('.fixed').remove()" class="text-slate-400 hover:text-slate-600"><svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" d="M6 6l12 12M18 6L6 18"/></svg></button>
+    </div>
+    <p class="text-sm text-slate-500 dark:text-slate-400">The deposit is charged straight into your own Stripe payouts account and is refundable per your policy. Send the customer this secure link or open it on your device.</p>
+    <div>
+      <label class="block text-[11px] font-semibold text-slate-500 dark:text-slate-400 mb-1">Deposit amount</label>
+      <div class="flex items-center gap-2">
+        <span class="text-slate-500 font-bold">$</span>
+        <input id="dep-amount" type="number" min="1" step="1" placeholder="500" class="w-40 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm">
+        <button type="button" onclick="deskDepositCreate('${contactId}')" class="text-sm font-bold bg-teal-600 hover:bg-teal-500 text-white px-4 py-2 rounded-lg">Create link</button>
+      </div>
+      <div class="text-[11px] text-slate-400 mt-1">Leave blank to use your default deposit amount.</div>
+    </div>
+    <div id="dep-link" class="hidden"></div>
+  </div>`, 'max-w-lg');
+}
+async function deskDepositCreate(contactId) {
+  const link = document.getElementById('dep-link');
+  const amt = parseInt(document.getElementById('dep-amount')?.value || '', 10);
+  if (link) { link.classList.remove('hidden'); link.innerHTML = '<div class="text-xs text-slate-500">Creating a secure deposit link…</div>'; }
+  try {
+    const body = { contact_id: contactId, vehicle_id: (typeof __deskDeal !== 'undefined' && __deskDeal?.inventory_id) || null };
+    if (amt && amt > 0) body.amount = amt;
+    const r = await apiSendJson('/deposits/checkout', 'POST', body, { timeoutMs: 30000 });
+    if (!r.url) throw new Error('No link returned.');
+    if (link) link.innerHTML = `
+      <div class="text-[11px] font-semibold text-slate-500 dark:text-slate-400 mb-1">Send this secure link to the customer, or open it to take payment now:</div>
+      <div class="flex gap-1.5">
+        <input readonly value="${esc(r.url)}" onclick="this.select()" class="flex-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1.5 text-xs">
+        <button type="button" onclick="navigator.clipboard.writeText('${esc(r.url)}');showToast('Link copied','success')" class="text-xs font-bold bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 px-3 rounded-lg">Copy</button>
+        <a href="${esc(r.url)}" target="_blank" rel="noopener" class="text-xs font-bold bg-teal-600 hover:bg-teal-500 text-white px-3 py-1.5 rounded-lg">Open</a>
+      </div>
+      <div class="text-[11px] text-slate-400 mt-1">Once paid, it shows on the customer's record automatically.</div>`;
+  } catch (e) {
+    if (link) link.innerHTML = `<div class="text-xs text-rose-600 dark:text-rose-400">${esc(e.message || 'Could not create the deposit link.')}</div>`;
+  }
+}
+window.deskCollectDeposit = deskCollectDeposit; window.deskDepositCreate = deskDepositCreate;
 // Open the Desk-a-deal page focused on one customer (from a CRM row).
 function openDeskForContact(contactId) { __deskContactId = contactId; switchPage('desk'); }
 window.loadDeskDeal = loadDeskDeal;

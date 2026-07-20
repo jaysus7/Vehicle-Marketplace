@@ -69,6 +69,8 @@
     html[data-dash-mode="marketsync"] #chev-sales,
     html[data-dash-mode="marketsync"] #nav-desk,
     html[data-dash-mode="marketsync"] #header-appraise-btn,
+    html[data-dash-mode="marketsync"] #idscan-btn,
+    html[data-dash-mode="marketsync"] #fb-post-btn,
     html[data-dash-mode="marketsync"] .nav-group[data-group="service"] { display: none !important; }
     /* Report rail in MarketSync mode: hide the vehicle / F&I reports — MarketSync
        sells software, so keep only the SaaS-relevant reports (leads, marketing,
@@ -206,6 +208,7 @@
       <!-- Rank/tier chip — always-visible gamification status; opens the leaderboard -->
       <button id="ui-tier-chip" onclick="openLeaderboardOnDash()" title="Your rank & badges — open the leaderboard" class="hidden items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold border transition hover:brightness-110 whitespace-nowrap"></button>
       <button id="fb-post-btn" onclick="postToFacebook()" title="Post inventory to Facebook Marketplace" class="inline-flex items-center gap-1.5 bg-blue-600 hover:bg-blue-500 text-white px-2.5 sm:px-3 py-1.5 rounded text-sm sm:text-xs font-bold border border-blue-600 shadow-sm shadow-blue-500/40 transition whitespace-nowrap"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>Post to Facebook</button>
+      <button id="idscan-btn" onclick="identityScan()" title="Scan a driver's licence to add a customer" class="inline-flex items-center gap-1.5 bg-teal-600 hover:bg-teal-500 text-white px-2.5 sm:px-3 py-1.5 rounded text-sm sm:text-xs font-bold border border-teal-600 shadow-sm shadow-teal-500/40 transition whitespace-nowrap"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/><circle cx="12" cy="13" r="3"/></svg>Identity scan</button>
       <a id="ext-header-btn" href="https://chromewebstore.google.com/detail/marketsync/mfoaodaoipaalloccolophjhblgikada" target="_blank" rel="noopener" class="hidden bg-purple-600 hover:bg-purple-500 text-white px-2.5 sm:px-3 py-1.5 rounded text-sm sm:text-xs font-bold border border-purple-600 shadow-sm shadow-purple-500/40 transition whitespace-nowrap">Install extension</a>
       <!-- How-to guide -->
       <button type="button" id="guide-btn" onclick="openGuideModal()" title="How-to guide — learn every feature" aria-label="How-to guide" class="p-1.5 rounded-lg text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 transition">
@@ -3100,7 +3103,7 @@
     </div>
   </div>
 
-  <script src="dashboard.js?v=20260720i"></script>
+  <script src="dashboard.js?v=20260720j"></script>
   <!-- Google Translate widget (per-rep dashboard translation) -->
   <script>
     window.googleTranslateElementInit = function () {

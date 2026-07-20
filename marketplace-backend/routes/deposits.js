@@ -243,4 +243,64 @@ export function registerDeposits(app) {
       res.status(400).json({ error: 'Could not start the deposit checkout. Please try again.' })
     }
   })
+
+  // In-deal deposit — a rep generates a real deposit payment link for a customer as
+  // part of desking a deal. Same destination-charge flow as the website route, but
+  // authenticated and tied to an existing CRM contact (and optional vehicle). The
+  // link is sent to / opened for the customer; the shared webhook stamps it paid.
+  app.post('/deposits/checkout', requireAuth, async (req, res) => {
+    if (!req.dealershipId) return res.status(400).json({ error: 'No dealership' })
+    if (!stripeDepositsConfigured()) return res.status(501).json({ error: 'Deposits aren’t configured on this server yet.' })
+    const row = await getRow(req.dealershipId)
+    const accountId = row?.lender_code_map?.account_id
+    if (!row?.enabled || !accountId || !row?.lender_code_map?.charges_enabled) {
+      return res.status(400).json({ error: 'Connect your Stripe payouts account in Settings → Deposits before collecting a deposit.' })
+    }
+    const b = req.body || {}
+    const contactId = String(b.contact_id || '')
+    if (!contactId) return res.status(400).json({ error: 'contact_id required' })
+    const { data: contact } = await supabaseAdmin.from('contacts')
+      .select('id, full_name, email, phone').eq('id', contactId).eq('dealership_id', req.dealershipId).maybeSingle()
+    if (!contact) return res.status(404).json({ error: 'Customer not found' })
+
+    const m = row.lender_code_map || {}
+    const amount = clampAmount(b.amount || m.deposit_amount || 500)
+    const currency = m.currency || 'usd'
+    let inventory_id = null, vehicleLabel = 'a vehicle'
+    if (b.vehicle_id) {
+      const { data: v } = await supabaseAdmin.from('inventory').select('id, dealership_id, year, make, model, trim').eq('id', b.vehicle_id).maybeSingle()
+      if (v && v.dealership_id === req.dealershipId) { inventory_id = v.id; vehicleLabel = [v.year, v.make, v.model, v.trim].filter(Boolean).join(' ') || vehicleLabel }
+    }
+    const { data: dealer } = await supabaseAdmin.from('dealerships').select('name').eq('id', req.dealershipId).maybeSingle()
+    const dealerName = dealer?.name || 'the dealership'
+    try {
+      const session = await stripe.checkout.sessions.create({
+        mode: 'payment',
+        line_items: [{
+          price_data: {
+            currency,
+            product_data: { name: `Deposit — ${vehicleLabel}`, description: `Holds ${vehicleLabel} at ${dealerName}. Refundable per dealership policy.` },
+            unit_amount: amount * 100,
+          },
+          quantity: 1,
+        }],
+        payment_intent_data: {
+          on_behalf_of: accountId,
+          transfer_data: { destination: accountId },
+          description: `Deal deposit — ${vehicleLabel} — ${dealerName}`,
+        },
+        customer_email: contact.email || undefined,
+        success_url: `${FRONTEND_URL}/dashboard.html?deposit=success`,
+        cancel_url: `${FRONTEND_URL}/dashboard.html?deposit=cancelled`,
+        metadata: {
+          kind: 'deposit', dealership_id: req.dealershipId, contact_id: contactId,
+          vehicle_id: inventory_id || '', vehicle_label: vehicleLabel, source: 'deal_desk',
+        },
+      })
+      res.json({ ok: true, url: session.url, amount, currency })
+    } catch (e) {
+      console.error('[deposits] deal checkout failed:', e.message)
+      res.status(400).json({ error: 'Could not create the deposit link. Please try again.' })
+    }
+  })
 }
