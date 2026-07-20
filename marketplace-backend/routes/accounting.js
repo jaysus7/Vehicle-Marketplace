@@ -119,6 +119,43 @@ export async function postDepositToLedger(dealershipId, { contactId, amountCents
   } catch (e) { console.warn('[accounting] postDepositToLedger failed:', e.message) }
 }
 
+// ── MarketSync's own financials ──────────────────────────────────────────────
+// MarketSync (the SaaS company) is itself a dealership row; its income is dealer
+// subscription revenue, not vehicle deals. When a dealer pays, we post that revenue
+// to MarketSync's own ledger so its Accounting page reflects real SaaS financials.
+const MS_DEALER_ID = process.env.MARKETSYNC_DEALERSHIP_ID || '5c535d3c-9120-47ee-8ab3-73963608f624'
+async function ensureAccount(dealershipId, { name, category, system_key, code }) {
+  const { data } = await supabaseAdmin.from('gl_accounts').select('id').eq('dealership_id', dealershipId).eq('system_key', system_key).maybeSingle()
+  if (data?.id) return data.id
+  const { data: created } = await supabaseAdmin.from('gl_accounts').insert({ dealership_id: dealershipId, name, category, system_key, code }).select('id').single()
+  return created?.id || null
+}
+export async function postMarketsyncRevenue({ amountCents, currency, ref, description }) {
+  try {
+    if (!MS_DEALER_ID || !amountCents) return
+    if (ref) { const { data: dup } = await supabaseAdmin.from('gl_entries').select('id').eq('dealership_id', MS_DEALER_ID).eq('ref', String(ref)).limit(1); if (dup && dup.length) return }
+    await ensureChart(MS_DEALER_ID)
+    const acct = await ensureAccount(MS_DEALER_ID, { name: 'Subscription Revenue', category: 'income', system_key: 'saas_revenue', code: '4200' })
+    await supabaseAdmin.from('gl_entries').insert({
+      dealership_id: MS_DEALER_ID, entry_date: new Date().toISOString().slice(0, 10), account_id: acct,
+      description: String(description || 'Dealer subscription').slice(0, 200), amount: round2(n(amountCents) / 100), direction: 'in', source: 'saas', ref: ref ? String(ref) : null,
+    })
+  } catch (e) { console.warn('[accounting] postMarketsyncRevenue failed:', e.message) }
+}
+// Post an affiliate payout as a MarketSync expense (called when a commission is paid).
+export async function postMarketsyncAffiliateExpense({ amountCents, currency, ref, description }) {
+  try {
+    if (!MS_DEALER_ID || !amountCents) return
+    if (ref) { const { data: dup } = await supabaseAdmin.from('gl_entries').select('id').eq('dealership_id', MS_DEALER_ID).eq('ref', String(ref)).limit(1); if (dup && dup.length) return }
+    await ensureChart(MS_DEALER_ID)
+    const acct = await ensureAccount(MS_DEALER_ID, { name: 'Affiliate Commissions', category: 'expense', system_key: 'affiliate_expense', code: '6700' })
+    await supabaseAdmin.from('gl_entries').insert({
+      dealership_id: MS_DEALER_ID, entry_date: new Date().toISOString().slice(0, 10), account_id: acct,
+      description: String(description || 'Affiliate payout').slice(0, 200), amount: round2(n(amountCents) / 100), direction: 'out', source: 'affiliate', ref: ref ? String(ref) : null,
+    })
+  } catch (e) { console.warn('[accounting] postMarketsyncAffiliateExpense failed:', e.message) }
+}
+
 // ── Daily reconciliation ─────────────────────────────────────────────────────
 async function reconcileDay(dealershipId, dateStr, { alert = false } = {}) {
   const date = dateStr || today()

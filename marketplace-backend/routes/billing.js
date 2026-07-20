@@ -11,6 +11,7 @@ import {
 import { createNotification } from '../notifications.js'
 import { handleDepositCheckout } from './deposits.js'
 import { accrueAffiliateCommission } from './affiliate.js'
+import { postMarketsyncRevenue } from './accounting.js'
 
 // Inventory Intelligence price ID — accept the canonical name OR the
 // STRIPE_INVENTORY_INTELLIGANCE name used in the current Render environment,
@@ -271,6 +272,9 @@ export function registerRoutes(app) {
           // Affiliate: accrue the referring affiliate's commission on this payment
           // (idempotent on the invoice id; no-op when the dealer wasn't referred).
           if (dealer?.id) await accrueAffiliateCommission({ dealershipId: dealer.id, amountCents: invoice.amount_paid, currency: invoice.currency, extRef: invoice.id })
+          // MarketSync financials: post this subscription payment as SaaS revenue to
+          // MarketSync's own ledger (idempotent on the invoice id).
+          await postMarketsyncRevenue({ amountCents: invoice.amount_paid, currency: invoice.currency, ref: invoice.id, description: `Subscription — ${dealer?.name || invoice.customer}` })
           break
         }
 
