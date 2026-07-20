@@ -59,8 +59,6 @@
     html[data-dash-mode="marketsync"] .nav-group[data-group="ii"],
     html[data-dash-mode="marketsync"] .nav-group[data-group="web"],
     html[data-dash-mode="marketsync"] .nav-group[data-group="auto"],
-    html[data-dash-mode="marketsync"] #nav-reports,
-    html[data-dash-mode="marketsync"] #nav-reports-m,
     html[data-dash-mode="marketsync"] .nav-item[data-page="inventory"],
     html[data-dash-mode="marketsync"] #grp-sales [data-page="appraisal"],
     html[data-dash-mode="marketsync"] #grp-sales [data-page="recon"],
@@ -72,6 +70,19 @@
     html[data-dash-mode="marketsync"] #nav-desk,
     html[data-dash-mode="marketsync"] #header-appraise-btn,
     html[data-dash-mode="marketsync"] .nav-group[data-group="service"] { display: none !important; }
+    /* Report rail in MarketSync mode: hide the vehicle / F&I reports — MarketSync
+       sells software, so keep only the SaaS-relevant reports (leads, marketing,
+       appointments, activity, customers, rep scorecard, all). */
+    html[data-dash-mode="marketsync"] #report-rail [data-report="lot"],
+    html[data-dash-mode="marketsync"] #report-rail [data-report="scan"],
+    html[data-dash-mode="marketsync"] #report-rail [data-report="snapshot"],
+    html[data-dash-mode="marketsync"] #report-rail [data-report="weekly"],
+    html[data-dash-mode="marketsync"] #report-rail [data-report="equity"],
+    html[data-dash-mode="marketsync"] #report-rail [data-report="sales"],
+    html[data-dash-mode="marketsync"] #report-rail [data-report="fni"],
+    html[data-dash-mode="marketsync"] #report-rail [data-report="appraisals"],
+    html[data-dash-mode="marketsync"] #report-rail [data-report="service"],
+    html[data-dash-mode="marketsync"] #report-rail [data-report="esign"] { display: none !important; }
     /* Keep the CRM group open + force-show Leads. Sales becomes a direct page link
        (JS points the header at the F&I/Sales page and hides the F&I sub-item). */
     html[data-dash-mode="marketsync"] #grp-crm { display: block !important; }
@@ -3089,7 +3100,7 @@
     </div>
   </div>
 
-  <script src="dashboard.js?v=20260720d"></script>
+  <script src="dashboard.js?v=20260720e"></script>
   <!-- Google Translate widget (per-rep dashboard translation) -->
   <script>
     window.googleTranslateElementInit = function () {

@@ -326,7 +326,10 @@ let profileContext = null;
 // html[data-dash-mode] attribute). Persisted per-browser.
 let __dashMode = localStorage.getItem('ms_dash_mode') === 'marketsync' ? 'marketsync' : 'demo';
 // The pages that remain in MarketSync mode (everything else is vehicle-only).
-const MS_ALLOWED_PAGES = new Set(['insights', 'crm', 'tasks', 'appointments', 'leads', 'fni', 'profile']);
+const MS_ALLOWED_PAGES = new Set(['insights', 'crm', 'tasks', 'appointments', 'leads', 'fni', 'reports', 'profile']);
+// In MarketSync mode the Reports hub shows only the SaaS-relevant reports (no
+// vehicle inventory, F&I, appraisals or service — MarketSync sells software).
+const MS_REPORT_KEYS = new Set(['leads', 'marketing', 'appointments', 'activity', 'customers', 'reps']);
 function applyDashMode(mode) {
   __dashMode = mode === 'marketsync' ? 'marketsync' : 'demo';
   document.documentElement.setAttribute('data-dash-mode', __dashMode);
@@ -7312,7 +7315,11 @@ const REPORT_DEFS = [
 ];
 function renderReportTabs() {
   const host = document.getElementById('reports-tabs'); if (!host) return;
-  host.innerHTML = REPORT_DEFS.map(d => `<button onclick="reportsTab('${d.key}')" class="px-3 py-1.5 text-xs font-bold rounded-lg border transition ${__rptTab === d.key ? 'bg-indigo-600 text-white border-indigo-600' : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800'}">${d.label}</button>`).join('');
+  const ms = document.documentElement.getAttribute('data-dash-mode') === 'marketsync';
+  const defs = ms ? REPORT_DEFS.filter(d => MS_REPORT_KEYS.has(d.key)) : REPORT_DEFS;
+  // MarketSync mode has no Overview (it's vehicle-heavy) — default to Leads.
+  if (ms && !MS_REPORT_KEYS.has(__rptTab)) __rptTab = 'leads';
+  host.innerHTML = defs.map(d => `<button onclick="reportsTab('${d.key}')" class="px-3 py-1.5 text-xs font-bold rounded-lg border transition ${__rptTab === d.key ? 'bg-indigo-600 text-white border-indigo-600' : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800'}">${d.label}</button>`).join('');
 }
 function reportsTab(key) {
   __rptTab = key;
