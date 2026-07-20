@@ -229,6 +229,25 @@ function showToast(message, type = 'info', duration = 4000) {
   } catch {}
 })()
 
+// Same, for the ad-spend (Meta / Google Ads) OAuth return.
+;(function bootstrapAdSpendReturn() {
+  try {
+    const q = new URLSearchParams(window.location.search)
+    const state = q.get('adspend')
+    if (!state) return
+    const provider = q.get('provider') || ''
+    const label = provider === 'meta' ? 'Meta Ads' : provider === 'google_ads' ? 'Google Ads' : 'Ad account'
+    window.addEventListener('DOMContentLoaded', () => {
+      setTimeout(() => {
+        if (state === 'connected') { showToast(`${label} connected — importing spend…`, 'success'); if (typeof switchPage === 'function') switchPage('reports'); }
+        else showToast(`Couldn’t connect ${label}${q.get('msg') ? ': ' + q.get('msg') : ''}`, 'error', 7000)
+      }, 400)
+    })
+    q.delete('adspend'); q.delete('provider'); q.delete('msg')
+    history.replaceState(null, '', window.location.pathname + (q.toString() ? '?' + q.toString() : ''))
+  } catch {}
+})()
+
 // Keys that should survive localStorage.clear() (user-level UI preferences, not session data)
 const PERSIST_KEYS = ['ms_tour_done', 'ms_ext_cta_dismissed'];
 function clearLocalStorage() {
@@ -4206,6 +4225,8 @@ async function loadMarketingRoi() {
           <span class="text-[11px] text-slate-400">ROI = (sales × assumed gross − spend) ÷ spend. Revenue is real (sum of selling prices).</span>
         </div>
       </div>
+      <div class="space-y-4">
+      <div id="adspend-panel"></div>
       <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4">
         <div class="flex items-center justify-between mb-2">
           <div class="text-sm font-bold text-slate-900 dark:text-white">Monthly ad spend</div>
@@ -4213,10 +4234,64 @@ async function loadMarketingRoi() {
         <label class="block text-[11px] font-bold text-slate-500 dark:text-slate-400 mb-1">Month</label>
         <input type="month" value="${__mktSpendPeriod}" max="${mktCurrentPeriod()}" onchange="mktSetSpendPeriod(this.value)" class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-1.5 text-sm mb-3">
         <div class="space-y-2">${editor}</div>
-        <p class="text-[11px] text-slate-400 mt-3">Enter what you spent on each channel that month. Blank = $0. The report sums spend across the months in your selected range.</p>
+        <p class="text-[11px] text-slate-400 mt-3">Enter what you spent on each channel that month. Blank = $0. The report sums spend across the months in your selected range. Auto-imported months fill in on their own.</p>
+      </div>
       </div>
     </div>`;
+  loadAdSpendPanel();
 }
+
+// ── Ad-spend auto-import (Meta / Google Ads) panel on the Marketing ROI report ─
+async function loadAdSpendPanel() {
+  const host = document.getElementById('adspend-panel');
+  if (!host) return;
+  let data;
+  try { data = await apiGetJson('/adspend/status', { retries: 1 }); }
+  catch { host.remove(); return; }
+  const icon = { meta: '📘', google_ads: '🟢' };
+  const rows = (data.providers || []).map(p => {
+    let right;
+    if (!p.configured) right = '<span class="text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500">Setup pending</span>';
+    else if (p.connected) right = data.can_manage ? `<button onclick="adDisconnect('${p.provider}')" class="text-xs font-bold text-rose-600 dark:text-rose-400 hover:underline">Disconnect</button>` : '<span class="text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300">Connected</span>';
+    else right = data.can_manage ? `<button onclick="adConnect('${p.provider}')" class="text-xs font-bold bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-1.5 rounded-lg transition">Connect</button>` : '<span class="text-[10px] text-slate-400">Ask an admin</span>';
+    const sub = p.connected ? `${esc(p.account || 'Connected')}${p.last_synced_at ? ' · synced ' + new Date(p.last_synced_at).toLocaleDateString('en-US') : ''}${p.last_error ? ' · <span class="text-rose-500">' + esc(p.last_error.slice(0, 50)) + '</span>' : ''}` : (p.configured ? 'Auto-import monthly spend' : 'Server setup pending');
+    return `<div class="flex items-center gap-2.5 py-2 border-b border-slate-100 dark:border-slate-800 last:border-0">
+      <div class="w-8 h-8 rounded-lg bg-blue-100 dark:bg-blue-950/40 flex items-center justify-center text-base shrink-0">${icon[p.provider] || '📊'}</div>
+      <div class="min-w-0 flex-1"><div class="text-sm font-bold text-slate-900 dark:text-white">${esc(p.label)}</div><div class="text-[11px] text-slate-500 dark:text-slate-400 truncate">${sub}</div></div>
+      <div class="shrink-0">${right}</div>
+    </div>`;
+  }).join('');
+  const anyConnected = (data.providers || []).some(p => p.connected);
+  host.innerHTML = `<div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4">
+    <div class="flex items-center justify-between mb-1"><div class="text-sm font-bold text-slate-900 dark:text-white">Auto-import spend</div>
+      ${anyConnected ? `<button onclick="adSyncNow(this)" class="text-[11px] font-bold bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 px-2.5 py-1 rounded-lg transition">Sync now</button>` : ''}</div>
+    <p class="text-[11px] text-slate-400 mb-2">Connect your ad accounts to pull spend automatically — no monthly typing.</p>
+    ${rows}
+    ${!data.any_configured ? '<div class="mt-2 pt-2 border-t border-slate-100 dark:border-slate-800 text-[11px] text-slate-400">Turns on once the Meta/Google Ads API keys are set on the server.</div>' : ''}
+  </div>`;
+}
+async function adConnect(provider) {
+  try { const d = await apiGetJson(`/adspend/connect/${provider}`, { retries: 1 }); if (d.url) window.location.href = d.url; }
+  catch (e) { showToast(e.message || 'Could not start the connection', 'error'); }
+}
+async function adDisconnect(provider) {
+  if (!confirm('Disconnect this ad account? Imported spend stays; it just stops updating.')) return;
+  try { await apiSendJson(`/adspend/disconnect/${provider}`, 'POST'); showToast('Disconnected', 'success'); loadAdSpendPanel(); }
+  catch (e) { showToast(e.message || 'Could not disconnect', 'error'); }
+}
+async function adSyncNow(btn) {
+  const orig = btn.textContent; btn.disabled = true; btn.textContent = 'Syncing…';
+  try {
+    const r = await apiSendJson('/adspend/sync-now', 'POST');
+    const months = (r.results || []).reduce((a, x) => a + (x.months || 0), 0);
+    showToast(`Imported spend for ${months} month${months === 1 ? '' : 's'}`, 'success');
+    loadMarketingRoi();
+  } catch (e) { showToast(e.message || 'Sync failed', 'error'); }
+  finally { btn.disabled = false; btn.textContent = orig; }
+}
+window.adConnect = adConnect;
+window.adDisconnect = adDisconnect;
+window.adSyncNow = adSyncNow;
 function marketingRoiCsv() {
   const d = __marketingRoiData; if (!d) return;
   const t = d.totals || {};

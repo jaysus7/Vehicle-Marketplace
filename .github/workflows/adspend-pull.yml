@@ -1,0 +1,19 @@
+name: Ad-spend nightly import
+
+# Pulls monthly Meta / Google Ads spend into marketing_spend so the Marketing ROI
+# report stays current without anyone typing spend. No-op until the ad-platform
+# OAuth keys are configured on the backend.
+on:
+  schedule:
+    - cron: '30 6 * * *'   # daily ~06:30 UTC
+  workflow_dispatch: {}
+
+jobs:
+  pull:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call /cron/adspend-pull
+        run: |
+          curl -fsS -X POST \
+            "https://vehicle-marketplace-s0e4.onrender.com/cron/adspend-pull" \
+            -H "x-cron-secret: ${{ secrets.CRON_SECRET }}"
