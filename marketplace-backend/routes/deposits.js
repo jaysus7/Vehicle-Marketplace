@@ -16,6 +16,7 @@ import { stripe, supabaseAdmin, FRONTEND_URL } from '../shared.js'
 import { requireAuth } from '../middleware.js'
 import { createNotification } from '../notifications.js'
 import { findOrCreateContact } from './crm.js'
+import { squareStatus, squareCreateDepositLink } from '../providers/square.js'
 
 const PROVIDER = 'stripe_deposits'
 const isMgr = (req) => ['DEALER_ADMIN', 'OWNER', 'MANAGER'].includes(req.profile?.role)
@@ -43,37 +44,47 @@ export async function depositConfigForSite(dealershipId) {
 }
 
 // Called from the single Stripe webhook (billing.js) for deposit Checkout Sessions.
+// Shared "a deposit was paid" side-effects, provider-agnostic: timeline note on the
+// customer record, a "Deposit" tag (so the CRM/website "Paid" surfaces it), an optional
+// lead note, and a rep notification. Used by both the Stripe and Square deposit flows.
+export async function stampDepositPaid({ dealershipId, contactId, leadId, amountCents, currency, vehicleLabel, provider, paymentRef, repId }) {
+  if (!dealershipId) return
+  const amountStr = amountCents != null ? '$' + (amountCents / 100).toLocaleString('en-US') : 'a deposit'
+  const vehicle = vehicleLabel || 'a vehicle'
+  if (contactId) {
+    try {
+      await supabaseAdmin.from('communications').insert({
+        dealership_id: dealershipId, contact_id: contactId, channel: 'note', direction: 'internal',
+        subject: 'Deposit received',
+        body: `Paid ${amountStr} to reserve ${vehicle}${provider ? ` (via ${provider})` : ''}.`,
+        meta: { kind: 'deposit_paid', amount_total: amountCents, currency, vehicle, provider: provider || 'stripe', payment_ref: paymentRef || null },
+      })
+      const { data: c } = await supabaseAdmin.from('contacts').select('tags').eq('id', contactId).maybeSingle()
+      const tags = Array.isArray(c?.tags) ? c.tags : []
+      if (!tags.includes('Deposit')) tags.push('Deposit')
+      await supabaseAdmin.from('contacts').update({ tags, last_activity_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq('id', contactId)
+    } catch (e) { console.warn('[deposits] stamp contact failed:', e.message) }
+  }
+  if (leadId) {
+    try { await supabaseAdmin.from('leads').update({ comments: `💳 Deposit paid (${amountStr}) to reserve ${vehicle}.` }).eq('id', leadId) } catch {}
+  }
+  await createNotification({
+    dealershipId, type: 'new_lead',
+    title: `💳 Deposit received — ${amountStr}`,
+    body: `${amountStr} paid to reserve ${vehicle}. Confirm the hold and follow up.`,
+    linkPage: 'crm', targetUserId: repId || null,
+  })
+}
+
 export async function handleDepositCheckout(session) {
   const meta = session.metadata || {}
   if (meta.kind !== 'deposit' || !meta.dealership_id) return
   const paid = session.payment_status === 'paid' || session.status === 'complete'
   if (!paid) return
-  const amountStr = session.amount_total != null ? '$' + (session.amount_total / 100).toLocaleString('en-US') : 'a deposit'
-  const vehicle = meta.vehicle_label || 'a vehicle'
-  // Stamp the contact + timeline so the deposit shows on the customer record.
-  if (meta.contact_id) {
-    try {
-      await supabaseAdmin.from('communications').insert({
-        dealership_id: meta.dealership_id, contact_id: meta.contact_id, channel: 'note', direction: 'internal',
-        subject: 'Online deposit received',
-        body: `Paid ${amountStr} to reserve ${vehicle} via the website.`,
-        meta: { kind: 'deposit_paid', amount_total: session.amount_total, currency: session.currency, vehicle, payment_intent: session.payment_intent || null },
-      })
-      // Tag the contact "Deposit" so the CRM/website "Paid" surfaces it, and bump activity.
-      const { data: c } = await supabaseAdmin.from('contacts').select('tags').eq('id', meta.contact_id).maybeSingle()
-      const tags = Array.isArray(c?.tags) ? c.tags : []
-      if (!tags.includes('Deposit')) tags.push('Deposit')
-      await supabaseAdmin.from('contacts').update({ tags, last_activity_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq('id', meta.contact_id)
-    } catch (e) { console.warn('[deposits] stamp contact failed:', e.message) }
-  }
-  if (meta.lead_id) {
-    try { await supabaseAdmin.from('leads').update({ comments: `💳 Deposit paid online (${amountStr}) to reserve ${vehicle}.` }).eq('id', meta.lead_id) } catch {}
-  }
-  await createNotification({
-    dealershipId: meta.dealership_id, type: 'new_lead',
-    title: `💳 Deposit received — ${amountStr}`,
-    body: `A shopper paid ${amountStr} online to reserve ${vehicle}. Confirm the hold and follow up.`,
-    linkPage: 'crm', targetUserId: meta.rep_id || null,
+  await stampDepositPaid({
+    dealershipId: meta.dealership_id, contactId: meta.contact_id || null, leadId: meta.lead_id || null,
+    amountCents: session.amount_total, currency: session.currency, vehicleLabel: meta.vehicle_label,
+    provider: 'Stripe', paymentRef: session.payment_intent || null, repId: meta.rep_id || null,
   })
 }
 
@@ -250,12 +261,6 @@ export function registerDeposits(app) {
   // link is sent to / opened for the customer; the shared webhook stamps it paid.
   app.post('/deposits/checkout', requireAuth, async (req, res) => {
     if (!req.dealershipId) return res.status(400).json({ error: 'No dealership' })
-    if (!stripeDepositsConfigured()) return res.status(501).json({ error: 'Deposits aren’t configured on this server yet.' })
-    const row = await getRow(req.dealershipId)
-    const accountId = row?.lender_code_map?.account_id
-    if (!row?.enabled || !accountId || !row?.lender_code_map?.charges_enabled) {
-      return res.status(400).json({ error: 'Connect your Stripe payouts account in Settings → Deposits before collecting a deposit.' })
-    }
     const b = req.body || {}
     const contactId = String(b.contact_id || '')
     if (!contactId) return res.status(400).json({ error: 'contact_id required' })
@@ -263,9 +268,12 @@ export function registerDeposits(app) {
       .select('id, full_name, email, phone').eq('id', contactId).eq('dealership_id', req.dealershipId).maybeSingle()
     if (!contact) return res.status(404).json({ error: 'Customer not found' })
 
-    const m = row.lender_code_map || {}
-    const amount = clampAmount(b.amount || m.deposit_amount || 500)
-    const currency = m.currency || 'usd'
+    // Which payout rail is this dealer set up on? Prefer Stripe; fall back to Square.
+    const row = await getRow(req.dealershipId)
+    const m = row?.lender_code_map || {}
+    const stripeReady = stripeDepositsConfigured() && row?.enabled && m.account_id && m.charges_enabled
+    const sq = await squareStatus(req.dealershipId)
+
     let inventory_id = null, vehicleLabel = 'a vehicle'
     if (b.vehicle_id) {
       const { data: v } = await supabaseAdmin.from('inventory').select('id, dealership_id, year, make, model, trim').eq('id', b.vehicle_id).maybeSingle()
@@ -273,6 +281,31 @@ export function registerDeposits(app) {
     }
     const { data: dealer } = await supabaseAdmin.from('dealerships').select('name').eq('id', req.dealershipId).maybeSingle()
     const dealerName = dealer?.name || 'the dealership'
+
+    // Square path — used when the dealer connected Square (and Stripe deposits isn't ready).
+    if (!stripeReady && sq.ready) {
+      const amount = clampAmount(b.amount || 500)
+      try {
+        const link = await squareCreateDepositLink({
+          dealershipId: req.dealershipId, amount,
+          description: `Deposit — ${vehicleLabel} — ${dealerName}`,
+          buyerEmail: contact.email || undefined, reference: `dep_${contactId}`,
+          redirectUrl: `${FRONTEND_URL}/dashboard.html?deposit=success`,
+        })
+        if (!link.url) throw new Error('Square did not return a link.')
+        return res.json({ ok: true, url: link.url, amount, currency: link.currency, provider: 'square' })
+      } catch (e) {
+        console.error('[deposits] square link failed:', e.message)
+        return res.status(400).json({ error: e.message || 'Could not create the Square deposit link.' })
+      }
+    }
+
+    if (!stripeReady) {
+      return res.status(400).json({ error: 'Connect a payouts account (Stripe or Square) in Settings → Deposits before collecting a deposit.' })
+    }
+    const accountId = m.account_id
+    const amount = clampAmount(b.amount || m.deposit_amount || 500)
+    const currency = m.currency || 'usd'
     try {
       const session = await stripe.checkout.sessions.create({
         mode: 'payment',

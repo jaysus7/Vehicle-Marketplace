@@ -11,6 +11,7 @@ import { sendDealerSms, invalidateTwilioCache } from './automation.js'
 import { qboConfigured, qboAuthorizeUrl, signState, verifyState, qboExchangeCode, qboEnsureToken, qboCompanyName } from '../providers/quickbooks.js'
 import { OAUTH_PROVIDERS, oauthConfigured, oauthAuthorizeUrl, oauthExchangeCode, oauthEnsureToken, oauthAfterToken, oauthTest, gbpCreatePost, signState as signOAuthState, verifyState as verifyOAuthState } from '../providers/oauth.js'
 import { stripeDepositsConfigured } from './deposits.js'
+import { squareConfigured } from '../providers/square.js'
 import Anthropic from '@anthropic-ai/sdk'
 import { aiAllowed, recordUsage } from '../usage.js'
 
@@ -52,6 +53,7 @@ const CATALOG = {
   google_business: { category: 'Marketing',   label: 'Google Business',      live: false, oauth: true, desc: 'Let AI write Google Business posts for new arrivals, specials and updates — post them today, one-click auto-publish once Google approves access.' },
   twilio:          { category: 'Messaging',   label: 'Twilio SMS',           live: true,  desc: 'Bring your own Twilio account so automated texts send from your own A2P-registered number.' },
   stripe_deposits: { category: 'Payments',    label: 'Online Deposits (Stripe)', deposits: true, desc: 'Take a real, refundable "reserve this vehicle" deposit on your website — paid straight into your own Stripe account.' },
+  square_deposits: { category: 'Payments',    label: 'Deposits (Square)',    square: true, oauth: true, desc: 'Run on Square? Take the same refundable deposit — on your website and inside a deal — paid straight into your own Square account.' },
 }
 const PROVIDERS = Object.keys(CATALOG)
 const isMgr = (req) => ['DEALER_ADMIN', 'OWNER', 'MANAGER'].includes(req.profile?.role)
@@ -71,6 +73,7 @@ export function registerIntegrations(app) {
       const meta = CATALOG[p] || {}
       // OAuth connectors flip live once their app credentials are provisioned.
       const live = p === 'quickbooks' ? qboConfigured()
+        : meta.square ? squareConfigured()
         : OAUTH_PROVIDERS.includes(p) ? oauthConfigured(p)
         : meta.deposits ? stripeDepositsConfigured()
         : !!meta.live

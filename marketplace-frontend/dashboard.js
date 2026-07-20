@@ -6490,6 +6490,7 @@ const INTEGRATION_ICONS = {
   routeone:        { emoji: '🏦', bg: 'bg-slate-100 dark:bg-slate-800' },
   dealertrack:     { emoji: '🏦', bg: 'bg-slate-100 dark:bg-slate-800' },
   stripe_deposits: { emoji: '💳', bg: 'bg-indigo-100 dark:bg-indigo-950/40' },
+  square_deposits: { emoji: '◼️', bg: 'bg-slate-100 dark:bg-slate-800' },
 };
 function integrationIcon(provider) {
   const i = INTEGRATION_ICONS[provider] || { emoji: '🔌', bg: 'bg-slate-100 dark:bg-slate-800' };
@@ -6529,7 +6530,7 @@ function renderIntegrations(data) {
         <h3 class="text-xs font-bold uppercase tracking-wide text-slate-400 dark:text-slate-500">${esc(cat)}</h3>
         ${CATEGORY_BLURB[cat] ? `<p class="text-[11px] text-slate-400 dark:text-slate-500 mt-0.5">${esc(CATEGORY_BLURB[cat])}</p>` : ''}
       </div>
-      <div class="space-y-3">${byCat[cat].slice().sort((a, b) => rank(a) - rank(b)).map(p => p.provider === 'webhook' ? webhookCard(p, events) : p.provider === 'twilio' ? twilioCard(p) : p.provider === 'google_business' ? googleBusinessCard(p) : (p.deposits && p.live) ? depositsCard(p) : (p.oauth && p.live) ? oauthCard(p) : (p.manual && Array.isArray(p.fields)) ? fniCredsCard(p) : providerCard(p)).join('')}</div>
+      <div class="space-y-3">${byCat[cat].slice().sort((a, b) => rank(a) - rank(b)).map(p => p.provider === 'webhook' ? webhookCard(p, events) : p.provider === 'twilio' ? twilioCard(p) : p.provider === 'google_business' ? googleBusinessCard(p) : (p.provider === 'square_deposits' && p.live) ? squareCard(p) : (p.deposits && p.live) ? depositsCard(p) : (p.oauth && p.live) ? oauthCard(p) : (p.manual && Array.isArray(p.fields)) ? fniCredsCard(p) : providerCard(p)).join('')}</div>
     </div>`).join('');
   if (!data.pii_ready) {
     host.insertAdjacentHTML('afterbegin', `<div class="mb-4 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 px-4 py-2.5 text-xs text-amber-700 dark:text-amber-300">Encryption key not set — signing secrets and credentials can't be stored until <code>PII_ENCRYPTION_KEY</code> is configured on the server.</div>`);
@@ -7184,6 +7185,44 @@ window.connectOAuth = connectOAuth;
 window.testOAuth = testOAuth;
 window.disconnectOAuth = disconnectOAuth;
 window.toggleAccountingAutosync = toggleAccountingAutosync;
+
+// Square deposits card — dealer connects their own Square account via OAuth; once
+// connected, the same "Collect deposit" flow (website + deal desk) routes to Square.
+function squareCard(p) {
+  const connected = p.configured && p.enabled;
+  const cfg = p.lender_code_map || {};
+  return `<div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-4">
+    <div class="flex items-start gap-3">
+      ${integrationIcon(p.provider)}
+      <div class="min-w-0 flex-1">
+        <div class="flex items-center gap-2 flex-wrap"><span class="font-bold text-sm text-slate-900 dark:text-white">${esc(p.label)}</span>${statusPill(p)}</div>
+        <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">${esc(p.description)}</p>
+        ${connected && cfg.connected_at ? `<p class="text-[11px] text-slate-400 mt-1">Connected ${new Date(cfg.connected_at).toLocaleDateString()}${cfg.location_name ? ' · ' + esc(cfg.location_name) : ''}.</p>` : ''}
+        <div class="flex items-center gap-2 mt-3">
+          ${connected
+            ? `<button onclick="disconnectSquare('${esc(p.label)}', this)" class="ml-auto text-xs text-rose-500 hover:text-rose-400 font-semibold">Disconnect</button>`
+            : `<button onclick="connectSquare(this)" class="bg-slate-900 dark:bg-white dark:text-slate-900 text-white text-sm font-bold px-4 py-2 rounded-lg transition hover:opacity-90">Connect Square</button>`}
+        </div>
+      </div>
+    </div>
+  </div>`;
+}
+async function connectSquare(btn) {
+  const orig = btn.textContent; btn.disabled = true; btn.textContent = 'Opening…';
+  try {
+    const d = await apiGetJson('/square/connect', { retries: 1 });
+    if (d.url) { window.location.href = d.url; return; }
+    throw new Error('Could not start the connection.');
+  } catch (e) { btn.disabled = false; btn.textContent = orig; showToast(e.message || 'Could not connect', 'error'); }
+}
+async function disconnectSquare(label, btn) {
+  if (!confirm(`Disconnect ${label}? MarketSync will stop routing deposits to Square.`)) return;
+  btn.disabled = true;
+  try { await apiSendJson('/square/disconnect', 'POST', {}); showToast(`${label} disconnected`, 'success'); loadIntegrations(); }
+  catch (e) { btn.disabled = false; showToast(e.message || 'Could not disconnect', 'error'); }
+}
+window.connectSquare = connectSquare;
+window.disconnectSquare = disconnectSquare;
 
 // Online deposits (Stripe Connect) card — dealer connects their own Stripe, sets a
 // deposit amount, and flips it on to show a "Reserve with a deposit" button on their site.
@@ -16369,7 +16408,7 @@ async function startVinStickerTrial() {
   if (!provider) return;
   const status = params.get('status');
   const msg = params.get('msg');
-  const LABELS = { quickbooks: 'QuickBooks', xero: 'Xero', google_business: 'Google Business', stripe_deposits: 'Online Deposits' };
+  const LABELS = { quickbooks: 'QuickBooks', xero: 'Xero', google_business: 'Google Business', stripe_deposits: 'Online Deposits', square: 'Square' };
   const label = LABELS[provider] || 'Integration';
   history.replaceState({}, '', window.location.pathname);
   const openHub = () => { if (typeof switchPage === 'function') { switchPage('profile'); setTimeout(() => { if (typeof settingsTab === 'function') settingsTab('integrations'); }, 250); } };

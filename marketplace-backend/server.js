@@ -39,6 +39,7 @@ import { registerEsign } from './routes/esign.js'
 import { registerCalendar } from './routes/calendar.js'
 import { registerAdSpend } from './routes/adspend.js'
 import { registerIdentity } from './routes/identity.js'
+import { registerSquare } from './routes/square.js'
 
 const app = express()
 const PORT = process.env.PORT || 10000
@@ -59,6 +60,9 @@ app.get(/\.html$/, (req, res) => {
 
 // Stripe webhook must be raw before express.json
 registerBilling(app)
+// Square webhook is also raw-body (own express.raw on /square/webhook); its other
+// routes read no JSON body, so registering here (before express.json) is safe.
+registerSquare(app)
 
 app.use(express.json({ limit: '25mb' }))
 app.use(express.urlencoded({ extended: true, limit: '25mb' }))
