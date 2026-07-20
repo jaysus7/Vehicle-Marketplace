@@ -70,6 +70,7 @@
     html[data-dash-mode="marketsync"] #nav-desk,
     html[data-dash-mode="marketsync"] #header-appraise-btn,
     html[data-dash-mode="marketsync"] #idscan-btn,
+    html[data-dash-mode="marketsync"] #nav-commissions,
     html[data-dash-mode="marketsync"] #fb-post-btn,
     html[data-dash-mode="marketsync"] .nav-group[data-group="service"] { display: none !important; }
     /* Report rail in MarketSync mode: hide the vehicle / F&I reports — MarketSync
@@ -843,6 +844,12 @@
             <span>Reports</span>
           </button>
 
+          <!-- Commissions (all sales roles; reps see their own, managers see the team + plans) -->
+          <button type="button" id="nav-commissions" data-page="commissions" title="Commissions" class="nav-item w-full flex items-center gap-2.5 px-3 py-2 rounded font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition">
+            <svg class="w-4 h-4 flex-shrink-0 text-emerald-600 dark:text-emerald-400" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8V7m0 1v8m0 0v1"/><circle cx="12" cy="12" r="9"/></svg>
+            <span>Commissions</span>
+          </button>
+
           <!-- ─── Website (admin) ─── -->
           <div class="nav-group" data-group="web" data-admin-nav>
             <div class="flex items-center">
@@ -1019,6 +1026,11 @@
       <!-- ───────── REPORTS PAGE (managers) ───────── -->
       <!-- The three manager reports are stacked here, plus the Sold-per-rep report
            and a custom report builder. Manager-gated (nav revealed in JS). -->
+      <!-- Commissions — reps see their own earnings; managers get Team + Plans tabs. -->
+      <div data-page-content="commissions" class="page-content hidden space-y-6">
+        <div id="commissions-root"></div>
+      </div>
+
       <div data-page-content="reports" class="page-content hidden space-y-6">
         <div>
           <h1 class="text-2xl font-black text-slate-900 dark:text-white">Reports</h1>
@@ -3108,7 +3120,7 @@
     </div>
   </div>
 
-  <script src="dashboard.js?v=20260720n"></script>
+  <script src="dashboard.js?v=20260720o"></script>
   <!-- Google Translate widget (per-rep dashboard translation) -->
   <script>
     window.googleTranslateElementInit = function () {

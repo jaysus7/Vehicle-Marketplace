@@ -988,6 +988,7 @@ function switchPage(pageId) {
   if (pageId === 'inv-intel' && typeof window._invIntelPageHook === 'function') window._invIntelPageHook();
   if (pageId === 'ai-vision') loadAiVisionPage();
   if (pageId === 'reports') loadReports();
+  if (pageId === 'commissions') loadCommissionsPage();
   if (pageId === 'desk') loadDeskDeal();
   if (pageId === 'crm') loadCrmPage();
   if (pageId === 'leads') loadLeadsPage();
@@ -7523,6 +7524,320 @@ async function teamDeleteStaff(id) {
 }
 window.teamAddStaff = teamAddStaff;
 window.teamDeleteStaff = teamDeleteStaff;
+
+// ── Commissions page ─────────────────────────────────────────────────────────
+// Reps see their own earnings (status, clawback reasons, bonuses); managers get a
+// team rollup and the plan builder. All figures come from the commission engine.
+let __commState = { tab: null, month: null };
+const commIsMgr = () => ['DEALER_ADMIN', 'OWNER', 'MANAGER'].includes(profileContext?.role);
+function commMoney(v) { const n = Number(v) || 0; return (n < 0 ? '-$' : '$') + Math.abs(n).toLocaleString('en-US', { maximumFractionDigits: 0 }); }
+function commMonth() { return __commState.month || new Date().toISOString().slice(0, 7); }
+function commStatusPill(s) {
+  const map = { pending: ['bg-amber-100 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300', 'Pending'],
+    earned: ['bg-blue-100 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300', 'Earned'],
+    paid: ['bg-emerald-100 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300', 'Paid'],
+    clawed_back: ['bg-rose-100 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300', 'Clawed back'] };
+  const [c, l] = map[s] || ['bg-slate-100 dark:bg-slate-800 text-slate-600', s];
+  return `<span class="inline-block text-[10px] font-bold px-2 py-0.5 rounded-full ${c}">${l}</span>`;
+}
+function loadCommissionsPage() {
+  if (!__commState.tab) __commState.tab = commIsMgr() ? 'team' : 'mine';
+  if (!commIsMgr() && __commState.tab !== 'mine') __commState.tab = 'mine';
+  const root = document.getElementById('commissions-root');
+  if (!root) return;
+  const tab = (id, label) => `<button onclick="commSetTab('${id}')" class="px-3 py-1.5 rounded-lg text-sm font-bold transition ${__commState.tab === id ? 'bg-indigo-600 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'}">${label}</button>`;
+  root.innerHTML = `
+    <div class="flex items-center justify-between gap-3 flex-wrap">
+      <div>
+        <h1 class="text-2xl font-black text-slate-900 dark:text-white">Commissions</h1>
+        <p class="text-sm text-slate-500 dark:text-slate-400">${commIsMgr() ? 'Your team’s pay, bonuses and clawbacks — and the plans that drive them.' : 'Your earnings this period — pending, earned, paid, and any clawbacks.'}</p>
+      </div>
+      <input type="month" value="${commMonth()}" onchange="commSetMonth(this.value)" class="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-1.5 text-sm">
+    </div>
+    <div class="flex flex-wrap gap-1.5">
+      ${tab('mine', 'My commission')}
+      ${commIsMgr() ? tab('team', 'Team') + tab('plans', 'Plans') : ''}
+    </div>
+    <div id="comm-body" class="pt-1"><div class="text-sm text-slate-400">Loading…</div></div>`;
+  if (__commState.tab === 'mine') commLoadMine();
+  else if (__commState.tab === 'team') commLoadTeam();
+  else commLoadPlans();
+}
+function commSetTab(t) { __commState.tab = t; loadCommissionsPage(); }
+function commSetMonth(m) { __commState.month = m; loadCommissionsPage(); }
+window.loadCommissionsPage = loadCommissionsPage; window.commSetTab = commSetTab; window.commSetMonth = commSetMonth;
+
+function commStatCards(s) {
+  const card = (label, val, cls) => `<div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4"><div class="text-[11px] font-bold uppercase tracking-wider text-slate-400">${label}</div><div class="text-2xl font-black mt-1 ${cls || 'text-slate-900 dark:text-white'}">${commMoney(val)}</div></div>`;
+  return `<div class="grid grid-cols-2 md:grid-cols-6 gap-3">
+    ${card('Pending', s.pending)}
+    ${card('Earned', s.earned, 'text-blue-600 dark:text-blue-400')}
+    ${card('Paid', s.paid, 'text-emerald-600 dark:text-emerald-400')}
+    ${card('Volume bonus', s.volume_bonus, 'text-indigo-600 dark:text-indigo-400')}
+    ${card('Clawed back', s.clawed_back, 'text-rose-600 dark:text-rose-400')}
+    ${card('Take-home', s.total, 'text-slate-900 dark:text-white')}
+  </div>`;
+}
+function commDealsTable(s, mgr) {
+  if (!s.deals.length) return '<div class="text-sm text-slate-400 py-6 text-center">No deals this month yet.</div>';
+  return `<div class="overflow-x-auto bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl">
+    <table class="w-full text-sm min-w-[720px]">
+      <thead><tr class="text-left text-[11px] uppercase tracking-wider text-slate-400 border-b border-slate-200 dark:border-slate-800">
+        <th class="px-3 py-2">Deal</th><th class="px-3 py-2">Customer</th><th class="px-3 py-2 text-right">Front</th><th class="px-3 py-2 text-right">Back (F&amp;I)</th><th class="px-3 py-2 text-right">Total</th><th class="px-3 py-2">Status</th>${mgr ? '<th class="px-3 py-2"></th>' : ''}</tr></thead>
+      <tbody>${s.deals.map(d => `<tr class="border-b border-slate-100 dark:border-slate-800/60">
+        <td class="px-3 py-2 font-mono text-xs">#${d.deal_number || '—'}</td>
+        <td class="px-3 py-2">${esc(d.customer || '—')}</td>
+        <td class="px-3 py-2 text-right">${commMoney(d.front)}</td>
+        <td class="px-3 py-2 text-right">${commMoney(d.back)}</td>
+        <td class="px-3 py-2 text-right font-bold">${commMoney(d.total)}</td>
+        <td class="px-3 py-2">${commStatusPill(d.status)}${d.reason ? `<div class="text-[10px] text-rose-500 mt-0.5">${esc(d.reason)}</div>` : ''}</td>
+        ${mgr ? `<td class="px-3 py-2 text-right whitespace-nowrap">${d.status === 'pending' ? `<button onclick="commMarkFunded('${d.deal_id}')" class="text-[11px] font-bold text-blue-600 hover:text-blue-500">Mark funded</button>` : ''}${d.status !== 'clawed_back' ? ` <button onclick="commClawback('${d.deal_id}')" class="text-[11px] font-bold text-rose-500 hover:text-rose-400 ml-2">Claw back</button>` : ''}</td>` : ''}
+      </tr>`).join('')}</tbody>
+    </table></div>`;
+}
+function commAdjList(s) {
+  if (!s.adjustments || !s.adjustments.length) return '';
+  return `<div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4">
+    <div class="text-sm font-bold text-slate-800 dark:text-slate-100 mb-2">Bonuses &amp; adjustments</div>
+    ${s.adjustments.map(a => `<div class="flex items-center justify-between text-sm py-1 border-b border-slate-100 dark:border-slate-800/60 last:border-0">
+      <div><span class="font-semibold capitalize">${esc(a.type)}</span>${a.reason ? ` — <span class="text-slate-500 dark:text-slate-400">${esc(a.reason)}</span>` : ''}</div>
+      <div class="font-bold ${a.amount < 0 ? 'text-rose-500' : 'text-emerald-600 dark:text-emerald-400'}">${commMoney(a.amount)}</div>
+    </div>`).join('')}
+  </div>`;
+}
+async function commLoadMine() {
+  const body = document.getElementById('comm-body'); if (!body) return;
+  try {
+    const s = await apiGetJson(`/commissions/mine?month=${commMonth()}`);
+    body.innerHTML = `${commStatCards(s)}<div class="mt-4 space-y-4">${commDealsTable(s, false)}${commAdjList(s)}</div>`;
+  } catch (e) { body.innerHTML = `<div class="text-sm text-rose-500">${esc(e.message || 'Could not load your commission.')}</div>`; }
+}
+async function commLoadTeam() {
+  const body = document.getElementById('comm-body'); if (!body) return;
+  try {
+    const d = await apiGetJson(`/commissions/team?month=${commMonth()}`);
+    const t = d.totals || {};
+    const totals = `<div class="grid grid-cols-2 md:grid-cols-6 gap-3 mb-4">
+      <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4"><div class="text-[11px] font-bold uppercase tracking-wider text-slate-400">Units</div><div class="text-2xl font-black mt-1">${t.units || 0}</div></div>
+      <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4"><div class="text-[11px] font-bold uppercase tracking-wider text-slate-400">Pending</div><div class="text-2xl font-black mt-1">${commMoney(t.pending)}</div></div>
+      <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4"><div class="text-[11px] font-bold uppercase tracking-wider text-slate-400">Earned</div><div class="text-2xl font-black mt-1 text-blue-600 dark:text-blue-400">${commMoney(t.earned)}</div></div>
+      <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4"><div class="text-[11px] font-bold uppercase tracking-wider text-slate-400">Paid</div><div class="text-2xl font-black mt-1 text-emerald-600 dark:text-emerald-400">${commMoney(t.paid)}</div></div>
+      <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4"><div class="text-[11px] font-bold uppercase tracking-wider text-slate-400">Bonuses</div><div class="text-2xl font-black mt-1 text-indigo-600 dark:text-indigo-400">${commMoney(t.bonus)}</div></div>
+      <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4"><div class="text-[11px] font-bold uppercase tracking-wider text-slate-400">Total</div><div class="text-2xl font-black mt-1">${commMoney(t.total)}</div></div>
+    </div>`;
+    const rows = (d.reps || []).filter(r => r.units || r.total || r.pending).map(r => `<tr class="border-b border-slate-100 dark:border-slate-800/60 hover:bg-slate-50 dark:hover:bg-slate-800/40 cursor-pointer" onclick="commViewRep('${r.rep_id}')">
+      <td class="px-3 py-2 font-semibold">${esc(r.rep_name)}</td>
+      <td class="px-3 py-2 text-right">${r.units}</td>
+      <td class="px-3 py-2 text-right">${commMoney(r.pending)}</td>
+      <td class="px-3 py-2 text-right text-blue-600 dark:text-blue-400">${commMoney(r.earned)}</td>
+      <td class="px-3 py-2 text-right text-emerald-600 dark:text-emerald-400">${commMoney(r.paid)}</td>
+      <td class="px-3 py-2 text-right text-indigo-600 dark:text-indigo-400">${commMoney(r.volume_bonus)}</td>
+      <td class="px-3 py-2 text-right text-rose-500">${commMoney(r.clawed_back)}</td>
+      <td class="px-3 py-2 text-right font-bold">${commMoney(r.total)}</td>
+    </tr>`).join('');
+    body.innerHTML = `${totals}
+      <div class="flex justify-end mb-2"><button onclick="commMarkPaidMonth()" class="text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-1.5 rounded-lg">Mark earned → paid (this month)</button></div>
+      <div class="overflow-x-auto bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl">
+        <table class="w-full text-sm min-w-[760px]"><thead><tr class="text-left text-[11px] uppercase tracking-wider text-slate-400 border-b border-slate-200 dark:border-slate-800">
+          <th class="px-3 py-2">Rep</th><th class="px-3 py-2 text-right">Units</th><th class="px-3 py-2 text-right">Pending</th><th class="px-3 py-2 text-right">Earned</th><th class="px-3 py-2 text-right">Paid</th><th class="px-3 py-2 text-right">Bonus</th><th class="px-3 py-2 text-right">Clawed</th><th class="px-3 py-2 text-right">Total</th>
+        </tr></thead><tbody>${rows || '<tr><td colspan="8" class="px-3 py-6 text-center text-slate-400">No commission activity this month.</td></tr>'}</tbody></table>
+      </div>
+      <div id="comm-rep-detail" class="mt-4"></div>`;
+  } catch (e) { body.innerHTML = `<div class="text-sm text-rose-500">${esc(e.message || 'Could not load the team.')}</div>`; }
+}
+async function commViewRep(repId) {
+  const box = document.getElementById('comm-rep-detail'); if (!box) return;
+  box.innerHTML = '<div class="text-sm text-slate-400">Loading rep…</div>';
+  try {
+    const s = await apiGetJson(`/commissions/rep/${repId}?month=${commMonth()}`);
+    box.innerHTML = `<div class="border-t border-slate-200 dark:border-slate-800 pt-4">
+      <div class="flex items-center justify-between mb-3"><h3 class="text-lg font-black text-slate-900 dark:text-white">${esc(s.rep_name)}</h3>
+        <button onclick="commAddAdjustment('${repId}','${esc(s.rep_name)}')" class="text-xs font-bold bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 px-3 py-1.5 rounded-lg">+ Bonus / adjustment</button></div>
+      ${commStatCards(s)}<div class="mt-4 space-y-4">${commDealsTable(s, true)}${commAdjList(s)}</div></div>`;
+    box.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  } catch (e) { box.innerHTML = `<div class="text-sm text-rose-500">${esc(e.message)}</div>`; }
+}
+async function commMarkFunded(dealId) {
+  try { await apiSendJson('/commissions/mark-funded', 'POST', { deal_id: dealId }); showToast('Marked funded — commission earned', 'success'); loadCommissionsPage(); }
+  catch (e) { showToast(e.message || 'Could not mark funded', 'error'); }
+}
+async function commClawback(dealId) {
+  const reason = prompt('Reason for the clawback (the rep will see this):', '');
+  if (reason === null) return;
+  try { await apiSendJson('/commissions/clawback', 'POST', { deal_id: dealId, reason }); showToast('Commission clawed back', 'success'); loadCommissionsPage(); }
+  catch (e) { showToast(e.message || 'Could not claw back', 'error'); }
+}
+async function commMarkPaidMonth() {
+  if (!confirm('Mark all EARNED commissions this month as paid? Do this after your payroll run.')) return;
+  try { await apiSendJson('/commissions/mark-paid', 'POST', { month: commMonth() }); showToast('Marked paid', 'success'); loadCommissionsPage(); }
+  catch (e) { showToast(e.message || 'Could not mark paid', 'error'); }
+}
+function commAddAdjustment(repId, repName) {
+  crmOverlay(`<div class="p-5 space-y-3">
+    <div class="text-lg font-black text-slate-900 dark:text-white">Adjust — ${esc(repName)}</div>
+    <div><label class="block text-[11px] font-semibold text-slate-500 mb-1">Type</label>
+      <select id="adj-type" class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm"><option value="bonus">Bonus</option><option value="spiff">Spiff</option><option value="adjustment">Adjustment</option><option value="clawback">Clawback (deduction)</option></select></div>
+    <div><label class="block text-[11px] font-semibold text-slate-500 mb-1">Amount ($)</label><input id="adj-amount" type="number" step="1" class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm"></div>
+    <div><label class="block text-[11px] font-semibold text-slate-500 mb-1">Reason (rep sees this)</label><input id="adj-reason" type="text" class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm"></div>
+    <div class="flex justify-end gap-2 pt-1"><button onclick="this.closest('.fixed').remove()" class="text-sm font-bold text-slate-500 px-4 py-2">Cancel</button>
+      <button onclick="commSaveAdjustment('${repId}', this)" class="text-sm font-bold bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg">Save</button></div>
+  </div>`, 'max-w-md');
+}
+async function commSaveAdjustment(repId, btn) {
+  const type = document.getElementById('adj-type')?.value;
+  const amount = parseFloat(document.getElementById('adj-amount')?.value || '0');
+  const reason = document.getElementById('adj-reason')?.value || '';
+  if (!amount) { showToast('Enter an amount', 'error'); return; }
+  btn.disabled = true;
+  try { await apiSendJson('/commissions/adjust', 'POST', { rep_id: repId, type, amount, reason }); showToast('Saved', 'success'); btn.closest('.fixed').remove(); commViewRep(repId); }
+  catch (e) { btn.disabled = false; showToast(e.message || 'Could not save', 'error'); }
+}
+window.commViewRep = commViewRep; window.commMarkFunded = commMarkFunded; window.commClawback = commClawback;
+window.commMarkPaidMonth = commMarkPaidMonth; window.commAddAdjustment = commAddAdjustment; window.commSaveAdjustment = commSaveAdjustment;
+
+// ── Plans tab ────────────────────────────────────────────────────────────────
+let __commPlans = [], __commReps = [];
+async function commLoadPlans() {
+  const body = document.getElementById('comm-body'); if (!body) return;
+  try {
+    const d = await apiGetJson('/commissions/plans');
+    __commPlans = d.plans || []; __commReps = d.reps || [];
+    body.innerHTML = `
+      <div class="grid lg:grid-cols-2 gap-6">
+        <div>
+          <div class="flex items-center justify-between mb-2"><h3 class="text-lg font-black text-slate-900 dark:text-white">Plans</h3>
+            <button onclick="commEditPlan(null)" class="text-xs font-bold bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-1.5 rounded-lg">+ New plan</button></div>
+          <div class="space-y-2">${__commPlans.length ? __commPlans.map(commPlanCard).join('') : '<div class="text-sm text-slate-400">No plans yet. Create one, then assign reps.</div>'}</div>
+        </div>
+        <div>
+          <h3 class="text-lg font-black text-slate-900 dark:text-white mb-2">Assign reps</h3>
+          <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl divide-y divide-slate-100 dark:divide-slate-800">
+            ${__commReps.map(r => `<div class="flex items-center justify-between gap-2 px-3 py-2">
+              <span class="text-sm font-semibold">${esc(r.display_name || r.full_name || 'Rep')}</span>
+              <select onchange="commAssign('${r.id}', this.value)" class="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1 text-xs">
+                <option value="">Default plan</option>
+                ${__commPlans.map(p => `<option value="${p.id}" ${r.commission_plan_id === p.id ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}
+              </select></div>`).join('') || '<div class="px-3 py-3 text-sm text-slate-400">No reps.</div>'}
+          </div>
+          <p class="text-[11px] text-slate-400 mt-2">Reps on “Default plan” use whichever plan is marked default.</p>
+        </div>
+      </div>
+      <div id="comm-plan-editor" class="mt-6"></div>`;
+  } catch (e) { body.innerHTML = `<div class="text-sm text-rose-500">${esc(e.message || 'Could not load plans.')}</div>`; }
+}
+function commPlanCard(p) {
+  const f = p.config?.front || {}, b = p.config?.back || {};
+  const desc = `${f.method === 'flat' ? commMoney(f.flat) + '/unit' : f.method === 'percent' ? (f.percent || 0) + '% gross' : `greater of ${f.percent || 0}% gross or ${commMoney(f.flat)}`}${f.pack ? ` · $${f.pack} pack` : ''} · F&I ${b.method === 'flat' ? commMoney(b.flat) : (b.percent || 0) + '%'}`;
+  return `<div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-3 flex items-center justify-between gap-2">
+    <div class="min-w-0"><div class="font-bold text-slate-900 dark:text-white flex items-center gap-2">${esc(p.name)}${p.is_default ? '<span class="text-[10px] font-bold bg-indigo-100 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-300 px-1.5 py-0.5 rounded-full">Default</span>' : ''}${p.active ? '' : '<span class="text-[10px] text-slate-400">(inactive)</span>'}</div>
+      <div class="text-[11px] text-slate-500 dark:text-slate-400 truncate">${desc}</div></div>
+    <button onclick='commEditPlan(${JSON.stringify(p.id)})' class="text-xs font-bold text-indigo-600 hover:text-indigo-500 flex-shrink-0">Edit</button>
+  </div>`;
+}
+function commEditPlan(id) {
+  const p = id ? __commPlans.find(x => x.id === id) : null;
+  const c = p?.config || {}; const f = c.front || {}; const b = c.back || {}; const bonuses = Array.isArray(c.bonuses) ? c.bonuses : [];
+  const box = document.getElementById('comm-plan-editor'); if (!box) return;
+  const inp = (id2, val, ph, type = 'number') => `<input id="${id2}" type="${type}" value="${val != null ? esc(val) : ''}" placeholder="${ph || ''}" class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm">`;
+  box.innerHTML = `<div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-5 space-y-4">
+    <div class="flex items-center justify-between"><h3 class="text-lg font-black text-slate-900 dark:text-white">${id ? 'Edit plan' : 'New plan'}</h3>
+      ${id ? `<button onclick="commDeletePlan('${id}')" class="text-xs font-bold text-rose-500 hover:text-rose-400">Delete</button>` : ''}</div>
+    <div class="grid sm:grid-cols-2 gap-3">
+      <div><label class="block text-[11px] font-semibold text-slate-500 mb-1">Plan name</label>${inp('pl-name', p?.name, 'e.g. Standard sales', 'text')}</div>
+      <div class="flex items-end gap-4">
+        <label class="inline-flex items-center gap-2 text-sm font-semibold"><input id="pl-default" type="checkbox" ${p?.is_default ? 'checked' : ''} class="accent-indigo-600 w-4 h-4">Default plan</label>
+        <label class="inline-flex items-center gap-2 text-sm font-semibold"><input id="pl-active" type="checkbox" ${p ? (p.active ? 'checked' : '') : 'checked'} class="accent-indigo-600 w-4 h-4">Active</label>
+      </div>
+    </div>
+    <div class="pt-2 border-t border-slate-100 dark:border-slate-800">
+      <div class="text-xs font-black uppercase tracking-wider text-slate-400 mb-2">Front-end (vehicle)</div>
+      <div class="grid sm:grid-cols-4 gap-3">
+        <div><label class="block text-[11px] font-semibold text-slate-500 mb-1">Method</label>
+          <select id="pl-fmethod" class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm">
+            <option value="greater" ${(f.method || 'greater') === 'greater' ? 'selected' : ''}>Greater of % or flat</option>
+            <option value="percent" ${f.method === 'percent' ? 'selected' : ''}>% of gross</option>
+            <option value="flat" ${f.method === 'flat' ? 'selected' : ''}>Flat per unit</option>
+          </select></div>
+        <div><label class="block text-[11px] font-semibold text-slate-500 mb-1">% of gross</label>${inp('pl-fpercent', f.percent, '25')}</div>
+        <div><label class="block text-[11px] font-semibold text-slate-500 mb-1">Flat / mini ($)</label>${inp('pl-fflat', f.flat, '250')}</div>
+        <div><label class="block text-[11px] font-semibold text-slate-500 mb-1">Pack ($)</label>${inp('pl-fpack', f.pack, '500')}</div>
+      </div>
+      <p class="text-[11px] text-slate-400 mt-1">Gross = selling price − vehicle cost − pack (cost stays internal; never shown to customers).</p>
+    </div>
+    <div class="pt-2 border-t border-slate-100 dark:border-slate-800">
+      <div class="text-xs font-black uppercase tracking-wider text-slate-400 mb-2">Back-end (F&amp;I)</div>
+      <div class="grid sm:grid-cols-3 gap-3">
+        <div><label class="block text-[11px] font-semibold text-slate-500 mb-1">Method</label>
+          <select id="pl-bmethod" class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm">
+            <option value="percent" ${(b.method || 'percent') === 'percent' ? 'selected' : ''}>% of F&amp;I</option>
+            <option value="flat" ${b.method === 'flat' ? 'selected' : ''}>Flat per deal</option>
+          </select></div>
+        <div><label class="block text-[11px] font-semibold text-slate-500 mb-1">% of F&amp;I</label>${inp('pl-bpercent', b.percent, '5')}</div>
+        <div><label class="block text-[11px] font-semibold text-slate-500 mb-1">Flat ($)</label>${inp('pl-bflat', b.flat, '0')}</div>
+      </div>
+    </div>
+    <div class="pt-2 border-t border-slate-100 dark:border-slate-800">
+      <div class="grid sm:grid-cols-2 gap-3">
+        <div><label class="block text-[11px] font-semibold text-slate-500 mb-1">Spiff per deal ($)</label>${inp('pl-spiff', c.spiff_per_deal, '0')}</div>
+      </div>
+      <div class="mt-3">
+        <div class="flex items-center justify-between mb-1"><div class="text-xs font-black uppercase tracking-wider text-slate-400">Volume bonuses (monthly)</div>
+          <button onclick="commAddBonusRow()" class="text-[11px] font-bold text-indigo-600">+ Add tier</button></div>
+        <div id="pl-bonuses" class="space-y-2">${bonuses.map(commBonusRow).join('')}</div>
+      </div>
+    </div>
+    <div class="flex justify-end gap-2 pt-2"><button onclick="commLoadPlans()" class="text-sm font-bold text-slate-500 px-4 py-2">Cancel</button>
+      <button onclick="commSavePlan(${id ? `'${id}'` : 'null'}, this)" class="text-sm font-bold bg-indigo-600 hover:bg-indigo-500 text-white px-5 py-2 rounded-lg">Save plan</button></div>
+  </div>`;
+  box.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+function commBonusRow(bn) {
+  bn = bn || {};
+  return `<div class="flex items-center gap-2 comm-bonus-row">
+    <select class="cb-basis bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1.5 text-sm"><option value="units" ${bn.basis !== 'gross' ? 'selected' : ''}>Units ≥</option><option value="gross" ${bn.basis === 'gross' ? 'selected' : ''}>Gross ≥ $</option></select>
+    <input type="number" class="cb-threshold w-24 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1.5 text-sm" placeholder="10" value="${bn.threshold != null ? esc(bn.threshold) : ''}">
+    <span class="text-sm text-slate-400">→ pay $</span>
+    <input type="number" class="cb-amount w-28 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1.5 text-sm" placeholder="500" value="${bn.amount != null ? esc(bn.amount) : ''}">
+    <button onclick="this.closest('.comm-bonus-row').remove()" class="text-rose-400 hover:text-rose-500 text-sm">✕</button>
+  </div>`;
+}
+function commAddBonusRow() { const w = document.getElementById('pl-bonuses'); if (w) w.insertAdjacentHTML('beforeend', commBonusRow({})); }
+function commCollectConfig() {
+  const val = (id) => document.getElementById(id)?.value;
+  const num = (id) => { const n = parseFloat(val(id)); return Number.isFinite(n) ? n : 0; };
+  const bonuses = Array.from(document.querySelectorAll('#pl-bonuses .comm-bonus-row')).map(r => ({
+    basis: r.querySelector('.cb-basis').value,
+    threshold: parseFloat(r.querySelector('.cb-threshold').value) || 0,
+    amount: parseFloat(r.querySelector('.cb-amount').value) || 0,
+  })).filter(x => x.threshold > 0 && x.amount > 0);
+  return {
+    front: { method: val('pl-fmethod'), percent: num('pl-fpercent'), flat: num('pl-fflat'), pack: num('pl-fpack') },
+    back: { method: val('pl-bmethod'), percent: num('pl-bpercent'), flat: num('pl-bflat') },
+    spiff_per_deal: num('pl-spiff'), bonuses,
+  };
+}
+async function commSavePlan(id, btn) {
+  const name = document.getElementById('pl-name')?.value.trim();
+  if (!name) { showToast('Name the plan', 'error'); return; }
+  const payload = { name, is_default: document.getElementById('pl-default')?.checked, active: document.getElementById('pl-active')?.checked, config: commCollectConfig() };
+  btn.disabled = true;
+  try {
+    if (id) await apiSendJson(`/commissions/plans/${id}`, 'PUT', payload);
+    else await apiSendJson('/commissions/plans', 'POST', payload);
+    showToast('Plan saved', 'success'); commLoadPlans();
+  } catch (e) { btn.disabled = false; showToast(e.message || 'Could not save', 'error'); }
+}
+async function commDeletePlan(id) {
+  if (!confirm('Delete this plan? Reps on it will fall back to the default.')) return;
+  try { await apiSendJson(`/commissions/plans/${id}`, 'DELETE'); showToast('Plan deleted', 'success'); commLoadPlans(); }
+  catch (e) { showToast(e.message || 'Could not delete', 'error'); }
+}
+async function commAssign(repId, planId) {
+  try { await apiSendJson('/commissions/assign', 'PUT', { rep_id: repId, plan_id: planId || null }); showToast('Rep updated', 'success'); }
+  catch (e) { showToast(e.message || 'Could not assign', 'error'); }
+}
+window.commLoadPlans = commLoadPlans; window.commEditPlan = commEditPlan; window.commAddBonusRow = commAddBonusRow;
+window.commSavePlan = commSavePlan; window.commDeletePlan = commDeletePlan; window.commAssign = commAssign;
 
 // Reports page — stacks the three manager reports + the sold-per-rep report and
 // the custom report builder. Called from switchPage('reports').
