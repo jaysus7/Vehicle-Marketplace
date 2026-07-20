@@ -17433,6 +17433,10 @@ function wireReportRail() {
       setTimeout(() => flash('leads-metrics'), 200);
     } else if (kind === 'equity') {
       switchPage('equity');
+    } else if (kind === 'marketing' || kind === 'appointments' || kind === 'esign') {
+      // Open the full Reports hub straight on the requested tab.
+      switchPage('reports');
+      setTimeout(() => { if (typeof reportsTab === 'function') reportsTab(kind); }, 150);
     } else if (kind === 'all') {
       switchPage('reports');
     }

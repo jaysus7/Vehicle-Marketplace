@@ -105,17 +105,20 @@
     html[data-dash-mode="marketsync"] .dark\:text-indigo-400{color:#a78bfa!important}
     html[data-dash-mode="marketsync"] [aria-current="page"]{background-color:#ede9fe!important;color:#6d28d9!important}
     html[data-dash-mode="marketsync"].dark [aria-current="page"]{background-color:rgba(76,29,149,.4)!important;color:#c4b5fd!important}
-    /* Deeper purple identity: tint the page, card borders, primary buttons + focus. */
-    html[data-dash-mode="marketsync"] body,
-    html[data-dash-mode="marketsync"] .bg-slate-50{background-color:#faf8ff!important}
+    /* Deeper purple identity: tint the page, card borders, primary buttons + focus.
+       The light-tint overrides are scoped to :not(.dark) so they never override the
+       dark card/page backgrounds in night mode (which would leave white text on a
+       white card — invisible). Dark mode is handled by the .dark-qualified rules. */
+    html[data-dash-mode="marketsync"]:not(.dark) body,
+    html[data-dash-mode="marketsync"]:not(.dark) .bg-slate-50{background-color:#faf8ff!important}
     html[data-dash-mode="marketsync"].dark body,
     html[data-dash-mode="marketsync"].dark .bg-slate-950{background-color:#0f0a1e!important}
-    html[data-dash-mode="marketsync"] .border-slate-200{border-color:#e7e0fb!important}
+    html[data-dash-mode="marketsync"]:not(.dark) .border-slate-200{border-color:#e7e0fb!important}
     html[data-dash-mode="marketsync"].dark .border-slate-800{border-color:#2e1065!important}
     html[data-dash-mode="marketsync"].dark .bg-slate-900{background-color:#160f2b!important}
-    html[data-dash-mode="marketsync"] .bg-white{background-color:#fffdff!important}
+    html[data-dash-mode="marketsync"]:not(.dark) .bg-white{background-color:#fffdff!important}
     /* Buttons: primary violet with depth; secondary chips get a violet wash. */
-    html[data-dash-mode="marketsync"] .bg-slate-100{background-color:#f1ecfe!important}
+    html[data-dash-mode="marketsync"]:not(.dark) .bg-slate-100{background-color:#f1ecfe!important}
     html[data-dash-mode="marketsync"].dark .bg-slate-800{background-color:#241a45!important}
     html[data-dash-mode="marketsync"] button.bg-indigo-600,
     html[data-dash-mode="marketsync"] a.bg-indigo-600{box-shadow:0 1px 2px rgba(124,58,237,.35),0 4px 12px -2px rgba(124,58,237,.35)!important}
@@ -2655,6 +2658,18 @@
       <svg class="w-5 h-5 flex-shrink-0 text-teal-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
       <span class="text-xs font-bold whitespace-nowrap">Equity Mining</span>
     </button>
+    <button type="button" data-report="marketing" title="Marketing ROI — spend vs leads, sales & ROI by channel" class="group flex items-center gap-2.5 w-full text-left px-2.5 py-2 rounded-lg text-slate-600 dark:text-slate-300 hover:bg-fuchsia-50 dark:hover:bg-fuchsia-950/40 hover:text-fuchsia-700 dark:hover:text-fuchsia-300 transition">
+      <svg class="w-5 h-5 flex-shrink-0 text-fuchsia-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M11 3.055A9.001 9.001 0 1020.945 13H11V3.055z"/><path stroke-linecap="round" stroke-linejoin="round" d="M20.488 9A9.004 9.004 0 0015 3.512V9h5.488z"/></svg>
+      <span class="text-xs font-bold whitespace-nowrap">Marketing ROI</span>
+    </button>
+    <button type="button" data-report="appointments" title="Appointments & show-rate — booked, shown, no-show by rep" class="group flex items-center gap-2.5 w-full text-left px-2.5 py-2 rounded-lg text-slate-600 dark:text-slate-300 hover:bg-blue-50 dark:hover:bg-blue-950/40 hover:text-blue-700 dark:hover:text-blue-300 transition">
+      <svg class="w-5 h-5 flex-shrink-0 text-blue-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+      <span class="text-xs font-bold whitespace-nowrap">Appointments</span>
+    </button>
+    <button type="button" data-report="esign" title="E-signature completion — sent, viewed, signed, time-to-sign" class="group flex items-center gap-2.5 w-full text-left px-2.5 py-2 rounded-lg text-slate-600 dark:text-slate-300 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 hover:text-emerald-700 dark:hover:text-emerald-300 transition">
+      <svg class="w-5 h-5 flex-shrink-0 text-emerald-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/></svg>
+      <span class="text-xs font-bold whitespace-nowrap">E-signatures</span>
+    </button>
     <button type="button" data-report="all" title="All reports — the full Reports page" class="group flex items-center gap-2.5 w-full text-left px-2.5 py-2 rounded-lg text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white transition">
       <svg class="w-5 h-5 flex-shrink-0 text-slate-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16M4 18h16"/></svg>
       <span class="text-xs font-bold whitespace-nowrap">All reports</span>
@@ -3039,7 +3054,7 @@
     </div>
   </div>
 
-  <script src="dashboard.js?v=20260720a"></script>
+  <script src="dashboard.js?v=20260720b"></script>
   <!-- Google Translate widget (per-rep dashboard translation) -->
   <script>
     window.googleTranslateElementInit = function () {
