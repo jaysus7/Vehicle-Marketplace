@@ -34,6 +34,8 @@ const DEFAULT_ACCOUNTS = [
   { code: '4100', name: 'F&I Income', category: 'income', system_key: 'fni_income' },
   { code: '4900', name: 'Other Income', category: 'income' },
   { code: '2050', name: 'Customer Deposits', category: 'liability', system_key: 'customer_deposits' },
+  { code: '2100', name: 'Sales Tax Collected', category: 'liability', system_key: 'tax_collected' },
+  { code: '1300', name: 'Sales Tax Paid / ITCs', category: 'asset', system_key: 'tax_paid' },
   { code: '5000', name: 'Reconditioning', category: 'expense' },
   { code: '6000', name: 'Advertising', category: 'expense' },
   { code: '6100', name: 'Payroll', category: 'expense' },
@@ -45,9 +47,15 @@ const DEFAULT_ACCOUNTS = [
 ]
 
 async function ensureChart(dealershipId) {
-  const { data: existing } = await supabaseAdmin.from('gl_accounts').select('id').eq('dealership_id', dealershipId).limit(1)
-  if (existing && existing.length) return
-  await supabaseAdmin.from('gl_accounts').insert(DEFAULT_ACCOUNTS.map(a => ({ ...a, dealership_id: dealershipId })))
+  const { data: existing } = await supabaseAdmin.from('gl_accounts').select('id, system_key').eq('dealership_id', dealershipId)
+  if (!existing || !existing.length) {
+    await supabaseAdmin.from('gl_accounts').insert(DEFAULT_ACCOUNTS.map(a => ({ ...a, dealership_id: dealershipId })))
+    return
+  }
+  // Backfill any system accounts a pre-existing chart is missing (e.g. the tax accounts).
+  const have = new Set(existing.map(a => a.system_key).filter(Boolean))
+  const missing = DEFAULT_ACCOUNTS.filter(a => a.system_key && !have.has(a.system_key))
+  if (missing.length) await supabaseAdmin.from('gl_accounts').insert(missing.map(a => ({ ...a, dealership_id: dealershipId })))
 }
 async function accountByKey(dealershipId, key) {
   const { data } = await supabaseAdmin.from('gl_accounts').select('id').eq('dealership_id', dealershipId).eq('system_key', key).eq('active', true).maybeSingle()
@@ -61,6 +69,9 @@ function settingsOf(d) {
     accounting_emails: Array.isArray(s.accounting_emails) ? s.accounting_emails : [],
     gm_emails: Array.isArray(s.gm_emails) ? s.gm_emails : [],
     auto_post: s.auto_post !== false,
+    tax_number: s.tax_number || '',
+    tax_label: s.tax_label || 'Sales tax',
+    tax_frequency: s.tax_frequency || 'quarterly',
   }
 }
 
@@ -70,7 +81,7 @@ function settingsOf(d) {
 export async function postDealToLedger(dealershipId, dealId) {
   try {
     const { data: deal } = await supabaseAdmin.from('deals')
-      .select('id, selling_price, cost, fni_items, delivered_at, deal_status').eq('id', dealId).eq('dealership_id', dealershipId).maybeSingle()
+      .select('id, deal_number, selling_price, cost, fni_items, tax_amount, delivered_at, deal_status').eq('id', dealId).eq('dealership_id', dealershipId).maybeSingle()
     if (!deal) return
     const { data: dlr } = await supabaseAdmin.from('dealerships').select('accounting_settings, cost_tracking_enabled').eq('id', dealershipId).maybeSingle()
     if (!settingsOf(dlr).auto_post) return
@@ -79,12 +90,15 @@ export async function postDealToLedger(dealershipId, dealId) {
     const price = n(deal.selling_price)
     const frontGross = dlr?.cost_tracking_enabled && deal.cost != null ? Math.max(0, price - n(deal.cost)) : price
     const fniGross = (Array.isArray(deal.fni_items) ? deal.fni_items : []).reduce((s, x) => s + n(x?.price), 0)
-    await supabaseAdmin.from('gl_entries').delete().eq('dealership_id', dealershipId).eq('ref_deal_id', dealId).in('source', ['deal', 'fni'])
+    const taxAmt = n(deal.tax_amount)
+    await supabaseAdmin.from('gl_entries').delete().eq('dealership_id', dealershipId).eq('ref_deal_id', dealId).in('source', ['deal', 'fni', 'tax'])
     const rows = []
     const vAcct = await accountByKey(dealershipId, 'vehicle_sales')
     const fAcct = await accountByKey(dealershipId, 'fni_income')
-    if (frontGross > 0) rows.push({ dealership_id: dealershipId, entry_date: date, account_id: vAcct, description: 'Vehicle gross (delivered deal)', amount: round2(frontGross), direction: 'in', source: 'deal', ref_deal_id: dealId })
-    if (fniGross > 0) rows.push({ dealership_id: dealershipId, entry_date: date, account_id: fAcct, description: 'F&I income (delivered deal)', amount: round2(fniGross), direction: 'in', source: 'fni', ref_deal_id: dealId })
+    const tAcct = await accountByKey(dealershipId, 'tax_collected')
+    if (frontGross > 0) rows.push({ dealership_id: dealershipId, entry_date: date, account_id: vAcct, description: `Vehicle gross — deal #${deal.deal_number || ''}`, amount: round2(frontGross), direction: 'in', source: 'deal', ref_deal_id: dealId })
+    if (fniGross > 0) rows.push({ dealership_id: dealershipId, entry_date: date, account_id: fAcct, description: `F&I income — deal #${deal.deal_number || ''}`, amount: round2(fniGross), direction: 'in', source: 'fni', ref_deal_id: dealId })
+    if (taxAmt > 0) rows.push({ dealership_id: dealershipId, entry_date: date, account_id: tAcct, description: `Sales tax collected — deal #${deal.deal_number || ''}`, amount: round2(taxAmt), direction: 'in', source: 'tax', ref_deal_id: dealId })
     if (rows.length) await supabaseAdmin.from('gl_entries').insert(rows)
   } catch (e) { console.warn('[accounting] postDealToLedger failed:', e.message) }
 }
@@ -280,6 +294,40 @@ export function registerAccounting(app) {
     res.json({ ok: true, month: from.slice(0, 7), income, expense, net: round2(income - expense), income_lines: lines.filter(l => l.category === 'income'), expense_lines: lines.filter(l => l.category === 'expense'), other_lines: lines.filter(l => !['income', 'expense'].includes(l.category)) })
   })
 
+  // ── Tax: collected (from deals) vs paid/ITCs → net owing for the period ──────
+  app.get('/accounting/tax', requireAuth, async (req, res) => {
+    if (!guard(req, res)) return
+    await ensureChart(req.dealershipId)
+    const { from, to } = monthBounds(req.query.month)
+    const { data: dlr } = await supabaseAdmin.from('dealerships').select('accounting_settings').eq('id', req.dealershipId).maybeSingle()
+    const st = settingsOf(dlr)
+    const paidAcct = await accountByKey(req.dealershipId, 'tax_paid')
+    const { data: entries } = await supabaseAdmin.from('gl_entries')
+      .select('id, entry_date, description, amount, source, account_id, ref_deal_id')
+      .eq('dealership_id', req.dealershipId).gte('entry_date', from).lt('entry_date', to)
+    const collected = round2((entries || []).filter(e => e.source === 'tax').reduce((s, e) => s + n(e.amount), 0))
+    const paid = round2((entries || []).filter(e => e.account_id === paidAcct).reduce((s, e) => s + n(e.amount), 0))
+    const lines = (entries || []).filter(e => e.source === 'tax' || e.account_id === paidAcct)
+      .map(e => ({ id: e.id, date: e.entry_date, description: e.description, amount: Number(e.amount), kind: e.source === 'tax' ? 'collected' : 'paid' }))
+      .sort((a, b) => (b.date || '').localeCompare(a.date || ''))
+    res.json({ ok: true, month: from.slice(0, 7), collected, paid, net_owing: round2(collected - paid), label: st.tax_label, tax_number: st.tax_number, frequency: st.tax_frequency, lines })
+  })
+
+  // Record tax paid / an input-tax-credit (posts to the Sales Tax Paid account).
+  app.post('/accounting/tax/paid', requireAuth, async (req, res) => {
+    if (!guard(req, res)) return
+    await ensureChart(req.dealershipId)
+    const amount = Math.abs(round2(req.body?.amount))
+    if (!amount) return res.status(400).json({ error: 'amount required' })
+    const paidAcct = await accountByKey(req.dealershipId, 'tax_paid')
+    const { data, error } = await supabaseAdmin.from('gl_entries').insert({
+      dealership_id: req.dealershipId, entry_date: String(req.body?.entry_date || today()).slice(0, 10), account_id: paidAcct,
+      description: String(req.body?.description || 'Tax paid / ITC').slice(0, 200), amount, direction: 'out', source: 'manual', created_by: req.user?.id || null,
+    }).select().single()
+    if (error) return res.status(500).json({ error: error.message })
+    res.json({ ok: true, entry: data })
+  })
+
   // ── Settings ──────────────────────────────────────────────────────────────────
   app.get('/accounting/settings', requireAuth, async (req, res) => {
     if (!guard(req, res)) return
@@ -296,6 +344,9 @@ export function registerAccounting(app) {
       accounting_emails: parseEmails(b.accounting_emails),
       gm_emails: parseEmails(b.gm_emails),
       auto_post: b.auto_post !== false,
+      tax_number: String(b.tax_number || '').slice(0, 40),
+      tax_label: String(b.tax_label || 'Sales tax').slice(0, 40) || 'Sales tax',
+      tax_frequency: ['monthly', 'quarterly', 'annual'].includes(b.tax_frequency) ? b.tax_frequency : 'quarterly',
     }
     await supabaseAdmin.from('dealerships').update({ accounting_settings: next }).eq('id', req.dealershipId)
     res.json({ ok: true, settings: next })

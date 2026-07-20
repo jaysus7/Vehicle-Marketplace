@@ -7548,7 +7548,7 @@ window.teamDeleteStaff = teamDeleteStaff;
 // Managers/accounting. The deal + F&I auto-post income; accounting adds the day's
 // expenses; a daily reconciliation flags anything off (and emails when it is).
 let __acctState = { tab: 'reconciliation', date: null, accounts: [] };
-const ACCT_TABS = [['insights', 'Insights'], ['reconciliation', 'Reconciliation'], ['bank', 'Bank account'], ['expenses', 'Expenses'], ['reports', 'Reports'], ['settings', 'Settings']];
+const ACCT_TABS = [['insights', 'Insights'], ['reconciliation', 'Reconciliation'], ['bank', 'Bank account'], ['expenses', 'Expenses'], ['tax', 'Tax'], ['reports', 'Reports'], ['settings', 'Settings']];
 function acctToday() { return __acctState.date || new Date().toISOString().slice(0, 10); }
 function acctMonth() { return acctToday().slice(0, 7); }
 function loadAccountingPage(goTab) {
@@ -7560,7 +7560,7 @@ function loadAccountingPage(goTab) {
       <p class="text-sm text-slate-500 dark:text-slate-400">Deals &amp; F&amp;I post themselves — add the day's expenses and close the books. Reconciliation runs daily and alerts you when something's off.</p></div>
     <div class="flex flex-wrap gap-1.5">${ACCT_TABS.map(([id, l]) => tab(id, l)).join('')}</div>
     <div id="acct-body" class="pt-1"><div class="text-sm text-slate-400">Loading…</div></div>`;
-  const map = { insights: acctLoadInsights, reconciliation: acctLoadToday, bank: acctLoadBank, expenses: acctLoadExpenses, reports: acctLoadReportsDetail, settings: acctLoadSettings };
+  const map = { insights: acctLoadInsights, reconciliation: acctLoadToday, bank: acctLoadBank, expenses: acctLoadExpenses, tax: acctLoadTax, reports: acctLoadReportsDetail, settings: acctLoadSettings };
   (map[__acctState.tab] || acctLoadToday)();
 }
 function acctSetTab(t) { __acctState.tab = t; loadAccountingPage(); }
@@ -7592,13 +7592,15 @@ async function acctLoadToday() {
       <div class="grid grid-cols-2 md:grid-cols-5 gap-3 mt-3 text-center">
         ${[['Delivered', r.deals_delivered || 0], ['Income posted', commMoney(r.income_posted)], ['Deposits in', commMoney(r.recorded_cash)], ['Expenses', commMoney(r.expenses_total)], ['Variance', commMoney(r.variance)]].map(([l, v]) => `<div class="bg-white/70 dark:bg-slate-900/50 rounded-lg py-2"><div class="text-[10px] uppercase tracking-wider text-slate-400 font-bold">${l}</div><div class="font-black text-slate-900 dark:text-white">${v}</div></div>`).join('')}
       </div></div>`;
-    const expenseAccts = __acctState.accounts.filter(a => a.category === 'expense' && a.active);
+    const activeAccts = __acctState.accounts.filter(a => a.active);
     const addExpense = `<div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4">
-      <div class="text-sm font-bold text-slate-800 dark:text-slate-100 mb-2">Add an expense / entry</div>
-      <div class="grid sm:grid-cols-5 gap-2 items-end">
+      <div class="text-sm font-bold text-slate-800 dark:text-slate-100 mb-2">Add an entry</div>
+      <div class="grid sm:grid-cols-6 gap-2 items-end">
+        <div><label class="block text-[11px] font-semibold text-slate-500 mb-1">Money</label>
+          <select id="acct-e-dir" class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-2 text-sm"><option value="out">Out (expense)</option><option value="in">In (income)</option></select></div>
         <div class="sm:col-span-1"><label class="block text-[11px] font-semibold text-slate-500 mb-1">Account</label>
-          <select id="acct-e-account" class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-2 text-sm">${expenseAccts.map(a => `<option value="${a.id}">${esc(a.name)}</option>`).join('')}</select></div>
-        <div><label class="block text-[11px] font-semibold text-slate-500 mb-1">Amount ($)</label><input id="acct-e-amount" type="number" step="1" class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-2 text-sm"></div>
+          <select id="acct-e-account" class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-2 text-sm">${activeAccts.map(a => `<option value="${a.id}">${esc(a.name)}</option>`).join('')}</select></div>
+        <div><label class="block text-[11px] font-semibold text-slate-500 mb-1">Amount ($)</label><input id="acct-e-amount" type="number" step="0.01" class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-2 text-sm"></div>
         <div class="sm:col-span-2"><label class="block text-[11px] font-semibold text-slate-500 mb-1">Description</label><input id="acct-e-desc" type="text" placeholder="Vendor / memo" class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-2 text-sm"></div>
         <div><button onclick="acctAddEntry(this)" class="w-full text-sm font-bold bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-2 rounded-lg">Add</button></div>
       </div></div>`;
@@ -7623,9 +7625,10 @@ async function acctAddEntry(btn) {
   const account_id = document.getElementById('acct-e-account')?.value;
   const amount = parseFloat(document.getElementById('acct-e-amount')?.value || '0');
   const description = document.getElementById('acct-e-desc')?.value || '';
+  const direction = document.getElementById('acct-e-dir')?.value === 'in' ? 'in' : 'out';
   if (!amount) { showToast('Enter an amount', 'error'); return; }
   btn.disabled = true;
-  try { await apiSendJson('/accounting/entries', 'POST', { account_id, amount, description, direction: 'out', entry_date: acctToday() }); showToast('Entry added', 'success'); acctLoadToday(); }
+  try { await apiSendJson('/accounting/entries', 'POST', { account_id, amount, description, direction, entry_date: acctToday() }); showToast('Entry added', 'success'); acctLoadToday(); }
   catch (e) { btn.disabled = false; showToast(e.message || 'Could not add', 'error'); }
 }
 async function acctDelEntry(id) {
@@ -7847,6 +7850,46 @@ function acctExportCsv() {
 window.acctLoadBank = acctLoadBank; window.acctLoadReportsDetail = acctLoadReportsDetail; window.acctExportCsv = acctExportCsv;
 window.acctLoadInsights = acctLoadInsights; window.acctLoadExpenses = acctLoadExpenses;
 
+// Tax — sales tax collected (auto from delivered deals) vs tax paid / ITCs, and the
+// net owing for the period. Record ITCs / remittances here.
+async function acctLoadTax() {
+  const body = document.getElementById('acct-body'); if (!body) return;
+  try {
+    const d = await apiGetJson(`/accounting/tax?month=${acctMonth()}`);
+    const rows = (d.lines || []).map(l => `<tr class="border-b border-slate-100 dark:border-slate-800/60">
+      <td class="px-3 py-2">${l.date}</td><td class="px-3 py-2 text-slate-500">${esc(l.description || '')}</td>
+      <td class="px-3 py-2"><span class="text-[10px] font-bold px-2 py-0.5 rounded-full ${l.kind === 'collected' ? 'bg-emerald-100 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300' : 'bg-sky-100 dark:bg-sky-950/40 text-sky-700 dark:text-sky-300'}">${l.kind === 'collected' ? 'Collected' : 'Paid / ITC'}</span></td>
+      <td class="px-3 py-2 text-right font-bold">${commMoney(l.amount)}</td></tr>`).join('');
+    body.innerHTML = `
+      <div class="flex items-center gap-2 mb-3"><input type="month" value="${acctMonth()}" onchange="__acctState.date=this.value+'-01'; acctLoadTax()" class="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-1.5 text-sm">
+        <span class="text-sm text-slate-500">${esc(d.label || 'Sales tax')}${d.tax_number ? ` · #${esc(d.tax_number)}` : ''} · remit ${esc(d.frequency || 'quarterly')}</span></div>
+      <div class="grid grid-cols-3 gap-3 mb-4">
+        <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4"><div class="text-[11px] uppercase font-bold tracking-wider text-slate-400">Collected (from deals)</div><div class="text-2xl font-black text-emerald-600 dark:text-emerald-400 mt-1">${commMoney(d.collected)}</div></div>
+        <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4"><div class="text-[11px] uppercase font-bold tracking-wider text-slate-400">Paid / ITCs</div><div class="text-2xl font-black text-sky-600 dark:text-sky-400 mt-1">${commMoney(d.paid)}</div></div>
+        <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4"><div class="text-[11px] uppercase font-bold tracking-wider text-slate-400">Net owing</div><div class="text-2xl font-black mt-1 ${d.net_owing > 0 ? 'text-rose-500' : 'text-slate-900 dark:text-white'}">${commMoney(d.net_owing)}</div></div>
+      </div>
+      <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4 mb-4">
+        <div class="text-sm font-bold mb-2">Record tax paid / an input-tax-credit</div>
+        <div class="grid sm:grid-cols-4 gap-2 items-end">
+          <div><label class="block text-[11px] font-semibold text-slate-500 mb-1">Date</label><input id="tax-date" type="date" value="${acctToday()}" class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-2 text-sm"></div>
+          <div><label class="block text-[11px] font-semibold text-slate-500 mb-1">Amount ($)</label><input id="tax-amount" type="number" step="0.01" class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-2 text-sm"></div>
+          <div class="sm:col-span-1"><label class="block text-[11px] font-semibold text-slate-500 mb-1">Description</label><input id="tax-desc" type="text" placeholder="ITC / remittance" class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-2 text-sm"></div>
+          <div><button onclick="acctAddTaxPaid(this)" class="w-full text-sm font-bold bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-2 rounded-lg">Add</button></div>
+        </div></div>
+      <div class="overflow-x-auto bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl">
+        <table class="w-full text-sm min-w-[560px]"><thead><tr class="text-left text-[11px] uppercase tracking-wider text-slate-400 border-b border-slate-200 dark:border-slate-800"><th class="px-3 py-2">Date</th><th class="px-3 py-2">Description</th><th class="px-3 py-2">Type</th><th class="px-3 py-2 text-right">Amount</th></tr></thead>
+        <tbody>${rows || '<tr><td colspan="4" class="px-3 py-6 text-center text-slate-400">No tax activity this month yet — it fills in as deals are delivered.</td></tr>'}</tbody></table></div>`;
+  } catch (e) { body.innerHTML = `<div class="text-sm text-rose-500">${esc(e.message || 'Could not load tax.')}</div>`; }
+}
+async function acctAddTaxPaid(btn) {
+  const amount = parseFloat(document.getElementById('tax-amount')?.value || '0');
+  if (!amount) { showToast('Enter an amount', 'error'); return; }
+  btn.disabled = true;
+  try { await apiSendJson('/accounting/tax/paid', 'POST', { amount, description: document.getElementById('tax-desc')?.value || '', entry_date: document.getElementById('tax-date')?.value || acctToday() }); showToast('Recorded', 'success'); acctLoadTax(); }
+  catch (e) { btn.disabled = false; showToast(e.message || 'Could not save', 'error'); }
+}
+window.acctLoadTax = acctLoadTax; window.acctAddTaxPaid = acctAddTaxPaid;
+
 async function acctLoadSettings() {
   const body = document.getElementById('acct-body'); if (!body) return;
   try {
@@ -7863,6 +7906,13 @@ async function acctLoadSettings() {
         <input id="acct-s-tol" type="number" step="1" value="${s.tolerance}" class="w-32 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm"></div>
       <label class="flex items-center gap-2 text-sm font-semibold"><input id="acct-s-autopost" type="checkbox" ${s.auto_post ? 'checked' : ''} class="accent-indigo-600 w-4 h-4">Auto-post delivered deals &amp; deposits to the ledger</label>
       <label class="flex items-center gap-2 text-sm font-semibold"><input id="acct-s-enabled" type="checkbox" ${s.enabled ? 'checked' : ''} class="accent-indigo-600 w-4 h-4">Run the daily reconciliation</label>
+      <div class="pt-3 mt-1 border-t border-slate-100 dark:border-slate-800 text-sm font-black uppercase tracking-wider text-slate-400">Tax</div>
+      <div class="grid sm:grid-cols-3 gap-3">
+        <div><label class="block text-[11px] font-semibold text-slate-500 mb-1">Tax label</label><input id="acct-s-taxlabel" type="text" value="${esc(s.tax_label || 'Sales tax')}" placeholder="HST / GST / Sales tax" class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm"></div>
+        <div><label class="block text-[11px] font-semibold text-slate-500 mb-1">Tax / registration #</label><input id="acct-s-taxnum" type="text" value="${esc(s.tax_number || '')}" placeholder="GST/HST #" class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm"></div>
+        <div><label class="block text-[11px] font-semibold text-slate-500 mb-1">Remittance</label><select id="acct-s-taxfreq" class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm">${['monthly', 'quarterly', 'annual'].map(f => `<option value="${f}" ${(s.tax_frequency || 'quarterly') === f ? 'selected' : ''}>${f[0].toUpperCase() + f.slice(1)}</option>`).join('')}</select></div>
+      </div>
+      <p class="text-[11px] text-slate-400">Tax on delivered deals auto-posts to Sales Tax Collected; record ITCs/remittances on the Tax tab.</p>
       <div class="pt-1"><button onclick="acctSaveSettings(this)" class="text-sm font-bold bg-indigo-600 hover:bg-indigo-500 text-white px-5 py-2 rounded-lg">Save</button></div>
       </div>
       <div><div class="text-sm font-black uppercase tracking-wider text-slate-400 mb-2">Chart of accounts</div><div id="acct-accounts-box"><div class="text-sm text-slate-400">Loading…</div></div></div>
@@ -7880,6 +7930,9 @@ async function acctSaveSettings(btn) {
     tolerance: parseFloat(document.getElementById('acct-s-tol')?.value || '25'),
     auto_post: document.getElementById('acct-s-autopost')?.checked,
     enabled: document.getElementById('acct-s-enabled')?.checked,
+    tax_label: document.getElementById('acct-s-taxlabel')?.value || 'Sales tax',
+    tax_number: document.getElementById('acct-s-taxnum')?.value || '',
+    tax_frequency: document.getElementById('acct-s-taxfreq')?.value || 'quarterly',
   };
   btn.disabled = true;
   try { await apiSendJson('/accounting/settings', 'PUT', payload); showToast('Saved', 'success'); btn.disabled = false; }
