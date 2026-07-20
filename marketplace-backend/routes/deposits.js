@@ -23,6 +23,29 @@ const isMgr = (req) => ['DEALER_ADMIN', 'OWNER', 'MANAGER'].includes(req.profile
 export const stripeDepositsConfigured = () => !!process.env.STRIPE_SECRET_KEY
 const clampAmount = (n) => Math.min(100000, Math.max(1, Math.round(Number(n) || 0)))
 const currencyFor = (country) => /(^ca$|canada)/i.test(String(country || '')) ? 'cad' : 'usd'
+const isCanada = (country) => /(^ca$|canada)/i.test(String(country || ''))
+
+// Bank-transfer deposits (opt-in). Lower fees than cards: Canadian dealers get
+// pre-authorized debit (acss_debit, the Interac/PAD bank rail); US dealers get ACH
+// (us_bank_account). We ADD it alongside card; if the connected account hasn't
+// enabled that method, Stripe rejects the session and we transparently retry
+// card-only, so a deposit link can never fail because of this option.
+function depositMethodTypes(country, acceptBank) {
+  if (!acceptBank) return ['card']
+  return isCanada(country) ? ['card', 'acss_debit'] : ['card', 'us_bank_account']
+}
+// Create a deposit Checkout Session, degrading to card-only if the bank method is
+// unavailable on the connected account.
+async function createDepositSession(params, methodTypes) {
+  try {
+    return await stripe.checkout.sessions.create({ ...params, payment_method_types: methodTypes })
+  } catch (e) {
+    if (methodTypes.length > 1) {
+      return await stripe.checkout.sessions.create({ ...params, payment_method_types: ['card'] })
+    }
+    throw e
+  }
+}
 
 async function getRow(dealershipId) {
   const { data } = await supabaseAdmin.from('dealer_integrations')
@@ -103,6 +126,7 @@ export function registerDeposits(app) {
       enabled: !!row?.enabled,
       deposit_amount: clampAmount(m.deposit_amount || 500),
       currency: m.currency || 'usd',
+      accept_bank: !!m.accept_bank,
     })
   })
 
@@ -175,6 +199,7 @@ export function registerDeposits(app) {
     const b = req.body || {}
     const patch = { lender_code_map: { ...m } }
     if (b.deposit_amount !== undefined) patch.lender_code_map.deposit_amount = clampAmount(b.deposit_amount)
+    if (b.accept_bank !== undefined) patch.lender_code_map.accept_bank = !!b.accept_bank
     if (b.enabled !== undefined) patch.enabled = !!b.enabled && !!m.charges_enabled
     await saveRow(req.dealershipId, patch)
     res.json({ ok: true, deposit_amount: patch.lender_code_map.deposit_amount ?? clampAmount(m.deposit_amount || 500), enabled: patch.enabled ?? !!row?.enabled })
@@ -225,7 +250,7 @@ export function registerDeposits(app) {
       const contactId = await findOrCreateContact({ dealershipId: d.id, name, email, phone, source: 'Website' })
       if (contactId && lead?.id) await supabaseAdmin.from('leads').update({ contact_id: contactId }).eq('id', lead.id)
 
-      const session = await stripe.checkout.sessions.create({
+      const session = await createDepositSession({
         mode: 'payment',
         line_items: [{
           price_data: {
@@ -247,7 +272,7 @@ export function registerDeposits(app) {
           kind: 'deposit', dealership_id: d.id, contact_id: contactId || '', lead_id: lead?.id || '',
           vehicle_id: inventory_id || '', vehicle_label: vehicleLabel,
         },
-      })
+      }, depositMethodTypes(d.country, row?.lender_code_map?.accept_bank))
       res.json({ url: session.url })
     } catch (e) {
       console.error('[deposits] checkout failed:', e.message)
@@ -279,7 +304,7 @@ export function registerDeposits(app) {
       const { data: v } = await supabaseAdmin.from('inventory').select('id, dealership_id, year, make, model, trim').eq('id', b.vehicle_id).maybeSingle()
       if (v && v.dealership_id === req.dealershipId) { inventory_id = v.id; vehicleLabel = [v.year, v.make, v.model, v.trim].filter(Boolean).join(' ') || vehicleLabel }
     }
-    const { data: dealer } = await supabaseAdmin.from('dealerships').select('name').eq('id', req.dealershipId).maybeSingle()
+    const { data: dealer } = await supabaseAdmin.from('dealerships').select('name, country').eq('id', req.dealershipId).maybeSingle()
     const dealerName = dealer?.name || 'the dealership'
 
     // Square path — used when the dealer connected Square (and Stripe deposits isn't ready).
@@ -307,7 +332,7 @@ export function registerDeposits(app) {
     const amount = clampAmount(b.amount || m.deposit_amount || 500)
     const currency = m.currency || 'usd'
     try {
-      const session = await stripe.checkout.sessions.create({
+      const session = await createDepositSession({
         mode: 'payment',
         line_items: [{
           price_data: {
@@ -329,7 +354,7 @@ export function registerDeposits(app) {
           kind: 'deposit', dealership_id: req.dealershipId, contact_id: contactId,
           vehicle_id: inventory_id || '', vehicle_label: vehicleLabel, source: 'deal_desk',
         },
-      })
+      }, depositMethodTypes(dealer?.country, m.accept_bank))
       res.json({ ok: true, url: session.url, amount, currency })
     } catch (e) {
       console.error('[deposits] deal checkout failed:', e.message)

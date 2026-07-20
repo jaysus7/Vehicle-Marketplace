@@ -7252,6 +7252,7 @@ function depositsCard(p) {
             <input id="dep-amount" type="number" min="1" step="1" value="${amount}" class="w-32 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm"></div>
           <label class="inline-flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-200 pb-2"><input id="dep-enabled" type="checkbox" ${on ? 'checked' : ''} class="accent-indigo-600 w-4 h-4">Show "Reserve with a deposit" on my site</label>
         </div>
+        <label class="inline-flex items-start gap-2 text-sm font-semibold text-slate-700 dark:text-slate-200"><input id="dep-bank" type="checkbox" ${m.accept_bank ? 'checked' : ''} class="accent-indigo-600 w-4 h-4 mt-0.5"><span>Also accept bank transfer <span class="font-normal text-slate-500 dark:text-slate-400">(lower fees — pre-authorized debit in Canada, ACH in the US). Enable the method in your Stripe dashboard first; card is always offered.</span></span></label>
         <div class="flex items-center gap-2">
           <button onclick="saveDeposits(this)" class="bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-bold px-4 py-2 rounded-lg transition">Save</button>
           <button onclick="disconnectDeposits(this)" class="ml-auto text-xs text-rose-500 hover:text-rose-400 font-semibold">Disconnect</button>
@@ -7289,9 +7290,10 @@ async function refreshDeposits(btn) {
 async function saveDeposits(btn) {
   const amount = Math.max(1, parseInt(document.getElementById('dep-amount')?.value) || 0);
   const enabled = !!document.getElementById('dep-enabled')?.checked;
+  const accept_bank = !!document.getElementById('dep-bank')?.checked;
   const orig = btn.textContent; btn.disabled = true; btn.textContent = 'Saving…';
   try {
-    await apiSendJson('/deposits/config', 'PUT', { deposit_amount: amount, enabled });
+    await apiSendJson('/deposits/config', 'PUT', { deposit_amount: amount, enabled, accept_bank });
     btn.textContent = 'Saved ✓'; showToast(enabled ? 'Deposits are live on your site' : 'Deposit settings saved', 'success');
     setTimeout(() => loadIntegrations(), 700);
   } catch (e) { btn.disabled = false; btn.textContent = orig; showToast(e.message || 'Could not save', 'error'); }
