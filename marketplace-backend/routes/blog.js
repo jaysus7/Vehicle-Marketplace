@@ -71,6 +71,42 @@ async function findNearDuplicate(slug, title) {
   return worst ? { ...worst, threshold } : null
 }
 
+// --- Related-post cross-referencing ----------------------------------------
+// Internal links between topically-related posts are the single biggest on-site
+// SEO lever for a blog: they spread crawl equity, keep readers on-site, and
+// signal topical authority. We rank other published posts by shared tags +
+// title/slug token overlap and expose the top few. Cheap, deterministic, and
+// needs nothing from n8n — it works off whatever posts already exist.
+async function relatedPosts(post, limit = 4) {
+  const { data: all } = await supabaseAdmin
+    .from('blog_posts')
+    .select('slug, title, excerpt, cover_image_url, tags, published_at')
+    .eq('status', 'published')
+    .order('published_at', { ascending: false })
+    .limit(200)
+  if (!all) return []
+  const baseTokens = postTokens(post.slug, post.title)
+  const baseTags = new Set((post.tags || []).map(t => String(t).toLowerCase()))
+  const scored = []
+  for (const p of all) {
+    if (p.slug === post.slug) continue
+    const tagOverlap = (p.tags || []).reduce((n, t) => n + (baseTags.has(String(t).toLowerCase()) ? 1 : 0), 0)
+    const tokenSim = jaccard(baseTokens, postTokens(p.slug, p.title))
+    const score = tagOverlap * 0.6 + tokenSim
+    if (score > 0) scored.push({ p, score })
+  }
+  scored.sort((a, b) => b.score - a.score)
+  let picks = scored.slice(0, limit).map(s => s.p)
+  // Fall back to most-recent posts if nothing overlaps, so the section is never empty.
+  if (picks.length < limit) {
+    for (const p of all) {
+      if (p.slug === post.slug || picks.find(x => x.slug === p.slug)) continue
+      picks.push(p); if (picks.length >= limit) break
+    }
+  }
+  return picks
+}
+
 export function registerRoutes(app) {
   // List published posts (newest first). Lightweight — no full body.
   app.get('/blog', async (req, res) => {
@@ -97,6 +133,16 @@ export function registerRoutes(app) {
       .single()
     if (error || !data) return res.status(404).json({ error: 'Post not found' })
     res.json(data)
+  })
+
+  // Related posts for a given slug — topical internal-linking for SEO + engagement.
+  app.get('/blog/:slug/related', async (req, res) => {
+    const { data: p } = await supabaseAdmin
+      .from('blog_posts').select('slug, title, tags').eq('slug', req.params.slug).eq('status', 'published').maybeSingle()
+    if (!p) return res.json({ related: [] })
+    const limit = Math.min(8, Math.max(1, parseInt(req.query.limit) || 4))
+    const related = await relatedPosts(p, limit)
+    res.json({ related: related.map(x => ({ slug: x.slug, title: x.title, excerpt: x.excerpt, cover_image_url: x.cover_image_url, published_at: x.published_at })) })
   })
 
   // Create / update a post (upsert on slug). For n8n.
@@ -165,6 +211,13 @@ export function registerRoutes(app) {
     const tags = (p.tags || []).map(t => esc(t)).join(' · ')
     const cover = p.cover_image_url ? `<img src="${esc(p.cover_image_url)}" alt="${title}" style="width:100%;border-radius:12px;margin:1.5rem 0;max-height:480px;object-fit:cover;">` : ''
 
+    // Crawlable internal links to related posts (SEO cross-referencing).
+    const rel = await relatedPosts(p, 4)
+    const relatedHtml = rel.length ? `<div class="related">
+      <h3>Related articles</h3>
+      <ul>${rel.map(r => `<li><a href="https://marketsync.link/blog/${esc(r.slug)}">${esc(r.title)}</a></li>`).join('')}</ul>
+    </div>` : ''
+
     const ld = JSON.stringify({
       '@context': 'https://schema.org', '@type': 'BlogPosting',
       headline: p.title, description: p.excerpt || '',
@@ -219,6 +272,12 @@ export function registerRoutes(app) {
     .cta h3{font-size:1.2rem;font-weight:700;margin-bottom:.5rem}
     .cta p{font-size:.875rem;color:#64748b;margin-bottom:1rem}
     .cta a{display:inline-block;background:#4f46e5;color:#fff;font-weight:700;padding:.75rem 1.5rem;border-radius:.75rem;text-decoration:none}
+    .related{margin-top:3rem;padding-top:2rem;border-top:1px solid #e2e8f0}
+    .related h3{font-size:1.1rem;font-weight:700;margin-bottom:.75rem;color:#0f172a}
+    .related ul{list-style:none;margin:0}
+    .related li{margin:.4rem 0}
+    .related a{color:#4f46e5;text-decoration:none;font-weight:600}
+    .related a:hover{text-decoration:underline}
     footer{border-top:1px solid #e2e8f0;padding:2rem 1.5rem;text-align:center;font-size:.75rem;color:#94a3b8}
   </style>
 </head>
@@ -232,6 +291,7 @@ export function registerRoutes(app) {
     <h1>${title}</h1>
     ${cover}
     <div class="article">${p.content_html || ''}</div>
+    ${relatedHtml}
     <div class="cta">
       <h3>Run your whole dealership from one platform</h3>
       <p>Website, CRM, inventory intelligence, appraisals and vehicle marketing in one system. Free 30-day trial.</p>
