@@ -90,6 +90,8 @@
        (JS points the header at the F&I/Sales page and hides the F&I sub-item). */
     html[data-dash-mode="marketsync"] #grp-crm { display: block !important; }
     html[data-dash-mode="marketsync"] #nav-leads-sales { display: flex !important; }
+    /* Affiliate admin lives in the MarketSync workspace only. */
+    html[data-dash-mode="marketsync"] #nav-affiliates { display: flex !important; }
     /* Trimmed Settings tabs in MarketSync mode (hide vehicle-specific tabs). */
     html[data-dash-mode="marketsync"] #settings-tabs [data-stab="branding"],
     html[data-dash-mode="marketsync"] #settings-tabs [data-stab="language"],
@@ -872,6 +874,12 @@
             </div>
           </div>
 
+          <!-- Affiliates admin — MarketSync owner only (shown in MarketSync mode) -->
+          <button type="button" id="nav-affiliates" data-page="affiliates-admin" title="Affiliates" class="nav-item hidden w-full flex items-center gap-2.5 px-3 py-2 rounded font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition">
+            <svg class="w-4 h-4 flex-shrink-0 text-violet-600 dark:text-violet-400" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M17 20h5v-2a4 4 0 00-3-3.87M9 20H4v-2a4 4 0 013-3.87m6-1.13a4 4 0 10-4-4 4 4 0 004 4zm6 0a3 3 0 10-2.5-4.5"/></svg>
+            <span>Affiliates</span>
+          </button>
+
           <!-- ─── Website (admin) ─── -->
           <div class="nav-group" data-group="web" data-admin-nav>
             <div class="flex items-center">
@@ -1056,6 +1064,11 @@
       <!-- Accounting — daily ledger, reconciliation, chart of accounts, P&L (managers). -->
       <div data-page-content="accounting" class="page-content hidden space-y-6">
         <div id="accounting-root"></div>
+      </div>
+
+      <!-- Affiliates admin — MarketSync owner manages affiliates + payouts. -->
+      <div data-page-content="affiliates-admin" class="page-content hidden space-y-6">
+        <div id="affadmin-root"></div>
       </div>
 
       <div data-page-content="reports" class="page-content hidden space-y-6">
@@ -3147,7 +3160,7 @@
     </div>
   </div>
 
-  <script src="dashboard.js?v=20260720z"></script>
+  <script src="dashboard.js?v=20260721a"></script>
   <!-- Google Translate widget (per-rep dashboard translation) -->
   <script>
     window.googleTranslateElementInit = function () {

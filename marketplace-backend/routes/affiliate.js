@@ -15,7 +15,12 @@
  */
 import { randomBytes } from 'crypto'
 import { supabase, supabaseAdmin, FRONTEND_URL } from '../shared.js'
+import { requireAuth } from '../middleware.js'
 import { rateLimit, validatePassword } from '../security.js'
+import { postMarketsyncAffiliateExpense } from './accounting.js'
+
+const OWNER_EMAIL = (process.env.OWNER_EMAIL || 'massiejay@gmail.com').toLowerCase()
+const isAdmin = (req) => (req.user?.email || '').toLowerCase() === OWNER_EMAIL || req.profile?.is_marketsync === true
 
 // Program defaults (a new affiliate inherits these; the owner can tune per-affiliate).
 const DEFAULT_RATE_PCT = Number(process.env.AFFILIATE_RATE_PCT) || 25
@@ -181,5 +186,68 @@ export function registerAffiliate(app) {
     if (payout && !/.+@.+\..+/.test(payout)) return res.status(400).json({ error: 'Enter a valid payout email.' })
     await supabaseAdmin.from('affiliates').update({ payout_email: payout || req.affiliate.email }).eq('id', req.affiliate.id)
     res.json({ ok: true })
+  })
+
+  // ── Owner admin (MarketSync) ─────────────────────────────────────────────────
+  const adminGuard = (req, res) => { if (!isAdmin(req)) { res.status(403).json({ error: 'Owner access required' }); return false } return true }
+
+  // All affiliates with their totals + program-wide summary.
+  app.get('/affiliate/admin/list', requireAuth, async (req, res) => {
+    if (!adminGuard(req, res)) return
+    const { data: affs } = await supabaseAdmin.from('affiliates').select('*').order('created_at', { ascending: false })
+    const rows = []
+    for (const a of (affs || [])) {
+      const s = await affiliateSummary(a)
+      rows.push({ id: a.id, name: a.name, email: a.email, code: a.code, status: a.status, payout_email: a.payout_email,
+        rate_pct: a.rate_pct, rate_months: a.rate_months, bounty: a.bounty, created_at: a.created_at,
+        referrals: s.counts.total, active: s.counts.active, pending: s.earnings.pending, paid: s.earnings.paid, total: s.earnings.total })
+    }
+    const totals = rows.reduce((t, r) => ({ affiliates: t.affiliates + 1, referrals: t.referrals + r.referrals, active: t.active + r.active, pending: round2(t.pending + r.pending), paid: round2(t.paid + r.paid) }), { affiliates: 0, referrals: 0, active: 0, pending: 0, paid: 0 })
+    res.json({ ok: true, affiliates: rows, totals })
+  })
+
+  // Tune an affiliate: rate, months, bounty, status.
+  app.post('/affiliate/admin/update', requireAuth, async (req, res) => {
+    if (!adminGuard(req, res)) return
+    const id = String(req.body?.affiliate_id || '')
+    if (!id) return res.status(400).json({ error: 'affiliate_id required' })
+    const patch = {}
+    if (req.body.rate_pct !== undefined) patch.rate_pct = Math.max(0, Math.min(100, n(req.body.rate_pct)))
+    if (req.body.rate_months !== undefined) patch.rate_months = Math.max(0, Math.round(n(req.body.rate_months)))
+    if (req.body.bounty !== undefined) patch.bounty = Math.max(0, n(req.body.bounty))
+    if (req.body.status !== undefined && ['active', 'suspended'].includes(req.body.status)) patch.status = req.body.status
+    if (!Object.keys(patch).length) return res.status(400).json({ error: 'Nothing to update' })
+    const { data, error } = await supabaseAdmin.from('affiliates').update(patch).eq('id', id).select().maybeSingle()
+    if (error) return res.status(500).json({ error: error.message })
+    res.json({ ok: true, affiliate: data })
+  })
+
+  // Commissions across all affiliates (optionally by status), for the admin view.
+  app.get('/affiliate/admin/commissions', requireAuth, async (req, res) => {
+    if (!adminGuard(req, res)) return
+    let q = supabaseAdmin.from('affiliate_commissions').select('*').order('created_at', { ascending: false }).limit(1000)
+    if (req.query.status) q = q.eq('status', String(req.query.status))
+    const { data: comms } = await q
+    const ids = [...new Set((comms || []).map(c => c.affiliate_id))]
+    let names = {}
+    if (ids.length) { const { data: affs } = await supabaseAdmin.from('affiliates').select('id, name, email').in('id', ids); names = Object.fromEntries((affs || []).map(a => [a.id, a.name || a.email])) }
+    res.json({ ok: true, commissions: (comms || []).map(c => ({ id: c.id, affiliate: names[c.affiliate_id] || '—', amount: Number(c.amount), currency: c.currency, status: c.status, source: c.source, period: c.period, created_at: c.created_at })) })
+  })
+
+  // Mark an affiliate's outstanding commission paid → posts one expense to
+  // MarketSync's ledger for the total.
+  app.post('/affiliate/admin/pay', requireAuth, async (req, res) => {
+    if (!adminGuard(req, res)) return
+    const id = String(req.body?.affiliate_id || '')
+    if (!id) return res.status(400).json({ error: 'affiliate_id required' })
+    const { data: due } = await supabaseAdmin.from('affiliate_commissions').select('id, amount, currency').eq('affiliate_id', id).in('status', ['pending', 'approved'])
+    const rows = due || []
+    if (!rows.length) return res.json({ ok: true, paid: 0, count: 0 })
+    const total = round2(rows.reduce((s, c) => s + Number(c.amount), 0))
+    const currency = rows[0].currency || 'usd'
+    await supabaseAdmin.from('affiliate_commissions').update({ status: 'paid' }).in('id', rows.map(r => r.id))
+    const { data: aff } = await supabaseAdmin.from('affiliates').select('name, email').eq('id', id).maybeSingle()
+    await postMarketsyncAffiliateExpense({ amountCents: Math.round(total * 100), currency, ref: `affpay_${id}_${Date.now()}`, description: `Affiliate payout — ${aff?.name || aff?.email || id}` })
+    res.json({ ok: true, paid: total, count: rows.length })
   })
 }

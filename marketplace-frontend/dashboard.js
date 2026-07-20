@@ -326,7 +326,7 @@ let profileContext = null;
 // html[data-dash-mode] attribute). Persisted per-browser.
 let __dashMode = localStorage.getItem('ms_dash_mode') === 'marketsync' ? 'marketsync' : 'demo';
 // The pages that remain in MarketSync mode (everything else is vehicle-only).
-const MS_ALLOWED_PAGES = new Set(['insights', 'crm', 'tasks', 'appointments', 'leads', 'fni', 'reports', 'profile', 'accounting', 'commissions']);
+const MS_ALLOWED_PAGES = new Set(['insights', 'crm', 'tasks', 'appointments', 'leads', 'fni', 'reports', 'profile', 'accounting', 'commissions', 'affiliates-admin']);
 // In MarketSync mode the Reports hub shows only the SaaS-relevant reports (no
 // vehicle inventory, F&I, appraisals or service — MarketSync sells software).
 const MS_REPORT_KEYS = new Set(['leads', 'marketing', 'appointments', 'activity', 'customers', 'reps']);
@@ -997,6 +997,7 @@ function switchPage(pageId) {
   if (pageId === 'reports') loadReports();
   if (pageId === 'commissions') loadCommissionsPage();
   if (contentKey === 'accounting') loadAccountingPage(pageId.startsWith('acct-') ? pageId.slice(5) : undefined);
+  if (pageId === 'affiliates-admin') loadAffiliatesAdmin();
   if (pageId === 'desk') loadDeskDeal();
   if (pageId === 'crm') loadCrmPage();
   if (pageId === 'leads') loadLeadsPage();
@@ -7609,6 +7610,68 @@ function acctSetDate(d) { __acctState.date = d; acctLoadToday(); }
 // Nav sub-item → jump to the Accounting page on a specific tab.
 function acctGo(tab) { __acctState.tab = tab; switchPage('accounting'); }
 window.loadAccountingPage = loadAccountingPage; window.acctSetTab = acctSetTab; window.acctSetDate = acctSetDate; window.acctGo = acctGo;
+
+// ── Affiliates admin (MarketSync owner) ──────────────────────────────────────
+async function loadAffiliatesAdmin() {
+  const root = document.getElementById('affadmin-root'); if (!root) return;
+  root.innerHTML = '<div class="text-sm text-slate-400">Loading…</div>';
+  try {
+    const d = await apiGetJson('/affiliate/admin/list');
+    const t = d.totals || {};
+    const badge = (s) => `<span class="text-[10px] font-bold px-2 py-0.5 rounded-full ${s === 'active' ? 'bg-emerald-100 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300' : 'bg-rose-100 dark:bg-rose-950/40 text-rose-600'}">${esc(s)}</span>`;
+    const rows = (d.affiliates || []).map(a => `<tr class="border-b border-slate-100 dark:border-slate-800/60">
+      <td class="px-3 py-2"><div class="font-semibold">${esc(a.name || a.email)}</div><div class="text-[11px] text-slate-400">${esc(a.email)} · <span class="font-mono">${esc(a.code)}</span></div></td>
+      <td class="px-3 py-2 text-center">${a.referrals} <span class="text-slate-400">/ ${a.active} paying</span></td>
+      <td class="px-3 py-2 text-center">${a.rate_pct}% · ${a.rate_months}mo</td>
+      <td class="px-3 py-2 text-right text-amber-600 dark:text-amber-400">${commMoney(a.pending)}</td>
+      <td class="px-3 py-2 text-right text-emerald-600 dark:text-emerald-400">${commMoney(a.paid)}</td>
+      <td class="px-3 py-2 text-center">${badge(a.status)}</td>
+      <td class="px-3 py-2 text-right whitespace-nowrap">
+        <button onclick='affAdminEdit(${JSON.stringify(a)})' class="text-xs font-bold text-indigo-600 hover:text-indigo-500">Edit</button>
+        ${a.pending > 0 ? `<button onclick="affAdminPay('${a.id}', ${a.pending})" class="text-xs font-bold text-emerald-600 hover:text-emerald-500 ml-2">Pay out</button>` : ''}
+      </td></tr>`).join('');
+    root.innerHTML = `
+      <div><h1 class="text-2xl font-black text-slate-900 dark:text-white">Affiliates</h1>
+        <p class="text-sm text-slate-500 dark:text-slate-400">Manage your referral partners, their rates, and payouts. Affiliates sign up at <a href="affiliates.html" target="_blank" class="text-indigo-600 dark:text-indigo-400 hover:underline">marketsync.link/affiliates</a>.</p></div>
+      <div class="grid grid-cols-2 md:grid-cols-5 gap-3">
+        <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4"><div class="text-[11px] uppercase font-bold tracking-wider text-slate-400">Affiliates</div><div class="text-2xl font-black mt-1">${t.affiliates || 0}</div></div>
+        <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4"><div class="text-[11px] uppercase font-bold tracking-wider text-slate-400">Referrals</div><div class="text-2xl font-black mt-1">${t.referrals || 0}</div></div>
+        <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4"><div class="text-[11px] uppercase font-bold tracking-wider text-slate-400">Paying</div><div class="text-2xl font-black mt-1 text-emerald-600 dark:text-emerald-400">${t.active || 0}</div></div>
+        <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4"><div class="text-[11px] uppercase font-bold tracking-wider text-slate-400">Owed (pending)</div><div class="text-2xl font-black mt-1 text-amber-600 dark:text-amber-400">${commMoney(t.pending)}</div></div>
+        <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4"><div class="text-[11px] uppercase font-bold tracking-wider text-slate-400">Paid out</div><div class="text-2xl font-black mt-1">${commMoney(t.paid)}</div></div>
+      </div>
+      <div class="overflow-x-auto bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl">
+        <table class="w-full text-sm min-w-[760px]"><thead><tr class="text-left text-[11px] uppercase tracking-wider text-slate-400 border-b border-slate-200 dark:border-slate-800">
+          <th class="px-3 py-2">Affiliate</th><th class="px-3 py-2 text-center">Referrals</th><th class="px-3 py-2 text-center">Rate</th><th class="px-3 py-2 text-right">Pending</th><th class="px-3 py-2 text-right">Paid</th><th class="px-3 py-2 text-center">Status</th><th class="px-3 py-2"></th></tr></thead>
+          <tbody>${rows || '<tr><td colspan="7" class="px-3 py-8 text-center text-slate-400">No affiliates yet. Share the program page to get your first partners.</td></tr>'}</tbody></table></div>`;
+  } catch (e) { root.innerHTML = `<div class="text-sm text-rose-500">${esc(e.message || 'Could not load affiliates.')}</div>`; }
+}
+function affAdminEdit(a) {
+  crmOverlay(`<div class="p-5 space-y-3">
+    <div class="text-lg font-black text-slate-900 dark:text-white">${esc(a.name || a.email)}</div>
+    <div class="grid grid-cols-2 gap-3">
+      <div><label class="block text-[11px] font-semibold text-slate-500 mb-1">Commission %</label><input id="aff-rate" type="number" step="1" value="${a.rate_pct}" class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm"></div>
+      <div><label class="block text-[11px] font-semibold text-slate-500 mb-1">Months (0 = lifetime)</label><input id="aff-months" type="number" step="1" value="${a.rate_months}" class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm"></div>
+    </div>
+    <div><label class="block text-[11px] font-semibold text-slate-500 mb-1">Status</label>
+      <select id="aff-status" class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm"><option value="active" ${a.status === 'active' ? 'selected' : ''}>Active</option><option value="suspended" ${a.status === 'suspended' ? 'selected' : ''}>Suspended</option></select></div>
+    <div class="flex justify-end gap-2 pt-1"><button onclick="this.closest('.fixed').remove()" class="text-sm font-bold text-slate-500 px-4 py-2">Cancel</button>
+      <button onclick="affAdminSave('${a.id}', this)" class="text-sm font-bold bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg">Save</button></div>
+  </div>`, 'max-w-md');
+}
+async function affAdminSave(id, btn) {
+  btn.disabled = true;
+  try {
+    await apiSendJson('/affiliate/admin/update', 'POST', { affiliate_id: id, rate_pct: parseFloat(document.getElementById('aff-rate').value), rate_months: parseInt(document.getElementById('aff-months').value), status: document.getElementById('aff-status').value });
+    showToast('Affiliate updated', 'success'); btn.closest('.fixed').remove(); loadAffiliatesAdmin();
+  } catch (e) { btn.disabled = false; showToast(e.message || 'Could not save', 'error'); }
+}
+async function affAdminPay(id, amount) {
+  if (!confirm(`Mark ${commMoney(amount)} as paid to this affiliate? This posts the payout as a MarketSync expense.`)) return;
+  try { const r = await apiSendJson('/affiliate/admin/pay', 'POST', { affiliate_id: id }); showToast(`Paid ${commMoney(r.paid)} (${r.count} commissions)`, 'success'); loadAffiliatesAdmin(); }
+  catch (e) { showToast(e.message || 'Could not pay out', 'error'); }
+}
+window.loadAffiliatesAdmin = loadAffiliatesAdmin; window.affAdminEdit = affAdminEdit; window.affAdminSave = affAdminSave; window.affAdminPay = affAdminPay;
 
 async function acctLoadToday() {
   const body = document.getElementById('acct-body'); if (!body) return;
