@@ -17,6 +17,7 @@
 import { supabaseAdmin } from '../shared.js'
 import { requireAuth } from '../middleware.js'
 import { sendEmail } from '../securityAlerts.js'
+import { plaidConfigured, plaidStatus, bankTotalsForDay, syncTransactions } from '../providers/plaid.js'
 
 const isMgr = (req) => ['DEALER_ADMIN', 'OWNER', 'MANAGER'].includes(req.profile?.role)
 const n = (v) => { const x = Number(v); return Number.isFinite(x) ? x : 0 }
@@ -123,16 +124,33 @@ async function reconcileDay(dealershipId, dateStr, { alert = false } = {}) {
   const missing = dd.filter(d => (n(d.down_payment) + n(d.deposit_amount)) === 0)
   const deals_missing_cash = missing.length
   const variance = round2(expected_cash - recorded_cash)
-  const status = (deals_missing_cash > 0 || Math.abs(variance) > st.tolerance) ? 'off' : 'balanced'
+
+  // Bank cross-check (Plaid) when connected: does money into the bank that day match
+  // the cash we recorded (deposits)?
+  let bank = null, bank_total = null, bank_variance = 0
+  if (plaidConfigured()) {
+    const bstat = await plaidStatus(dealershipId).catch(() => ({ connected: false }))
+    if (bstat.connected) {
+      bank = await bankTotalsForDay(dealershipId, date).catch(() => null)
+      if (bank) { bank_total = round2(bank.bank_in - bank.bank_out); bank_variance = round2(bank.bank_in - recorded_cash) }
+    }
+  }
+  const bankOff = bank && Math.abs(bank_variance) > st.tolerance
+  const status = (deals_missing_cash > 0 || Math.abs(variance) > st.tolerance || bankOff) ? 'off' : 'balanced'
+  const note = deals_missing_cash > 0 ? `${deals_missing_cash} delivered deal(s) have no deposit or down payment recorded.`
+    : Math.abs(variance) > st.tolerance ? `Expected cash-in ${money(expected_cash)} vs recorded ${money(recorded_cash)} (off by ${money(variance)}).`
+    : bankOff ? `Bank shows ${money(bank.bank_in)} in but ${money(recorded_cash)} was recorded (off by ${money(bank_variance)}).`
+    : 'Balanced.'
   const detail = {
     tolerance: st.tolerance,
     missing_deals: missing.map(d => ({ deal_number: d.deal_number, id: d.id })),
-    note: deals_missing_cash > 0 ? `${deals_missing_cash} delivered deal(s) have no deposit or down payment recorded.` : (Math.abs(variance) > st.tolerance ? `Expected cash-in ${money(expected_cash)} vs recorded ${money(recorded_cash)} (off by ${money(variance)}).` : 'Balanced.'),
+    bank: bank ? { bank_in: bank.bank_in, bank_out: bank.bank_out, variance: bank_variance, count: bank.count } : null,
+    note,
   }
   const { data: prior } = await supabaseAdmin.from('reconciliations').select('id, alerted').eq('dealership_id', dealershipId).eq('recon_date', date).maybeSingle()
   const row = {
     dealership_id: dealershipId, recon_date: date, expected_cash, recorded_cash, expenses_total, income_posted,
-    variance, deals_delivered: dd.length, deals_missing_cash, status, detail, ran_at: new Date().toISOString(),
+    variance, deals_delivered: dd.length, deals_missing_cash, status, detail, bank_total, ran_at: new Date().toISOString(),
   }
   if (prior) await supabaseAdmin.from('reconciliations').update(row).eq('id', prior.id)
   else await supabaseAdmin.from('reconciliations').insert(row)
@@ -147,6 +165,7 @@ async function reconcileDay(dealershipId, dateStr, { alert = false } = {}) {
           <li>Delivered deals: ${dd.length}${deals_missing_cash ? ` — <strong>${deals_missing_cash} with no cash recorded</strong>` : ''}</li>
           <li>Expected cash-in: ${money(expected_cash)} · Recorded: ${money(recorded_cash)} · Variance: <strong>${money(variance)}</strong></li>
           <li>Income posted: ${money(income_posted)} · Expenses: ${money(expenses_total)}</li>
+          ${bank ? `<li>Bank in: ${money(bank.bank_in)} · Bank out: ${money(bank.bank_out)} · vs recorded: <strong>${money(bank_variance)}</strong></li>` : ''}
         </ul>
         <p>${detail.note}</p><p>Open MarketSync → Accounting to review and close the day.</p>`
       try { await sendEmail({ to, subject: `⚠️ Books don't reconcile — ${date}`, html, text: detail.note }); emailed = true } catch (e) { console.warn('[accounting] alert email failed:', e.message) }
@@ -290,6 +309,9 @@ export function registerAccounting(app) {
     let ran = 0, off = 0
     for (const d of (dealers || [])) {
       if (!settingsOf(d).enabled) continue
+      // Pull the latest bank transactions first (if the dealer linked a bank), so the
+      // reconciliation sees today's activity.
+      if (plaidConfigured()) { try { await syncTransactions(d.id) } catch {} }
       const snap = await reconcileDay(d.id, y, { alert: true }); ran++
       if (snap.status === 'off') off++
     }
