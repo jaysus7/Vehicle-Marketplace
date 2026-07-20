@@ -17436,8 +17436,9 @@ function wireReportRail() {
       switchPage('profile');
       setTimeout(() => flash('weekly-report-btn'), 120);
     } else if (kind === 'speed') {
-      switchPage('leads');
-      setTimeout(() => flash('leads-metrics'), 200);
+      // Speed-to-lead lives in the Leads report (median response, under-5-min %).
+      switchPage('reports');
+      setTimeout(() => { if (typeof reportsTab === 'function') reportsTab('leads'); }, 150);
     } else if (kind === 'equity') {
       switchPage('equity');
     } else if (['sales', 'fni', 'leads', 'reps', 'appraisals', 'appointments', 'service', 'esign', 'marketing', 'activity', 'customers'].includes(kind)) {
