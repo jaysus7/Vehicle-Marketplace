@@ -2136,7 +2136,6 @@ async function crmLoadContacts() {
         <input id="crm-search" placeholder="${crmIsSoldView() ? 'Search sold customers — name, email, phone…' : 'Search ALL contacts — name, email, phone…'}" oninput="crmSearchDebounced()" class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg pl-9 pr-3 py-2 text-sm">
       </div>
       <span id="crm-repfilter"></span>
-      ${crmIsSoldView() ? '' : `<button id="crm-ms-chip" onclick="crmToggleMarketSync()" title="Show only leads from your MarketSync website + AI chat" class="inline-flex items-center gap-1.5 text-sm font-bold px-3 py-2 rounded-lg border transition ${__crmSourceFilter === 'marketsync' ? 'bg-indigo-600 border-indigo-600 text-white' : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:border-indigo-300'}">✨ MarketSync leads</button>`}
     </div>
     <div id="crm-list" class="py-10 text-center text-sm text-slate-400 italic">Loading contacts…</div>`;
   crmRefreshContacts();
