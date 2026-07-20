@@ -6226,9 +6226,7 @@ function deskPrint(kind, opts = {}) {
     ${foot(5)}
   </div>`;
 
-  // Page 6 — a Customer Copy of the face sheet (identical page 1, tagged).
-  const page6 = `<div class="page"><div class="copytag">CUSTOMER COPY</div>${face}${foot(6)}</div>`;
-  const inner = `<style>${DESK_DOC_CSS}</style><div class="page">${face}${foot(1)}</div>${page2}${page3}${page4}${page5}${page6}`;
+  const inner = `<style>${DESK_DOC_CSS}</style><div class="page">${face}${foot(1)}</div>${page2}${page3}${page4}${page5}`;
   const billTitle = condLabel + ' Motor Vehicle Purchase Agreement';
   if (opts.returnHtml) return { title: billTitle, doc_type: 'bill_of_sale', html: inner };
   if (typeof apprPrintWindow === 'function') apprPrintWindow(billTitle, inner);
