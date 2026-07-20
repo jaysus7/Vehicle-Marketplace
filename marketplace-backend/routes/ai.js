@@ -30,7 +30,7 @@ export function registerAI(app) {
     if (!req.dealershipId) return res.status(400).json({ error: 'No dealership associated' })
     const { data, error } = await supabaseAdmin
       .from('dealerships')
-      .select('ai_boost_active, ai_tone, ai_required_fields, ai_manager_email, vin_sticker_active, inv_intel_active, ai_vision_active, ai_boost_paid, inv_intel_paid, full_access_until, photo_background_url, country, province, city, postal_code, daily_digest_enabled, legal_name, street_address, phone, fax, hst_number, omvic_reg, plan, desk_fees, ai_internal_style, ai_customer_style, ai_knowledge, ai_knowledge_name, cost_tracking_enabled, cost_rep_visible, autoresponder_mode, autoresponder_channel')
+      .select('ai_boost_active, ai_tone, ai_required_fields, ai_manager_email, vin_sticker_active, inv_intel_active, ai_vision_active, ai_boost_paid, inv_intel_paid, full_access_until, photo_background_url, country, province, city, postal_code, daily_digest_enabled, legal_name, street_address, phone, fax, hst_number, omvic_reg, plan, desk_fees, ai_assistant_name, ai_internal_style, ai_customer_style, ai_knowledge, ai_knowledge_name, cost_tracking_enabled, cost_rep_visible, autoresponder_mode, autoresponder_channel')
       .eq('id', req.dealershipId)
       .single()
     if (error) return res.status(500).json({ error: error.message })
@@ -111,6 +111,7 @@ export function registerAI(app) {
     // AI persona/style prompts + knowledge base. Style prompts steer tone/voice;
     // the knowledge base is grounding text both the internal assistant and the
     // customer chat can draw on. Bounded so they can't blow up the prompt/cost.
+    if (req.body.ai_assistant_name !== undefined) update.ai_assistant_name = (req.body.ai_assistant_name || '').toString().trim().slice(0, 60) || null
     if (req.body.ai_internal_style !== undefined) update.ai_internal_style = (req.body.ai_internal_style || '').toString().trim().slice(0, 2000) || null
     if (req.body.ai_customer_style !== undefined) update.ai_customer_style = (req.body.ai_customer_style || '').toString().trim().slice(0, 2000) || null
     if (req.body.ai_knowledge !== undefined) update.ai_knowledge = (req.body.ai_knowledge || '').toString().trim().slice(0, 12000) || null
@@ -132,7 +133,7 @@ export function registerAI(app) {
       .from('dealerships')
       .update(update)
       .eq('id', req.dealershipId)
-      .select('ai_boost_active, ai_tone, ai_required_fields, ai_manager_email, country, province, city, postal_code, daily_digest_enabled, legal_name, street_address, phone, fax, hst_number, omvic_reg, desk_fees, ai_internal_style, ai_customer_style, ai_knowledge, ai_knowledge_name, cost_tracking_enabled, cost_rep_visible, autoresponder_mode, autoresponder_channel')
+      .select('ai_boost_active, ai_tone, ai_required_fields, ai_manager_email, country, province, city, postal_code, daily_digest_enabled, legal_name, street_address, phone, fax, hst_number, omvic_reg, desk_fees, ai_assistant_name, ai_internal_style, ai_customer_style, ai_knowledge, ai_knowledge_name, cost_tracking_enabled, cost_rep_visible, autoresponder_mode, autoresponder_channel')
       .single()
     if (error) return res.status(500).json({ error: error.message })
     // Audit sensitive setting changes — especially the internal-cost visibility flags.
@@ -2570,7 +2571,7 @@ ACV / wholesale take-in (what the dealer buys it for): ${cur} $${suggestedOffer.
 
     const { data: dealer } = await supabaseAdmin
       .from('dealerships')
-      .select('name, ai_boost_active, inv_intel_active, city, province, country, ai_internal_style, ai_knowledge, ai_knowledge_name')
+      .select('name, ai_boost_active, inv_intel_active, city, province, country, ai_assistant_name, ai_internal_style, ai_knowledge, ai_knowledge_name')
       .eq('id', req.dealershipId).maybeSingle()
 
     const entitled = isOwner || !!dealer?.ai_boost_active || !!dealer?.inv_intel_active
@@ -2654,7 +2655,8 @@ ACV / wholesale take-in (what the dealer buys it for): ${cur} $${suggestedOffer.
       `Sales month-to-date: ${soldMTD.length} sold${revMTD ? ` ($${Math.round(revMTD).toLocaleString()} revenue)` : ''}. Cars in reconditioning/get-ready: ${reconCount || 0}. Open tasks due/overdue: ${overdueCount}.`,
     ].join('\n')
 
-    const system = `You are MarketSync — the smartest person at this car dealership. You are a sharp GM/analyst who knows this store's whole operation: inventory, leads, sales, F&I, commissions, reconditioning, tasks and appointments. You do four things: (1) answer how MarketSync works, what's included, and pricing, from the PRODUCT GUIDE; (2) answer about THIS store from the LIVE SNAPSHOT; (3) for any deeper question about the store's own numbers or people — units/gross/commissions this month, who's ahead or needs coaching, lead volume/sources/conversion, unworked leads, reconditioning status, overdue tasks, who to call today, recent trades, whether we're trending up or down vs last period, what to prioritize today, which cars to discount or wholesale and the reprice target, who to call for an upgrade or lease pull-ahead, or which ad channel is paying off — call the dealership_report tool with the right topic ('trends', 'priorities', 'pricing', 'equity', 'marketing_roi', and the rest) and answer from real data (don't guess); (4) pull live MARKET data — decode a VIN, predict a price for a VIN, or a market snapshot for a make/model; (5) DO things when asked — add a follow-up task/reminder, or text/email a group of customers — via the propose_action tool, which ALWAYS asks the user to confirm before anything runs (never say it's done; say you've set it up for their confirmation). Use a tool whenever it sharpens the answer; never guess a VIN — ask for it. Be direct and specific: lead with the number, then one crisp takeaway or recommended action. Keep it tight — a couple of sentences or a short list, no headings, no fluff. Never invent numbers beyond the snapshot or tool results; when quoting product prices, note they should confirm exact pricing on the billing screen. Today: ${new Date().toISOString().slice(0, 10)}.\n\n${PRODUCT_KB}\n\nLIVE SNAPSHOT (this dealership, right now):\n${facts}`
+    const assistantName = (dealer?.ai_assistant_name || '').trim() || 'MarketSync'
+    const system = `You are ${assistantName} — the smartest person at this car dealership. You are a sharp GM/analyst who knows this store's whole operation: inventory, leads, sales, F&I, commissions, reconditioning, tasks and appointments. You do four things: (1) answer how MarketSync works, what's included, and pricing, from the PRODUCT GUIDE; (2) answer about THIS store from the LIVE SNAPSHOT; (3) for any deeper question about the store's own numbers or people — units/gross/commissions this month, who's ahead or needs coaching, lead volume/sources/conversion, unworked leads, reconditioning status, overdue tasks, who to call today, recent trades, whether we're trending up or down vs last period, what to prioritize today, which cars to discount or wholesale and the reprice target, who to call for an upgrade or lease pull-ahead, or which ad channel is paying off — call the dealership_report tool with the right topic ('trends', 'priorities', 'pricing', 'equity', 'marketing_roi', and the rest) and answer from real data (don't guess); (4) pull live MARKET data — decode a VIN, predict a price for a VIN, or a market snapshot for a make/model; (5) DO things when asked — add a follow-up task/reminder, or text/email a group of customers — via the propose_action tool, which ALWAYS asks the user to confirm before anything runs (never say it's done; say you've set it up for their confirmation). Use a tool whenever it sharpens the answer; never guess a VIN — ask for it. Be direct and specific: lead with the number, then one crisp takeaway or recommended action. Keep it tight — a couple of sentences or a short list, no headings, no fluff. Never invent numbers beyond the snapshot or tool results; when quoting product prices, note they should confirm exact pricing on the billing screen. Today: ${new Date().toISOString().slice(0, 10)}.\n\n${PRODUCT_KB}\n\nLIVE SNAPSHOT (this dealership, right now):\n${facts}`
       // Dealer-set voice/style for the internal assistant, plus their uploaded knowledge base.
       + (dealer?.ai_internal_style ? `\n\nHOUSE STYLE (follow this voice for your answers): ${dealer.ai_internal_style}` : '')
       + (dealer?.ai_knowledge ? `\n\nDEALERSHIP KNOWLEDGE BASE${dealer.ai_knowledge_name ? ` (${dealer.ai_knowledge_name})` : ''} — treat as authoritative for this store's own policies/processes:\n${dealer.ai_knowledge}` : '')

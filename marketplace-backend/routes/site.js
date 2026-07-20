@@ -258,6 +258,8 @@ function siteContent(d) {
     accent_color: b.accent_color || null,
     // AI sales concierge chat bubble on the public site (dealer opt-in).
     sales_chat: !!b.site_sales_chat,
+    // Customer-facing name for the concierge (e.g. "Ava"). Blank = generic.
+    chat_name: b.site_chat_name || null,
     // AI concierge tuning: dealer knowledge base, custom instructions, disclaimer.
     chat_kb: b.site_chat_kb || null,
     chat_instructions: b.site_chat_instructions || null,
@@ -646,7 +648,8 @@ export function registerSite(app) {
     const kb = [String(b.site_chat_kb || '').trim(), String(aiCfg?.ai_knowledge || '').trim()].filter(Boolean).join('\n\n').slice(0, 12000)
     const instr = [String(aiCfg?.ai_customer_style || '').trim(), String(b.site_chat_instructions || '').trim()].filter(Boolean).join('\n\n').slice(0, 4000)
     const disclaimer = String(b.site_chat_disclaimer || '').trim().slice(0, 600)
-    const system = `You are the friendly online sales concierge for ${d.name}, a car dealership${loc ? ` in ${loc}` : ''}. Help shoppers find a vehicle, answer questions about the inventory below, and guide them toward the next step: booking a test drive, getting pre-approved for financing, or valuing their trade. Be warm, concise (2–4 sentences), and never pushy.
+    const botName = String(b.site_chat_name || '').trim().slice(0, 60)
+    const system = `You are ${botName ? `${botName}, the friendly online sales concierge` : 'the friendly online sales concierge'} for ${d.name}, a car dealership${loc ? ` in ${loc}` : ''}.${botName ? ` If a shopper asks your name, say you're ${botName}.` : ''} Help shoppers find a vehicle, answer questions about the inventory below, and guide them toward the next step: booking a test drive, getting pre-approved for financing, or valuing their trade. Be warm, concise (2–4 sentences), and never pushy.
 
 RULES:
 - Only discuss vehicles from the INVENTORY list. Never invent stock, prices, VINs, or specs. If something isn't listed, say you'll have an advisor confirm and offer to take their info.
@@ -744,12 +747,13 @@ ${lines || '(no vehicles listed right now)'}` + scopeClause(`${d.name} — its v
 
     // Merge site content into the shared branding jsonb (don't wipe sticker fields).
     const contentKeys = ['tagline', 'about', 'hours', 'phone', 'email', 'address', 'hero_url', 'primary_color', 'secondary_color', 'accent_color', 'facebook_url', 'instagram_url', 'typography', 'heading_font', 'body_font', 'hero_photos', 'seo_title', 'seo_description', 'seo_keywords', 'seo_image']
-    const touchesContent = contentKeys.some(k => b[k] !== undefined) || b.head_html !== undefined || b.widgets !== undefined || b.pages !== undefined || b.sections !== undefined || b.staff !== undefined || b.build_makes !== undefined || b.builtins !== undefined || b.menu_order !== undefined || b.sales_chat !== undefined || b.chat_kb !== undefined || b.chat_instructions !== undefined || b.chat_disclaimer !== undefined
+    const touchesContent = contentKeys.some(k => b[k] !== undefined) || b.head_html !== undefined || b.widgets !== undefined || b.pages !== undefined || b.sections !== undefined || b.staff !== undefined || b.build_makes !== undefined || b.builtins !== undefined || b.menu_order !== undefined || b.sales_chat !== undefined || b.chat_name !== undefined || b.chat_kb !== undefined || b.chat_instructions !== undefined || b.chat_disclaimer !== undefined
     if (touchesContent) {
       const { data: cur } = await supabaseAdmin.from('dealerships').select('branding').eq('id', req.dealershipId).single()
       const branding = { ...(cur?.branding || {}) }
       for (const k of contentKeys) if (b[k] !== undefined) branding[k] = b[k] === '' ? null : b[k]
       if (b.sales_chat !== undefined) branding.site_sales_chat = !!b.sales_chat
+      if (b.chat_name !== undefined) branding.site_chat_name = String(b.chat_name || '').slice(0, 60) || null
       if (b.chat_kb !== undefined) branding.site_chat_kb = String(b.chat_kb || '').slice(0, 12000) || null
       if (b.chat_instructions !== undefined) branding.site_chat_instructions = String(b.chat_instructions || '').slice(0, 4000) || null
       if (b.chat_disclaimer !== undefined) branding.site_chat_disclaimer = String(b.chat_disclaimer || '').slice(0, 600) || null

@@ -973,7 +973,7 @@
         <div id="ms-chat-panel" style="display:none;position:fixed;right:18px;bottom:88px;z-index:60;width:min(370px,calc(100vw - 36px));height:min(560px,calc(100vh - 120px));background:#fff;border-radius:16px;box-shadow:0 20px 60px rgba(0,0,0,.3);overflow:hidden;flex-direction:column">
           <div class="brand-bg" style="color:#fff;padding:14px 16px;display:flex;align-items:center;gap:10px">
             ${s.logo_url?`<img src="${esc(s.logo_url)}" style="height:26px;width:auto;background:rgba(255,255,255,.15);border-radius:4px;padding:2px">`:''}
-            <div style="flex:1;min-width:0"><div style="font-weight:800;font-size:15px;line-height:1.1">${esc(s.name)}</div><div style="font-size:11px;opacity:.85">Sales team · replies in seconds</div></div>
+            <div style="flex:1;min-width:0"><div style="font-weight:800;font-size:15px;line-height:1.1">${esc(s.name)}</div><div style="font-size:11px;opacity:.85">${s.chat_name?esc(s.chat_name)+' · ':'Sales team · '}replies in seconds</div></div>
             <button onclick="chatToggle()" style="background:none;border:none;color:#fff;cursor:pointer;opacity:.8"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
           </div>
           <div id="ms-chat-log" style="flex:1;overflow-y:auto;padding:14px;background:#f8fafc;display:flex;flex-direction:column;gap:10px"></div>
@@ -994,7 +994,7 @@
       const p=document.getElementById('ms-chat-panel'); if(!p) return;
       p.style.display=CHAT_OPEN?'flex':'none';
       if(CHAT_OPEN){
-        if(!CHAT.length) chatPush('bot',`Hi! 👋 Looking for something specific, or want help finding the right vehicle? Ask me anything about our inventory, financing or trade-ins.`);
+        if(!CHAT.length){ const cn=(DATA&&DATA.site&&DATA.site.chat_name||'').trim(); chatPush('bot',`Hi! 👋 ${cn?`I'm ${cn}. `:''}Looking for something specific, or want help finding the right vehicle? Ask me anything about our inventory, financing or trade-ins.`); }
         setTimeout(()=>document.getElementById('ms-chat-input')?.focus(),50);
       }
     }

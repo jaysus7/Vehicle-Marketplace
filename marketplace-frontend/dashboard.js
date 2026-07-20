@@ -10652,6 +10652,11 @@ function siteSettingsFields(cfg) {
       </div>
       <div class="mt-4 pt-4 border-t border-slate-200 dark:border-slate-800 space-y-4">
         <div>
+          ${lbl('Concierge name — what the chat calls itself to shoppers')}
+          <p class="text-[11px] text-slate-400 dark:text-slate-500 mb-1.5">Give your website chat a name (e.g. “Ava”). It shows in the chat window and the AI uses it when a shopper asks who they're talking to. Leave blank for a generic “Sales team”.</p>
+          <input id="site-chat-name" type="text" maxlength="60" value="${esc(c.chat_name || '')}" placeholder="e.g. Ava" class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm">
+        </div>
+        <div>
           <div class="flex items-center justify-between gap-2 mb-1">
             ${lbl('Knowledge base — facts the concierge can answer from')}
             <div class="flex items-center gap-2">
@@ -11063,6 +11068,7 @@ async function saveSite(btn) {
     seo_title: val('seo-title'), seo_description: val('seo-desc'), seo_keywords: val('seo-keywords'), seo_image: val('seo-image'),
     head_html: document.getElementById('site-head')?.value || '',
     sales_chat: document.getElementById('site-sales-chat')?.checked || false,
+    chat_name: document.getElementById('site-chat-name')?.value || '',
     chat_kb: document.getElementById('site-chat-kb')?.value || '',
     chat_instructions: document.getElementById('site-chat-instructions')?.value || '',
     chat_disclaimer: document.getElementById('site-chat-disclaimer')?.value || '',
@@ -15038,6 +15044,7 @@ async function loadAIBoostSection() {
     applyFeatureFlags();   // re-hide any feature the dealer switched off (e.g. Appraisals)
     // Reveal the floating AI assistant dock for entitled dealers (owner exempt).
     updateAiDockVisibility();
+    applyAssistantName(cfg.ai_assistant_name);
     // Reveal the fixed Reports quick-access rail for Inventory Intelligence dealers.
     updateReportRailVisibility();
     // Stash dealership location for the appraisal PDFs' header.
@@ -15111,6 +15118,7 @@ function renderAIBoostSection(cfg) {
       if (el) el.checked = reqFields.includes(f);
     });
     // AI persona + knowledge base
+    const asstName = document.getElementById('ai-assistant-name'); if (asstName) asstName.value = cfg.ai_assistant_name || '';
     const inStyle = document.getElementById('ai-internal-style'); if (inStyle) inStyle.value = cfg.ai_internal_style || '';
     const cuStyle = document.getElementById('ai-customer-style'); if (cuStyle) cuStyle.value = cfg.ai_customer_style || '';
     const kb = document.getElementById('ai-knowledge'); if (kb) kb.value = cfg.ai_knowledge || '';
@@ -15272,6 +15280,7 @@ function setupAIBoostListeners() {
       province: document.getElementById('ai-province')?.value.trim() || null,
       city: document.getElementById('ai-city')?.value.trim() || null,
       postal_code: document.getElementById('ai-postal')?.value.trim() || null,
+      ai_assistant_name: document.getElementById('ai-assistant-name')?.value.trim() || null,
       ai_internal_style: document.getElementById('ai-internal-style')?.value.trim() || null,
       ai_customer_style: document.getElementById('ai-customer-style')?.value.trim() || null,
       ai_knowledge: document.getElementById('ai-knowledge')?.value.trim() || null,
@@ -17618,6 +17627,18 @@ document.addEventListener('DOMContentLoaded', () => {
 // updateAiDockVisibility() call in loadAIBoostSection().
 let aiDockMessages = [];
 let aiDockBusy = false;
+let __aiAssistantName = 'MarketSync';   // dealer-set internal assistant name
+
+// Rename the "Ask MarketSync" dock (launcher, header, greeting) to the dealer's
+// chosen assistant name. Falls back to "MarketSync" when blank.
+function applyAssistantName(name) {
+  __aiAssistantName = (name || '').trim() || 'MarketSync';
+  const label = document.getElementById('ai-dock-btn-label'); if (label) label.textContent = `Ask ${__aiAssistantName}`;
+  const title = document.getElementById('ai-dock-title'); if (title) title.textContent = `Ask ${__aiAssistantName}`;
+  const btn = document.getElementById('ai-dock-btn'); if (btn) btn.setAttribute('aria-label', `Ask ${__aiAssistantName}`);
+  if (!aiDockMessages.length) renderAiDockMessages();   // refresh the greeting if still on the intro
+}
+window.applyAssistantName = applyAssistantName;
 
 // ── Reports rail — fixed right-edge quick access to every lot-wide report ─────
 let __reportRailWired = false;
@@ -17718,7 +17739,7 @@ function renderAiDockMessages() {
       ? ['What should I focus on today?', 'Are we up or down vs last month?', "Who's my top salesperson?", 'Why did leads change this month?', 'Which cars should I discount or wholesale?']
       : ['What should I focus on today?', 'Which units are aging 60+ days?', 'How many leads need follow-up?', 'Anything priced off market?'];
     intro.innerHTML =
-      '<div class="mb-3 leading-relaxed">Hi 👋 I\'m MarketSync — I can see your whole store live: inventory, leads, sales, F&amp;I, commissions, reconditioning and today\'s tasks. Ask me anything.</div>' +
+      `<div class="mb-3 leading-relaxed">Hi 👋 I'm ${esc(__aiAssistantName)} — I can see your whole store live: inventory, leads, sales, F&amp;I, commissions, reconditioning and today's tasks. Ask me anything.</div>` +
       '<div class="flex flex-wrap gap-1.5">' +
       suggestions
         .map(s => `<button type="button" data-ai-suggest="${s}" class="text-xs bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 rounded-full px-3 py-1.5 text-slate-700 dark:text-slate-200 transition">${s}</button>`)

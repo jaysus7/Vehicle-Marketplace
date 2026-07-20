@@ -528,6 +528,11 @@
               <!-- AI persona / voice — steer how the assistant + customer chat speak -->
               <div class="pt-3 mt-1 border-t border-slate-100 dark:border-slate-800 space-y-3">
                 <div>
+                  <label class="block text-[11px] uppercase font-bold text-slate-400 mb-1 tracking-wider">Assistant name</label>
+                  <input id="ai-assistant-name" type="text" maxlength="60" placeholder="MarketSync" class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded px-2.5 py-1.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:border-indigo-500">
+                  <p class="text-[11px] text-slate-400 mt-1">What your team's AI assistant calls itself (the “Ask MarketSync” dock). Leave blank for “MarketSync”.</p>
+                </div>
+                <div>
                   <label class="block text-[11px] uppercase font-bold text-slate-400 mb-1 tracking-wider">Internal assistant style</label>
                   <textarea id="ai-internal-style" rows="2" placeholder="e.g. Talk like a sharp GM. Blunt, numbers first, no fluff. Use our lingo (units, gross, ups)." class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded px-2.5 py-1.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:border-indigo-500"></textarea>
                   <p class="text-[11px] text-slate-400 mt-1">How “Ask MarketSync” talks to your team.</p>
@@ -2728,7 +2733,7 @@
   <!-- ── AI Assistant dock — floating "Ask MarketSync" chat (paid; shown via JS) ── -->
   <button id="ai-dock-btn" type="button" aria-label="Ask MarketSync" class="hidden fixed bottom-5 right-5 z-40 flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-sm pl-4 pr-5 py-3 rounded-full shadow-lg shadow-indigo-600/40 transition">
     <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="1.9" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M8 10h8M8 14h5M21 12a8.5 8.5 0 0 1-12.4 7.55L3 21l1.5-5.4A8.5 8.5 0 1 1 21 12Z"/></svg>
-    Ask MarketSync
+    <span id="ai-dock-btn-label">Ask MarketSync</span>
   </button>
 
   <div id="ai-dock-panel" class="hidden fixed z-50 bottom-4 right-4 left-4 sm:left-auto sm:w-[390px] max-h-[calc(100dvh-2rem)] h-[560px] flex flex-col bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl overflow-hidden">
@@ -2738,7 +2743,7 @@
           <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="1.9" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M8 10h8M8 14h5M21 12a8.5 8.5 0 0 1-12.4 7.55L3 21l1.5-5.4A8.5 8.5 0 1 1 21 12Z"/></svg>
         </span>
         <div class="min-w-0">
-          <div class="text-sm font-bold text-slate-900 dark:text-white leading-tight">Ask MarketSync</div>
+          <div id="ai-dock-title" class="text-sm font-bold text-slate-900 dark:text-white leading-tight">Ask MarketSync</div>
           <div class="text-[11px] text-slate-500 dark:text-slate-400 leading-tight">Answers from your live lot data</div>
         </div>
       </div>
@@ -3103,7 +3108,7 @@
     </div>
   </div>
 
-  <script src="dashboard.js?v=20260720m"></script>
+  <script src="dashboard.js?v=20260720n"></script>
   <!-- Google Translate widget (per-rep dashboard translation) -->
   <script>
     window.googleTranslateElementInit = function () {
