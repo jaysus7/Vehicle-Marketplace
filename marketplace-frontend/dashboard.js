@@ -7206,7 +7206,10 @@ const REPORT_DEFS = [
   { key: 'leads', label: '📥 Leads & sources' },
   { key: 'reps', label: '🏆 Rep scorecard' },
   { key: 'appraisals', label: '🔑 Appraisals' },
+  { key: 'appointments', label: '📅 Appointments' },
   { key: 'service', label: '🔧 Service' },
+  { key: 'esign', label: '✍️ E-signatures' },
+  { key: 'marketing', label: '📣 Marketing ROI' },
   { key: 'activity', label: '📞 Activity' },
   { key: 'customers', label: '👥 Customers' },
 ];

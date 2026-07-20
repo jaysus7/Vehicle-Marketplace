@@ -1617,7 +1617,37 @@ ACV / wholesale take-in (what the dealer buys it for): ${cur} $${suggestedOffer.
     }
     const topMakes = Object.entries(makeCount).sort((a, b) => b[1] - a[1]).slice(0, 5)
 
+    // CRM + sales activity (this week vs last) — makes the briefing about the whole
+    // store, not just the lot: leads, deals, appointments/show-rate, e-sign, tasks.
+    const [{ data: crmLeads }, { data: crmDeals }, { data: crmAppts }, { data: crmEsign }, { data: crmTasksDone }] = await Promise.all([
+      supabaseAdmin.from('leads').select('created_at').eq('dealership_id', dealershipId).gte('created_at', ago14).limit(50000),
+      supabaseAdmin.from('deals').select('selling_price, deal_status, sold_at').eq('dealership_id', dealershipId).in('deal_status', ['sold', 'fni', 'delivered']).gte('sold_at', ago14).limit(20000),
+      supabaseAdmin.from('crm_tasks').select('due_at, done, created_at').eq('dealership_id', dealershipId).eq('type', 'appointment').gte('created_at', ago14).limit(50000),
+      supabaseAdmin.from('esign_requests').select('status, created_at').eq('dealership_id', dealershipId).gte('created_at', ago14).limit(20000),
+      supabaseAdmin.from('crm_tasks').select('done_at').eq('dealership_id', dealershipId).eq('done', true).gte('done_at', ago14).limit(50000),
+    ])
+    const inWk = (iso) => iso && iso >= ago7
+    const inPrev = (iso) => iso && iso >= ago14 && iso < ago7
+    const dealsWkRows = (crmDeals || []).filter(d => inWk(d.sold_at))
+    const pastApptsWk = (crmAppts || []).filter(a => a.due_at && new Date(a.due_at).getTime() < now && a.due_at >= ago7)
+    const apptShowed = pastApptsWk.filter(a => a.done).length
+    const crm = {
+      leadsWk: (crmLeads || []).filter(l => inWk(l.created_at)).length,
+      leadsPrev: (crmLeads || []).filter(l => inPrev(l.created_at)).length,
+      dealsWk: dealsWkRows.length,
+      dealsPrev: (crmDeals || []).filter(d => inPrev(d.sold_at)).length,
+      revenueWk: Math.round(dealsWkRows.reduce((s, d) => s + (Number(d.selling_price) || 0), 0)),
+      apptsWk: (crmAppts || []).filter(a => inWk(a.created_at)).length,
+      apptsPrev: (crmAppts || []).filter(a => inPrev(a.created_at)).length,
+      apptShowed,
+      apptShowRate: pastApptsWk.length ? Math.round((apptShowed / pastApptsWk.length) * 100) : null,
+      esignSentWk: (crmEsign || []).filter(e => inWk(e.created_at)).length,
+      esignSignedWk: (crmEsign || []).filter(e => inWk(e.created_at) && e.status === 'signed').length,
+      tasksDoneWk: (crmTasksDone || []).filter(t => inWk(t.done_at)).length,
+    }
+
     return {
+      crm,
       vehicles, vehicleById,
       totalUnits, withPhotos, noPhotos, prices, avgPrice, medianPrice,
       withDays, aging, slowMovers30, avgDays,
@@ -1651,7 +1681,7 @@ ACV / wholesale take-in (what the dealer buys it for): ${cur} $${suggestedOffer.
       prevPriceFlagCount,
       newArrivalsThisWeek, newArrivalsPrevWeek,
       soldThisWeekCount, soldPrevWeekCount,
-      conditionCount, priceBrackets, daysBrackets, topMakes
+      conditionCount, priceBrackets, daysBrackets, topMakes, crm
     } = d
 
     const dealerName = dealer.name || 'Your Dealership'
@@ -1904,7 +1934,7 @@ ACV / wholesale take-in (what the dealer buys it for): ${cur} $${suggestedOffer.
       prevPriceFlagCount,
       newArrivalsThisWeek, newArrivalsPrevWeek,
       soldThisWeekCount, soldPrevWeekCount,
-      conditionCount, priceBrackets, daysBrackets, topMakes
+      conditionCount, priceBrackets, daysBrackets, topMakes, crm
     } = d
 
     const dealerName = dealer.name || 'Your Dealership'
@@ -2031,6 +2061,17 @@ ACV / wholesale take-in (what the dealer buys it for): ${cur} $${suggestedOffer.
       ${statBox('Sold This Week', soldThisWeekCount, 'units sold last 7 days', soldThisWeekCount > 0 ? '#16a34a' : '#94a3b8', wkDelta(soldThisWeekCount, soldPrevWeekCount))}
       ${statBox('60d+ Aging', aging.length, `${agingPct}% of lot`, aging.length > 0 ? '#f59e0b' : '#16a34a')}
       ${statBox('Avg Ask Price', avgPrice ? '$' + avgPrice.toLocaleString() : '—', medianPrice ? `median $${medianPrice.toLocaleString()}` : '', '#334155')}
+    </tr></table>
+  </td></tr>
+
+  <!-- Row 4: sales & CRM this week -->
+  ${sec('Sales &amp; CRM — this week', 1)}
+  <tr><td style="padding:0">
+    <table width="100%" cellpadding="0" cellspacing="0" style="border-bottom:1px solid #e2e8f0"><tr>
+      ${statBox('New Leads', crm.leadsWk, 'captured this week', '#6366f1', wkDelta(crm.leadsWk, crm.leadsPrev))}
+      ${statBox('Deals Sold', crm.dealsWk, crm.revenueWk ? '$' + crm.revenueWk.toLocaleString() + ' revenue' : 'this week', crm.dealsWk > 0 ? '#16a34a' : '#94a3b8', wkDelta(crm.dealsWk, crm.dealsPrev))}
+      ${statBox('Appointments', crm.apptsWk, crm.apptShowRate != null ? `${crm.apptShowRate}% show-rate` : 'booked this week', '#0ea5e9', wkDelta(crm.apptsWk, crm.apptsPrev))}
+      ${statBox('Docs Signed', crm.esignSignedWk, `${crm.esignSentWk} sent this week`, crm.esignSignedWk > 0 ? '#16a34a' : '#94a3b8')}
     </tr></table>
   </td></tr>
 

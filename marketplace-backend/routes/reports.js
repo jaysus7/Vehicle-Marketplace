@@ -17,6 +17,7 @@
  */
 import { supabaseAdmin } from '../shared.js'
 import { requireAuth } from '../middleware.js'
+import { buildMarketingRoi } from './marketing.js'
 
 const isMgr = (req) => ['DEALER_ADMIN', 'OWNER', 'MANAGER'].includes(req.profile?.role)
 const WON = ['sold', 'fni', 'delivered']
@@ -289,5 +290,75 @@ export function registerReports(app) {
       },
       top_sources: Object.entries(sources).sort((a, b) => b[1] - a[1]).slice(0, 15).map(([source, count]) => ({ source, count })),
     })
+  })
+
+  // ── Appointments & show-rate ─────────────────────────────────────────────────
+  // Every appointment is a crm_tasks row (type='appointment') with a due_at. A
+  // "showed" appointment is one marked done; a past appointment left un-done is a
+  // no-show. Show-rate is computed only over appointments whose time has passed.
+  app.get('/reports/appointments', requireAuth, async (req, res) => {
+    if (!guard(req, res)) return
+    const did = req.dealershipId
+    const days = rangeDays(req.query); const startIso = new Date(Date.now() - days * 86400000).toISOString()
+    const { nameOf } = await roster(did)
+    const { data: appts } = await supabaseAdmin.from('crm_tasks')
+      .select('assigned_to, category, service_type, done, due_at, created_at, external_source')
+      .eq('dealership_id', did).eq('type', 'appointment').gte('created_at', startIso).limit(50000)
+    const rows = appts || []
+    const now = Date.now()
+    const past = rows.filter(r => r.due_at && new Date(r.due_at).getTime() < now)
+    const showed = past.filter(r => r.done)
+    const missed = past.filter(r => !r.done)
+    const upcoming = rows.filter(r => r.due_at && new Date(r.due_at).getTime() >= now && !r.done)
+    const kind = (r) => r.category === 'service' ? 'Service' : r.category === 'calendar' ? 'Calendar' : 'Sales'
+    const byKind = {}
+    for (const r of rows) { const k = kind(r); byKind[k] = byKind[k] || { booked: 0, showed: 0, missed: 0 }; byKind[k].booked++; if (r.due_at && new Date(r.due_at).getTime() < now) { if (r.done) byKind[k].showed++; else byKind[k].missed++ } }
+    const byRep = {}
+    for (const r of rows) { const id = r.assigned_to || 'unassigned'; byRep[id] = byRep[id] || { booked: 0, showed: 0, missed: 0 }; byRep[id].booked++; if (r.due_at && new Date(r.due_at).getTime() < now) { if (r.done) byRep[id].showed++; else byRep[id].missed++ } }
+    res.json({
+      ok: true, range_days: days,
+      summary: {
+        booked: rows.length, showed: showed.length, no_show: missed.length, upcoming: upcoming.length,
+        show_rate_pct: pct(showed.length, showed.length + missed.length),
+        synced_from_calendar: rows.filter(r => r.external_source).length,
+      },
+      by_kind: Object.entries(byKind).map(([type, v]) => ({ type, booked: v.booked, showed: v.showed, no_show: v.missed, show_rate_pct: pct(v.showed, v.showed + v.missed) })),
+      by_rep: Object.entries(byRep).sort((a, b) => b[1].booked - a[1].booked).map(([id, v]) => ({ rep: id === 'unassigned' ? 'Unassigned' : nameOf(id), booked: v.booked, showed: v.showed, no_show: v.missed, show_rate_pct: pct(v.showed, v.showed + v.missed) })),
+    })
+  })
+
+  // ── E-signature completion ───────────────────────────────────────────────────
+  app.get('/reports/esign', requireAuth, async (req, res) => {
+    if (!guard(req, res)) return
+    const did = req.dealershipId
+    const days = rangeDays(req.query); const startIso = new Date(Date.now() - days * 86400000).toISOString()
+    const { data: reqs } = await supabaseAdmin.from('esign_requests')
+      .select('doc_type, doc_title, status, created_at, signed_at').eq('dealership_id', did).gte('created_at', startIso).limit(20000)
+    const rows = reqs || []
+    const count = (s) => rows.filter(r => r.status === s).length
+    const signed = rows.filter(r => r.status === 'signed' && r.signed_at)
+    // Median hours from send to signature.
+    const hrs = signed.map(r => (new Date(r.signed_at).getTime() - new Date(r.created_at).getTime()) / 3600000).filter(h => h >= 0).sort((a, b) => a - b)
+    const medianHrs = hrs.length ? Math.round(hrs[Math.floor(hrs.length / 2)] * 10) / 10 : null
+    const byType = {}
+    for (const r of rows) { const k = (r.doc_type || 'document'); byType[k] = byType[k] || { sent: 0, signed: 0 }; byType[k].sent++; if (r.status === 'signed') byType[k].signed++ }
+    res.json({
+      ok: true, range_days: days,
+      summary: {
+        sent: rows.length, viewed: count('viewed'), signed: signed.length, declined: count('declined'),
+        awaiting: rows.filter(r => ['sent', 'viewed'].includes(r.status)).length,
+        completion_pct: pct(signed.length, rows.length), median_hours_to_sign: medianHrs,
+      },
+      by_type: Object.entries(byType).sort((a, b) => b[1].sent - a[1].sent).map(([type, v]) => ({ type, sent: v.sent, signed: v.signed, completion_pct: pct(v.signed, v.sent) })),
+    })
+  })
+
+  // ── Marketing ROI ────────────────────────────────────────────────────────────
+  // Wraps the shared ROI model so it lives in the Reports hub alongside the rest.
+  app.get('/reports/marketing', requireAuth, async (req, res) => {
+    if (!guard(req, res)) return
+    const days = rangeDays(req.query)
+    try { const roi = await buildMarketingRoi(req.dealershipId, { days }); res.json({ ok: true, range_days: days, ...roi }) }
+    catch (e) { res.status(500).json({ error: e.message || 'Could not build the marketing report' }) }
   })
 }
