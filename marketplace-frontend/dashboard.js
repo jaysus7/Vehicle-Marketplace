@@ -326,7 +326,7 @@ let profileContext = null;
 // html[data-dash-mode] attribute). Persisted per-browser.
 let __dashMode = localStorage.getItem('ms_dash_mode') === 'marketsync' ? 'marketsync' : 'demo';
 // The pages that remain in MarketSync mode (everything else is vehicle-only).
-const MS_ALLOWED_PAGES = new Set(['insights', 'crm', 'tasks', 'appointments', 'leads', 'fni', 'reports', 'profile']);
+const MS_ALLOWED_PAGES = new Set(['insights', 'crm', 'tasks', 'appointments', 'leads', 'fni', 'reports', 'profile', 'accounting', 'commissions']);
 // In MarketSync mode the Reports hub shows only the SaaS-relevant reports (no
 // vehicle inventory, F&I, appraisals or service — MarketSync sells software).
 const MS_REPORT_KEYS = new Set(['leads', 'marketing', 'appointments', 'activity', 'customers', 'reps']);
@@ -937,8 +937,11 @@ function switchPage(pageId) {
     pageId = 'automation-builder';
   }
 
+  // Accounting has one container but each nav leaf (acct-insights, acct-tax, …) is
+  // its own "page" — map those to the shared accounting container.
+  const contentKey = (typeof pageId === 'string' && pageId.startsWith('acct-')) ? 'accounting' : pageId;
   document.querySelectorAll('[data-page-content]').forEach(el => {
-    el.classList.toggle('hidden', el.dataset.pageContent !== pageId);
+    el.classList.toggle('hidden', el.dataset.pageContent !== contentKey);
   });
   document.querySelectorAll('#dashboard-nav .nav-item, #nav-vin-sticker, #nav-inv-intel, #nav-ai-vision').forEach(btn => {
     let active = btn.id === 'nav-inv-intel' ? pageId === 'inv-intel'
@@ -993,7 +996,7 @@ function switchPage(pageId) {
   if (pageId === 'ai-vision') loadAiVisionPage();
   if (pageId === 'reports') loadReports();
   if (pageId === 'commissions') loadCommissionsPage();
-  if (pageId === 'accounting') loadAccountingPage();
+  if (contentKey === 'accounting') loadAccountingPage(pageId.startsWith('acct-') ? pageId.slice(5) : undefined);
   if (pageId === 'desk') loadDeskDeal();
   if (pageId === 'crm') loadCrmPage();
   if (pageId === 'leads') loadLeadsPage();
