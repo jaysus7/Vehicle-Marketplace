@@ -573,6 +573,56 @@ Guidelines: under 90 words; answer their question if they asked one; confirm the
     }
   })
 
+  // ── Scan a receipt → structured expense fields ─────────────────────────────
+  // Accounting snaps a photo of a receipt; AI Vision reads it and returns the
+  // fields to pre-fill an expense (vendor, date, total, tax, a category guess).
+  // Nothing is stored here — the user reviews and saves through the normal flow.
+  app.post('/accounting/scan-receipt', requireAuth, async (req, res) => {
+    if (!req.dealershipId) return res.status(400).json({ error: 'No dealership' })
+    if (!['DEALER_ADMIN', 'OWNER', 'MANAGER', 'ACCOUNTING'].includes(req.profile?.role)) return res.status(403).json({ error: 'Manager access required' })
+    const isOwner = (req.user.email || '').toLowerCase() === OWNER_EMAIL
+    const { data: dealer } = await supabaseAdmin.from('dealerships').select('ai_boost_active').eq('id', req.dealershipId).maybeSingle()
+    if (!isOwner && !dealer?.ai_boost_active) return res.status(403).json({ error: 'Receipt scanning needs AI Boost' })
+    if (!process.env.ANTHROPIC_API_KEY) return res.status(503).json({ error: 'AI features not configured' })
+    if (!(await aiAllowed(req.dealershipId, isOwner))) return res.status(429).json({ error: 'Monthly AI limit reached — resets next month.' })
+    const img = String(req.body?.image || '')
+    const m = img.match(/^data:(image\/(png|jpe?g|webp));base64,(.+)$/)
+    if (!m) return res.status(400).json({ error: 'Send the receipt photo as a base64 data URL.' })
+    const media_type = m[1] === 'image/jpg' ? 'image/jpeg' : m[1]
+    const data = m[3]
+    if (data.length > 8_000_000) return res.status(400).json({ error: 'Image too large — retake at normal quality.' })
+    // Optional: the dealer's expense-account names, so the AI can pick the best fit.
+    const categories = Array.isArray(req.body?.categories)
+      ? req.body.categories.map(c => String(c || '').slice(0, 60)).filter(Boolean).slice(0, 40) : []
+    const catLine = categories.length
+      ? `Choose the single best "category" from THIS list (copy it exactly), or null if none clearly fit: ${JSON.stringify(categories)}.`
+      : `Give a short "category" guess (e.g. "Fuel", "Office supplies", "Advertising", "Meals", "Repairs", "Parts", "Utilities") or null.`
+    const prompt = `You are reading a photo of a purchase RECEIPT to help a car dealership record an expense. Extract ONLY what is clearly legible. Return STRICT JSON with these keys (use null when not visible): vendor (the store/merchant name), date (YYYY-MM-DD), subtotal (number, pre-tax), tax (number, total tax), total (number, grand total actually paid). ${catLine} Numbers must be plain (no currency symbols or commas). Do not guess or invent. Return ONLY the JSON object, no prose.`
+    try {
+      const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
+      const msg = await Promise.race([
+        anthropic.messages.create({ model: 'claude-haiku-4-5-20251001', max_tokens: 400, messages: [{ role: 'user', content: [
+          { type: 'image', source: { type: 'base64', media_type, data } },
+          { type: 'text', text: prompt },
+        ] }] }),
+        new Promise((_, rej) => setTimeout(() => rej(new Error('ai timeout')), 30000)),
+      ])
+      recordUsage(req.dealershipId, { ai: 1 })
+      let txt = (msg?.content?.[0]?.text || '').trim().replace(/^```json\s*|\s*```$/g, '')
+      let f
+      try { f = JSON.parse(txt) } catch { return res.status(422).json({ error: 'Could not read the receipt clearly — try a flatter, well-lit photo.' }) }
+      const num = (v) => { const n = parseFloat(String(v ?? '').replace(/[^0-9.\-]/g, '')); return Number.isFinite(n) ? n : null }
+      res.json({ ok: true, fields: {
+        vendor: f.vendor ? String(f.vendor).slice(0, 120) : null,
+        date: /^\d{4}-\d{2}-\d{2}$/.test(f.date || '') ? f.date : null,
+        subtotal: num(f.subtotal), tax: num(f.tax), total: num(f.total),
+        category: f.category ? String(f.category).slice(0, 60) : null,
+      } })
+    } catch (e) {
+      res.status(500).json({ error: e.message === 'ai timeout' ? 'Reading the receipt took too long — try again.' : 'Could not read the receipt.' })
+    }
+  })
+
   // ── AI copy for the website builder (✨ per-section actions) ────────────────
   // task: rewrite | improve | expand | shorten | generate | seo | faq
   // kind: headline | subheadline | cta | about | faq | seo | text

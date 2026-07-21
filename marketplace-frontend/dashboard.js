@@ -8252,7 +8252,11 @@ async function acctLoadExpenses() {
     body.innerHTML = `
       <div class="flex items-center gap-2 mb-3"><input type="month" value="${acctMonth()}" onchange="__acctState.date=this.value+'-01'; acctLoadExpenses()" class="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-1.5 text-sm"><span class="text-sm text-slate-500">Total: <b>${commMoney(total)}</b></span></div>
       <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4 mb-4">
-        <div class="text-sm font-bold mb-2">Add an expense</div>
+        <div class="flex items-center justify-between gap-2 mb-2">
+          <div class="text-sm font-bold">Add an expense</div>
+          <input id="acct-receipt-file" type="file" accept="image/*" capture="environment" class="hidden" onchange="acctScanReceipt(this.files[0])">
+          <button onclick="document.getElementById('acct-receipt-file').click()" class="flex items-center gap-1.5 text-xs font-bold bg-violet-100 dark:bg-violet-950/40 text-violet-700 dark:text-violet-300 hover:bg-violet-200 dark:hover:bg-violet-900/50 px-3 py-1.5 rounded-lg transition"><svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6.827 6.175A2.31 2.31 0 015.186 7.23c-.38.054-.757.112-1.134.175C2.999 7.58 2.25 8.507 2.25 9.574V18a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9.574c0-1.067-.75-1.994-1.802-2.169a47.865 47.865 0 00-1.134-.175 2.31 2.31 0 01-1.64-1.055l-.822-1.316a2.192 2.192 0 00-1.736-1.039 48.774 48.774 0 00-5.232 0 2.192 2.192 0 00-1.736 1.039l-.821 1.316z"/><path stroke-linecap="round" stroke-linejoin="round" d="M16.5 12.75a4.5 4.5 0 11-9 0 4.5 4.5 0 019 0z"/></svg>Scan receipt</button>
+        </div>
         <div class="grid sm:grid-cols-5 gap-2 items-end">
           <div><label class="block text-[11px] font-semibold text-slate-500 mb-1">Date</label><input id="acct-x-date" type="date" value="${acctToday()}" class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-2 text-sm"></div>
           <div><label class="block text-[11px] font-semibold text-slate-500 mb-1">Account</label><select id="acct-x-account" class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-2 text-sm">${expenseAccts.map(a => `<option value="${a.id}">${esc(a.name)}</option>`).join('')}</select></div>
@@ -8273,7 +8277,34 @@ async function acctAddExpense(btn) {
   catch (e) { btn.disabled = false; showToast(e.message || 'Could not add', 'error'); }
 }
 async function acctDelEntry2(id) { if (!confirm('Delete this expense?')) return; try { await apiSendJson(`/accounting/entries/${id}`, 'DELETE'); acctLoadExpenses(); } catch (e) { showToast(e.message, 'error'); } }
-window.acctAddExpense = acctAddExpense; window.acctDelEntry2 = acctDelEntry2;
+// Snap a receipt → AI reads it → pre-fills the expense form for a quick review + Add.
+async function acctScanReceipt(file) {
+  if (!file) return;
+  const fileInput = document.getElementById('acct-receipt-file');
+  if (file.size > 12 * 1024 * 1024) { showToast('That image is too large — try again at normal quality.', 'error'); if (fileInput) fileInput.value = ''; return; }
+  showToast('Reading receipt…', 'info');
+  try {
+    const dataUrl = await new Promise((resolve, reject) => { const r = new FileReader(); r.onload = () => resolve(r.result); r.onerror = reject; r.readAsDataURL(file); });
+    const categories = (__acctState.accounts || []).filter(a => a.category === 'expense' && a.active).map(a => a.name);
+    const d = await apiSendJson('/accounting/scan-receipt', 'POST', { image: dataUrl, categories }, { timeoutMs: 40000 });
+    const f = d.fields || {};
+    const set = (id, val) => { const el = document.getElementById(id); if (el && val != null && val !== '') el.value = val; };
+    if (f.date) set('acct-x-date', f.date);
+    if (f.total != null) set('acct-x-amount', f.total);
+    const memo = [f.vendor, f.category && f.category !== f.vendor ? f.category : null].filter(Boolean).join(' · ');
+    if (memo) set('acct-x-desc', memo);
+    // Best-effort: pick the expense account whose name matches the AI's category.
+    if (f.category) {
+      const sel = document.getElementById('acct-x-account');
+      if (sel) { const opt = [...sel.options].find(o => o.textContent.trim().toLowerCase() === f.category.toLowerCase()) || [...sel.options].find(o => o.textContent.trim().toLowerCase().includes(f.category.toLowerCase())); if (opt) sel.value = opt.value; }
+    }
+    document.getElementById('acct-x-amount')?.focus();
+    showToast(f.total != null ? `Read ${f.vendor || 'receipt'} — review and Add ✓` : 'Read the receipt — please check the amount', 'success');
+  } catch (e) {
+    showToast(e.message || 'Could not read the receipt', 'error');
+  } finally { if (fileInput) fileInput.value = ''; }
+}
+window.acctAddExpense = acctAddExpense; window.acctDelEntry2 = acctDelEntry2; window.acctScanReceipt = acctScanReceipt;
 
 // Bank account — link a bank via Plaid; transactions feed the daily reconciliation.
 function plaidEnsureScript() {
