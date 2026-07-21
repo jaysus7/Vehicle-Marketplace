@@ -417,7 +417,10 @@ async function renderMarketsyncInsights() {
     <div class="flex items-center justify-between gap-3 flex-wrap">
       <div><h1 class="text-2xl font-black text-slate-900 dark:text-white">MarketSync</h1>
         <p class="text-sm text-slate-500 dark:text-slate-400">Leads from your website + chatbot, and what they're worth across the five price points.</p></div>
-      <button onclick="marketsyncCleanup(this)" class="text-xs font-bold text-violet-600 dark:text-violet-400 hover:text-violet-500 border border-violet-200 dark:border-violet-900 rounded-lg px-3 py-2">Remove sample leads</button>
+      <div class="flex items-center gap-2">
+        <a href="/marketsync-guide.html" target="_blank" rel="noopener" class="text-xs font-bold text-violet-600 dark:text-violet-400 hover:text-violet-500 border border-violet-200 dark:border-violet-900 rounded-lg px-3 py-2">📘 Owner guide</a>
+        <button onclick="marketsyncCleanup(this)" class="text-xs font-bold text-violet-600 dark:text-violet-400 hover:text-violet-500 border border-violet-200 dark:border-violet-900 rounded-lg px-3 py-2">Remove sample leads</button>
+      </div>
     </div>
     <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mt-4">
       ${tile('Total leads', total)}

@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="robots" content="noindex, nofollow">
+  <title>MarketSync Owner Guide</title>
+  <link rel="icon" type="image/png" href="/favicon.png">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>tailwind = { config: { darkMode: 'media' } }</script>
+  <style>
+    html{scroll-behavior:smooth;scroll-padding-top:80px}
+    .mock{border:1px solid #e2e8f0;border-radius:14px;overflow:hidden;background:#fff;box-shadow:0 10px 30px -18px rgba(2,6,23,.4);margin:1.1rem 0}
+    .mk-bar{display:flex;gap:6px;align-items:center;padding:8px 12px;background:#f1f5f9;border-bottom:1px solid #e2e8f0}
+    .mk-bar i{width:10px;height:10px;border-radius:50%;background:#cbd5e1;display:inline-block}
+    .mk-bar b{margin-left:8px;font-size:11px;font-weight:600;color:#94a3b8}
+    .mk-in{padding:14px}
+    .mk-row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+    .mk-tile{border:1px solid #e2e8f0;border-radius:10px;padding:10px 12px;background:#f8fafc;text-align:center;flex:1;min-width:88px}
+    .mk-tile .n{font-size:20px;font-weight:800;color:#7c3aed;line-height:1.1}
+    .mk-tile .l{font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:#94a3b8;font-weight:700;margin-top:2px}
+    .mk-card{border:1px solid #e2e8f0;border-radius:10px;padding:10px 12px;background:#fff}
+    .mk-pill{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;padding:2px 8px;border-radius:999px;background:#ede9fe;color:#6d28d9}
+    .mk-pill.green{background:#d1fae5;color:#047857}
+    .mk-btn{font-size:12px;font-weight:700;padding:6px 12px;border-radius:8px;background:#ede9fe;color:#6d28d9;border:1px solid #ddd6fe}
+    .mk-btn.p{background:#7c3aed;color:#fff;border-color:#7c3aed}
+    .mk-btn.g{background:#059669;color:#fff;border-color:#059669}
+    .mk-btn.gray{background:#f1f5f9;color:#475569;border-color:#e2e8f0}
+    .mk-mut{color:#94a3b8;font-size:12px}
+    .cap{font-size:12px;font-style:italic;color:#94a3b8;margin:-.4rem 0 1.3rem;padding-left:2px}
+    @media (prefers-color-scheme:dark){
+      .mock{border-color:#26233f;background:#141024;box-shadow:0 14px 34px -18px rgba(0,0,0,.7)}
+      .mk-bar{background:#1c1836;border-color:#26233f}.mk-bar i{background:#3a3557}
+      .mk-tile{border-color:#2a2648;background:#0e0b1c}.mk-tile .n{color:#a78bfa}
+      .mk-card{border-color:#2a2648;background:#1c1836}
+      .mk-pill{background:#2a1f4d;color:#c4b5fd}.mk-pill.green{background:#0f2a1e;color:#4ade80}
+      .mk-btn{background:#2a1f4d;color:#c4b5fd;border-color:#3b2f66}.mk-btn.gray{background:#1c1836;color:#9fb0cc;border-color:#2a2648}
+    }
+  </style>
+</head>
+<body class="bg-slate-50 dark:bg-[#0c0a17] text-slate-800 dark:text-slate-200 antialiased">
+  <nav class="sticky top-0 z-30 border-b border-slate-200 dark:border-violet-950/60 bg-slate-50/85 dark:bg-[#0c0a17]/85 backdrop-blur">
+    <div class="max-w-3xl mx-auto px-6 py-4 flex items-center justify-between">
+      <span class="font-black text-lg text-slate-900 dark:text-white">Market<span class="text-violet-600 dark:text-violet-400">Sync</span> <span class="text-sm font-bold text-slate-400">Owner guide</span></span>
+      <a href="dashboard.html" class="text-sm font-bold text-violet-600 dark:text-violet-400 hover:underline">← Back to dashboard</a>
+    </div>
+  </nav>
+
+  <main class="max-w-3xl mx-auto px-6 py-10 space-y-10">
+    <header>
+      <p class="text-xs font-black uppercase tracking-widest text-violet-600 dark:text-violet-400 mb-2">Private · owner only</p>
+      <h1 class="text-3xl sm:text-4xl font-black tracking-tight text-slate-900 dark:text-white leading-tight">Running MarketSync — your owner playbook</h1>
+      <p class="text-slate-600 dark:text-gray-400 mt-3">This is your back office: the secret workspace switch, your SaaS pipeline and revenue, and the affiliate program. Dealers never see any of this.</p>
+    </header>
+
+    <!-- 1 -->
+    <section>
+      <h2 class="text-2xl font-black text-slate-900 dark:text-white mb-2"><span class="text-violet-500">1.</span> The three dashboards</h2>
+      <p class="text-slate-600 dark:text-gray-300 mb-4">MarketSync has three separate front doors, each for a different person. Knowing which is which is the whole foundation.</p>
+      <div class="grid sm:grid-cols-3 gap-3">
+        <div class="rounded-xl border border-slate-200 dark:border-slate-800 p-4"><div class="text-2xl">🚗</div><div class="font-bold text-slate-900 dark:text-white mt-1">Dealer</div><p class="text-sm text-slate-600 dark:text-gray-300">What every dealership customer uses. Covered in the dealer guide.</p></div>
+        <div class="rounded-xl border border-violet-300 dark:border-violet-800 p-4 bg-violet-50 dark:bg-violet-950/30"><div class="text-2xl">🟣</div><div class="font-bold text-slate-900 dark:text-white mt-1">MarketSync (you)</div><p class="text-sm text-slate-600 dark:text-gray-300">Your private view — SaaS leads, revenue, affiliate management.</p></div>
+        <div class="rounded-xl border border-slate-200 dark:border-slate-800 p-4"><div class="text-2xl">🤝</div><div class="font-bold text-slate-900 dark:text-white mt-1">Affiliate</div><p class="text-sm text-slate-600 dark:text-gray-300">A separate login &amp; site for your referral partners.</p></div>
+      </div>
+    </section>
+
+    <!-- 2 -->
+    <section>
+      <h2 class="text-2xl font-black text-slate-900 dark:text-white mb-2"><span class="text-violet-500">2.</span> Your workspace switch</h2>
+      <ol class="space-y-3 text-slate-700 dark:text-gray-300">
+        <li class="flex gap-3"><span class="flex-shrink-0 w-6 h-6 rounded-full bg-violet-600 text-white text-xs font-bold flex items-center justify-center">1</span><span class="flex-1">At the very top of your left menu (only you see it) is the switch: <b>🚗 MarketSync Automotive</b> (demo) and <b>🟣 MarketSync</b> (your business).</span></li>
+        <li class="flex gap-3"><span class="flex-shrink-0 w-6 h-6 rounded-full bg-violet-600 text-white text-xs font-bold flex items-center justify-center">2</span><span class="flex-1"><b>🚗 Automotive</b> is a demo dealership with sample data — perfect for demos and for filming your training videos. Use <b>Reset demo data</b> to start fresh.</span></li>
+        <li class="flex gap-3"><span class="flex-shrink-0 w-6 h-6 rounded-full bg-violet-600 text-white text-xs font-bold flex items-center justify-center">3</span><span class="flex-1"><b>🟣 MarketSync</b> turns the app purple and trims it to your SaaS pages — leads, revenue, accounting and affiliates.</span></li>
+      </ol>
+      <div class="mock">
+        <div class="mk-bar"><i></i><i></i><i></i><b>Left menu · workspace switch</b></div>
+        <div class="mk-in mk-row"><span class="mk-btn gray">🚗 MarketSync Automotive</span><span class="mk-btn p">🟣 MarketSync</span><span class="mk-btn gray">↻ Reset demo data</span></div>
+      </div>
+      <p class="cap">🖼️ Film the dealer courses in demo mode so no real data shows; run your business in MarketSync mode.</p>
+    </section>
+
+    <!-- 3 -->
+    <section>
+      <h2 class="text-2xl font-black text-slate-900 dark:text-white mb-2"><span class="text-violet-500">3.</span> MarketSync insights — your pipeline</h2>
+      <p class="text-slate-600 dark:text-gray-300 mb-3">In 🟣 mode, the Dashboard shows your SaaS leads and what they're worth.</p>
+      <div class="mock">
+        <div class="mk-bar"><i></i><i></i><i></i><b>MarketSync · Insights</b></div>
+        <div class="mk-in">
+          <div class="mk-row" style="margin-bottom:10px"><div class="mk-tile"><div class="n">48</div><div class="l">Total leads</div></div><div class="mk-tile"><div class="n">31</div><div class="l">Open</div></div><div class="mk-tile"><div class="n">6</div><div class="l">Won</div></div><div class="mk-tile"><div class="n">12</div><div class="l">New · 30d</div></div></div>
+          <div class="mk-card"><b class="text-sm text-slate-900 dark:text-white">Revenue potential</b><div class="mk-mut" style="margin-top:4px">31 open leads × price points → monthly &amp; annual run-rate</div></div>
+        </div>
+      </div>
+      <p class="cap">🖼️ Your growth math on one screen. &ldquo;Remove sample leads&rdquo; clears the demo data once you're live.</p>
+    </section>
+
+    <!-- 4 -->
+    <section>
+      <h2 class="text-2xl font-black text-slate-900 dark:text-white mb-2"><span class="text-violet-500">4.</span> Your financials — in Accounting</h2>
+      <ol class="space-y-3 text-slate-700 dark:text-gray-300">
+        <li class="flex gap-3"><span class="flex-shrink-0 w-6 h-6 rounded-full bg-violet-600 text-white text-xs font-bold flex items-center justify-center">1</span><span class="flex-1">When a dealer pays their subscription, that <b>SaaS revenue posts to your books automatically</b> (the same accounting engine dealers use, pointed at your business).</span></li>
+        <li class="flex gap-3"><span class="flex-shrink-0 w-6 h-6 rounded-full bg-violet-600 text-white text-xs font-bold flex items-center justify-center">2</span><span class="flex-1">When you pay an affiliate, it's recorded as an <b>affiliate-expense</b> line — so your profit is always accurate.</span></li>
+        <li class="flex gap-3"><span class="flex-shrink-0 w-6 h-6 rounded-full bg-violet-600 text-white text-xs font-bold flex items-center justify-center">3</span><span class="flex-1">Reconciliation, tax, reports and CSV export all work the same — for your software company.</span></li>
+      </ol>
+    </section>
+
+    <!-- 5 -->
+    <section>
+      <h2 class="text-2xl font-black text-slate-900 dark:text-white mb-2"><span class="text-violet-500">5.</span> The affiliate admin</h2>
+      <p class="text-slate-600 dark:text-gray-300 mb-3">In 🟣 mode, open <b>Affiliates</b> to run the program.</p>
+      <ol class="space-y-3 text-slate-700 dark:text-gray-300">
+        <li class="flex gap-3"><span class="flex-shrink-0 w-6 h-6 rounded-full bg-emerald-600 text-white text-xs font-bold flex items-center justify-center">1</span><span class="flex-1">See totals — affiliates, referrals, and total paid out.</span></li>
+        <li class="flex gap-3"><span class="flex-shrink-0 w-6 h-6 rounded-full bg-emerald-600 text-white text-xs font-bold flex items-center justify-center">2</span><span class="flex-1">The table shows each affiliate's referrals (and how many are paying), rate (8% · life), pending and paid amounts, and status.</span></li>
+        <li class="flex gap-3"><span class="flex-shrink-0 w-6 h-6 rounded-full bg-emerald-600 text-white text-xs font-bold flex items-center justify-center">3</span><span class="flex-1"><b>Edit</b> an affiliate to change their rate/months/status (give a top partner a custom deal). <b>Pay out</b> marks pending commission paid and books the expense.</span></li>
+      </ol>
+      <div class="mock">
+        <div class="mk-bar"><i></i><i></i><i></i><b>MarketSync · Affiliates</b></div>
+        <div class="mk-in">
+          <div class="mk-row" style="margin-bottom:10px"><div class="mk-tile"><div class="n">9</div><div class="l">Affiliates</div></div><div class="mk-tile"><div class="n">23</div><div class="l">Referrals</div></div><div class="mk-tile"><div class="n">$4,120</div><div class="l">Paid out</div></div></div>
+          <div class="mk-card"><div class="mk-row" style="justify-content:space-between"><span>Chris D. · 5 refs / 3 paying · 8% · life</span><span class="mk-row"><span class="mk-pill green">$310 pending</span><span class="mk-btn g">Pay out</span><span class="mk-btn gray">Edit</span></span></div></div>
+        </div>
+      </div>
+      <p class="cap">🖼️ Approve, tune and pay partners from one screen — payouts book straight into your accounting.</p>
+    </section>
+
+    <!-- 6 -->
+    <section>
+      <h2 class="text-2xl font-black text-slate-900 dark:text-white mb-2"><span class="text-violet-500">6.</span> Grow the program</h2>
+      <ul class="space-y-2 text-slate-700 dark:text-gray-300 list-disc pl-5">
+        <li>&ldquo;<b>Become an affiliate</b>&rdquo; sits in the footer of every marketing page → the public affiliates page.</li>
+        <li>Add the hook to the end of demos: &ldquo;Know other dealers? Earn <b>8% for life</b>.&rdquo;</li>
+        <li>Consultants, trainers and vendors who already talk to dealers make the best affiliates — recurring-for-life is an easy yes.</li>
+      </ul>
+      <div class="rounded-xl bg-violet-50 dark:bg-violet-950/30 border border-violet-200 dark:border-violet-900/50 px-4 py-3 text-sm text-violet-800 dark:text-violet-200 mt-4">You run your entire software business — leads, revenue, and a pay-for-performance affiliate army — inside the very product you sell.</div>
+    </section>
+
+    <p class="text-xs text-slate-400 pt-4 border-t border-slate-200 dark:border-slate-800">Private owner guide · not indexed · pairs with your 8-part video course series.</p>
+  </main>
+</body>
+</html>
