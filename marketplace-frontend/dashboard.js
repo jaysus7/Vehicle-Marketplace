@@ -6688,7 +6688,7 @@ function renderIntegrations(data) {
         ${CATEGORY_BLURB[cat] ? `<p class="text-[11px] text-slate-400 dark:text-slate-500 mt-0.5">${esc(CATEGORY_BLURB[cat])}</p>` : ''}
       </div>
       <div class="space-y-3">${byCat[cat].slice().sort((a, b) => rank(a) - rank(b)).map(p => {
-        const card = p.provider === 'webhook' ? webhookCard(p, events) : p.provider === 'twilio' ? twilioCard(p) : p.provider === 'google_business' ? googleBusinessCard(p) : (p.provider === 'square_deposits' && p.live) ? squareCard(p) : (p.deposits && p.live) ? depositsCard(p) : (p.oauth && p.live) ? oauthCard(p) : (p.manual && Array.isArray(p.fields)) ? fniCredsCard(p) : providerCard(p);
+        const card = p.provider === 'webhook' ? webhookCard(p, events) : p.provider === 'twilio' ? twilioCard(p) : p.provider === 'google_business' ? googleBusinessCard(p) : p.provider === 'square_deposits' ? squareCard(p) : (p.deposits && p.live) ? depositsCard(p) : (p.oauth && p.live) ? oauthCard(p) : (p.manual && Array.isArray(p.fields)) ? fniCredsCard(p) : providerCard(p);
         // Grey out anything not set up yet; full colour on hover so it's still usable.
         return isIntegrationConnected(p) ? card : `<div class="opacity-60 hover:opacity-100 transition-opacity">${card}</div>`;
       }).join('')}</div>
@@ -6861,7 +6861,7 @@ async function loadCalendarSyncCard() {
     }
     const sub = p.connected
       ? `Connected${p.account ? ' · ' + esc(p.account) : ''}${p.last_synced_at ? ' · synced ' + new Date(p.last_synced_at).toLocaleDateString('en-US') : ''}${p.last_error ? ' · <span class="text-rose-500">' + esc(p.last_error.slice(0, 60)) + '</span>' : ''}`
-      : p.configured ? 'Two-way sync for your appointments' : 'Ask your admin to finish the one-time server setup';
+      : p.configured ? 'Two-way sync for your appointments' : 'Built and ready — switches on once the one-time server keys are set.';
     return `<div class="flex items-center gap-3 py-2.5 border-b border-slate-100 dark:border-slate-800 last:border-0">
       <div class="w-9 h-9 rounded-lg bg-blue-100 dark:bg-blue-950/40 flex items-center justify-center text-lg shrink-0">${icon[p.provider] || '📅'}</div>
       <div class="min-w-0 flex-1"><div class="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">${esc(p.label)}${p.connected ? '<span class="text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300">Connected</span>' : ''}</div>
@@ -7352,18 +7352,25 @@ window.toggleAccountingAutosync = toggleAccountingAutosync;
 function squareCard(p) {
   const connected = p.configured && p.enabled;
   const cfg = p.lender_code_map || {};
+  // p.live = MarketSync's Square app keys are set on the server. Until they are,
+  // there's nothing for a dealer to do — show an honest "ready, pending setup"
+  // state instead of a misleading Connect button or "Coming soon" pill.
+  const pendingPill = '<span class="text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500">Setup pending</span>';
+  const controls = !p.live
+    ? `<p class="text-[11px] text-slate-400 mt-2">Built and ready — Square switches on once MarketSync's Square keys are set on the server. Nothing to do here yet.</p>`
+    : `<div class="flex items-center gap-2 mt-3">
+        ${connected
+          ? `<button onclick="disconnectSquare('${esc(p.label)}', this)" class="ml-auto text-xs text-rose-500 hover:text-rose-400 font-semibold">Disconnect</button>`
+          : `<button onclick="connectSquare(this)" class="bg-slate-900 dark:bg-white dark:text-slate-900 text-white text-sm font-bold px-4 py-2 rounded-lg transition hover:opacity-90">Connect Square</button>`}
+      </div>`;
   return `<div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-4">
     <div class="flex items-start gap-3">
       ${integrationIcon(p.provider)}
       <div class="min-w-0 flex-1">
-        <div class="flex items-center gap-2 flex-wrap"><span class="font-bold text-sm text-slate-900 dark:text-white">${esc(p.label)}</span>${statusPill(p)}</div>
+        <div class="flex items-center gap-2 flex-wrap"><span class="font-bold text-sm text-slate-900 dark:text-white">${esc(p.label)}</span>${p.live ? statusPill(p) : pendingPill}</div>
         <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">${esc(p.description)}</p>
         ${connected && cfg.connected_at ? `<p class="text-[11px] text-slate-400 mt-1">Connected ${new Date(cfg.connected_at).toLocaleDateString()}${cfg.location_name ? ' · ' + esc(cfg.location_name) : ''}.</p>` : ''}
-        <div class="flex items-center gap-2 mt-3">
-          ${connected
-            ? `<button onclick="disconnectSquare('${esc(p.label)}', this)" class="ml-auto text-xs text-rose-500 hover:text-rose-400 font-semibold">Disconnect</button>`
-            : `<button onclick="connectSquare(this)" class="bg-slate-900 dark:bg-white dark:text-slate-900 text-white text-sm font-bold px-4 py-2 rounded-lg transition hover:opacity-90">Connect Square</button>`}
-        </div>
+        ${controls}
       </div>
     </div>
   </div>`;
