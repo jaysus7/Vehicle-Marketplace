@@ -872,17 +872,21 @@ async function _runInventorySyncInner(dealershipId) {
   // without anyone opening the VIN decoder. Incremental + fire-and-forget.
   autoCheckRecalls(dealershipId).catch(e => console.warn('[sync] recall auto-check failed:', e.message))
 
-  // AI Vision: score newly-synced photos when the add-on is active (incremental).
-  try {
-    const { data: d } = await supabaseAdmin.from('dealerships').select('ai_boost_active').eq('id', dealershipId).single()
-    if (d?.ai_boost_active) runPhotoVision(dealershipId).catch(e => console.warn('[sync] ai-vision failed:', e.message))
-  } catch {}
-
-  // Photo overlays: pre-brand new photos when the dealer has overlays on.
-  brandDealershipPhotos(dealershipId).catch(e => console.warn('[sync] photo-overlay failed:', e.message))
-
-  // Pull authentic OEM window stickers for new vehicles (VIN Sticker add-on).
-  autoFetchOemStickers(dealershipId).catch(e => console.warn('[sync] oem-stickers failed:', e.message))
+  // Post-sync media jobs (AI photo scoring, photo overlays, OEM sticker pulls) are
+  // all image/PDF-heavy. Run them ONE AFTER ANOTHER in a single background chain
+  // rather than three at once — firing them concurrently is what spiked memory past
+  // the 512MB tier and got the instance OOM-restarted mid-sync. Still fire-and-forget
+  // relative to the sync itself, so the caller isn't blocked.
+  ;(async () => {
+    try {
+      const { data: d } = await supabaseAdmin.from('dealerships').select('ai_boost_active').eq('id', dealershipId).single()
+      if (d?.ai_boost_active) await runPhotoVision(dealershipId)
+    } catch (e) { console.warn('[sync] ai-vision failed:', e.message) }
+    // Photo overlays: pre-brand new photos when the dealer has overlays on.
+    try { await brandDealershipPhotos(dealershipId) } catch (e) { console.warn('[sync] photo-overlay failed:', e.message) }
+    // Pull authentic OEM window stickers for new vehicles (VIN Sticker add-on).
+    try { await autoFetchOemStickers(dealershipId) } catch (e) { console.warn('[sync] oem-stickers failed:', e.message) }
+  })()
 
   const { count: availableCount } = await supabaseAdmin
     .from('inventory')

@@ -21,7 +21,7 @@ import { recordUsage } from '../usage.js'
 const HERO_MODEL = 'claude-haiku-4-5-20251001'
 const MAX_INSPECT = 16           // sharp-inspect at most this many photos/vehicle (free)
 const MAX_VISION = 12            // images sent to Claude in the single gallery call
-const CONCURRENCY = 3            // vehicles analyzed in parallel
+const CONCURRENCY = 2            // vehicles analyzed in parallel (kept low for the 512MB tier)
 
 async function fetchBuffer(url, timeoutMs = 12000) {
   try {
@@ -31,13 +31,18 @@ async function fetchBuffer(url, timeoutMs = 12000) {
   } catch { return null }
 }
 
-// Free local checks on a single image buffer via sharp.
-async function inspectWithSharp(buf) {
+// Fetch one photo and, in a single pass, run the free local sharp checks AND
+// produce the small 512px JPEG the vision call needs — then let the full-res
+// buffer go out of scope. This is the key memory guard: we never retain a
+// gallery of multi-MB originals, only the tiny downscaled copies (~40KB each),
+// so peak RAM stays well under the 512MB tier even mid-sync.
+async function fetchAndAnalyze(url) {
+  const buf = await fetchBuffer(url)
+  if (!buf) return null
   try {
     const sharp = (await import('sharp')).default
-    const img = sharp(buf, { failOn: 'none' })
-    const meta = await img.metadata()
-    const stats = await img.stats()
+    const meta = await sharp(buf, { failOn: 'none' }).metadata()
+    const stats = await sharp(buf, { failOn: 'none' }).stats()
     const width = meta.width || 0
     const height = meta.height || 0
     // Mean luminance (0–255) across channels, and how "flat" the image is.
@@ -45,24 +50,26 @@ async function inspectWithSharp(buf) {
     const stdevs = stats.channels.map(c => c.stdev)
     const brightness = means.length ? means.reduce((a, b) => a + b, 0) / means.length : 128
     const variation = stdevs.length ? stdevs.reduce((a, b) => a + b, 0) / stdevs.length : 50
-    return { width, height, brightness, variation }
+    let small = null
+    try {
+      small = await sharp(buf, { failOn: 'none' })
+        .resize({ width: 512, withoutEnlargement: true }).jpeg({ quality: 65 }).toBuffer()
+    } catch { /* undecodable for downscale — still return the local metrics */ }
+    return { width, height, brightness, variation, small }
   } catch { return null }
 }
 
 // One Claude vision call over the WHOLE gallery — overall quality, per-photo
 // issues, the strongest hero, and gallery coverage (what shots are missing).
-async function classifyGallery(buffers) {
+async function classifyGallery(smallBuffers) {
   if (!process.env.ANTHROPIC_API_KEY) return null
   try {
-    const sharp = (await import('sharp')).default
+    // Buffers arrive already downscaled to 512px JPEG (see fetchAndAnalyze), so
+    // there's nothing to resize here — just base64-encode for the vision call.
     const imgs = []
-    for (const buf of buffers) {
+    for (const buf of smallBuffers) {
       if (!buf) continue
-      try {
-        const jpg = await sharp(buf, { failOn: 'none' })
-          .resize({ width: 512, withoutEnlargement: true }).jpeg({ quality: 65 }).toBuffer()
-        imgs.push(jpg.toString('base64'))
-      } catch { imgs.push(buf.toString('base64')) }
+      imgs.push(buf.toString('base64'))
       if (imgs.length >= MAX_VISION) break
     }
     if (!imgs.length) return null
@@ -112,16 +119,17 @@ export async function scoreVehiclePhotos(vehicle) {
   const countScore = urls.length >= 10 ? 20 : urls.length >= 6 ? 15 : urls.length >= 3 ? 9 : 4
   if (urls.length < 6) flags.push(`Only ${urls.length} photo${urls.length === 1 ? '' : 's'}`)
 
-  // Local pass across the whole gallery (free). Bound fetches to keep it quick.
+  // Local pass across the whole gallery (free). Process ONE photo at a time so we
+  // only ever hold a single full-res image in memory; each pass keeps just the
+  // tiny downscaled copy for the vision call and drops the original.
   const inspectUrls = urls.slice(0, MAX_INSPECT)
-  const buffers = await Promise.all(inspectUrls.map(u => fetchBuffer(u)))
   let darkCount = 0, tinyCount = 0, blankCount = 0, inspected = 0
   const perPhoto = []
-  for (let i = 0; i < buffers.length; i++) {
-    const buf = buffers[i]
-    if (!buf) continue
-    const s = await inspectWithSharp(buf)
+  const smallBufs = []
+  for (let i = 0; i < inspectUrls.length; i++) {
+    const s = await fetchAndAnalyze(inspectUrls[i])
     if (!s) continue
+    if (s.small) smallBufs.push(s.small)
     inspected++
     const issues = []
     if (s.width && s.width < 640) { tinyCount++; issues.push('low resolution') }
@@ -139,7 +147,7 @@ export async function scoreVehiclePhotos(vehicle) {
   // 35 pts quality + 25 pts coverage: one Claude vision call over the gallery.
   let qualityScore = 22   // neutral defaults if vision is unavailable
   let coverageScore = 18
-  const galleryBufs = buffers.filter(Boolean).slice(0, MAX_VISION)
+  const galleryBufs = smallBufs.slice(0, MAX_VISION)
   const g = galleryBufs.length ? await classifyGallery(galleryBufs) : null
   if (g) {
     qualityScore = g.overall === 'good' ? 35 : g.overall === 'fair' ? 22 : 8
