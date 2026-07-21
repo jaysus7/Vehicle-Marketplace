@@ -479,13 +479,13 @@ async function loadSetupSnapshot(force) {
 
 // The steps. Order = the order we walk people through.
 const SETUP_STEPS = [
-  { id: 'inventory', icon: '🚗', label: 'Add your inventory', desc: 'Pull every vehicle in from your website or a feed — automatically.', roles: MGR_SET, done: s => s.feeds.length > 0, run: () => runSetupForm('inventory') },
-  { id: 'website', icon: '🌐', label: 'Set up your website', desc: 'Claim your web address, add your look, and go live.', roles: MGR_SET, done: s => !!(s.site.site_published || s.site.site_slug), run: () => runSetupForm('website') },
-  { id: 'texting', icon: '💬', label: 'Connect texting', desc: 'Text customers right from a lead (Twilio).', roles: MGR_SET, done: s => !!(s.twilio && isIntegrationConnected(s.twilio)), run: () => setupGoIntegration('twilio') },
-  { id: 'calendar', icon: '📅', label: 'Connect your calendar', desc: 'Appointments sync to Google or Outlook — both ways.', roles: MGR_SET, done: s => (s.cal.providers || []).some(p => p.connected), run: () => setupGoIntegration('calendar') },
-  { id: 'accounting', icon: '🧾', label: 'Set up sales tax', desc: 'So every deal posts to the books correctly.', roles: [...MGR_SET, 'ACCOUNTING'], done: s => !!(s.acct.tax_number || (s.acct.accounting_emails || []).length), run: () => runSetupForm('accounting') },
-  { id: 'service', icon: '🔧', label: 'Turn on service booking', desc: 'Let customers book service from your website.', roles: [...MGR_SET, 'SERVICE'], done: s => !!s.svc.enabled, run: () => runSetupForm('service') },
-  { id: 'automation', icon: '⚡', label: 'Turn on follow-ups', desc: 'Auto-text and email your leads on autopilot.', roles: MGR_SET, done: () => false, run: () => { setSetupAck('automation'); setupCloseAll(); switchPage('automation-builder'); showToast('Flip on a sequence to finish this step', 'info'); } },
+  { id: 'inventory', icon: '🚗', label: 'Add your inventory', desc: 'Pull every vehicle in from your website or a feed — automatically.', roles: MGR_SET, tour: 'inventory', done: s => s.feeds.length > 0, run: () => runSetupForm('inventory') },
+  { id: 'website', icon: '🌐', label: 'Set up your website', desc: 'Claim your web address, add your look, and go live.', roles: MGR_SET, tour: 'website', done: s => !!(s.site.site_published || s.site.site_slug), run: () => runSetupForm('website') },
+  { id: 'texting', icon: '💬', label: 'Connect texting', desc: 'Text customers right from a lead (Twilio).', roles: MGR_SET, tour: 'texting', done: s => !!(s.twilio && isIntegrationConnected(s.twilio)), run: () => setupGoIntegration('twilio') },
+  { id: 'calendar', icon: '📅', label: 'Connect your calendar', desc: 'Appointments sync to Google or Outlook — both ways.', roles: MGR_SET, tour: 'calendar', done: s => (s.cal.providers || []).some(p => p.connected), run: () => setupGoIntegration('calendar') },
+  { id: 'accounting', icon: '🧾', label: 'Set up sales tax', desc: 'So every deal posts to the books correctly.', roles: [...MGR_SET, 'ACCOUNTING'], tour: 'accounting', done: s => !!(s.acct.tax_number || (s.acct.accounting_emails || []).length), run: () => runSetupForm('accounting') },
+  { id: 'service', icon: '🔧', label: 'Turn on service booking', desc: 'Let customers book service from your website.', roles: [...MGR_SET, 'SERVICE'], tour: 'service', done: s => !!s.svc.enabled, run: () => runSetupForm('service') },
+  { id: 'automation', icon: '⚡', label: 'Turn on follow-ups', desc: 'Auto-text and email your leads on autopilot.', roles: MGR_SET, tour: 'automation', done: () => false, run: () => { setSetupAck('automation'); setupCloseAll(); switchPage('automation-builder'); showToast('Flip on a sequence to finish this step', 'info'); } },
 ];
 function setupStepsFor(role) { return SETUP_STEPS.filter(s => s.roles.includes(role)); }
 function setupStepDone(step, snap) { return setupAck(step.id) || !!(step.done && step.done(snap)); }
@@ -527,11 +527,16 @@ async function openSetupCenter() {
     const tag = x.done ? '<span class="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 shrink-0">✓ Done</span>'
       : isNext ? '<span class="text-[11px] font-black text-indigo-600 dark:text-indigo-400 shrink-0">Start →</span>'
         : '<span class="text-[11px] font-bold text-slate-400 shrink-0">To&nbsp;do</span>';
-    return `<button onclick="setupRun('${x.s.id}')" class="w-full flex items-center gap-3 text-left rounded-xl border px-3 py-3 transition ${ring}">
-      <span class="w-8 h-8 rounded-full flex items-center justify-center text-base shrink-0 ${badge}">${x.done ? '✓' : x.s.icon}</span>
-      <span class="min-w-0 flex-1"><span class="block text-sm font-bold text-slate-900 dark:text-white">${esc(x.s.label)}</span><span class="block text-[11px] text-slate-500 dark:text-slate-400">${esc(x.s.desc)}</span></span>
-      ${tag}
-    </button>`;
+    // Each row = a "Show me" tour button (a guided look at that spot) + the setup action.
+    const tourBtn = x.s.tour ? `<button onclick="setupTour('${x.s.tour}')" title="Show me around this area" class="shrink-0 flex flex-col items-center justify-center rounded-xl border border-slate-200 dark:border-slate-700 px-2.5 hover:bg-slate-50 dark:hover:bg-slate-800/60 text-slate-500 dark:text-slate-400"><svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M2.036 12.322a1 1 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.964-7.178z"/><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg><span class="text-[9px] font-bold mt-0.5">Tour</span></button>` : '';
+    return `<div class="flex items-stretch gap-2">
+      <button onclick="setupRun('${x.s.id}')" class="flex-1 min-w-0 flex items-center gap-3 text-left rounded-xl border px-3 py-3 transition ${ring}">
+        <span class="w-8 h-8 rounded-full flex items-center justify-center text-base shrink-0 ${badge}">${x.done ? '✓' : x.s.icon}</span>
+        <span class="min-w-0 flex-1"><span class="block text-sm font-bold text-slate-900 dark:text-white">${esc(x.s.label)}</span><span class="block text-[11px] text-slate-500 dark:text-slate-400">${esc(x.s.desc)}</span></span>
+        ${tag}
+      </button>
+      ${tourBtn}
+    </div>`;
   }).join('');
   crmOverlay(`<div class="p-5 space-y-4" data-setup-body>
     <div class="flex items-start justify-between gap-3">
@@ -541,6 +546,7 @@ async function openSetupCenter() {
     </div>
     <div><div class="flex items-center justify-between text-[11px] font-bold text-slate-500 dark:text-slate-400 mb-1"><span>${done} of ${total} done</span><span>${pct}%</span></div>
       <div class="h-2 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden"><div class="h-full ${allDone ? 'bg-emerald-500' : 'bg-indigo-600'} rounded-full transition-all duration-500" style="width:${pct}%"></div></div></div>
+    <p class="text-[11px] text-slate-400 dark:text-slate-500 -mt-1">Each step has a <span class="font-bold text-indigo-500 dark:text-indigo-400">👁 Tour</span> button for a quick look around, plus its setup. Prefer the whole thing? <button onclick="setupCloseAll(); startMarketSyncTour();" class="font-bold text-indigo-600 dark:text-indigo-400 hover:underline">Take the full tour →</button></p>
     <div class="space-y-2">${rows}</div>
     ${allDone
       ? `<button onclick="this.closest('.fixed').remove()" class="w-full text-sm font-bold bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2.5 rounded-lg transition">Done</button>`
@@ -548,6 +554,8 @@ async function openSetupCenter() {
   </div>`, 'max-w-md').dataset.setup = '1';
 }
 function setupRun(id) { const s = SETUP_STEPS.find(x => x.id === id); if (s) s.run(); }
+// Close the Setup overlay and run that spot's short guided tour.
+function setupTour(tourId) { setupCloseAll(); if (typeof startAreaTour === 'function') startAreaTour(tourId); }
 
 // Refresh everything after a step and flow straight to the next one.
 async function afterSetupStep() {
@@ -581,6 +589,7 @@ async function runSetupForm(id) {
     <div class="space-y-3">${w.fields.map(fieldHtml).join('')}</div>
     <div class="flex items-center gap-2 pt-3 border-t border-slate-100 dark:border-slate-800">
       <button onclick="openSetupCenter()" class="text-xs font-bold text-slate-500 hover:text-slate-700 dark:hover:text-slate-200 px-2 py-2">← All steps</button>
+      <button onclick="setupTour('${id}')" class="text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:underline px-1 py-2">👁 Show me around</button>
       <div class="flex-1"></div>
       <button onclick="setupSaveForm('${id}', this)" class="text-sm font-bold bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg">Save &amp; continue</button>
     </div>
@@ -616,7 +625,7 @@ function focusIntegrationCard() {
     setTimeout(() => el.classList.remove('setup-flash'), 2600);
   }, 400);
 }
-Object.assign(window, { openSetupCenter, setupRun, setupSaveForm, renderSetupBar });
+Object.assign(window, { openSetupCenter, setupRun, setupSaveForm, setupTour, renderSetupBar });
 
 // ── Facebook-only tier ───────────────────────────────────────────────────────
 // A dealer who pays for Facebook posting alone sees only the Facebook posting hub

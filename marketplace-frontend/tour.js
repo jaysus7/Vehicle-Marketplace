@@ -115,7 +115,37 @@
     }
   ];
 
+  // Short, area-specific tours — one per Setup step. Each is launched from the
+  // Setup Center's "Show me" button (window.startAreaTour), so every spot gives a
+  // guided look AND its setup form.
+  const AREA_TOURS = {
+    inventory: [
+      { target: '#feeds-panel', before: () => goPage('inventory'), title: 'Build your inventory', body: `Your inventory <b>auto-syncs</b> from your website feed or a CSV — year, make, model, price, mileage and photos. Hit <b>Sync Now</b> to pull the latest; sold cars drop off by themselves.` },
+      { target: '#install-ext-btn', before: () => goPage('inventory'), title: 'Post to Facebook in seconds', body: `Install the <b>MarketSync</b> Chrome extension, pick a car and click <b>Post</b> — it fills the whole Marketplace listing. Mark a car <b>Sold</b> and it clears the Facebook post too.` },
+    ],
+    website: [
+      { target: '#dashboard-nav [data-page="website"]', before: () => { openGroup('web'); goPage('website'); }, title: 'Your dealer website', body: `A drag-and-drop builder of <b>blocks</b> — hero, featured inventory, specials, reviews, payment calculator. Your synced stock and an AI chat appear automatically. Pick your colours and hit <b>Publish</b>.` },
+    ],
+    texting: [
+      { target: '#dashboard-nav [data-page="crm"]', before: () => { openGroup('crm'); goPage('crm'); }, title: 'Texting lives in the CRM', body: `Once texting is connected, you two-way <b>SMS a customer right from their card</b> — and every message is saved to their history. Leads, tasks and appointments all live on that one record.` },
+    ],
+    calendar: [
+      { target: '#dashboard-nav [data-page="appointments"]', before: () => { openGroup('crm'); goPage('appointments'); }, title: 'Calendar sync', body: `Appointments you book here flow to your <b>Google or Outlook</b> calendar, and events on your calendar flow back — both ways, automatically, once it's connected.` },
+    ],
+    accounting: [
+      { target: '#grp-accounting-wrap', before: () => { openGroup('accounting'); }, title: 'Accounting — mostly automatic', body: `Delivered deals, F&amp;I, tax and deposits <b>post themselves</b> to the ledger; your team only types in expenses. Set your sales tax once and the daily reconciliation watches the rest.` },
+    ],
+    service: [
+      { target: '#dashboard-nav [data-page="service-appointments"]', before: () => { openGroup('service'); goPage('service-appointments'); }, title: 'Service keeps them for years', body: `Book oil changes, tires and repairs against the <b>same customer record</b> as their purchase. <b>Equity Mining</b> flags past buyers ready to trade up — the easiest next sale.` },
+    ],
+    automation: [
+      { target: '#dashboard-nav [data-page="automation-builder"]', before: () => { openGroup('auto'); goPage('automation-builder'); }, title: 'Automation that never sleeps', body: `Set up follow-up <b>touches</b> once and they fire by themselves — new-lead chases, delivery thank-you + review asks, holiday notes. Flip <b>Engine on</b> and it runs for years.` },
+    ],
+  };
+
   let idx = 0;
+  let activeSteps = STEPS;   // the full tour by default; area tours swap this in
+  let isFullTour = true;     // only the full tour records "seen" so it stops auto-running
   let els = null;
   let reposition = null;   // active scroll/resize handler for the current step
   let roObserver = null;   // ResizeObserver that repositions when the target resizes
@@ -188,7 +218,7 @@
     card.querySelector('.ms-tour-next').onclick = () => {
       const chk = document.getElementById('ms-tour-dontshow-chk');
       if (chk?.checked) { try { localStorage.setItem(DONE_KEY, '1'); } catch {} end(); return; }
-      idx < STEPS.length - 1 ? (idx++, render()) : end();
+      idx < activeSteps.length - 1 ? (idx++, render()) : end();
     };
 
     els = { backdrop, hole, card };
@@ -226,7 +256,7 @@
 
   async function render() {
     const { hole, card } = buildUI();
-    const step = STEPS[idx];
+    const step = activeSteps[idx];
     const token = ++renderToken;
     detachReposition();
 
@@ -241,11 +271,11 @@
     card.querySelector('h3').innerHTML = step.title;
     card.querySelector('p').innerHTML = step.body;
     card.querySelector('.ms-tour-dots').innerHTML =
-      STEPS.map((_, i) => `<span class="ms-tour-dot ${i === idx ? 'on' : ''}"></span>`).join('');
+      activeSteps.map((_, i) => `<span class="ms-tour-dot ${i === idx ? 'on' : ''}"></span>`).join('');
     card.querySelector('.ms-tour-back').style.visibility = idx === 0 ? 'hidden' : 'visible';
-    card.querySelector('.ms-tour-next').textContent = idx === STEPS.length - 1 ? 'Finish' : 'Next';
+    card.querySelector('.ms-tour-next').textContent = idx === activeSteps.length - 1 ? 'Finish' : 'Next';
     const dontShowRow = card.querySelector('#ms-tour-dontshow-row');
-    if (dontShowRow) dontShowRow.style.display = idx === 0 ? 'flex' : 'none';
+    if (dontShowRow) dontShowRow.style.display = (idx === 0 && isFullTour) ? 'flex' : 'none';
 
     let target = null;
     if (step.target) target = await waitForVisible(step.target, step.before ? 2200 : 1200);
@@ -273,7 +303,7 @@
       centerCard();
     }
 
-    if (idx === STEPS.length - 1) setTimeout(() => { if (token === renderToken) fireConfetti(); }, 250);
+    if (idx === activeSteps.length - 1) setTimeout(() => { if (token === renderToken) fireConfetti(); }, 250);
   }
 
   function positionTo(target) {
@@ -370,7 +400,12 @@
     })();
   }
 
-  function start() {
+  // start() runs the full tour. start(stepsArray) runs a short area tour. The header
+  // Tour button passes a click event — not an array — so it still runs the full tour.
+  function start(steps) {
+    const custom = Array.isArray(steps) && steps.length;
+    activeSteps = custom ? steps : STEPS;
+    isFullTour = !custom;
     idx = 0;
     buildUI();
     els.backdrop.style.display = els.hole.style.display = els.card.style.display = 'block';
@@ -381,11 +416,12 @@
     renderToken++;
     detachReposition();
     if (els) els.backdrop.style.display = els.hole.style.display = els.card.style.display = 'none';
-    try { localStorage.setItem(DONE_KEY, '1'); } catch {}
+    if (isFullTour) { try { localStorage.setItem(DONE_KEY, '1'); } catch {} }   // area tours never suppress the full one
   }
 
-  // Public entry point (used by the Tour button).
+  // Public entry points: the header Tour button + per-area tours from Setup.
   window.startMarketSyncTour = start;
+  window.startAreaTour = (id) => { const s = AREA_TOURS[id]; if (s) start(s); };
 
   // Wire the replay button + auto-run for first-time users once the dashboard
   // has rendered its nav.
