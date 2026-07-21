@@ -376,6 +376,117 @@ function applyStaffRoleNav(role) {
   return true;
 }
 
+// ── First-run setup wizards ──────────────────────────────────────────────────
+// Each workspace tab can pop a short wizard the first time it's opened, so the
+// page's essentials (sales tax, service booking, CRM connections…) are filled in
+// before the user leans on it. Fully skippable — but nudged. "Done" or "Skip" is
+// remembered per dealership+user in localStorage; a tab whose config already
+// exists is treated as done and never nags.
+const __wizKey = (page) => `ms_wiz_${(profileContext?.dealership?.id || 'x')}_${(user?.id || 'u')}_${page}`;
+function wizSeen(page) { try { const v = localStorage.getItem(__wizKey(page)); return v === 'done' || v === 'skip'; } catch { return true; } }
+function wizMark(page, val) { try { localStorage.setItem(__wizKey(page), val); } catch {} }
+
+const SETUP_WIZARDS = {
+  accounting: {
+    title: 'Set up Accounting', icon: '🧾',
+    intro: "Tell us how you handle sales tax so deals post to the books correctly. About 30 seconds.",
+    roles: ['DEALER_ADMIN', 'OWNER', 'MANAGER', 'ACCOUNTING'],
+    load: async () => (await apiGetJson('/accounting/settings')).settings || {},
+    isConfigured: async () => { try { const s = (await apiGetJson('/accounting/settings')).settings; return !!(s && (s.tax_number || (s.accounting_emails || []).length)); } catch { return false; } },
+    fields: [
+      { key: 'tax_label', label: 'What sales tax do you charge?', placeholder: 'GST/HST', hint: 'The label that prints on deals — e.g. GST, HST, PST, or Sales tax.' },
+      { key: 'tax_number', label: 'Tax / business registration number', placeholder: '12345 6789 RT0001' },
+      { key: 'tax_frequency', label: 'How often do you remit?', type: 'select', options: [['monthly', 'Monthly'], ['quarterly', 'Quarterly'], ['annual', 'Annual']] },
+      { key: 'accounting_emails', label: 'Accounting email(s)', placeholder: 'books@yourdealer.com', hint: 'Where reconciliation alerts go. Separate several with commas.' },
+    ],
+    save: async (v) => { await apiSendJson('/accounting/settings', 'PUT', { tax_label: v.tax_label, tax_number: v.tax_number, tax_frequency: v.tax_frequency, accounting_emails: v.accounting_emails }); if (typeof loadAccountingPage === 'function') loadAccountingPage(); },
+  },
+  service: {
+    title: 'Set up Service', icon: '🔧',
+    intro: "Turn on online service booking and tell customers when you're open.",
+    roles: ['DEALER_ADMIN', 'OWNER', 'MANAGER', 'SERVICE'],
+    load: async () => (await apiGetJson('/service/config')).settings || {},
+    isConfigured: async () => { try { const s = (await apiGetJson('/service/config')).settings; return !!(s && s.enabled); } catch { return false; } },
+    fields: [
+      { key: 'enabled', label: 'Online booking', type: 'checkbox', checkboxLabel: 'Let customers request service appointments from my website' },
+      { key: 'hours', label: 'Service hours', placeholder: 'Mon–Fri 8–5, Sat 9–1' },
+      { key: 'desk_email', label: 'Where booking requests go', placeholder: 'service@yourdealer.com' },
+      { key: 'duration_min', label: 'Default appointment length (minutes)', type: 'number', placeholder: '60' },
+    ],
+    save: async (v) => { await apiSendJson('/service/config', 'PUT', { enabled: !!v.enabled, hours: v.hours, desk_email: v.desk_email, duration_min: v.duration_min }); if (typeof loadServiceSettings === 'function') loadServiceSettings(); },
+  },
+  crm: {
+    title: 'Connect your CRM', icon: '💬',
+    intro: 'Hook up texting, calendar and email so every lead lands in one place. Connect what you need now — you can always add the rest later under Settings → Integrations.',
+    roles: ['DEALER_ADMIN', 'OWNER', 'MANAGER'],
+    isConfigured: async () => false,   // a guided intro; offered once, never forced
+    linksHtml: () => `<div class="space-y-2">
+      ${[['💬', 'Texting (Twilio)', 'Two-way SMS with customers, right from a lead.'], ['📅', 'Calendar sync', 'Appointments flow to your Google / Outlook calendar.'], ['🔌', 'All integrations', 'Email, deposits, DMS and more.']].map(x => `
+      <button onclick="wizGoIntegrations()" class="w-full flex items-center gap-3 text-left bg-slate-50 dark:bg-slate-800/60 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 transition">
+        <span class="text-xl">${x[0]}</span>
+        <span class="min-w-0"><span class="block text-sm font-bold text-slate-900 dark:text-white">${x[1]}</span><span class="block text-[11px] text-slate-500 dark:text-slate-400">${x[2]}</span></span>
+        <svg class="w-4 h-4 ml-auto text-slate-400 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
+      </button>`).join('')}
+    </div>`,
+  },
+};
+
+// Called from switchPage when a wizard-backed tab is opened.
+async function maybeRunSetupWizard(page) {
+  const w = SETUP_WIZARDS[page];
+  if (!w || wizSeen(page)) return;
+  if (Array.isArray(w.roles) && !w.roles.includes(profileContext?.role)) return;
+  try { if (w.isConfigured && await w.isConfigured()) { wizMark(page, 'done'); return; } } catch {}
+  openSetupWizard(page);
+}
+
+async function openSetupWizard(page) {
+  const w = SETUP_WIZARDS[page];
+  let cur = {};
+  try { if (w.load) cur = (await w.load()) || {}; } catch {}
+  const ic = 'w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm';
+  const fieldHtml = (f) => {
+    const v = cur[f.key], id = `wiz-${f.key}`;
+    let input;
+    if (f.type === 'checkbox') input = `<label class="flex items-center gap-2 text-sm ${ic}"><input id="${id}" type="checkbox" class="accent-indigo-600" ${v ? 'checked' : ''}>${esc(f.checkboxLabel || 'Yes')}</label>`;
+    else if (f.type === 'select') input = `<select id="${id}" class="${ic}">${f.options.map(o => `<option value="${o[0]}" ${String(v) === o[0] ? 'selected' : ''}>${esc(o[1])}</option>`).join('')}</select>`;
+    else input = `<input id="${id}" type="${f.type || 'text'}" value="${esc(Array.isArray(v) ? v.join(', ') : (v ?? ''))}" placeholder="${esc(f.placeholder || '')}" class="${ic}">`;
+    return `<div><label class="block text-[11px] font-semibold text-slate-500 dark:text-slate-400 mb-1">${esc(f.label)}</label>${input}${f.hint ? `<p class="text-[11px] text-slate-400 mt-1">${esc(f.hint)}</p>` : ''}</div>`;
+  };
+  const body = w.linksHtml ? w.linksHtml() : `<div class="space-y-3">${w.fields.map(fieldHtml).join('')}</div>`;
+  const primary = w.fields
+    ? `<button onclick="wizSave('${page}', this)" class="text-sm font-bold bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg">Save &amp; finish</button>`
+    : `<button onclick="wizFinish('${page}', this)" class="text-sm font-bold bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg">Done</button>`;
+  crmOverlay(`<div class="p-5 space-y-4">
+    <div class="flex items-start gap-3">
+      <div class="w-10 h-10 rounded-xl bg-indigo-100 dark:bg-indigo-950/50 flex items-center justify-center text-xl shrink-0">${w.icon || '🛠️'}</div>
+      <div class="min-w-0"><div class="text-lg font-black text-slate-900 dark:text-white">${esc(w.title)}</div>
+        <p class="text-sm text-slate-500 dark:text-slate-400 mt-0.5">${esc(w.intro)}</p></div>
+    </div>
+    ${body}
+    <div class="flex items-center gap-2 pt-1 border-t border-slate-100 dark:border-slate-800 mt-1 -mx-5 px-5">
+      <button onclick="wizSkip('${page}', this)" class="text-xs font-bold text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 py-2 mt-3">Skip for now</button>
+      <span class="text-[11px] text-amber-600 dark:text-amber-400 mt-3">Recommended — better not to skip.</span>
+      <div class="flex-1"></div>
+      <div class="mt-3">${primary}</div>
+    </div>
+  </div>`, 'max-w-lg');
+}
+async function wizSave(page, btn) {
+  const w = SETUP_WIZARDS[page]; const v = {};
+  (w.fields || []).forEach(f => {
+    const el = document.getElementById(`wiz-${f.key}`); if (!el) return;
+    v[f.key] = f.type === 'checkbox' ? el.checked : (f.type === 'number' ? (parseInt(el.value) || undefined) : (el.value || '').trim());
+  });
+  const orig = btn.textContent; btn.disabled = true; btn.textContent = 'Saving…';
+  try { await w.save(v); wizMark(page, 'done'); showToast('Setup saved ✓', 'success'); btn.closest('.fixed')?.remove(); }
+  catch (e) { btn.disabled = false; btn.textContent = orig; showToast(e.message || 'Could not save', 'error'); }
+}
+function wizSkip(page, btn) { wizMark(page, 'skip'); btn.closest('.fixed')?.remove(); }
+function wizFinish(page, btn) { wizMark(page, 'done'); btn.closest('.fixed')?.remove(); }
+function wizGoIntegrations() { document.querySelector('.fixed')?.remove(); wizMark('crm', 'done'); switchPage('profile'); setTimeout(() => { if (typeof settingsTab === 'function') settingsTab('integrations'); }, 250); }
+Object.assign(window, { wizSave, wizSkip, wizFinish, wizGoIntegrations });
+
 // ── Facebook-only tier ───────────────────────────────────────────────────────
 // A dealer who pays for Facebook posting alone sees only the Facebook posting hub
 // (inventory in facebook mode) + the leaderboard. Driven by cfg.fb_only from
@@ -1103,6 +1214,13 @@ function switchPage(pageId) {
   if (pageId === 'fni') loadFniPage();
   if (pageId === 'equity') loadEquityPage();
   if (pageId === 'appraisal') { initAppraisal(); loadApprList(); apprEnsureBranding(); }
+
+  // First-run setup wizard for the tab just opened (accounting/service/crm). Fires
+  // once per dealership+user, after the page has had a beat to render.
+  const wk = contentKey === 'accounting' ? 'accounting'
+    : (pageId === 'service-appointments' || pageId === 'service-settings') ? 'service'
+    : pageId === 'crm' ? 'crm' : null;
+  if (wk) setTimeout(() => { try { maybeRunSetupWizard(wk); } catch (e) {} }, 200);
 }
 
 // ── Trade Appraisal ──────────────────────────────────────────────────────────
