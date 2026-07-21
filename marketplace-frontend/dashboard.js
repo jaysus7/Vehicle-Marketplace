@@ -341,7 +341,7 @@ const MS_ALLOWED_PAGES = new Set(['insights', 'crm', 'tasks', 'appointments', 'l
 const STAFF_ROLE_NAV = {
   FNI:        { groups: ['crm', 'sales'],       pages: ['insights', 'crm', 'tasks', 'appointments', 'leads', 'appraisal', 'fni', 'recon', 'desk', 'profile'], home: 'crm' },
   SERVICE:    { groups: ['crm', 'service'],      pages: ['crm', 'tasks', 'appointments', 'service-appointments', 'equity', 'service-settings', 'profile'], home: 'service-appointments' },
-  ACCOUNTING: { groups: ['crm', 'accounting'],   pages: ['crm', 'tasks', 'appointments', 'acct-insights', 'acct-reconciliation', 'acct-bank', 'commissions', 'acct-expenses', 'acct-tax', 'acct-reports', 'acct-settings', 'profile'], home: 'acct-insights' },
+  ACCOUNTING: { groups: ['crm', 'accounting'],   pages: ['crm', 'tasks', 'appointments', 'acct-insights', 'acct-reconciliation', 'acct-bank', 'commissions', 'acct-expenses', 'acct-budget', 'acct-tax', 'acct-reports', 'acct-settings', 'profile'], home: 'acct-insights' },
   CLEANUP:    { groups: ['sales'],               pages: ['recon', 'profile'], home: 'recon' },
 };
 const STAFF_ROLE_LABELS = { FNI: 'F&I', SERVICE: 'Service', ACCOUNTING: 'Accounting', CLEANUP: 'Cleanup' };
@@ -8022,7 +8022,7 @@ window.teamDeleteStaff = teamDeleteStaff;
 // Managers/accounting. The deal + F&I auto-post income; accounting adds the day's
 // expenses; a daily reconciliation flags anything off (and emails when it is).
 let __acctState = { tab: 'reconciliation', date: null, accounts: [] };
-const ACCT_TABS = [['insights', 'Insights'], ['reconciliation', 'Reconciliation'], ['bank', 'Bank account'], ['expenses', 'Expenses'], ['tax', 'Tax'], ['reports', 'Reports'], ['settings', 'Settings']];
+const ACCT_TABS = [['insights', 'Insights'], ['reconciliation', 'Reconciliation'], ['bank', 'Bank account'], ['expenses', 'Expenses'], ['budget', 'Budget'], ['tax', 'Tax'], ['reports', 'Reports'], ['settings', 'Settings']];
 function acctToday() { return __acctState.date || new Date().toISOString().slice(0, 10); }
 function acctMonth() { return acctToday().slice(0, 7); }
 function loadAccountingPage(goTab) {
@@ -8034,7 +8034,7 @@ function loadAccountingPage(goTab) {
       <p class="text-sm text-slate-500 dark:text-slate-400">Deals &amp; F&amp;I post themselves — add the day's expenses and close the books. Reconciliation runs daily and alerts you when something's off.</p></div>
     <div class="flex flex-wrap gap-1.5">${ACCT_TABS.map(([id, l]) => tab(id, l)).join('')}</div>
     <div id="acct-body" class="pt-1"><div class="text-sm text-slate-400">Loading…</div></div>`;
-  const map = { insights: acctLoadInsights, reconciliation: acctLoadToday, bank: acctLoadBank, expenses: acctLoadExpenses, tax: acctLoadTax, reports: acctLoadReportsDetail, settings: acctLoadSettings };
+  const map = { insights: acctLoadInsights, reconciliation: acctLoadToday, bank: acctLoadBank, expenses: acctLoadExpenses, budget: acctLoadBudget, tax: acctLoadTax, reports: acctLoadReportsDetail, settings: acctLoadSettings };
   (map[__acctState.tab] || acctLoadToday)();
 }
 function acctSetTab(t) { __acctState.tab = t; loadAccountingPage(); }
@@ -8305,6 +8305,62 @@ async function acctScanReceipt(file) {
   } finally { if (fileInput) fileInput.value = ''; }
 }
 window.acctAddExpense = acctAddExpense; window.acctDelEntry2 = acctDelEntry2; window.acctScanReceipt = acctScanReceipt;
+
+// Budget — a monthly spending target per expense category, tracked against actual spend.
+async function acctLoadBudget() {
+  const body = document.getElementById('acct-body'); if (!body) return;
+  try {
+    const [acc, b] = await Promise.all([
+      __acctState.accounts.length ? Promise.resolve({ accounts: __acctState.accounts }) : apiGetJson('/accounting/accounts'),
+      apiGetJson(`/accounting/budget?month=${acctMonth()}`),
+    ]);
+    __acctState.accounts = acc.accounts || __acctState.accounts;
+    const accts = __acctState.accounts.filter(a => a.category === 'expense' && a.active);
+    const budgets = b.budgets || {}, actuals = b.actuals || {};
+    let totBudget = 0, totActual = 0;
+    const rows = accts.map(a => {
+      const budget = Number(budgets[a.id]) || 0;
+      const spent = Number(actuals[a.id]) || 0;
+      totBudget += budget; totActual += spent;
+      const pct = budget > 0 ? Math.min(100, Math.round(spent / budget * 100)) : 0;
+      const over = budget > 0 && spent > budget;
+      const bar = budget > 0 ? (over ? 'bg-rose-500' : pct >= 85 ? 'bg-amber-500' : 'bg-emerald-500') : 'bg-slate-300 dark:bg-slate-700';
+      const remain = budget - spent;
+      return `<tr class="border-b border-slate-100 dark:border-slate-800/60">
+        <td class="px-3 py-2.5 font-medium text-slate-700 dark:text-slate-200">${esc(a.name)}</td>
+        <td class="px-3 py-2.5"><div class="flex items-center gap-1"><span class="text-slate-400 text-xs">$</span><input data-budget-acct="${a.id}" type="number" min="0" step="10" value="${budget || ''}" placeholder="—" class="w-24 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1.5 text-sm"></div></td>
+        <td class="px-3 py-2.5 text-right font-bold ${over ? 'text-rose-500' : 'text-slate-700 dark:text-slate-200'}">${commMoney(spent)}</td>
+        <td class="px-3 py-2.5 w-40"><div class="h-2 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden"><div class="h-full ${bar} rounded-full transition-all" style="width:${budget > 0 ? Math.max(pct, spent > 0 ? 4 : 0) : 0}%"></div></div></td>
+        <td class="px-3 py-2.5 text-right text-sm ${budget > 0 ? (remain < 0 ? 'text-rose-500 font-bold' : 'text-emerald-600 dark:text-emerald-400') : 'text-slate-400'}">${budget > 0 ? (remain < 0 ? `${commMoney(-remain)} over` : `${commMoney(remain)} left`) : '—'}</td>
+      </tr>`;
+    }).join('');
+    const totPct = totBudget > 0 ? Math.min(100, Math.round(totActual / totBudget * 100)) : 0;
+    const totOver = totBudget > 0 && totActual > totBudget;
+    body.innerHTML = `
+      <div class="flex items-center gap-2 mb-3 flex-wrap">
+        <input type="month" value="${acctMonth()}" onchange="__acctState.date=this.value+'-01'; acctLoadBudget()" class="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-1.5 text-sm">
+        <span class="text-sm text-slate-500">Set a monthly target per category — spend is tracked automatically.</span>
+      </div>
+      ${totBudget > 0 ? `<div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4 mb-4">
+        <div class="flex items-center justify-between mb-1.5"><span class="text-sm font-bold">This month</span><span class="text-sm font-bold ${totOver ? 'text-rose-500' : 'text-slate-700 dark:text-slate-200'}">${commMoney(totActual)} <span class="text-slate-400 font-normal">of</span> ${commMoney(totBudget)}</span></div>
+        <div class="h-2.5 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden"><div class="h-full ${totOver ? 'bg-rose-500' : totPct >= 85 ? 'bg-amber-500' : 'bg-emerald-500'} rounded-full transition-all" style="width:${totPct}%"></div></div>
+        ${totOver ? `<p class="text-[11px] text-rose-500 font-bold mt-1.5">Over budget by ${commMoney(totActual - totBudget)}.</p>` : `<p class="text-[11px] text-slate-400 mt-1.5">${commMoney(totBudget - totActual)} left across all categories.</p>`}
+      </div>` : ''}
+      <div class="overflow-x-auto bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl">
+        <table class="w-full text-sm min-w-[640px]"><thead><tr class="text-left text-[11px] uppercase tracking-wider text-slate-400 border-b border-slate-200 dark:border-slate-800"><th class="px-3 py-2">Category</th><th class="px-3 py-2">Monthly budget</th><th class="px-3 py-2 text-right">Spent</th><th class="px-3 py-2">Progress</th><th class="px-3 py-2 text-right">Remaining</th></tr></thead>
+        <tbody>${rows || '<tr><td colspan="5" class="px-3 py-6 text-center text-slate-400">No expense categories yet — add them under Settings.</td></tr>'}</tbody></table>
+      </div>
+      <div class="mt-3"><button onclick="acctSaveBudget(this)" class="text-sm font-bold bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg">Save budget</button></div>`;
+  } catch (e) { body.innerHTML = `<div class="text-sm text-rose-500">${esc(e.message)}</div>`; }
+}
+async function acctSaveBudget(btn) {
+  const budgets = {};
+  document.querySelectorAll('[data-budget-acct]').forEach(el => { const v = parseFloat(el.value || '0'); if (v > 0) budgets[el.getAttribute('data-budget-acct')] = v; });
+  const orig = btn.textContent; btn.disabled = true; btn.textContent = 'Saving…';
+  try { await apiSendJson('/accounting/budget', 'PUT', { budgets }); showToast('Budget saved', 'success'); acctLoadBudget(); }
+  catch (e) { btn.disabled = false; btn.textContent = orig; showToast(e.message || 'Could not save', 'error'); }
+}
+window.acctLoadBudget = acctLoadBudget; window.acctSaveBudget = acctSaveBudget;
 
 // Bank account — link a bank via Plaid; transactions feed the daily reconciliation.
 function plaidEnsureScript() {

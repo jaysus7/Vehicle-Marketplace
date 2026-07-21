@@ -375,6 +375,10 @@ export function registerAccounting(app) {
     if (!guard(req, res)) return
     const b = req.body || {}
     const parseEmails = (v) => (Array.isArray(v) ? v : String(v || '').split(/[,\s]+/)).map(s => String(s).trim().toLowerCase()).filter(e => /.+@.+\..+/.test(e)).slice(0, 20)
+    // Carry over the parts of accounting_settings this form doesn't own (budgets),
+    // since the write replaces the whole object.
+    const { data: curRow } = await supabaseAdmin.from('dealerships').select('accounting_settings').eq('id', req.dealershipId).maybeSingle()
+    const curRaw = (curRow?.accounting_settings && typeof curRow.accounting_settings === 'object') ? curRow.accounting_settings : {}
     const next = {
       enabled: b.enabled !== false,
       tolerance: Math.max(0, n(b.tolerance) || 25),
@@ -384,9 +388,44 @@ export function registerAccounting(app) {
       tax_number: String(b.tax_number || '').slice(0, 40),
       tax_label: String(b.tax_label || 'Sales tax').slice(0, 40) || 'Sales tax',
       tax_frequency: ['monthly', 'quarterly', 'annual'].includes(b.tax_frequency) ? b.tax_frequency : 'quarterly',
+      ...(curRaw.budgets ? { budgets: curRaw.budgets } : {}),
     }
     await supabaseAdmin.from('dealerships').update({ accounting_settings: next }).eq('id', req.dealershipId)
-    res.json({ ok: true, settings: next })
+    res.json({ ok: true, settings: settingsOf({ accounting_settings: next }) })
+  })
+
+  // ── Budgets ──────────────────────────────────────────────────────────────────
+  // A monthly spending target per expense account, stored in accounting_settings.
+  // GET returns the targets + this month's actual spend so the UI can show
+  // budget-vs-actual; PUT saves the targets map { [account_id]: monthlyAmount }.
+  app.get('/accounting/budget', requireAuth, async (req, res) => {
+    if (!guard(req, res)) return
+    const month = /^\d{4}-\d{2}$/.test(String(req.query.month || '')) ? String(req.query.month) : today().slice(0, 7)
+    const { data: row } = await supabaseAdmin.from('dealerships').select('accounting_settings').eq('id', req.dealershipId).maybeSingle()
+    const raw = (row?.accounting_settings && typeof row.accounting_settings === 'object') ? row.accounting_settings : {}
+    const budgets = (raw.budgets && typeof raw.budgets === 'object') ? raw.budgets : {}
+    // Actual expense spend for the month, grouped by account.
+    const from = month + '-01'
+    const toEnd = new Date(new Date(from + 'T00:00:00Z').getTime() + 32 * 86400000).toISOString().slice(0, 7) + '-01'
+    const { data: entries } = await supabaseAdmin.from('gl_entries')
+      .select('account_id, amount, direction').eq('dealership_id', req.dealershipId)
+      .eq('direction', 'out').gte('entry_date', from).lt('entry_date', toEnd).limit(5000)
+    const actuals = {}
+    for (const e of (entries || [])) { const k = e.account_id || 'none'; actuals[k] = (actuals[k] || 0) + (Number(e.amount) || 0) }
+    res.json({ ok: true, month, budgets, actuals })
+  })
+  app.put('/accounting/budget', requireAuth, async (req, res) => {
+    if (!guard(req, res)) return
+    const inb = (req.body && typeof req.body.budgets === 'object' && req.body.budgets) || {}
+    const budgets = {}
+    for (const [k, v] of Object.entries(inb)) {
+      const amt = round2(v)
+      if (amt && amt > 0) budgets[k] = Math.abs(amt)   // drop zero/blank = "no budget set"
+    }
+    const { data: row } = await supabaseAdmin.from('dealerships').select('accounting_settings').eq('id', req.dealershipId).maybeSingle()
+    const raw = (row?.accounting_settings && typeof row.accounting_settings === 'object') ? row.accounting_settings : {}
+    await supabaseAdmin.from('dealerships').update({ accounting_settings: { ...raw, budgets } }).eq('id', req.dealershipId)
+    res.json({ ok: true, budgets })
   })
 
   // ── Cron: reconcile yesterday for every dealership, alert on anything off ─────
