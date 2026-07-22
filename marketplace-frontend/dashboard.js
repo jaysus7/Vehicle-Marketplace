@@ -8286,6 +8286,7 @@ async function acctLoadExpenses() {
         ${sel('exp-f-cat', 'category', opts.categories, 'All categories')}
         ${sel('exp-f-status', 'status', opts.statuses, 'Any status')}
         <div class="flex-1"></div>
+        <button onclick="expGenerateRecurring(this)" title="Create this month's recurring expenses" class="text-xs font-bold bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 px-3 py-1.5 rounded-lg">↻ Recurring</button>
         <button onclick="expReports()" class="text-xs font-bold bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 px-3 py-1.5 rounded-lg">📊 Reports</button>
         <button onclick="expExport()" class="text-xs font-bold bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 px-3 py-1.5 rounded-lg">⬇ Export</button>
         <button onclick="expModal()" class="text-sm font-bold bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-1.5 rounded-lg">+ Add expense</button>
@@ -8424,7 +8425,12 @@ async function expExport() {
     const a = document.createElement('a'); a.href = url; a.download = `expenses-${__expState.filters.month || acctMonth()}.csv`; a.click(); URL.revokeObjectURL(url);
   } catch (e) { showToast(e.message || 'Could not export', 'error'); }
 }
-const EXP_REPORTS = [['department', 'P&L by department'], ['employee', 'By salesperson'], ['vin', 'Recon per VIN'], ['vendor', 'Vendor spend'], ['category', 'Top categories'], ['reimbursements', 'Outstanding reimbursements'], ['tax', 'GST/HST summary'], ['payment', 'By payment method']];
+async function expGenerateRecurring(btn) {
+  const orig = btn.textContent; btn.disabled = true; btn.textContent = '…';
+  try { const d = await apiSendJson('/expenses/generate-recurring', 'POST', { month: __expState.filters.month || acctMonth() }); showToast(d.created ? `Created ${d.created} recurring expense${d.created === 1 ? '' : 's'}` : 'Nothing new to create', 'success'); acctLoadExpenses(); }
+  catch (e) { btn.disabled = false; btn.textContent = orig; showToast(e.message || 'Could not generate', 'error'); }
+}
+const EXP_REPORTS = [['close', 'Daily close'], ['department', 'P&L by department'], ['employee', 'By salesperson'], ['vin', 'Recon per VIN'], ['vendor', 'Vendor spend'], ['category', 'Top categories'], ['reimbursements', 'Outstanding reimbursements'], ['tax', 'GST/HST summary'], ['payment', 'By payment method']];
 async function expReports() {
   const btns = EXP_REPORTS.map(([t, l]) => `<button onclick="expRunReport('${t}', this)" class="text-xs font-bold bg-slate-100 dark:bg-slate-800 hover:bg-indigo-100 dark:hover:bg-indigo-900/40 text-slate-700 dark:text-slate-200 px-3 py-1.5 rounded-lg">${l}</button>`).join('');
   crmOverlay(`<div class="p-5 space-y-3">
@@ -8439,6 +8445,20 @@ async function expRunReport(type, btn) {
   out.innerHTML = '<div class="text-sm text-slate-400">Loading…</div>';
   const m = __expState.filters.month || acctMonth();
   try {
+    if (type === 'close') {
+      const c = await apiGetJson(`/expenses/checks?month=${m}`);
+      const item = (ok, label, detail) => `<div class="flex items-center gap-2 py-1.5 border-b border-slate-100 dark:border-slate-800/60"><span class="w-5 h-5 rounded-full flex items-center justify-center text-xs shrink-0 ${ok ? 'bg-emerald-500 text-white' : 'bg-amber-400 text-white'}">${ok ? '✓' : '!'}</span><span class="text-sm flex-1">${label}</span><span class="text-xs font-bold text-slate-500">${detail}</span></div>`;
+      out.innerHTML = `<div class="space-y-0.5">
+        ${item(c.pending_count === 0, 'Expenses approved', c.pending_count ? `${c.pending_count} pending (${commMoney(c.pending_total)})` : 'all done')}
+        ${item(c.missing_receipts.length === 0, 'Receipts attached', c.missing_receipts.length ? `${c.missing_receipts.length} missing` : 'all attached')}
+        ${item(c.duplicates.length === 0, 'No duplicate expenses', c.duplicates.length ? `${c.duplicates.length} to review` : 'clean')}
+        ${item(c.outstanding_count === 0, 'Reimbursements paid', c.outstanding_count ? `${commMoney(c.outstanding_total)} owed` : 'none owed')}
+      </div>
+      <div class="mt-2 text-sm text-slate-500">Month total: <b class="text-slate-700 dark:text-slate-200">${commMoney(c.total)}</b> across ${c.count} expenses.</div>
+      ${c.missing_receipts.length ? `<div class="mt-3"><div class="text-[11px] font-bold uppercase text-slate-400 mb-1">Missing receipts</div>${c.missing_receipts.slice(0, 20).map(x => `<div class="text-xs flex justify-between py-0.5"><span>${x.date} · ${esc(x.vendor || x.category || '—')}</span><span class="font-bold">${commMoney(x.amount)}</span></div>`).join('')}</div>` : ''}
+      ${c.duplicates.length ? `<div class="mt-3"><div class="text-[11px] font-bold uppercase text-slate-400 mb-1">Possible duplicates</div>${c.duplicates.slice(0, 20).map(x => `<div class="text-xs py-0.5">${esc(x.vendor)} · ${commMoney(x.amount)} · ${x.dates.join(' & ')}</div>`).join('')}</div>` : ''}`;
+      return;
+    }
     const d = await apiGetJson(`/expenses/report/${type}?from=${m}-01&to=${m}-31`);
     const r = d.result;
     const table = (rowsArr, keyLabel) => `<div class="overflow-x-auto"><table class="w-full text-sm"><thead><tr class="text-left text-[11px] uppercase tracking-wider text-slate-400 border-b border-slate-200 dark:border-slate-800"><th class="px-2 py-1.5">${keyLabel}</th><th class="px-2 py-1.5 text-right">Count</th><th class="px-2 py-1.5 text-right">Total</th></tr></thead><tbody>${rowsArr.map(x => `<tr class="border-b border-slate-100 dark:border-slate-800/60"><td class="px-2 py-1.5 font-medium">${esc(x.key)}${x.stock ? ` <span class="text-[10px] text-slate-400">${esc(x.stock)}</span>` : ''}</td><td class="px-2 py-1.5 text-right text-slate-500">${x.count}</td><td class="px-2 py-1.5 text-right font-bold">${commMoney(x.total)}</td></tr>`).join('') || '<tr><td colspan="3" class="px-2 py-4 text-center text-slate-400">No data.</td></tr>'}</tbody></table></div>`;
@@ -8451,7 +8471,7 @@ async function expRunReport(type, btn) {
     }
   } catch (e) { out.innerHTML = `<div class="text-sm text-rose-500">${esc(e.message)}</div>`; }
 }
-Object.assign(window, { expSetFilter, expModal, expSave, expReceiptPick, expApprove, expReject, expMarkReimb, expDelete, expExport, expReports, expRunReport });
+Object.assign(window, { expSetFilter, expModal, expSave, expReceiptPick, expApprove, expReject, expMarkReimb, expDelete, expExport, expReports, expRunReport, expGenerateRecurring });
 
 // Budget — a monthly spending target per expense category, tracked against actual spend.
 async function acctLoadBudget() {

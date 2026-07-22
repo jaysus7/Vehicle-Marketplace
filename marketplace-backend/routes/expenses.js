@@ -245,6 +245,56 @@ export function registerExpenses(app) {
     res.json({ ok: true, expense: data })
   })
 
+  // ── Recurring: clone each recurring template into the given month if missing ────
+  app.post('/expenses/generate-recurring', requireAuth, async (req, res) => {
+    if (!guard(req, res)) return
+    const month = /^\d{4}-\d{2}$/.test(String(req.body?.month || '')) ? String(req.body.month) : today().slice(0, 7)
+    const { data: templates } = await supabaseAdmin.from('expenses').select('*').eq('dealership_id', req.dealershipId).eq('recurring', true).is('recurring_source_id', null).limit(500)
+    const from = month + '-01', to = month + '-31'
+    const { data: already } = await supabaseAdmin.from('expenses').select('recurring_source_id').eq('dealership_id', req.dealershipId).gte('expense_date', from).lte('expense_date', to).not('recurring_source_id', 'is', null)
+    const done = new Set((already || []).map(r => r.recurring_source_id))
+    let created = 0
+    for (const t of (templates || [])) {
+      if (done.has(t.id)) continue
+      const clone = { ...t }
+      delete clone.id; delete clone.created_at; delete clone.updated_at; delete clone.approved_by; delete clone.approved_at; delete clone.approver_note
+      clone.expense_date = month + '-01'; clone.recurring = false; clone.recurring_source_id = t.id
+      clone.status = 'submitted'; clone.posted = false; clone.gl_entry_id = null; clone.reimbursed = false
+      clone.events = [stamp(req.user?.id, 'created', 'recurring')]
+      const { error } = await supabaseAdmin.from('expenses').insert(clone)
+      if (!error) created++
+    }
+    res.json({ ok: true, created })
+  })
+
+  // ── Month-end / daily close checks ──────────────────────────────────────────────
+  app.get('/expenses/checks', requireAuth, async (req, res) => {
+    if (!guard(req, res)) return
+    const month = /^\d{4}-\d{2}$/.test(String(req.query.month || '')) ? String(req.query.month) : today().slice(0, 7)
+    const from = month + '-01', to = month + '-31'
+    const { data } = await supabaseAdmin.from('expenses').select('*').eq('dealership_id', req.dealershipId).gte('expense_date', from).lte('expense_date', to).limit(5000)
+    const rows = data || []
+    const missing_receipts = rows.filter(e => !e.receipt_url && e.status !== 'rejected').map(e => ({ id: e.id, date: e.expense_date, vendor: e.vendor, amount: e.amount, category: e.category }))
+    // Duplicate suspects: same vendor + same amount within 5 days.
+    const dupes = []
+    for (let i = 0; i < rows.length; i++) for (let j = i + 1; j < rows.length; j++) {
+      const a = rows[i], b = rows[j]
+      if (a.status === 'rejected' || b.status === 'rejected') continue
+      if (Math.abs(Number(a.amount) - Number(b.amount)) < 0.01 && (a.vendor || '').toLowerCase() === (b.vendor || '').toLowerCase() && (a.vendor || '') &&
+        Math.abs(new Date(a.expense_date) - new Date(b.expense_date)) <= 5 * 86400000) {
+        dupes.push({ ids: [a.id, b.id], vendor: a.vendor, amount: a.amount, dates: [a.expense_date, b.expense_date] })
+      }
+    }
+    const outstanding = rows.filter(e => e.reimbursable && !e.reimbursed)
+    const pending = rows.filter(e => e.status === 'submitted' || e.status === 'draft')
+    res.json({ ok: true, month,
+      missing_receipts, duplicates: dupes.slice(0, 100),
+      outstanding_total: round2(outstanding.reduce((s, e) => s + (Number(e.amount) || 0), 0)), outstanding_count: outstanding.length,
+      pending_count: pending.length, pending_total: round2(pending.reduce((s, e) => s + (Number(e.amount) || 0), 0)),
+      total: round2(rows.reduce((s, e) => s + (Number(e.amount) || 0), 0)), count: rows.length,
+    })
+  })
+
   // ── Reports ────────────────────────────────────────────────────────────────────
   // type: department | employee | vin | vendor | category | reimbursements | tax | payment
   app.get('/expenses/report/:type', requireAuth, async (req, res) => {
