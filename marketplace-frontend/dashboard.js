@@ -8232,79 +8232,226 @@ async function acctDelAccount(id) { if (!confirm('Delete this account?')) return
 window.acctAddAccount = acctAddAccount; window.acctToggleAccount = acctToggleAccount; window.acctDelAccount = acctDelAccount;
 
 // Expenses — where accounting adds the day's costs; lists the month's expenses.
+// ── Dealer Operations expenses ───────────────────────────────────────────────
+// A rich expense workspace: each expense links to a vendor, department, employee,
+// VIN/stock, RO, PO, payment method and receipt, with the tax split out, an
+// approval workflow, filters/search, dealer reports and CSV export.
+let __expState = { filters: {}, options: null, vendors: [] };
+const EXP_STATUS = { draft: ['Draft', 'bg-slate-100 dark:bg-slate-800 text-slate-500'], submitted: ['Pending', 'bg-amber-100 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300'], approved: ['Approved', 'bg-emerald-100 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300'], rejected: ['Rejected', 'bg-rose-100 dark:bg-rose-950/40 text-rose-600 dark:text-rose-300'], paid: ['Paid', 'bg-indigo-100 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300'] };
+const expIsApprover = () => ['DEALER_ADMIN', 'OWNER', 'MANAGER'].includes(profileContext?.role);
+function expTeam() { try { return Array.isArray(__dealerTeam) ? __dealerTeam : []; } catch { return []; } }
+function expFilterQS() {
+  const f = __expState.filters, m = f.month || acctMonth();
+  const p = new URLSearchParams();
+  p.set('from', m + '-01'); p.set('to', m + '-31');
+  ['category', 'department', 'status', 'vin', 'q', 'employee_id'].forEach(k => { if (f[k]) p.set(k, f[k]); });
+  return p.toString();
+}
 async function acctLoadExpenses() {
   const body = document.getElementById('acct-body'); if (!body) return;
+  body.innerHTML = '<div class="text-sm text-slate-400">Loading…</div>';
   try {
-    const from = acctMonth() + '-01';
-    const [acc, entriesR] = await Promise.all([
+    if (!__expState.filters.month) __expState.filters.month = acctMonth();
+    const [opts, vend, acc, list] = await Promise.all([
+      __expState.options ? Promise.resolve({ ...__expState.options }) : apiGetJson('/expenses/options'),
+      apiGetJson('/expense-vendors'),
       __acctState.accounts.length ? Promise.resolve({ accounts: __acctState.accounts }) : apiGetJson('/accounting/accounts'),
-      apiGetJson(`/accounting/entries?from=${from}&to=${acctMonth()}-31`),
+      apiGetJson('/expenses?' + expFilterQS()),
     ]);
+    __expState.options = opts; __expState.vendors = vend.vendors || [];
     __acctState.accounts = acc.accounts || __acctState.accounts;
-    const expenseAccts = __acctState.accounts.filter(a => a.category === 'expense' && a.active);
-    const acctName = (id) => (__acctState.accounts.find(a => a.id === id) || {}).name || '—';
-    const expenses = (entriesR.entries || []).filter(e => e.direction === 'out');
-    const total = expenses.reduce((s, e) => s + (Number(e.amount) || 0), 0);
-    const rows = expenses.map(e => `<tr class="border-b border-slate-100 dark:border-slate-800/60">
-      <td class="px-3 py-2">${e.entry_date}</td><td class="px-3 py-2">${acctName(e.account_id)}</td><td class="px-3 py-2 text-slate-500">${esc(e.description || '')}</td>
-      <td class="px-3 py-2 text-right font-bold text-rose-500">${commMoney(e.amount)}</td>
-      <td class="px-3 py-2 text-right">${e.source === 'manual' ? `<button onclick="acctDelEntry2('${e.id}')" class="text-rose-400 hover:text-rose-500 text-xs">Delete</button>` : ''}</td></tr>`).join('');
+    const f = __expState.filters;
+    const sel = (id, val, options, blank) => `<select id="${id}" onchange="expSetFilter('${val}', this.value)" class="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1.5 text-sm"><option value="">${blank}</option>${options.map(o => `<option value="${esc(o)}" ${f[val] === o ? 'selected' : ''}>${esc(o)}</option>`).join('')}</select>`;
+    const rows = (list.expenses || []).map(e => {
+      const st = EXP_STATUS[e.status] || EXP_STATUS.submitted;
+      return `<tr class="border-b border-slate-100 dark:border-slate-800/60 hover:bg-slate-50 dark:hover:bg-slate-800/40">
+        <td class="px-3 py-2 whitespace-nowrap">${e.expense_date}</td>
+        <td class="px-3 py-2">${esc(e.vendor || '—')}${e.receipt_url ? ` <a href="${esc(e.receipt_url)}" target="_blank" title="Receipt" class="text-indigo-500">📎</a>` : ''}</td>
+        <td class="px-3 py-2 text-slate-500">${esc(e.category || '—')}</td>
+        <td class="px-3 py-2 text-slate-500">${esc(e.department || '—')}</td>
+        <td class="px-3 py-2 text-slate-500 whitespace-nowrap">${esc(e.stock_number || e.vin || '—')}</td>
+        <td class="px-3 py-2 text-slate-500">${esc(e.employee_name || '—')}</td>
+        <td class="px-3 py-2 text-right font-bold text-rose-500 whitespace-nowrap">${commMoney(e.amount)}${Number(e.tax) ? `<span class="block text-[10px] font-normal text-slate-400">tax ${commMoney(e.tax)}</span>` : ''}</td>
+        <td class="px-3 py-2"><span class="text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full ${st[1]}">${st[0]}</span></td>
+        <td class="px-3 py-2 text-right whitespace-nowrap">
+          ${(expIsApprover() && (e.status === 'submitted' || e.status === 'draft')) ? `<button onclick="expApprove('${e.id}')" class="text-emerald-500 hover:text-emerald-600 text-xs font-bold mr-1.5">Approve</button><button onclick="expReject('${e.id}')" class="text-rose-400 hover:text-rose-500 text-xs mr-1.5">Reject</button>` : ''}
+          <button onclick="expModal('${e.id}')" class="text-indigo-500 hover:text-indigo-600 text-xs font-bold">Open</button>
+        </td></tr>`;
+    }).join('');
     body.innerHTML = `
-      <div class="flex items-center gap-2 mb-3"><input type="month" value="${acctMonth()}" onchange="__acctState.date=this.value+'-01'; acctLoadExpenses()" class="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-1.5 text-sm"><span class="text-sm text-slate-500">Total: <b>${commMoney(total)}</b></span></div>
-      <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4 mb-4">
-        <div class="flex items-center justify-between gap-2 mb-2">
-          <div class="text-sm font-bold">Add an expense</div>
-          <input id="acct-receipt-file" type="file" accept="image/*" capture="environment" class="hidden" onchange="acctScanReceipt(this.files[0])">
-          <button onclick="document.getElementById('acct-receipt-file').click()" class="flex items-center gap-1.5 text-xs font-bold bg-violet-100 dark:bg-violet-950/40 text-violet-700 dark:text-violet-300 hover:bg-violet-200 dark:hover:bg-violet-900/50 px-3 py-1.5 rounded-lg transition"><svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6.827 6.175A2.31 2.31 0 015.186 7.23c-.38.054-.757.112-1.134.175C2.999 7.58 2.25 8.507 2.25 9.574V18a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9.574c0-1.067-.75-1.994-1.802-2.169a47.865 47.865 0 00-1.134-.175 2.31 2.31 0 01-1.64-1.055l-.822-1.316a2.192 2.192 0 00-1.736-1.039 48.774 48.774 0 00-5.232 0 2.192 2.192 0 00-1.736 1.039l-.821 1.316z"/><path stroke-linecap="round" stroke-linejoin="round" d="M16.5 12.75a4.5 4.5 0 11-9 0 4.5 4.5 0 019 0z"/></svg>Scan receipt</button>
-        </div>
-        <div class="grid sm:grid-cols-5 gap-2 items-end">
-          <div><label class="block text-[11px] font-semibold text-slate-500 mb-1">Date</label><input id="acct-x-date" type="date" value="${acctToday()}" class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-2 text-sm"></div>
-          <div><label class="block text-[11px] font-semibold text-slate-500 mb-1">Account</label><select id="acct-x-account" class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-2 text-sm">${expenseAccts.map(a => `<option value="${a.id}">${esc(a.name)}</option>`).join('')}</select></div>
-          <div><label class="block text-[11px] font-semibold text-slate-500 mb-1">Amount ($)</label><input id="acct-x-amount" type="number" step="1" class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-2 text-sm"></div>
-          <div><label class="block text-[11px] font-semibold text-slate-500 mb-1">Description</label><input id="acct-x-desc" type="text" placeholder="Vendor / memo" class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-2 text-sm"></div>
-          <div><button onclick="acctAddExpense(this)" class="w-full text-sm font-bold bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-2 rounded-lg">Add</button></div>
-        </div></div>
+      <div class="flex flex-wrap items-center gap-2 mb-3">
+        <input type="month" value="${f.month}" onchange="expSetFilter('month', this.value)" class="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-1.5 text-sm">
+        <input id="exp-search" value="${esc(f.q || '')}" oninput="clearTimeout(window.__expQT); window.__expQT=setTimeout(()=>expSetFilter('q', this.value), 400)" placeholder="Search vendor, VIN, notes…" class="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-1.5 text-sm flex-1 min-w-[160px]">
+        ${sel('exp-f-dept', 'department', opts.departments, 'All depts')}
+        ${sel('exp-f-cat', 'category', opts.categories, 'All categories')}
+        ${sel('exp-f-status', 'status', opts.statuses, 'Any status')}
+        <div class="flex-1"></div>
+        <button onclick="expReports()" class="text-xs font-bold bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 px-3 py-1.5 rounded-lg">📊 Reports</button>
+        <button onclick="expExport()" class="text-xs font-bold bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 px-3 py-1.5 rounded-lg">⬇ Export</button>
+        <button onclick="expModal()" class="text-sm font-bold bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-1.5 rounded-lg">+ Add expense</button>
+      </div>
+      <div class="text-sm text-slate-500 mb-2">${list.count || 0} expense${list.count === 1 ? '' : 's'} · Total <b class="text-slate-700 dark:text-slate-200">${commMoney(list.sum || 0)}</b></div>
       <div class="overflow-x-auto bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl">
-        <table class="w-full text-sm min-w-[620px]"><thead><tr class="text-left text-[11px] uppercase tracking-wider text-slate-400 border-b border-slate-200 dark:border-slate-800"><th class="px-3 py-2">Date</th><th class="px-3 py-2">Account</th><th class="px-3 py-2">Description</th><th class="px-3 py-2 text-right">Amount</th><th class="px-3 py-2"></th></tr></thead><tbody>${rows || '<tr><td colspan="5" class="px-3 py-6 text-center text-slate-400">No expenses this month.</td></tr>'}</tbody></table></div>`;
+        <table class="w-full text-sm min-w-[900px]"><thead><tr class="text-left text-[11px] uppercase tracking-wider text-slate-400 border-b border-slate-200 dark:border-slate-800"><th class="px-3 py-2">Date</th><th class="px-3 py-2">Vendor</th><th class="px-3 py-2">Category</th><th class="px-3 py-2">Dept</th><th class="px-3 py-2">Stock/VIN</th><th class="px-3 py-2">Employee</th><th class="px-3 py-2 text-right">Amount</th><th class="px-3 py-2">Status</th><th class="px-3 py-2"></th></tr></thead>
+        <tbody>${rows || '<tr><td colspan="9" class="px-3 py-8 text-center text-slate-400">No expenses match — add one, or scan a receipt.</td></tr>'}</tbody></table></div>`;
   } catch (e) { body.innerHTML = `<div class="text-sm text-rose-500">${esc(e.message)}</div>`; }
 }
-async function acctAddExpense(btn) {
-  const account_id = document.getElementById('acct-x-account')?.value;
-  const amount = parseFloat(document.getElementById('acct-x-amount')?.value || '0');
-  if (!amount) { showToast('Enter an amount', 'error'); return; }
-  btn.disabled = true;
-  try { await apiSendJson('/accounting/entries', 'POST', { account_id, amount, description: document.getElementById('acct-x-desc')?.value || '', direction: 'out', entry_date: document.getElementById('acct-x-date')?.value || acctToday() }); showToast('Expense added', 'success'); acctLoadExpenses(); }
-  catch (e) { btn.disabled = false; showToast(e.message || 'Could not add', 'error'); }
+function expSetFilter(key, val) { __expState.filters[key] = val || undefined; acctLoadExpenses(); }
+
+// Add / edit modal — every operational dimension in one place.
+async function expModal(id) {
+  let e = { expense_date: acctToday(), status: 'submitted', reimbursable: false, recurring: false };
+  if (id) { try { const d = await apiGetJson(`/expenses/${id}`); e = d.expense || e; } catch { showToast('Could not load', 'error'); return; } }
+  const opts = __expState.options || { categories: [], departments: [], payment_methods: [], recurrences: [] };
+  const expAccts = (__acctState.accounts || []).filter(a => a.category === 'expense' && a.active);
+  const ic = 'w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm';
+  const lbl = (t) => `<label class="block text-[11px] font-semibold text-slate-500 dark:text-slate-400 mb-1">${t}</label>`;
+  const opt = (list, cur) => `<option value=""></option>` + list.map(o => `<option value="${esc(o)}" ${cur === o ? 'selected' : ''}>${esc(o)}</option>`).join('');
+  const team = expTeam();
+  const events = Array.isArray(e.events) ? e.events : [];
+  crmOverlay(`<div class="p-5 space-y-3" data-exp>
+    <div class="flex items-center justify-between"><div class="text-lg font-black text-slate-900 dark:text-white">${id ? 'Expense' : 'New expense'}</div>
+      <div class="flex items-center gap-2">
+        <input id="exp-receipt-file" type="file" accept="image/*,application/pdf" capture="environment" class="hidden" onchange="expReceiptPick(this.files[0])">
+        <button onclick="document.getElementById('exp-receipt-file').click()" class="flex items-center gap-1.5 text-xs font-bold bg-violet-100 dark:bg-violet-950/40 text-violet-700 dark:text-violet-300 hover:bg-violet-200 px-3 py-1.5 rounded-lg">📷 Scan / attach receipt</button>
+        <button onclick="this.closest('.fixed').remove()" class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"><svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" d="M6 6l12 12M18 6L6 18"/></svg></button>
+      </div>
+    </div>
+    <div id="exp-receipt-note" class="text-[11px] ${e.receipt_url ? '' : 'hidden'}">${e.receipt_url ? `<a href="${esc(e.receipt_url)}" target="_blank" class="text-indigo-500 font-bold">📎 Receipt attached — view</a>` : ''}</div>
+    <input type="hidden" id="exp-receipt-url" value="${esc(e.receipt_url || '')}"><input type="hidden" id="exp-receipt-type" value="${esc(e.receipt_type || '')}">
+    <div class="grid sm:grid-cols-3 gap-2">
+      <div>${lbl('Date')}<input id="exp-date" type="date" value="${esc(e.expense_date || acctToday())}" class="${ic}"></div>
+      <div>${lbl('Amount ($ total)')}<input id="exp-amount" type="number" step="0.01" value="${e.amount != null ? e.amount : ''}" class="${ic}"></div>
+      <div>${lbl('Tax (GST/HST)')}<input id="exp-tax" type="number" step="0.01" value="${e.tax != null ? e.tax : ''}" class="${ic}"></div>
+    </div>
+    <div class="grid sm:grid-cols-3 gap-2">
+      <div>${lbl('Vendor')}<input id="exp-vendor" list="exp-vendor-list" value="${esc(e.vendor || '')}" placeholder="Supplier" class="${ic}"><datalist id="exp-vendor-list">${__expState.vendors.map(v => `<option value="${esc(v.name)}">`).join('')}</datalist></div>
+      <div>${lbl('Category')}<select id="exp-category" class="${ic}">${opt(opts.categories, e.category)}</select></div>
+      <div>${lbl('Department')}<select id="exp-department" class="${ic}">${opt(opts.departments, e.department)}</select></div>
+    </div>
+    <div class="grid sm:grid-cols-3 gap-2">
+      <div>${lbl('Employee (who spent)')}<input id="exp-employee" list="exp-emp-list" value="${esc(e.employee_name || '')}" placeholder="Name" class="${ic}"><datalist id="exp-emp-list">${team.map(t => `<option value="${esc(t.full_name || t.display_name || '')}">`).join('')}</datalist></div>
+      <div>${lbl('GL / cost-centre account')}<select id="exp-gl" class="${ic}"><option value=""></option>${expAccts.map(a => `<option value="${a.id}" ${e.gl_account_id === a.id ? 'selected' : ''}>${esc(a.name)}</option>`).join('')}</select></div>
+      <div>${lbl('Payment method')}<select id="exp-pay" class="${ic}">${opt(opts.payment_methods, e.payment_method)}</select></div>
+    </div>
+    <div class="grid sm:grid-cols-4 gap-2">
+      <div>${lbl('VIN')}<input id="exp-vin" value="${esc(e.vin || '')}" class="${ic}"></div>
+      <div>${lbl('Stock #')}<input id="exp-stock" value="${esc(e.stock_number || '')}" class="${ic}"></div>
+      <div>${lbl('Repair order #')}<input id="exp-ro" value="${esc(e.repair_order || '')}" class="${ic}"></div>
+      <div>${lbl('PO #')}<input id="exp-po" value="${esc(e.po_number || '')}" class="${ic}"></div>
+    </div>
+    <div class="grid sm:grid-cols-4 gap-2">
+      <div>${lbl('Card last 4')}<input id="exp-card" maxlength="4" value="${esc(e.card_last4 || '')}" class="${ic}"></div>
+      <div>${lbl('Mileage (km)')}<input id="exp-km" type="number" step="0.1" value="${e.mileage_km != null ? e.mileage_km : ''}" class="${ic}"></div>
+      <div>${lbl('$ / km')}<input id="exp-rate" type="number" step="0.01" value="${e.mileage_rate != null ? e.mileage_rate : ''}" placeholder="0.70" class="${ic}"></div>
+      <div>${lbl('Recurrence')}<select id="exp-recurrence" class="${ic}">${opt(opts.recurrences, e.recurrence)}</select></div>
+    </div>
+    <div class="flex flex-wrap items-center gap-4">
+      <label class="flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-200"><input id="exp-reimb" type="checkbox" class="accent-indigo-600" ${e.reimbursable ? 'checked' : ''}>Reimbursable to employee</label>
+      <label class="flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-200"><input id="exp-recurring" type="checkbox" class="accent-indigo-600" ${e.recurring ? 'checked' : ''}>Recurring</label>
+      ${expIsApprover() && e.status !== 'approved' ? `<label class="flex items-center gap-2 text-sm font-semibold text-emerald-700 dark:text-emerald-300"><input id="exp-approve" type="checkbox" class="accent-emerald-600">Approve now</label>` : ''}
+    </div>
+    <div>${lbl('Notes')}<textarea id="exp-notes" rows="2" class="${ic}" placeholder="Memo, PO details, etc.">${esc(e.notes || '')}</textarea></div>
+    ${id && events.length ? `<details class="text-[11px] text-slate-400"><summary class="cursor-pointer font-bold">Audit trail (${events.length})</summary><div class="mt-1 space-y-0.5">${events.slice().reverse().map(v => `<div>${new Date(v.at).toLocaleString()} · <b>${esc(v.action)}</b>${v.detail ? ' · ' + esc(v.detail) : ''}</div>`).join('')}</div></details>` : ''}
+    <div class="flex items-center gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+      ${id ? `<button onclick="expDelete('${id}')" class="text-xs font-bold text-rose-500 hover:text-rose-400 px-2 py-2">Delete</button>${e.reimbursable && !e.reimbursed ? `<button onclick="expMarkReimb('${id}')" class="text-xs font-bold text-indigo-500 hover:text-indigo-600 px-2 py-2">Mark reimbursed</button>` : ''}` : ''}
+      <div class="flex-1"></div>
+      <button onclick="this.closest('.fixed').remove()" class="text-sm font-bold text-slate-500 px-3 py-2">Cancel</button>
+      <button onclick="expSave('${id || ''}', this)" class="text-sm font-bold bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg">Save</button>
+    </div>
+  </div>`, 'max-w-2xl');
 }
-async function acctDelEntry2(id) { if (!confirm('Delete this expense?')) return; try { await apiSendJson(`/accounting/entries/${id}`, 'DELETE'); acctLoadExpenses(); } catch (e) { showToast(e.message, 'error'); } }
-// Snap a receipt → AI reads it → pre-fills the expense form for a quick review + Add.
-async function acctScanReceipt(file) {
-  if (!file) return;
-  const fileInput = document.getElementById('acct-receipt-file');
-  if (file.size > 12 * 1024 * 1024) { showToast('That image is too large — try again at normal quality.', 'error'); if (fileInput) fileInput.value = ''; return; }
-  showToast('Reading receipt…', 'info');
+function expVal(id) { const el = document.getElementById(id); return el ? el.value.trim() : ''; }
+async function expSave(id, btn) {
+  const team = expTeam();
+  const empName = expVal('exp-employee');
+  const emp = team.find(t => (t.full_name || t.display_name || '').toLowerCase() === empName.toLowerCase());
+  const body = {
+    expense_date: expVal('exp-date'), amount: parseFloat(expVal('exp-amount')) || 0, tax: parseFloat(expVal('exp-tax')) || 0,
+    vendor: expVal('exp-vendor'), category: expVal('exp-category'), department: expVal('exp-department'),
+    employee_name: empName || null, employee_id: emp ? emp.id : null,
+    gl_account_id: expVal('exp-gl') || null, payment_method: expVal('exp-pay') || null, card_last4: expVal('exp-card') || null,
+    vin: expVal('exp-vin') || null, stock_number: expVal('exp-stock') || null, repair_order: expVal('exp-ro') || null, po_number: expVal('exp-po') || null,
+    mileage_km: expVal('exp-km') ? parseFloat(expVal('exp-km')) : null, mileage_rate: expVal('exp-rate') ? parseFloat(expVal('exp-rate')) : null,
+    recurrence: expVal('exp-recurrence') || null, recurring: !!document.getElementById('exp-recurring')?.checked,
+    reimbursable: !!document.getElementById('exp-reimb')?.checked, notes: expVal('exp-notes') || null,
+    receipt_url: expVal('exp-receipt-url') || null, receipt_type: expVal('exp-receipt-type') || null,
+  };
+  if (document.getElementById('exp-approve')?.checked) body.status = 'approved';
+  if (!body.amount && !(body.mileage_km && body.mileage_rate)) { showToast('Enter an amount (or mileage)', 'error'); return; }
+  const orig = btn.textContent; btn.disabled = true; btn.textContent = 'Saving…';
   try {
-    const dataUrl = await new Promise((resolve, reject) => { const r = new FileReader(); r.onload = () => resolve(r.result); r.onerror = reject; r.readAsDataURL(file); });
-    const categories = (__acctState.accounts || []).filter(a => a.category === 'expense' && a.active).map(a => a.name);
-    const d = await apiSendJson('/accounting/scan-receipt', 'POST', { image: dataUrl, categories }, { timeoutMs: 40000 });
-    const f = d.fields || {};
-    const set = (id, val) => { const el = document.getElementById(id); if (el && val != null && val !== '') el.value = val; };
-    if (f.date) set('acct-x-date', f.date);
-    if (f.total != null) set('acct-x-amount', f.total);
-    const memo = [f.vendor, f.category && f.category !== f.vendor ? f.category : null].filter(Boolean).join(' · ');
-    if (memo) set('acct-x-desc', memo);
-    // Best-effort: pick the expense account whose name matches the AI's category.
-    if (f.category) {
-      const sel = document.getElementById('acct-x-account');
-      if (sel) { const opt = [...sel.options].find(o => o.textContent.trim().toLowerCase() === f.category.toLowerCase()) || [...sel.options].find(o => o.textContent.trim().toLowerCase().includes(f.category.toLowerCase())); if (opt) sel.value = opt.value; }
-    }
-    document.getElementById('acct-x-amount')?.focus();
-    showToast(f.total != null ? `Read ${f.vendor || 'receipt'} — review and Add ✓` : 'Read the receipt — please check the amount', 'success');
-  } catch (e) {
-    showToast(e.message || 'Could not read the receipt', 'error');
-  } finally { if (fileInput) fileInput.value = ''; }
+    if (id) await apiSendJson(`/expenses/${id}`, 'PUT', body); else await apiSendJson('/expenses', 'POST', body);
+    showToast('Saved ✓', 'success'); btn.closest('.fixed')?.remove(); acctLoadExpenses();
+  } catch (e) { btn.disabled = false; btn.textContent = orig; showToast(e.message || 'Could not save', 'error'); }
 }
-window.acctAddExpense = acctAddExpense; window.acctDelEntry2 = acctDelEntry2; window.acctScanReceipt = acctScanReceipt;
+// Receipt in the modal: an image is OCR-scanned to prefill; a PDF just attaches. Both upload for the record.
+async function expReceiptPick(file) {
+  if (!file) return;
+  const isImg = (file.type || '').startsWith('image/');
+  showToast(isImg ? 'Reading receipt…' : 'Attaching…', 'info');
+  try {
+    // 1) OCR prefill for images.
+    if (isImg) {
+      const dataUrl = await new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = rej; r.readAsDataURL(file); });
+      try {
+        const d = await apiSendJson('/accounting/scan-receipt', 'POST', { image: dataUrl, categories: (__expState.options?.categories) || [] }, { timeoutMs: 40000 });
+        const f = d.fields || {}; const set = (id, v) => { const el = document.getElementById(id); if (el && v != null && v !== '') el.value = v; };
+        if (f.date) set('exp-date', f.date); if (f.total != null) set('exp-amount', f.total); if (f.tax != null) set('exp-tax', f.tax); if (f.vendor) set('exp-vendor', f.vendor);
+        if (f.category) { const s = document.getElementById('exp-category'); if (s) { const o = [...s.options].find(o => o.value.toLowerCase() === String(f.category).toLowerCase()); if (o) s.value = o.value; } }
+      } catch (e) { /* OCR may be off (no AI Boost) — still attach below */ }
+    }
+    // 2) Upload the file so it's stored on the record.
+    const fd = new FormData(); fd.append('file', file);
+    const r = await fetch(`${API}/expenses/upload-receipt`, { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: fd });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(d.error || 'Upload failed');
+    document.getElementById('exp-receipt-url').value = d.url; document.getElementById('exp-receipt-type').value = d.type || '';
+    const note = document.getElementById('exp-receipt-note'); if (note) { note.classList.remove('hidden'); note.innerHTML = `<a href="${esc(d.url)}" target="_blank" class="text-indigo-500 font-bold">📎 Receipt attached — view</a>`; }
+    showToast('Receipt attached ✓', 'success');
+  } catch (e) { showToast(e.message || 'Could not attach receipt', 'error'); }
+}
+async function expApprove(id) { try { await apiSendJson(`/expenses/${id}/approve`, 'POST', {}); showToast('Approved ✓', 'success'); acctLoadExpenses(); } catch (e) { showToast(e.message, 'error'); } }
+async function expReject(id) { const note = prompt('Reason for rejecting (optional):') ?? ''; try { await apiSendJson(`/expenses/${id}/reject`, 'POST', { note }); showToast('Rejected', 'success'); acctLoadExpenses(); } catch (e) { showToast(e.message, 'error'); } }
+async function expMarkReimb(id) { try { await apiSendJson(`/expenses/${id}/mark-reimbursed`, 'POST', {}); showToast('Marked reimbursed', 'success'); document.querySelector('.fixed[data-exp]')?.closest('.fixed')?.remove(); acctLoadExpenses(); } catch (e) { showToast(e.message, 'error'); } }
+async function expDelete(id) { if (!confirm('Delete this expense? This also removes its ledger entry.')) return; try { await apiSendJson(`/expenses/${id}`, 'DELETE'); showToast('Deleted', 'success'); document.querySelector('[data-exp]')?.closest('.fixed')?.remove(); acctLoadExpenses(); } catch (e) { showToast(e.message, 'error'); } }
+async function expExport() {
+  try {
+    showToast('Building CSV…', 'info');
+    const r = await fetch(`${API}/expenses/export.csv?` + expFilterQS(), { headers: { Authorization: `Bearer ${token}` } });
+    if (!r.ok) throw new Error('Export failed');
+    const blob = await r.blob(); const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url; a.download = `expenses-${__expState.filters.month || acctMonth()}.csv`; a.click(); URL.revokeObjectURL(url);
+  } catch (e) { showToast(e.message || 'Could not export', 'error'); }
+}
+const EXP_REPORTS = [['department', 'P&L by department'], ['employee', 'By salesperson'], ['vin', 'Recon per VIN'], ['vendor', 'Vendor spend'], ['category', 'Top categories'], ['reimbursements', 'Outstanding reimbursements'], ['tax', 'GST/HST summary'], ['payment', 'By payment method']];
+async function expReports() {
+  const btns = EXP_REPORTS.map(([t, l]) => `<button onclick="expRunReport('${t}', this)" class="text-xs font-bold bg-slate-100 dark:bg-slate-800 hover:bg-indigo-100 dark:hover:bg-indigo-900/40 text-slate-700 dark:text-slate-200 px-3 py-1.5 rounded-lg">${l}</button>`).join('');
+  crmOverlay(`<div class="p-5 space-y-3">
+    <div class="flex items-center justify-between"><div class="text-lg font-black text-slate-900 dark:text-white">Expense reports</div><button onclick="this.closest('.fixed').remove()" class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"><svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+    <p class="text-xs text-slate-500">For ${esc(__expState.filters.month || acctMonth())} (approved &amp; pending spend).</p>
+    <div class="flex flex-wrap gap-1.5">${btns}</div>
+    <div id="exp-report-out" class="pt-1"><div class="text-sm text-slate-400">Pick a report above.</div></div>
+  </div>`, 'max-w-lg');
+}
+async function expRunReport(type, btn) {
+  const out = document.getElementById('exp-report-out'); if (!out) return;
+  out.innerHTML = '<div class="text-sm text-slate-400">Loading…</div>';
+  const m = __expState.filters.month || acctMonth();
+  try {
+    const d = await apiGetJson(`/expenses/report/${type}?from=${m}-01&to=${m}-31`);
+    const r = d.result;
+    const table = (rowsArr, keyLabel) => `<div class="overflow-x-auto"><table class="w-full text-sm"><thead><tr class="text-left text-[11px] uppercase tracking-wider text-slate-400 border-b border-slate-200 dark:border-slate-800"><th class="px-2 py-1.5">${keyLabel}</th><th class="px-2 py-1.5 text-right">Count</th><th class="px-2 py-1.5 text-right">Total</th></tr></thead><tbody>${rowsArr.map(x => `<tr class="border-b border-slate-100 dark:border-slate-800/60"><td class="px-2 py-1.5 font-medium">${esc(x.key)}${x.stock ? ` <span class="text-[10px] text-slate-400">${esc(x.stock)}</span>` : ''}</td><td class="px-2 py-1.5 text-right text-slate-500">${x.count}</td><td class="px-2 py-1.5 text-right font-bold">${commMoney(x.total)}</td></tr>`).join('') || '<tr><td colspan="3" class="px-2 py-4 text-center text-slate-400">No data.</td></tr>'}</tbody></table></div>`;
+    if (type === 'tax') {
+      out.innerHTML = `<div class="grid grid-cols-3 gap-2 mb-3">${[['Total spend', r.total_spend], ['Taxable base', r.taxable_base], ['GST/HST', r.total_tax]].map(([l, v]) => `<div class="bg-slate-50 dark:bg-slate-800/50 rounded-lg p-2.5 text-center"><div class="text-[11px] text-slate-500">${l}</div><div class="text-base font-black">${commMoney(v)}</div></div>`).join('')}</div>${table(r.by_category, 'Category')}`;
+    } else if (type === 'reimbursements') {
+      out.innerHTML = `<div class="bg-amber-50 dark:bg-amber-950/30 rounded-lg p-2.5 mb-3 text-sm"><b>${commMoney(r.outstanding_total)}</b> outstanding to employees.</div>${table(r.by_employee, 'Employee')}`;
+    } else {
+      out.innerHTML = table(r, type === 'department' ? 'Department' : type === 'employee' ? 'Employee' : type === 'vin' ? 'VIN' : type === 'vendor' ? 'Vendor' : type === 'payment' ? 'Method' : 'Category');
+    }
+  } catch (e) { out.innerHTML = `<div class="text-sm text-rose-500">${esc(e.message)}</div>`; }
+}
+Object.assign(window, { expSetFilter, expModal, expSave, expReceiptPick, expApprove, expReject, expMarkReimb, expDelete, expExport, expReports, expRunReport });
 
 // Budget — a monthly spending target per expense category, tracked against actual spend.
 async function acctLoadBudget() {
