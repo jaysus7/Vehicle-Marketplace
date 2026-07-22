@@ -34,6 +34,50 @@ function esc(s) {
   ));
 }
 
+// Inline line-icon set (Font Awesome / Heroicons style) — no external library, so
+// it's CSP-safe and inherits currentColor like the rest of the UI. Use svgIcon()
+// everywhere instead of emojis.
+const SVG_ICONS = {
+  dot: '<circle cx="12" cy="12" r="3"/>',
+  sparkles: '<path d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z"/><path d="M18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 00-2.456 2.456z"/>',
+  fuel: '<path d="M3.75 21h10.5M4.5 21V5.25A2.25 2.25 0 016.75 3h4.5a2.25 2.25 0 012.25 2.25V21M13.5 9h2.25a2.25 2.25 0 012.25 2.25v6a1.5 1.5 0 003 0V9.257a1.5 1.5 0 00-.44-1.06l-2.06-2.06M7.5 7.5h3"/>',
+  tag: '<path d="M9.568 3H5.25A2.25 2.25 0 003 5.25v4.318c0 .597.237 1.17.659 1.591l9.581 9.581c.699.699 1.78.872 2.607.33a18.095 18.095 0 005.223-5.223c.542-.827.369-1.908-.33-2.607L11.16 3.66A2.25 2.25 0 009.568 3z"/><path d="M6 6h.008v.008H6V6z"/>',
+  shield: '<path d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z"/>',
+  droplet: '<path d="M12 21a9 9 0 01-9-9c0-3.6 4.5-9.75 9-11.25C16.5 2.25 21 8.4 21 12a9 9 0 01-9 9z"/>',
+  camera: '<path d="M6.827 6.175A2.31 2.31 0 015.186 7.23c-.38.054-.757.112-1.134.175C2.999 7.58 2.25 8.507 2.25 9.574V18a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9.574c0-1.067-.75-1.994-1.802-2.169a47.865 47.865 0 00-1.134-.175 2.31 2.31 0 01-1.64-1.055l-.822-1.316a2.192 2.192 0 00-1.736-1.039 48.774 48.774 0 00-5.232 0 2.192 2.192 0 00-1.736 1.039l-.821 1.316z"/><path d="M16.5 12.75a4.5 4.5 0 11-9 0 4.5 4.5 0 019 0zM18.75 10.5h.008v.008h-.008V10.5z"/>',
+  wrench: '<path d="M11.42 15.17L17.25 21A2.652 2.652 0 0021 17.25l-5.877-5.877M11.42 15.17l2.496-3.03c.317-.384.74-.626 1.208-.766M11.42 15.17l-4.655 5.653a2.548 2.548 0 11-3.586-3.586l6.837-5.63m5.108-.233c.55-.164 1.163-.188 1.743-.14a4.5 4.5 0 004.486-6.336l-3.276 3.277a3.004 3.004 0 01-2.25-2.25l3.276-3.276a4.5 4.5 0 00-6.336 4.486c.091 1.076-.071 2.264-.904 2.95l-.102.085"/>',
+  truck: '<path d="M8.25 18.75a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m3 0h6m-9 0H3.375a1.125 1.125 0 01-1.125-1.125V14.25m17.25 4.5a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m3 0h1.125c.621 0 1.129-.504 1.09-1.124a17.902 17.902 0 00-3.213-9.193 2.056 2.056 0 00-1.58-.86H14.25M16.5 18.75h-2.25m0-11.177v-.958c0-.568-.422-1.048-.987-1.106a48.554 48.554 0 00-10.026 0 1.106 1.106 0 00-.987 1.106v7.635m12-6.677v6.677m0 4.5v-4.5m0 0h-12"/>',
+  phone: '<path d="M2.25 6.75c0 8.284 6.716 15 15 15h2.25a2.25 2.25 0 002.25-2.25v-1.372c0-.516-.351-.966-.852-1.091l-4.423-1.106c-.44-.11-.902.055-1.173.417l-.97 1.293c-.282.376-.769.542-1.21.38a12.035 12.035 0 01-7.143-7.143c-.162-.441.004-.928.38-1.21l1.293-.97c.363-.271.527-.734.417-1.173L6.963 3.102a1.125 1.125 0 00-1.091-.852H4.5A2.25 2.25 0 002.25 4.5v2.25z"/>',
+  key: '<path d="M15.75 5.25a3 3 0 013 3m3 0a6 6 0 01-7.029 5.912c-.563-.097-1.159.026-1.563.43L10.5 17.25H8.25v2.25H6v2.25H2.25v-2.818c0-.597.237-1.17.659-1.591l6.499-6.499c.404-.404.527-1 .43-1.563A6 6 0 1121.75 8.25z"/>',
+  clipboard: '<path d="M9 12h3.75M9 15h3.75M9 18h3.75m3 .75H18a2.25 2.25 0 002.25-2.25V6.108c0-1.135-.845-2.098-1.976-2.192a48.424 48.424 0 00-1.123-.08m-5.801 0c-.065.21-.1.433-.1.664 0 .414.336.75.75.75h4.5a.75.75 0 00.75-.75 2.25 2.25 0 00-.1-.664m-5.8 0A2.251 2.251 0 0113.5 2.25H15c1.012 0 1.867.668 2.15 1.586m-5.8 0c-.376.023-.75.05-1.124.08C9.095 4.01 8.25 4.973 8.25 6.108V8.25m0 0H4.875c-.621 0-1.125.504-1.125 1.125v11.25c0 .621.504 1.125 1.125 1.125h9.75c.621 0 1.125-.504 1.125-1.125V9.375c0-.621-.504-1.125-1.125-1.125H8.25z"/>',
+  user: '<path d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z"/>',
+  calendar: '<path d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5"/>',
+  paperclip: '<path d="M18.375 12.739l-7.693 7.693a4.5 4.5 0 01-6.364-6.364l10.94-10.94A3 3 0 1119.5 7.372L8.552 18.32m.009-.01l-.01.01m5.699-9.941l-7.81 7.81a1.5 1.5 0 002.112 2.13"/>',
+  check: '<path d="M4.5 12.75l6 6 9-13.5"/>',
+  play: '<path d="M5.25 5.653c0-.856.917-1.398 1.667-.986l11.54 6.348a1.125 1.125 0 010 1.971l-11.54 6.347a1.125 1.125 0 01-1.667-.985V5.653z"/>',
+  reopen: '<path d="M9 15L3 9m0 0l6-6M3 9h12a6 6 0 010 12h-3"/>',
+  rocket: '<path d="M15.59 14.37a6 6 0 01-5.84 7.38v-4.8m5.84-2.58a14.98 14.98 0 006.16-12.12A14.98 14.98 0 009.631 8.41m5.96 5.96a14.926 14.926 0 01-5.841 2.58m-.119-8.54a6 6 0 00-7.381 5.84h4.8m2.581-5.84a14.927 14.927 0 00-2.58 5.84m2.699 2.7c-.103.021-.207.041-.311.06a15.09 15.09 0 01-2.448-2.448 14.9 14.9 0 01.06-.312m-2.24 2.39a4.493 4.493 0 00-1.757 4.306 4.493 4.493 0 004.306-1.758L16.5 21"/>',
+  eye: '<path d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z"/><path d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>',
+  chart: '<path d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z"/>',
+  download: '<path d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3"/>',
+  refresh: '<path d="M16.023 9.348h4.992V4.356M2.985 19.644v-4.992h4.992m-4.66 0a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99"/>',
+  receipt: '<path d="M8.25 6.75h7.5M8.25 12h7.5m-7.5 5.25h4.5M3.75 21V4.5A1.5 1.5 0 015.25 3h13.5a1.5 1.5 0 011.5 1.5V21l-2.25-1.5L15.75 21l-2.25-1.5L11.25 21 9 19.5 6.75 21 4.5 19.5 3.75 21z"/>',
+  plus: '<path d="M12 4.5v15m7.5-7.5h-15"/>',
+  close: '<path d="M6 18L18 6M6 6l12 12"/>',
+  chevronRight: '<path d="m8.25 4.5 7.5 7.5-7.5 7.5"/>',
+  chat: '<path d="M8.625 12a.375.375 0 11-.75 0 .375.375 0 01.75 0zm3.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm3.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zM21 12c0 4.556-4.03 8.25-9 8.25a9.764 9.764 0 01-2.555-.337A5.972 5.972 0 015.41 20.97a5.969 5.969 0 01-.474-.065 4.48 4.48 0 00.978-2.025c.09-.457-.133-.901-.467-1.226C3.93 16.178 3 14.189 3 12c0-4.556 4.03-8.25 9-8.25s9 3.694 9 8.25z"/>',
+  globe: '<path d="M12 21a9 9 0 100-18 9 9 0 000 18zM3.6 9h16.8M3.6 15h16.8M11.5 3a15.3 15.3 0 000 18M12.5 3a15.3 15.3 0 010 18"/>',
+  bolt: '<path d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z"/>',
+  megaphone: '<path d="M10.34 15.84c-.688-.06-1.386-.09-2.09-.09H7.5a4.5 4.5 0 110-9h.75c.704 0 1.402-.03 2.09-.09m0 9.18c.253.962.584 1.892.985 2.783.247.55.06 1.21-.463 1.511l-.657.38c-.551.318-1.26.117-1.527-.461a20.845 20.845 0 01-1.44-4.282m3.102.069a18.03 18.03 0 01-.59-4.59c0-1.586.205-3.124.59-4.59m0 9.18a23.848 23.848 0 018.835 2.535M10.34 6.66a23.847 23.847 0 008.835-2.535m0 0A23.74 23.74 0 0018.795 3m.38 1.125a23.91 23.91 0 011.014 5.395m-1.014 8.855c-.118.38-.245.754-.38 1.125m.38-1.125a23.91 23.91 0 001.014-5.395m0-3.46c.495.413.811 1.035.811 1.73 0 .695-.316 1.317-.811 1.73"/>',
+  currency: '<path d="M12 6v12m-3-2.818l.879.659c1.171.879 3.07.879 4.242 0 1.172-.879 1.172-2.303 0-3.182C13.536 12.219 12.768 12 12 12c-.725 0-1.45-.22-2.003-.659-1.106-.879-1.106-2.303 0-3.182s2.9-.879 4.006 0l.415.33M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>',
+  hashtag: '<path d="M5.25 8.25h15m-16.5 7.5h15m-1.8-13.5l-3.9 19.5m-2.1-19.5l-3.9 19.5"/>',
+  document: '<path d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z"/>',
+  car: '<path d="M8.25 18.75a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m3 0h6m-9 0H3.375a1.125 1.125 0 01-1.125-1.125V14.25m17.25 4.5a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m3 0h1.125c.621 0 1.129-.504 1.09-1.124a17.902 17.902 0 00-3.213-9.193 2.056 2.056 0 00-1.58-.86H14.25M16.5 18.75h-2.25m0-11.177v-.958c0-.568-.422-1.048-.987-1.106a48.554 48.554 0 00-10.026 0 1.106 1.106 0 00-.987 1.106v7.635m12-6.677v6.677m0 4.5v-4.5m0 0h-12"/>',
+};
+function svgIcon(name, cls = 'w-4 h-4') {
+  return `<svg class="${cls}" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24" aria-hidden="true">${SVG_ICONS[name] || SVG_ICONS.dot}</svg>`;
+}
+
 // ── Auto-format number inputs: thousands commas + up to 2 decimals ───────────
 // Give an input `data-money` (with type="text" inputmode="decimal") and it formats
 // live as the user types — e.g. 26626 → 26,626. Read the value back through msNum(),
@@ -381,7 +425,7 @@ function applyStaffRoleNav(role) {
 // config-backed step. Each has a `load` (prefill), `fields`, and `save`.
 const SETUP_WIZARDS = {
   accounting: {
-    title: 'Set up Accounting', icon: '🧾',
+    title: 'Set up Accounting', icon: 'receipt',
     intro: "Tell us how you handle sales tax so deals post to the books correctly. About 30 seconds.",
     roles: ['DEALER_ADMIN', 'OWNER', 'MANAGER', 'ACCOUNTING'],
     load: async () => (await apiGetJson('/accounting/settings')).settings || {},
@@ -401,7 +445,7 @@ const SETUP_WIZARDS = {
     },
   },
   service: {
-    title: 'Set up Service', icon: '🔧',
+    title: 'Set up Service', icon: 'wrench',
     intro: "Turn on online service booking and tell customers when you're open.",
     roles: ['DEALER_ADMIN', 'OWNER', 'MANAGER', 'SERVICE'],
     load: async () => (await apiGetJson('/service/config')).settings || {},
@@ -415,7 +459,7 @@ const SETUP_WIZARDS = {
     save: async (v) => { await apiSendJson('/service/config', 'PUT', { enabled: !!v.enabled, hours: v.hours, desk_email: v.desk_email, duration_min: v.duration_min }); if (typeof loadServiceSettings === 'function') loadServiceSettings(); },
   },
   website: {
-    title: 'Set up your website', icon: '🌐',
+    title: 'Set up your website', icon: 'globe',
     intro: 'Claim your web address, add a tagline, pick your brand colour, and go live. You can fine-tune everything later in the Website builder.',
     roles: ['DEALER_ADMIN', 'OWNER', 'MANAGER'],
     load: async () => (await apiGetJson('/dealership/site')) || {},
@@ -430,7 +474,7 @@ const SETUP_WIZARDS = {
     save: async (v) => { await apiSendJson('/dealership/site', 'PUT', { site_slug: v.site_slug, tagline: v.tagline, primary_color: v.primary_color, site_published: !!v.site_published }); if (typeof loadWebsiteSettings === 'function') { __wsTab = 'settings'; loadWebsitePage(); } },
   },
   inventory: {
-    title: 'Connect your inventory', icon: '🚗',
+    title: 'Connect your inventory', icon: 'car',
     intro: "Paste a link to your inventory — your website's used-cars page or an existing feed — and we'll pull every vehicle in automatically. This can take 10–30 seconds while we detect the platform.",
     roles: ['DEALER_ADMIN', 'OWNER', 'MANAGER'],
     isConfigured: async () => { try { const r = await fetch(`${API}/inventory-feeds`, { headers: { Authorization: `Bearer ${token}` } }); const feeds = r.ok ? await r.json() : []; return Array.isArray(feeds) && feeds.length > 0; } catch { return false; } },
@@ -479,13 +523,13 @@ async function loadSetupSnapshot(force) {
 
 // The steps. Order = the order we walk people through.
 const SETUP_STEPS = [
-  { id: 'inventory', icon: '🚗', label: 'Add your inventory', desc: 'Pull every vehicle in from your website or a feed — automatically.', roles: MGR_SET, tour: 'inventory', done: s => s.feeds.length > 0, run: () => runSetupForm('inventory') },
-  { id: 'website', icon: '🌐', label: 'Set up your website', desc: 'Claim your web address, add your look, and go live.', roles: MGR_SET, tour: 'website', done: s => !!(s.site.site_published || s.site.site_slug), run: () => runSetupForm('website') },
-  { id: 'texting', icon: '💬', label: 'Connect texting', desc: 'Text customers right from a lead (Twilio).', roles: MGR_SET, tour: 'texting', done: s => !!(s.twilio && isIntegrationConnected(s.twilio)), run: () => setupGoIntegration('twilio') },
-  { id: 'calendar', icon: '📅', label: 'Connect your calendar', desc: 'Appointments sync to Google or Outlook — both ways.', roles: MGR_SET, tour: 'calendar', done: s => (s.cal.providers || []).some(p => p.connected), run: () => setupGoIntegration('calendar') },
-  { id: 'accounting', icon: '🧾', label: 'Set up sales tax', desc: 'So every deal posts to the books correctly.', roles: [...MGR_SET, 'ACCOUNTING'], tour: 'accounting', done: s => !!(s.acct.tax_number || (s.acct.accounting_emails || []).length), run: () => runSetupForm('accounting') },
-  { id: 'service', icon: '🔧', label: 'Turn on service booking', desc: 'Let customers book service from your website.', roles: [...MGR_SET, 'SERVICE'], tour: 'service', done: s => !!s.svc.enabled, run: () => runSetupForm('service') },
-  { id: 'automation', icon: '⚡', label: 'Turn on follow-ups', desc: 'Auto-text and email your leads on autopilot.', roles: MGR_SET, tour: 'automation', done: () => false, run: () => { setSetupAck('automation'); setupCloseAll(); switchPage('automation-builder'); showToast('Flip on a sequence to finish this step', 'info'); } },
+  { id: 'inventory', icon: 'car', label: 'Add your inventory', desc: 'Pull every vehicle in from your website or a feed — automatically.', roles: MGR_SET, tour: 'inventory', done: s => s.feeds.length > 0, run: () => runSetupForm('inventory') },
+  { id: 'website', icon: 'globe', label: 'Set up your website', desc: 'Claim your web address, add your look, and go live.', roles: MGR_SET, tour: 'website', done: s => !!(s.site.site_published || s.site.site_slug), run: () => runSetupForm('website') },
+  { id: 'texting', icon: 'chat', label: 'Connect texting', desc: 'Text customers right from a lead (Twilio).', roles: MGR_SET, tour: 'texting', done: s => !!(s.twilio && isIntegrationConnected(s.twilio)), run: () => setupGoIntegration('twilio') },
+  { id: 'calendar', icon: 'calendar', label: 'Connect your calendar', desc: 'Appointments sync to Google or Outlook — both ways.', roles: MGR_SET, tour: 'calendar', done: s => (s.cal.providers || []).some(p => p.connected), run: () => setupGoIntegration('calendar') },
+  { id: 'accounting', icon: 'receipt', label: 'Set up sales tax', desc: 'So every deal posts to the books correctly.', roles: [...MGR_SET, 'ACCOUNTING'], tour: 'accounting', done: s => !!(s.acct.tax_number || (s.acct.accounting_emails || []).length), run: () => runSetupForm('accounting') },
+  { id: 'service', icon: 'wrench', label: 'Turn on service booking', desc: 'Let customers book service from your website.', roles: [...MGR_SET, 'SERVICE'], tour: 'service', done: s => !!s.svc.enabled, run: () => runSetupForm('service') },
+  { id: 'automation', icon: 'bolt', label: 'Turn on follow-ups', desc: 'Auto-text and email your leads on autopilot.', roles: MGR_SET, tour: 'automation', done: () => false, run: () => { setSetupAck('automation'); setupCloseAll(); switchPage('automation-builder'); showToast('Flip on a sequence to finish this step', 'info'); } },
 ];
 function setupStepsFor(role) { return SETUP_STEPS.filter(s => s.roles.includes(role)); }
 function setupStepDone(step, snap) { return setupAck(step.id) || !!(step.done && step.done(snap)); }
@@ -501,7 +545,7 @@ async function renderSetupBar() {
   if (done >= total) { host.innerHTML = ''; return; }
   const pct = Math.round(done / total * 100);
   host.innerHTML = `<button onclick="openSetupCenter()" title="Finish setting up" class="w-full text-left rounded-lg border border-indigo-200 dark:border-indigo-800 bg-indigo-50 dark:bg-indigo-950/30 px-3 py-2 mb-1.5 hover:bg-indigo-100 dark:hover:bg-indigo-900/40 transition">
-    <div class="flex items-center justify-between gap-2"><span class="text-[12px] font-black text-indigo-700 dark:text-indigo-300">🚀 Finish setup</span><span class="text-[11px] font-bold text-indigo-600 dark:text-indigo-400 shrink-0">${done}/${total}</span></div>
+    <div class="flex items-center justify-between gap-2"><span class="inline-flex items-center gap-1.5 text-[12px] font-black text-indigo-700 dark:text-indigo-300">${svgIcon('rocket', 'w-3.5 h-3.5')}Finish setup</span><span class="text-[11px] font-bold text-indigo-600 dark:text-indigo-400 shrink-0">${done}/${total}</span></div>
     <div class="h-1.5 rounded-full bg-indigo-100 dark:bg-indigo-900/50 overflow-hidden mt-1.5"><div class="h-full bg-indigo-600 rounded-full transition-all duration-500" style="width:${pct}%"></div></div>
   </button>`;
 }
@@ -531,7 +575,7 @@ async function openSetupCenter() {
     const tourBtn = x.s.tour ? `<button onclick="setupTour('${x.s.tour}')" title="Show me around this area" class="shrink-0 flex flex-col items-center justify-center rounded-xl border border-slate-200 dark:border-slate-700 px-2.5 hover:bg-slate-50 dark:hover:bg-slate-800/60 text-slate-500 dark:text-slate-400"><svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M2.036 12.322a1 1 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.964-7.178z"/><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg><span class="text-[9px] font-bold mt-0.5">Tour</span></button>` : '';
     return `<div class="flex items-stretch gap-2">
       <button onclick="setupRun('${x.s.id}')" class="flex-1 min-w-0 flex items-center gap-3 text-left rounded-xl border px-3 py-3 transition ${ring}">
-        <span class="w-8 h-8 rounded-full flex items-center justify-center text-base shrink-0 ${badge}">${x.done ? '✓' : x.s.icon}</span>
+        <span class="w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${badge}">${svgIcon(x.done ? 'check' : x.s.icon, 'w-4 h-4')}</span>
         <span class="min-w-0 flex-1"><span class="block text-sm font-bold text-slate-900 dark:text-white">${esc(x.s.label)}</span><span class="block text-[11px] text-slate-500 dark:text-slate-400">${esc(x.s.desc)}</span></span>
         ${tag}
       </button>
@@ -540,13 +584,13 @@ async function openSetupCenter() {
   }).join('');
   crmOverlay(`<div class="p-5 space-y-4" data-setup-body>
     <div class="flex items-start justify-between gap-3">
-      <div><div class="text-lg font-black text-slate-900 dark:text-white">${allDone ? "You're all set! 🎉" : "Let's set up MarketSync"}</div>
+      <div><div class="text-lg font-black text-slate-900 dark:text-white">${allDone ? "You're all set" : "Let's set up MarketSync"}</div>
         <p class="text-sm text-slate-500 dark:text-slate-400 mt-0.5">${allDone ? 'Every essential is configured. You can close this.' : "A few quick steps and you're ready to sell. Do them in any order — we keep your place, and you can stop any time."}</p></div>
       <button onclick="this.closest('.fixed').remove()" class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 shrink-0"><svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" d="M6 6l12 12M18 6L6 18"/></svg></button>
     </div>
     <div><div class="flex items-center justify-between text-[11px] font-bold text-slate-500 dark:text-slate-400 mb-1"><span>${done} of ${total} done</span><span>${pct}%</span></div>
       <div class="h-2 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden"><div class="h-full ${allDone ? 'bg-emerald-500' : 'bg-indigo-600'} rounded-full transition-all duration-500" style="width:${pct}%"></div></div></div>
-    <p class="text-[11px] text-slate-400 dark:text-slate-500 -mt-1">Each step has a <span class="font-bold text-indigo-500 dark:text-indigo-400">👁 Tour</span> button for a quick look around, plus its setup. Prefer the whole thing? <button onclick="setupCloseAll(); startMarketSyncTour();" class="font-bold text-indigo-600 dark:text-indigo-400 hover:underline">Take the full tour →</button></p>
+    <p class="text-[11px] text-slate-400 dark:text-slate-500 -mt-1">Each step has a <span class="inline-flex items-center gap-1 font-bold text-indigo-500 dark:text-indigo-400">${svgIcon('eye', 'w-3 h-3')}Tour</span> button for a quick look around, plus its setup. Prefer the whole thing? <button onclick="setupCloseAll(); startMarketSyncTour();" class="font-bold text-indigo-600 dark:text-indigo-400 hover:underline">Take the full tour</button></p>
     <div class="space-y-2">${rows}</div>
     ${allDone
       ? `<button onclick="this.closest('.fixed').remove()" class="w-full text-sm font-bold bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2.5 rounded-lg transition">Done</button>`
@@ -582,14 +626,14 @@ async function runSetupForm(id) {
   crmOverlay(`<div class="p-5 space-y-4" data-setup-body>
     <div class="flex items-start gap-3">
       <button onclick="openSetupCenter()" class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 shrink-0 mt-0.5" title="Back to all steps"><svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg></button>
-      <div class="w-10 h-10 rounded-xl bg-indigo-100 dark:bg-indigo-950/50 flex items-center justify-center text-xl shrink-0">${w.icon || '🛠️'}</div>
+      <div class="w-10 h-10 rounded-xl bg-indigo-100 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-300 flex items-center justify-center shrink-0">${svgIcon(w.icon || 'clipboard', 'w-5 h-5')}</div>
       <div class="min-w-0"><div class="text-lg font-black text-slate-900 dark:text-white">${esc(w.title)}</div>
         <p class="text-sm text-slate-500 dark:text-slate-400 mt-0.5">${esc(w.intro)}</p></div>
     </div>
     <div class="space-y-3">${w.fields.map(fieldHtml).join('')}</div>
     <div class="flex items-center gap-2 pt-3 border-t border-slate-100 dark:border-slate-800">
       <button onclick="openSetupCenter()" class="text-xs font-bold text-slate-500 hover:text-slate-700 dark:hover:text-slate-200 px-2 py-2">← All steps</button>
-      <button onclick="setupTour('${id}')" class="text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:underline px-1 py-2">👁 Show me around</button>
+      <button onclick="setupTour('${id}')" class="inline-flex items-center gap-1 text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:underline px-1 py-2">${svgIcon('eye', 'w-3.5 h-3.5')}Show me around</button>
       <div class="flex-1"></div>
       <button onclick="setupSaveForm('${id}', this)" class="text-sm font-bold bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg">Save &amp; continue</button>
     </div>
@@ -3787,7 +3831,7 @@ function setupMobileMoreMenu() {
       if (!steps.length || !__setupSnap) return;
       const dn = steps.filter(s => setupStepDone(s, __setupSnap)).length, tot = steps.length;
       if (dn >= tot) return;
-      const b = mk(`<button class="w-full text-left rounded-lg border border-indigo-200 dark:border-indigo-800 bg-indigo-50 dark:bg-indigo-950/30 px-3 py-2.5"><div class="flex items-center justify-between"><span class="text-sm font-black text-indigo-700 dark:text-indigo-300">🚀 Finish setup</span><span class="text-xs font-bold text-indigo-600 dark:text-indigo-400">${dn}/${tot}</span></div><div class="h-1.5 rounded-full bg-indigo-100 dark:bg-indigo-900/50 overflow-hidden mt-1.5"><div class="h-full bg-indigo-600 rounded-full" style="width:${Math.round(dn / tot * 100)}%"></div></div></button>`);
+      const b = mk(`<button class="w-full text-left rounded-lg border border-indigo-200 dark:border-indigo-800 bg-indigo-50 dark:bg-indigo-950/30 px-3 py-2.5"><div class="flex items-center justify-between"><span class="inline-flex items-center gap-1.5 text-sm font-black text-indigo-700 dark:text-indigo-300">${svgIcon('rocket', 'w-4 h-4')}Finish setup</span><span class="text-xs font-bold text-indigo-600 dark:text-indigo-400">${dn}/${tot}</span></div><div class="h-1.5 rounded-full bg-indigo-100 dark:bg-indigo-900/50 overflow-hidden mt-1.5"><div class="h-full bg-indigo-600 rounded-full" style="width:${Math.round(dn / tot * 100)}%"></div></div></button>`);
       b.addEventListener('click', () => { close(); openSetupCenter(); });
       list.appendChild(b);
     })();
@@ -4515,7 +4559,7 @@ async function loadExecutiveRoi() {
         <p class="text-sm text-slate-500 dark:text-slate-400">${d.is_manager ? 'Whole store' : 'Your book'} · what MarketSync moved — last ${d.range_days} days.</p>
       </div>
       <div class="flex gap-1.5 items-center">${rangeBtn('7', '7d')}${rangeBtn('30', '30d')}${rangeBtn('90', '90d')}${rangeBtn('365', '1y')}
-        <button onclick="execCsv()" class="ml-1 px-3 py-1.5 text-xs font-bold rounded-lg border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800">⬇ CSV</button></div>
+        <button onclick="execCsv()" class="ml-1 px-3 py-1.5 text-xs font-bold rounded-lg border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800">${svgIcon("download","w-3.5 h-3.5 inline-block align-text-bottom mr-0.5")}CSV</button></div>
     </div>
     ${fin ? `<div class="grid grid-cols-2 lg:grid-cols-4 gap-3">
       ${tile('Revenue', money0(fin.revenue), `${fin.units} sold · avg ${money0(fin.avg_price)}`, 'text-emerald-600 dark:text-emerald-400')}
@@ -4622,7 +4666,7 @@ async function loadInventoryMix() {
   root.innerHTML = `
     <div class="mb-4 flex items-start justify-between gap-3 flex-wrap"><div><h2 class="text-xl font-black text-slate-900 dark:text-white">Inventory mix &amp; aging</h2>
       <p class="text-sm text-slate-500 dark:text-slate-400">Your live lot, right now — how it's aging and what it's made of.</p></div>
-      <button onclick="invMixCsv()" class="px-3 py-1.5 text-xs font-bold rounded-lg border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800">⬇ CSV</button></div>
+      <button onclick="invMixCsv()" class="px-3 py-1.5 text-xs font-bold rounded-lg border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800">${svgIcon("download","w-3.5 h-3.5 inline-block align-text-bottom mr-0.5")}CSV</button></div>
     <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
       ${stat('Units in stock', d.summary.total_units, 'available')}
       ${stat('Lot value', compact(d.summary.total_value), 'total asking')}
@@ -4701,7 +4745,7 @@ async function loadSalesAnalysis() {
       <div><h2 class="text-xl font-black text-slate-900 dark:text-white">Sales analysis</h2>
         <p class="text-sm text-slate-500 dark:text-slate-400">What left the lot — last ${d.range_days} days.</p></div>
       <div class="flex gap-1.5 items-center">${rangeBtn('30', '30d')}${rangeBtn('90', '90d')}${rangeBtn('180', '6mo')}${rangeBtn('365', '1y')}
-        <button onclick="salesAnalysisCsv()" class="ml-1 px-3 py-1.5 text-xs font-bold rounded-lg border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800">⬇ CSV</button></div>
+        <button onclick="salesAnalysisCsv()" class="ml-1 px-3 py-1.5 text-xs font-bold rounded-lg border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800">${svgIcon("download","w-3.5 h-3.5 inline-block align-text-bottom mr-0.5")}CSV</button></div>
     </div>
     <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
       ${stat('Units sold', d.summary.units_sold, '')}
@@ -4809,7 +4853,7 @@ async function loadMarketingRoi() {
       <div><h2 class="text-xl font-black text-slate-900 dark:text-white">Marketing ROI</h2>
         <p class="text-sm text-slate-500 dark:text-slate-400">Which channels paid off — spend vs leads, sales & gross, last ${d.range_days} days.</p></div>
       <div class="flex gap-1.5 items-center">${rangeBtn('30', '30d')}${rangeBtn('90', '90d')}${rangeBtn('180', '6mo')}${rangeBtn('365', '1y')}
-        <button onclick="marketingRoiCsv()" class="ml-1 px-3 py-1.5 text-xs font-bold rounded-lg border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800">⬇ CSV</button></div>
+        <button onclick="marketingRoiCsv()" class="ml-1 px-3 py-1.5 text-xs font-bold rounded-lg border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800">${svgIcon("download","w-3.5 h-3.5 inline-block align-text-bottom mr-0.5")}CSV</button></div>
     </div>
     ${!d.has_spend ? `<div class="rounded-xl bg-indigo-50 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-900 px-4 py-3 mb-4 text-sm text-indigo-800 dark:text-indigo-200">Add your monthly ad spend per channel below to unlock cost-per-lead, cost-per-sale and ROI. Leads and sales by channel are already tracked from your CRM — no tagging needed.</div>` : ''}
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
@@ -4858,7 +4902,7 @@ async function loadAdSpendPanel() {
   let data;
   try { data = await apiGetJson('/adspend/status', { retries: 1 }); }
   catch { host.remove(); return; }
-  const icon = { meta: '📘', google_ads: '🟢' };
+  const icon = { meta: 'megaphone', google_ads: 'megaphone' };
   const rows = (data.providers || []).map(p => {
     let right;
     if (!p.configured) right = '<span class="text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500">Setup pending</span>';
@@ -4866,7 +4910,7 @@ async function loadAdSpendPanel() {
     else right = data.can_manage ? `<button onclick="adConnect('${p.provider}')" class="text-xs font-bold bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-1.5 rounded-lg transition">Connect</button>` : '<span class="text-[10px] text-slate-400">Ask an admin</span>';
     const sub = p.connected ? `${esc(p.account || 'Connected')}${p.last_synced_at ? ' · synced ' + new Date(p.last_synced_at).toLocaleDateString('en-US') : ''}${p.last_error ? ' · <span class="text-rose-500">' + esc(p.last_error.slice(0, 50)) + '</span>' : ''}` : (p.configured ? 'Auto-import monthly spend' : 'Server setup pending');
     return `<div class="flex items-center gap-2.5 py-2 border-b border-slate-100 dark:border-slate-800 last:border-0">
-      <div class="w-8 h-8 rounded-lg bg-blue-100 dark:bg-blue-950/40 flex items-center justify-center text-base shrink-0">${icon[p.provider] || '📊'}</div>
+      <div class="w-8 h-8 rounded-lg bg-blue-100 dark:bg-blue-950/40 text-blue-600 dark:text-blue-300 flex items-center justify-center shrink-0">${svgIcon(icon[p.provider] || 'megaphone', 'w-4 h-4')}</div>
       <div class="min-w-0 flex-1"><div class="text-sm font-bold text-slate-900 dark:text-white">${esc(p.label)}</div><div class="text-[11px] text-slate-500 dark:text-slate-400 truncate">${sub}</div></div>
       <div class="shrink-0">${right}</div>
     </div>`;
@@ -7200,7 +7244,7 @@ async function loadCalendarSyncCard() {
   let data;
   try { data = await apiGetJson('/calendar/status', { retries: 1 }); }
   catch { host.remove(); return; }
-  const icon = { google: '📅', microsoft: '📆' };
+  const icon = { google: 'calendar', microsoft: 'calendar' };
   const rows = (data.providers || []).map(p => {
     let right;
     if (!p.configured) {
@@ -8270,7 +8314,7 @@ async function acctLoadExpenses() {
       const st = EXP_STATUS[e.status] || EXP_STATUS.submitted;
       return `<tr class="border-b border-slate-100 dark:border-slate-800/60 hover:bg-slate-50 dark:hover:bg-slate-800/40">
         <td class="px-3 py-2 whitespace-nowrap">${e.expense_date}</td>
-        <td class="px-3 py-2">${esc(e.vendor || '—')}${e.receipt_url ? ` <a href="${esc(e.receipt_url)}" target="_blank" title="Receipt" class="text-indigo-500">📎</a>` : ''}</td>
+        <td class="px-3 py-2">${esc(e.vendor || '—')}${e.receipt_url ? ` <a href="${esc(e.receipt_url)}" target="_blank" title="Receipt" class="text-indigo-500 inline-flex align-middle">${svgIcon("paperclip","w-3.5 h-3.5")}</a>` : ''}</td>
         <td class="px-3 py-2 text-slate-500">${esc(e.category || '—')}</td>
         <td class="px-3 py-2 text-slate-500">${esc(e.department || '—')}</td>
         <td class="px-3 py-2 text-slate-500 whitespace-nowrap">${esc(e.stock_number || e.vin || '—')}</td>
@@ -8290,9 +8334,9 @@ async function acctLoadExpenses() {
         ${sel('exp-f-cat', 'category', opts.categories, 'All categories')}
         ${sel('exp-f-status', 'status', opts.statuses, 'Any status')}
         <div class="flex-1"></div>
-        <button onclick="expGenerateRecurring(this)" title="Create this month's recurring expenses" class="text-xs font-bold bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 px-3 py-1.5 rounded-lg">↻ Recurring</button>
-        <button onclick="expReports()" class="text-xs font-bold bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 px-3 py-1.5 rounded-lg">📊 Reports</button>
-        <button onclick="expExport()" class="text-xs font-bold bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 px-3 py-1.5 rounded-lg">⬇ Export</button>
+        <button onclick="expGenerateRecurring(this)" title="Create this month's recurring expenses" class="inline-flex items-center gap-1.5 text-xs font-bold bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 px-3 py-1.5 rounded-lg">${svgIcon('refresh', 'w-3.5 h-3.5')}Recurring</button>
+        <button onclick="expReports()" class="inline-flex items-center gap-1.5 text-xs font-bold bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 px-3 py-1.5 rounded-lg">${svgIcon('chart', 'w-3.5 h-3.5')}Reports</button>
+        <button onclick="expExport()" class="inline-flex items-center gap-1.5 text-xs font-bold bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 px-3 py-1.5 rounded-lg">${svgIcon('download', 'w-3.5 h-3.5')}Export</button>
         <button onclick="expModal()" class="text-sm font-bold bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-1.5 rounded-lg">+ Add expense</button>
       </div>
       <div class="text-sm text-slate-500 mb-2">${list.count || 0} expense${list.count === 1 ? '' : 's'} · Total <b class="text-slate-700 dark:text-slate-200">${commMoney(list.sum || 0)}</b></div>
@@ -8318,11 +8362,11 @@ async function expModal(id) {
     <div class="flex items-center justify-between"><div class="text-lg font-black text-slate-900 dark:text-white">${id ? 'Expense' : 'New expense'}</div>
       <div class="flex items-center gap-2">
         <input id="exp-receipt-file" type="file" accept="image/*,application/pdf" capture="environment" class="hidden" onchange="expReceiptPick(this.files[0])">
-        <button onclick="document.getElementById('exp-receipt-file').click()" class="flex items-center gap-1.5 text-xs font-bold bg-violet-100 dark:bg-violet-950/40 text-violet-700 dark:text-violet-300 hover:bg-violet-200 px-3 py-1.5 rounded-lg">📷 Scan / attach receipt</button>
+        <button onclick="document.getElementById('exp-receipt-file').click()" class="flex items-center gap-1.5 text-xs font-bold bg-violet-100 dark:bg-violet-950/40 text-violet-700 dark:text-violet-300 hover:bg-violet-200 px-3 py-1.5 rounded-lg">${svgIcon('camera', 'w-4 h-4')}Scan / attach receipt</button>
         <button onclick="this.closest('.fixed').remove()" class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"><svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" d="M6 6l12 12M18 6L6 18"/></svg></button>
       </div>
     </div>
-    <div id="exp-receipt-note" class="text-[11px] ${e.receipt_url ? '' : 'hidden'}">${e.receipt_url ? `<a href="${esc(e.receipt_url)}" target="_blank" class="text-indigo-500 font-bold">📎 Receipt attached — view</a>` : ''}</div>
+    <div id="exp-receipt-note" class="text-[11px] ${e.receipt_url ? '' : 'hidden'}">${e.receipt_url ? `<a href="${esc(e.receipt_url)}" target="_blank" class="text-indigo-500 font-bold">${svgIcon("paperclip","w-3.5 h-3.5 inline-block align-text-bottom")} Receipt attached — view</a>` : ''}</div>
     <input type="hidden" id="exp-receipt-url" value="${esc(e.receipt_url || '')}"><input type="hidden" id="exp-receipt-type" value="${esc(e.receipt_type || '')}">
     <div class="grid sm:grid-cols-3 gap-2">
       <div>${lbl('Date')}<input id="exp-date" type="date" value="${esc(e.expense_date || acctToday())}" class="${ic}"></div>
@@ -8412,7 +8456,7 @@ async function expReceiptPick(file) {
     const d = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(d.error || 'Upload failed');
     document.getElementById('exp-receipt-url').value = d.url; document.getElementById('exp-receipt-type').value = d.type || '';
-    const note = document.getElementById('exp-receipt-note'); if (note) { note.classList.remove('hidden'); note.innerHTML = `<a href="${esc(d.url)}" target="_blank" class="text-indigo-500 font-bold">📎 Receipt attached — view</a>`; }
+    const note = document.getElementById('exp-receipt-note'); if (note) { note.classList.remove('hidden'); note.innerHTML = `<a href="${esc(d.url)}" target="_blank" class="text-indigo-500 font-bold">${svgIcon("paperclip","w-3.5 h-3.5 inline-block align-text-bottom")} Receipt attached — view</a>`; }
     showToast('Receipt attached ✓', 'success');
   } catch (e) { showToast(e.message || 'Could not attach receipt', 'error'); }
 }
@@ -8484,7 +8528,7 @@ Object.assign(window, { expSetFilter, expModal, expSave, expReceiptPick, expAppr
 let __taskState = { filters: {}, options: null };
 const TASK_COLS = [['todo', 'To do'], ['in_progress', 'In progress'], ['blocked', 'Blocked'], ['done', 'Done']];
 const TASK_PRI = { urgent: 'border-l-rose-500', high: 'border-l-amber-500', normal: 'border-l-slate-300 dark:border-l-slate-600', low: 'border-l-slate-200 dark:border-l-slate-700' };
-const TASK_KIND_ICON = { Detail: '✨', Fuel: '⛽', Plates: '🔖', Safety: '🛡️', Wash: '🚿', Photos: '📸', Parts: '🔧', Transport: '🚚', Call: '📞', Deliver: '🔑', Other: '📋' };
+const TASK_KIND_ICON = { Detail: 'sparkles', Fuel: 'fuel', Plates: 'tag', Safety: 'shield', Wash: 'droplet', Photos: 'camera', Parts: 'wrench', Transport: 'truck', Call: 'phone', Deliver: 'key', Other: 'clipboard' };
 function taskTeamName(id) { const t = expTeam().find(x => x.id === id); return t ? (t.full_name || t.display_name || '') : ''; }
 async function loadTaskBoard() {
   const root = document.getElementById('taskboard-root'); if (!root) return;
@@ -8504,26 +8548,26 @@ async function loadTaskBoard() {
     const t0 = acctToday();
     const card = (e) => {
       const overdue = e.due_date && e.due_date < t0 && e.status !== 'done';
-      const icon = TASK_KIND_ICON[e.kind] || '📋';
+      const icon = TASK_KIND_ICON[e.kind] || 'clipboard';
       const veh = e.stock_number || e.vin;
       return `<div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 border-l-4 ${TASK_PRI[e.priority] || TASK_PRI.normal} rounded-lg p-2.5 mb-2 cursor-pointer hover:shadow-sm" onclick="taskModal('${e.id}')">
         <div class="flex items-start gap-2">
-          <span class="text-base leading-none mt-0.5">${icon}</span>
+          <span class="text-slate-400 dark:text-slate-500 mt-0.5">${svgIcon(icon, 'w-4 h-4')}</span>
           <div class="min-w-0 flex-1">
             <div class="text-sm font-bold text-slate-900 dark:text-white truncate">${esc(e.title)}</div>
             <div class="flex flex-wrap items-center gap-x-2 gap-y-0.5 mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">
               ${e.kind ? `<span>${esc(e.kind)}</span>` : ''}
               ${veh ? `<span class="font-mono">${esc(veh)}</span>` : ''}
-              ${e.contact_name ? `<span>· ${esc(e.contact_name)}</span>` : ''}
-              ${e.assignee_name ? `<span>· 👤 ${esc(e.assignee_name)}</span>` : ''}
-              ${e.due_date ? `<span class="${overdue ? 'text-rose-500 font-bold' : ''}">· 📅 ${e.due_date}${overdue ? ' (overdue)' : ''}</span>` : ''}
-              ${(Array.isArray(e.photos) && e.photos.length) ? `<span>· 📎${e.photos.length}</span>` : ''}
+              ${e.contact_name ? `<span class="inline-flex items-center gap-1">${svgIcon('user', 'w-3 h-3')}${esc(e.contact_name)}</span>` : ''}
+              ${e.assignee_name ? `<span class="inline-flex items-center gap-1">${svgIcon('user', 'w-3 h-3')}${esc(e.assignee_name)}</span>` : ''}
+              ${e.due_date ? `<span class="inline-flex items-center gap-1 ${overdue ? 'text-rose-500 font-bold' : ''}">${svgIcon('calendar', 'w-3 h-3')}${e.due_date}${overdue ? ' (overdue)' : ''}</span>` : ''}
+              ${(Array.isArray(e.photos) && e.photos.length) ? `<span class="inline-flex items-center gap-0.5">${svgIcon('paperclip', 'w-3 h-3')}${e.photos.length}</span>` : ''}
             </div>
           </div>
         </div>
-        <div class="flex items-center gap-1.5 mt-2" onclick="event.stopPropagation()">
-          ${e.status !== 'done' ? `<button onclick="taskSetStatus('${e.id}','done')" class="text-[11px] font-bold text-emerald-600 hover:text-emerald-500">✓ Done</button>` : `<button onclick="taskSetStatus('${e.id}','todo')" class="text-[11px] font-bold text-slate-400 hover:text-slate-600">↺ Reopen</button>`}
-          ${e.status === 'todo' ? `<button onclick="taskSetStatus('${e.id}','in_progress')" class="text-[11px] font-bold text-indigo-500 hover:text-indigo-600">▶ Start</button>` : ''}
+        <div class="flex items-center gap-2 mt-2" onclick="event.stopPropagation()">
+          ${e.status !== 'done' ? `<button onclick="taskSetStatus('${e.id}','done')" class="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-600 hover:text-emerald-500">${svgIcon('check', 'w-3.5 h-3.5')}Done</button>` : `<button onclick="taskSetStatus('${e.id}','todo')" class="inline-flex items-center gap-1 text-[11px] font-bold text-slate-400 hover:text-slate-600">${svgIcon('reopen', 'w-3.5 h-3.5')}Reopen</button>`}
+          ${e.status === 'todo' ? `<button onclick="taskSetStatus('${e.id}','in_progress')" class="inline-flex items-center gap-1 text-[11px] font-bold text-indigo-500 hover:text-indigo-600">${svgIcon('play', 'w-3.5 h-3.5')}Start</button>` : ''}
         </div>
       </div>`;
     };
@@ -8535,7 +8579,7 @@ async function loadTaskBoard() {
       </div>`;
     }).join('');
     const teamOpts = team.map(t => `<option value="${t.id}" ${f.assignee_id === t.id ? 'selected' : ''}>${esc(t.full_name || t.display_name || '')}</option>`).join('');
-    const kindQuick = ['Detail', 'Fuel', 'Plates', 'Safety', 'Photos', 'Transport', 'Deliver'].map(k => `<button onclick="taskModal(null, {kind:'${k}', title:'${k}'})" class="text-[11px] font-bold bg-slate-100 dark:bg-slate-800 hover:bg-indigo-100 dark:hover:bg-indigo-900/40 text-slate-700 dark:text-slate-200 px-2.5 py-1 rounded-full">${TASK_KIND_ICON[k]} ${k}</button>`).join('');
+    const kindQuick = ['Detail', 'Fuel', 'Plates', 'Safety', 'Photos', 'Transport', 'Deliver'].map(k => `<button onclick="taskModal(null, {kind:'${k}', title:'${k}'})" class="inline-flex items-center gap-1.5 text-[11px] font-bold bg-slate-100 dark:bg-slate-800 hover:bg-indigo-100 dark:hover:bg-indigo-900/40 text-slate-700 dark:text-slate-200 px-2.5 py-1 rounded-full">${svgIcon(TASK_KIND_ICON[k], 'w-3.5 h-3.5')}${k}</button>`).join('');
     root.innerHTML = `
       <div><h1 class="text-2xl font-black text-slate-900 dark:text-white">Task Board</h1><p class="text-sm text-slate-500 dark:text-slate-400">Every job to get a car ready — assigned, tracked, done. Detail, fuel, plates, transport, delivery and more.</p></div>
       <div class="flex flex-wrap items-center gap-2">
@@ -9249,7 +9293,7 @@ function loadReports() {
 let __rptTab = 'overview';
 let __rptRange = '90';
 const REPORT_DEFS = [
-  { key: 'overview', label: '📊 Overview' },
+  { key: 'overview', label: 'Overview' },
   { key: 'sales', label: '🚗 Sales' },
   { key: 'fni', label: '💰 F&I' },
   { key: 'leads', label: '📥 Leads & sources' },
@@ -9336,7 +9380,7 @@ async function loadDeepReport(key) {
       <div><h2 class="text-xl font-black text-slate-900 dark:text-white">${esc((def?.label || key).replace(/^\S+\s/, ''))}</h2>
         <p class="text-sm text-slate-500 dark:text-slate-400">Last ${d.range_days} days.</p></div>
       <div class="flex gap-1.5 items-center">${rangeBtn('30', '30d')}${rangeBtn('90', '90d')}${rangeBtn('180', '6mo')}${rangeBtn('365', '1y')}
-        <button onclick="exportReportCsv()" class="ml-1 px-3 py-1.5 text-xs font-bold rounded-lg border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800">⬇ CSV</button></div>
+        <button onclick="exportReportCsv()" class="ml-1 px-3 py-1.5 text-xs font-bold rounded-lg border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800">${svgIcon("download","w-3.5 h-3.5 inline-block align-text-bottom mr-0.5")}CSV</button></div>
     </div>
     ${tiles}${funnel ? '<div class="mt-4">' + funnel + '</div>' : ''}
     <div class="grid grid-cols-1 ${tables.length > 700 ? 'lg:grid-cols-2' : ''} gap-4 mt-4">${tables}</div>`;
@@ -14274,7 +14318,7 @@ function autoGlobalsHtml(s) {
       <button onclick="autoDigestPreview(this)" class="mt-2 text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:text-indigo-500">✉️ Email me a preview now</button>
     </div>
     <div class="mt-4 pt-4 border-t border-slate-100 dark:border-slate-800">
-      <div class="flex items-center gap-2 mb-1"><span class="text-sm font-black text-slate-900 dark:text-white">📊 Weekly briefing</span></div>
+      <div class="flex items-center gap-2 mb-1"><span class="inline-flex items-center gap-1.5 text-sm font-black text-slate-900 dark:text-white">${svgIcon("chart","w-4 h-4")}Weekly briefing</span></div>
       <p class="text-[11px] text-slate-500 dark:text-slate-400 mb-2">Once a week MarketSync writes a short strategic recap — how the week went vs last week (units, revenue, leads, appraisals), the biggest win, and what to push next week.</p>
       <label class="flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-200 mb-1.5"><input type="checkbox" id="ag-weekly" ${s.weekly_enabled !== false ? 'checked' : ''} class="accent-indigo-600 w-4 h-4">Send the weekly briefing to managers (in-app)</label>
       <label class="flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-200 mb-2"><input type="checkbox" id="ag-weekly-email" ${s.weekly_email ? 'checked' : ''} class="accent-indigo-600 w-4 h-4">Also email it to each manager</label>
@@ -16127,7 +16171,7 @@ async function openUpgradesHub() {
   </div>`;
   const banner = fullAccess
     ? `<div class="mb-4 rounded-xl bg-violet-600 text-white px-4 py-3">
-        <div class="font-black text-sm">🎉 You're on your 30-day free trial — every feature is unlocked.</div>
+        <div class="font-black text-sm">You're on your 30-day free trial — every feature is unlocked.</div>
         <div class="text-xs text-violet-100 mt-0.5">${daysLeft} day${daysLeft === 1 ? '' : 's'} left. Pick a package below to keep going.</div>
       </div>`
     : currentPlan
@@ -16770,7 +16814,7 @@ async function verifyAIBoostSession(sessionId) {
       headers: { 'Authorization': `Bearer ${token}` }
     });
     if (!res.ok) return; // webhook will still handle it; fail silently
-    showToast('🎉 AI Boost activated! Its AI tools are now live on every vehicle.', 'success', 6000);
+    showToast('AI Boost activated! Its AI tools are now live on every vehicle.', 'success', 6000);
     switchPage('inventory');
   } catch {}
 }
@@ -19264,12 +19308,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
       // Score bar segments
       const segments = [
-        { label: 'Photos',      val: b.photos,      max: 30, icon: '📷' },
-        { label: 'Days on lot', val: b.days,         max: 25, icon: '📅' },
-        { label: 'Price',       val: b.price,        max: 15, icon: '💰' },
-        { label: 'Mileage',     val: b.mileage,      max: 10, icon: '🔢' },
-        { label: 'Description', val: b.description,  max: 10, icon: '📝' },
-        { label: 'Fields',      val: b.fields,       max: 10, icon: '✅' },
+        { label: 'Photos',      val: b.photos,      max: 30, icon: 'camera' },
+        { label: 'Days on lot', val: b.days,         max: 25, icon: 'calendar' },
+        { label: 'Price',       val: b.price,        max: 15, icon: 'currency' },
+        { label: 'Mileage',     val: b.mileage,      max: 10, icon: 'hashtag' },
+        { label: 'Description', val: b.description,  max: 10, icon: 'document' },
+        { label: 'Fields',      val: b.fields,       max: 10, icon: 'check' },
       ].filter(s => s.val != null)
 
       const breakdownId = `hbd-${idx}`
@@ -19281,7 +19325,7 @@ document.addEventListener('DOMContentLoaded', () => {
               const barColor = pct >= 80 ? 'bg-emerald-500' : pct >= 50 ? 'bg-amber-400' : 'bg-red-400'
               return `<div>
                 <div class="flex justify-between text-[10px] font-semibold text-slate-500 dark:text-slate-400 mb-1">
-                  <span>${s.icon} ${s.label}</span><span>${s.val}/${s.max}</span>
+                  <span class="inline-flex items-center gap-1">${svgIcon(s.icon, 'w-3 h-3')}${s.label}</span><span>${s.val}/${s.max}</span>
                 </div>
                 <div class="h-1.5 rounded-full bg-slate-200 dark:bg-slate-700">
                   <div class="h-1.5 rounded-full ${barColor}" style="width:${pct}%"></div>

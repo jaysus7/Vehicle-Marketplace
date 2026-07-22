@@ -22,6 +22,38 @@ const stamp = (actor, action, detail) => ({ at: new Date().toISOString(), actor:
 // everything; a rep or detailer sees the board too (they need their own tasks).
 const inDealer = (req) => !!req.dealershipId
 
+// The standard get-ready checklist auto-created when a deal is sold/desked.
+const DEAL_TASK_TEMPLATE = [
+  { kind: 'Safety', title: 'Safety inspection', priority: 'high' },
+  { kind: 'Detail', title: 'Detail vehicle', priority: 'normal' },
+  { kind: 'Fuel', title: 'Fuel vehicle', priority: 'normal' },
+  { kind: 'Plates', title: 'Install licence plates', priority: 'normal' },
+  { kind: 'Photos', title: 'Take delivery photos', priority: 'low' },
+  { kind: 'Deliver', title: 'Deliver vehicle', priority: 'high' },
+]
+
+// Auto-create the prep task set for a sold deal — once per deal (deduped on
+// deal_id). Linked to the VIN/stock and customer so the board and the vehicle
+// timeline line up. Safe to call on every deal save; it no-ops after the first.
+export async function ensureDealTasks(dealershipId, { dealId, inventoryId = null, contactId = null, createdBy = null, dueDate = null } = {}) {
+  if (!dealershipId || !dealId) return
+  try {
+    const { data: existing } = await supabaseAdmin.from('dealer_tasks').select('id').eq('dealership_id', dealershipId).eq('deal_id', dealId).limit(1)
+    if (existing && existing.length) return   // already generated
+    let vin = null, stock = null, contact_name = null
+    if (inventoryId) { const { data: v } = await supabaseAdmin.from('inventory').select('vin, stock_number').eq('id', inventoryId).maybeSingle(); vin = v?.vin || null; stock = v?.stock_number || null }
+    if (contactId) { const { data: c } = await supabaseAdmin.from('contacts').select('full_name').eq('id', contactId).maybeSingle(); contact_name = c?.full_name || null }
+    const now = new Date().toISOString()
+    const rows = DEAL_TASK_TEMPLATE.map(t => ({
+      dealership_id: dealershipId, created_by: createdBy, deal_id: dealId, auto: true,
+      title: t.title, kind: t.kind, priority: t.priority, status: 'todo',
+      due_date: dueDate || null, vin, stock_number: stock, contact_id: contactId, contact_name,
+      events: [{ at: now, actor: createdBy, action: 'created', detail: 'auto (desked deal)' }],
+    }))
+    await supabaseAdmin.from('dealer_tasks').insert(rows)
+  } catch (e) { console.warn('[dealer-tasks] ensureDealTasks failed:', e.message) }
+}
+
 function fieldsFrom(b) {
   const out = {}
   const str = (k, max = 200) => { if (b[k] !== undefined) out[k] = b[k] === null ? null : String(b[k]).trim().slice(0, max) || null }

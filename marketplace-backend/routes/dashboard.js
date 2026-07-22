@@ -2,6 +2,7 @@ import { supabaseAdmin } from '../shared.js'
 import { requireAuth } from '../middleware.js'
 import { emitWebhook } from '../webhooks.js'
 import { ensureGetReadyCard } from './recon.js'
+import { ensureDealTasks } from './dealertasks.js'
 import { syncDealToAccounting } from '../providers/accounting.js'
 import { recomputeDealCommission, clawbackDealCommission } from './commissions.js'
 import { postDealToLedger } from './accounting.js'
@@ -1365,6 +1366,10 @@ export function registerRoutes(app) {
     if (data?.inventory_id && data.deal_status === 'sold') {
       await ensureGetReadyCard(req.dealershipId, { inventoryId: data.inventory_id, dealId: data.id })
     }
+    // Auto-generate the get-ready task set on the Task Board when a deal is sold.
+    if (data?.id && ['sold', 'delivered'].includes(data.deal_status)) {
+      ensureDealTasks(req.dealershipId, { dealId: data.id, inventoryId: data.inventory_id || null, contactId, createdBy: req.user?.id || null }).catch(() => {})
+    }
     let salesperson = null
     if (row.created_by) {
       const { data: rep } = await supabaseAdmin.from('profiles').select('full_name, registration_id').eq('id', row.created_by).maybeSingle()
@@ -1416,6 +1421,10 @@ export function registerRoutes(app) {
       if (m.deal === 'sold') {
         await ensureGetReadyCard(req.dealershipId, { inventoryId: deal.inventory_id, dealId: deal.id })
       }
+    }
+    // Auto-generate the get-ready Task Board checklist when the deal is sold/delivered.
+    if (['sold', 'delivered'].includes(m.deal)) {
+      ensureDealTasks(req.dealershipId, { dealId: deal.id, inventoryId: deal.inventory_id || null, contactId, createdBy: req.user?.id || null }).catch(() => {})
     }
     // Fire outbound webhooks on the milestone transitions (glue for accounting/Zapier).
     if (m.deal === 'sold' || m.deal === 'delivered') {
