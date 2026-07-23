@@ -1420,6 +1420,7 @@ function switchPage(pageId) {
   if (pageId === 'equity') loadEquityPage();
   if (pageId === 'appraisal') { initAppraisal(); loadApprList(); apprEnsureBranding(); }
   if (pageId === 'taskboard') loadTaskBoard();
+  if (pageId === 'operations') loadOperationsPage();
 
 }
 
@@ -8680,6 +8681,177 @@ async function taskUpdateBadge() {
   } catch {}
 }
 Object.assign(window, { taskSetFilter, taskModal, taskSave, taskSetStatus, taskDelete, taskPhotoPick });
+
+// ══ Operations — workflow exceptions dashboard + entity timelines (managers) ══
+// Surfaces the workflow engine: open exceptions (stalled recon, unanswered leads,
+// sold-not-delivered, overdue tasks, approvals waiting) and a live activity feed.
+// Clicking any row opens the five-section entity panel (Summary / Timeline /
+// Current State / Next Action / Related Records).
+const OPS_SEV = {
+  high:   { dot: 'bg-rose-500',   chip: 'bg-rose-100 text-rose-700 dark:bg-rose-950/50 dark:text-rose-300' },
+  medium: { dot: 'bg-amber-500',  chip: 'bg-amber-100 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300' },
+  low:    { dot: 'bg-slate-400',  chip: 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300' },
+};
+const OPS_KIND_LABEL = {
+  recon_stalled: 'Recon stalled', lead_unanswered: 'Lead unanswered', sold_not_delivered: 'Sold, not delivered',
+  task_overdue: 'Task overdue', approval_waiting: 'Approval waiting', workflow: 'Workflow',
+};
+const ENTITY_ICON = { deal: 'currency', vehicle: 'car', customer: 'user', task: 'clipboard' };
+function opsRelTime(iso) {
+  if (!iso) return '';
+  const d = new Date(iso), s = Math.floor((Date.now() - d.getTime()) / 1000);
+  if (s < 60) return 'just now';
+  if (s < 3600) return Math.floor(s / 60) + 'm ago';
+  if (s < 86400) return Math.floor(s / 3600) + 'h ago';
+  if (s < 604800) return Math.floor(s / 86400) + 'd ago';
+  return d.toLocaleDateString();
+}
+
+async function loadOperationsPage() {
+  const root = document.getElementById('operations-root');
+  if (!root) return;
+  root.innerHTML = `<div class="text-sm text-slate-400 py-10 text-center">Loading operations…</div>`;
+  let exceptions = [], events = [];
+  try {
+    const [ex, ev] = await Promise.all([
+      apiGetJson('/exceptions').catch(() => ({ exceptions: [] })),
+      apiGetJson('/events?limit=60').catch(() => ({ events: [] })),
+    ]);
+    exceptions = ex.exceptions || []; events = ev.events || [];
+  } catch { root.innerHTML = `<div class="text-sm text-rose-500 py-10 text-center">Could not load operations.</div>`; return; }
+
+  const badge = document.getElementById('operations-badge');
+  if (badge) { const n = exceptions.length; if (n) { badge.textContent = n; badge.classList.remove('hidden'); } else badge.classList.add('hidden'); }
+
+  const exCards = exceptions.length ? exceptions.map(x => {
+    const sev = OPS_SEV[x.severity] || OPS_SEV.medium;
+    return `<div class="flex items-start gap-3 p-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:shadow-sm transition cursor-pointer"
+        onclick="opsOpenEntity('${x.entity_type}','${x.entity_id}')">
+      <span class="mt-1.5 w-2 h-2 rounded-full ${sev.dot} flex-shrink-0"></span>
+      <div class="min-w-0 flex-1">
+        <div class="flex items-center gap-2 flex-wrap">
+          <span class="text-sm font-bold text-slate-900 dark:text-white">${esc(OPS_KIND_LABEL[x.kind] || x.kind)}</span>
+          <span class="text-[10px] font-bold px-1.5 py-0.5 rounded ${sev.chip}">${esc(x.severity)}</span>
+          ${x.department ? `<span class="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400">${esc(x.department)}</span>` : ''}
+        </div>
+        <div class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">${esc(x.description || '')}</div>
+        <div class="text-[11px] text-slate-400 mt-1 flex items-center gap-1">${svgIcon(ENTITY_ICON[x.entity_type] || 'dot', 'w-3 h-3')}<span class="capitalize">${esc(x.entity_type)}</span> · ${opsRelTime(x.created_at)}</div>
+      </div>
+      <button onclick="event.stopPropagation(); opsResolveException('${x.id}')" class="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 hover:text-emerald-500 px-2 py-1 flex-shrink-0">Resolve</button>
+    </div>`;
+  }).join('') : `<div class="p-6 text-center text-sm text-slate-400 border border-dashed border-slate-200 dark:border-slate-800 rounded-xl flex flex-col items-center gap-2">${svgIcon('check', 'w-6 h-6 text-emerald-400')}Nothing needs attention. Every workflow is on track.</div>`;
+
+  const feed = events.length ? events.map(e => `
+    <button onclick="opsOpenEntity('${e.entity_type}','${e.entity_id}')" class="w-full text-left flex items-start gap-2.5 px-1 py-2 hover:bg-slate-50 dark:hover:bg-slate-800/50 rounded-lg transition">
+      <span class="mt-0.5 text-slate-400">${svgIcon(ENTITY_ICON[e.entity_type] || 'dot', 'w-4 h-4')}</span>
+      <div class="min-w-0 flex-1">
+        <div class="text-[13px] text-slate-700 dark:text-slate-200 truncate">${esc(e.summary || e.event_name)}</div>
+        <div class="text-[11px] text-slate-400">${esc(e.event_name)} · ${opsRelTime(e.created_at)}</div>
+      </div>
+    </button>`).join('') : `<div class="text-sm text-slate-400 py-6 text-center">No recent activity.</div>`;
+
+  root.innerHTML = `
+    <div class="flex items-center justify-between flex-wrap gap-2">
+      <div>
+        <h1 class="text-2xl font-black text-slate-900 dark:text-white">Operations</h1>
+        <p class="text-sm text-slate-500 dark:text-slate-400">Everything the workflow engine is watching — problems first, then the live activity stream.</p>
+      </div>
+      <button onclick="loadOperationsPage()" class="text-xs font-bold text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 flex items-center gap-1">${svgIcon('refresh','w-4 h-4')}Refresh</button>
+    </div>
+    <div class="grid lg:grid-cols-2 gap-6">
+      <div class="space-y-2.5">
+        <div class="flex items-center gap-2 text-sm font-black text-slate-800 dark:text-slate-200">${svgIcon('shield','w-4 h-4 text-amber-500')}Needs attention <span class="text-xs font-bold text-slate-400">${exceptions.length}</span></div>
+        ${exCards}
+      </div>
+      <div class="space-y-1">
+        <div class="flex items-center gap-2 text-sm font-black text-slate-800 dark:text-slate-200 mb-1.5">${svgIcon('bolt','w-4 h-4 text-indigo-500')}Live activity</div>
+        <div class="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-2 max-h-[70vh] overflow-y-auto">${feed}</div>
+      </div>
+    </div>`;
+}
+
+async function opsResolveException(id) {
+  try { await apiSendJson(`/exceptions/${id}/resolve`, 'POST'); showToast('Resolved ✓', 'success'); loadOperationsPage(); }
+  catch (e) { showToast(e.message || 'Failed', 'error'); }
+}
+
+// ══ Five-section entity panel — the UI law: Summary / Timeline / Current State /
+// Next Action / Related Records — for a deal, vehicle, or customer. ═══════════
+async function opsOpenEntity(type, id, label) {
+  if (!type || !id) return;
+  const overlay = crmOverlay(`<div class="p-5"><div class="text-sm text-slate-400 py-16 text-center">Loading…</div></div>`, 'max-w-2xl');
+  const panel = overlay.firstElementChild;   // the white card; swap its content when data arrives
+  const taskParam = type === 'deal' ? 'deal_id' : type === 'vehicle' ? 'inventory_id' : 'contact_id';
+  let timeline = [], instances = [], tasks = [];
+  try {
+    const [tl, wf, tk] = await Promise.all([
+      apiGetJson(`/timeline/${type}/${id}`).catch(() => ({ timeline: [] })),
+      apiGetJson(`/workflow/instances/${type}/${id}`).catch(() => ({ instances: [] })),
+      apiGetJson(`/dealer-tasks?${taskParam}=${encodeURIComponent(id)}`).catch(() => ({ tasks: [] })),
+    ]);
+    timeline = tl.timeline || []; instances = wf.instances || []; tasks = tk.tasks || [];
+  } catch {}
+
+  const latest = timeline[0];
+  const curState = latest?.to_state || (instances[0]?.status === 'running' ? 'in progress' : '—');
+  const dept = timeline.find(e => e.department)?.department || null;
+  const running = instances.filter(i => i.status === 'running');
+  const openTasks = tasks.filter(t => t.status !== 'done');
+  const blocked = openTasks.filter(t => t.status === 'blocked');
+  const actionable = openTasks.filter(t => t.status !== 'blocked');
+  const nextTask = actionable[0] || null;
+
+  const sec = (icon, title, body) => `<div class="space-y-2">
+    <div class="flex items-center gap-2 text-[11px] font-black uppercase tracking-wide text-slate-400">${svgIcon(icon,'w-3.5 h-3.5')}${title}</div>
+    ${body}</div>`;
+
+  const timelineHtml = timeline.length ? `<div class="relative pl-4 space-y-2.5 max-h-56 overflow-y-auto">
+    ${timeline.map(e => `<div class="relative">
+      <span class="absolute -left-4 top-1.5 w-1.5 h-1.5 rounded-full bg-indigo-400"></span>
+      <div class="text-[13px] text-slate-700 dark:text-slate-200">${esc(e.summary || e.event_name)}</div>
+      <div class="text-[11px] text-slate-400">${e.department ? esc(e.department) + ' · ' : ''}${opsRelTime(e.created_at)}</div>
+    </div>`).join('')}</div>` : `<div class="text-xs text-slate-400">No activity recorded yet.</div>`;
+
+  const nextHtml = nextTask
+    ? `<div class="p-3 rounded-xl bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800">
+         <div class="text-sm font-bold text-indigo-900 dark:text-indigo-200">${esc(nextTask.title)}</div>
+         <div class="text-[11px] text-indigo-600 dark:text-indigo-400 mt-0.5">${esc(nextTask.kind || '')}${nextTask.department ? ' · ' + esc(nextTask.department) : ''}${nextTask.due_date ? ' · due ' + esc(nextTask.due_date) : ''}</div>
+         <button onclick="this.closest('.fixed').remove(); switchPage('taskboard')" class="mt-2 text-[11px] font-bold text-indigo-700 dark:text-indigo-300 flex items-center gap-1">Open on Task Board ${svgIcon('chevronRight','w-3 h-3')}</button>
+       </div>`
+    : running.length
+      ? `<div class="text-sm text-slate-500 dark:text-slate-400">Workflow running — no open task right now.</div>`
+      : `<div class="text-sm text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5">${svgIcon('check','w-4 h-4')}All caught up.</div>`;
+
+  const relatedHtml = `<div class="flex flex-wrap gap-1.5 text-[11px]">
+    ${running.map(i => `<span class="px-2 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 flex items-center gap-1">${svgIcon('bolt','w-3 h-3')}Workflow running</span>`).join('')}
+    ${blocked.length ? `<span class="px-2 py-1 rounded-lg bg-amber-100 dark:bg-amber-950/50 text-amber-700 dark:text-amber-300">${blocked.length} blocked</span>` : ''}
+    <span class="px-2 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">${openTasks.length} open task${openTasks.length === 1 ? '' : 's'}</span>
+    <span class="px-2 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">${timeline.length} event${timeline.length === 1 ? '' : 's'}</span>
+  </div>`;
+
+  if (!panel || !overlay.isConnected) return;   // user closed it while loading
+  panel.innerHTML = `<div class="p-5 space-y-5">
+    <div class="flex items-start justify-between gap-3">
+      <div class="flex items-center gap-2.5">
+        <span class="w-9 h-9 rounded-xl bg-slate-100 dark:bg-slate-800 grid place-items-center text-slate-500">${svgIcon(ENTITY_ICON[type] || 'dot','w-5 h-5')}</span>
+        <div>
+          <div class="text-lg font-black text-slate-900 dark:text-white capitalize">${esc(label || type)}</div>
+          <div class="text-[11px] text-slate-400 font-mono">${esc(String(id).slice(0, 8))}</div>
+        </div>
+      </div>
+      <button onclick="this.closest('.fixed').remove()" class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"><svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" d="M6 6l12 12M18 6L6 18"/></svg></button>
+    </div>
+
+    ${sec('eye','Current state', `<div class="flex items-center gap-2"><span class="text-base font-bold text-slate-900 dark:text-white capitalize">${esc(curState)}</span>${dept ? `<span class="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400">${esc(dept)}</span>` : ''}</div>`)}
+
+    ${sec('rocket','Next action', nextHtml)}
+
+    ${sec('calendar','Timeline', timelineHtml)}
+
+    ${sec('clipboard','Related records', relatedHtml)}
+  </div>`;
+}
+Object.assign(window, { loadOperationsPage, opsResolveException, opsOpenEntity });
 
 // Budget — a monthly spending target per expense category, tracked against actual spend.
 async function acctLoadBudget() {

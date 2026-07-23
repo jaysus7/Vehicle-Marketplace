@@ -119,6 +119,10 @@ export function registerDealerTasks(app) {
     if (q.mine === '1') query = query.eq('assignee_id', req.user.id)
     if (q.kind) query = query.eq('kind', String(q.kind))
     if (q.priority) query = query.eq('priority', String(q.priority))
+    // Entity filters — power the Operations "Next Action" panel for one record.
+    if (q.deal_id) query = query.eq('deal_id', String(q.deal_id))
+    if (q.inventory_id) query = query.eq('inventory_id', String(q.inventory_id))
+    if (q.contact_id) query = query.eq('contact_id', String(q.contact_id))
     if (q.vin) query = query.ilike('vin', `%${String(q.vin)}%`)
     if (q.q) query = query.or(`title.ilike.%${String(q.q)}%,notes.ilike.%${String(q.q)}%,vin.ilike.%${String(q.q)}%,stock_number.ilike.%${String(q.q)}%,contact_name.ilike.%${String(q.q)}%`)
     // Open first (todo/in_progress/blocked), newest due first; done last.
