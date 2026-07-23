@@ -3,6 +3,7 @@ import { requireAuth } from '../middleware.js'
 import { emitWebhook } from '../webhooks.js'
 import { ensureGetReadyCard } from './recon.js'
 import { ensureDealTasks } from './dealertasks.js'
+import { emitEvent } from './events.js'
 import { syncDealToAccounting } from '../providers/accounting.js'
 import { recomputeDealCommission, clawbackDealCommission } from './commissions.js'
 import { postDealToLedger } from './accounting.js'
@@ -1370,6 +1371,15 @@ export function registerRoutes(app) {
     if (data?.id && ['sold', 'delivered'].includes(data.deal_status)) {
       ensureDealTasks(req.dealershipId, { dealId: data.id, inventoryId: data.inventory_id || null, contactId, createdBy: req.user?.id || null }).catch(() => {})
     }
+    // Emit to the unified activity spine: a brand-new deal (no prior deal_number).
+    if (data?.id && !existingDeal) {
+      emitEvent({
+        dealershipId: req.dealershipId, eventName: 'deal.created', entityType: 'deal', entityId: data.id,
+        summary: `Deal #${data.deal_number || ''} created`.trim(), toState: data.deal_status || 'open',
+        department: 'Sales', createdBy: req.user?.id || null,
+        payload: { contact_id: contactId, inventory_id: data.inventory_id || null, deal_number: data.deal_number || null },
+      })
+    }
     let salesperson = null
     if (row.created_by) {
       const { data: rep } = await supabaseAdmin.from('profiles').select('full_name, registration_id').eq('id', row.created_by).maybeSingle()
@@ -1432,6 +1442,13 @@ export function registerRoutes(app) {
         deal_id: deal.id, contact_id: contactId, inventory_id: deal.inventory_id || null, at: now,
       })
     }
+    // Emit to the unified activity spine. to_state is the new deal status; the workflow
+    // engine matches templates on `deal.status_changed:<to_state>` (e.g. Sold Vehicle Delivery).
+    emitEvent({
+      dealershipId: req.dealershipId, eventName: 'deal.status_changed', entityType: 'deal', entityId: deal.id,
+      summary: `Deal marked ${m.deal}`, toState: m.deal, department: 'Sales', createdBy: req.user?.id || null,
+      payload: { contact_id: contactId, inventory_id: deal.inventory_id || null, action },
+    })
     // On delivery, book the deal into the dealer's accounting system if they've
     // connected one and opted into auto-sync (idempotent, fire-and-forget).
     if (m.deal === 'delivered') { syncDealToAccounting(req.dealershipId, deal.id); postDealToLedger(req.dealershipId, deal.id) }

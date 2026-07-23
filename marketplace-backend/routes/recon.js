@@ -3,6 +3,7 @@
 // kanban: stages are columns, cards are vehicles, with assignee + time-in-stage.
 import { supabaseAdmin } from '../shared.js'
 import { requireAuth } from '../middleware.js'
+import { emitEvent } from './events.js'
 
 // Ordered recon stages. 'frontline' is terminal (unit is ready to post/sell).
 export const RECON_STAGES = ['arrived', 'mechanical', 'parts', 'detail', 'photos', 'frontline']
@@ -212,6 +213,13 @@ export function registerRecon(app) {
           .eq('dealership_id', req.dealershipId).eq('inventory_id', inventory_id).in('kind', doneKinds).neq('status', 'done')
       }
     } catch (e) { console.warn('[recon] task sync failed:', e.message) }
+    // Emit to the unified activity spine. Department follows the stage's owner.
+    const stageDept = stage === 'detail' ? 'Cleanup' : stage === 'photos' ? 'Marketing' : 'Service'
+    emitEvent({
+      dealershipId: req.dealershipId, eventName: 'recon.stage_changed', entityType: 'vehicle', entityId: inventory_id,
+      summary: `Recon stage → ${stage}`, toState: stage, department: stageDept, createdBy: req.user?.id || null,
+      payload: { stage },
+    })
     res.json({ ok: true, stage })
   })
 

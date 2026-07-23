@@ -18,6 +18,7 @@ import { createNotification } from '../notifications.js'
 import { findOrCreateContact } from './crm.js'
 import { squareStatus, squareCreateDepositLink } from '../providers/square.js'
 import { postDepositToLedger } from './accounting.js'
+import { emitEvent } from './events.js'
 
 const PROVIDER = 'stripe_deposits'
 const isMgr = (req) => ['DEALER_ADMIN', 'OWNER', 'MANAGER'].includes(req.profile?.role)
@@ -100,6 +101,14 @@ export async function stampDepositPaid({ dealershipId, contactId, leadId, amount
   })
   // Post the deposit to the accounting ledger (idempotent on the payment ref).
   postDepositToLedger(dealershipId, { contactId, amountCents, ref: paymentRef, date: new Date().toISOString() })
+  // Emit to the unified activity spine (timeline + workflow trigger).
+  if (contactId) {
+    emitEvent({
+      dealershipId, eventName: 'deposit.paid', entityType: 'customer', entityId: contactId,
+      summary: `Deposit paid — ${amountStr}`, department: 'Accounting', createdBy: repId || null,
+      payload: { amount_cents: amountCents, currency, vehicle, provider: provider || 'stripe', payment_ref: paymentRef || null, lead_id: leadId || null },
+    })
+  }
 }
 
 export async function handleDepositCheckout(session) {

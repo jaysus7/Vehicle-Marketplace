@@ -3,6 +3,7 @@ import { requireAuth } from '../middleware.js'
 import { enqueueForTrigger, markDelivered, freezeSequences } from './automation.js'
 import { emitWebhook } from '../webhooks.js'
 import { syncAppointmentOut } from './calendar.js'
+import { emitEvent } from './events.js'
 import multer from 'multer'
 
 // CRM attachments: photos, videos and files reps attach to a customer. In-memory,
@@ -200,6 +201,11 @@ export function registerCrm(app) {
       last_activity_at: new Date().toISOString(),
     }).select('*').single()
     if (error) return res.status(500).json({ error: error.message })
+    emitEvent({
+      dealershipId: req.dealershipId, eventName: 'customer.created', entityType: 'customer', entityId: data.id,
+      summary: `Customer created — ${data.full_name || 'Unknown'}`, toState: data.status || 'lead',
+      department: 'Sales', createdBy: req.user?.id || null, payload: { source: data.source || 'Manual' },
+    })
     res.json({ ok: true, contact: data })
   })
 

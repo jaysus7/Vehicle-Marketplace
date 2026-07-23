@@ -3,6 +3,7 @@ import { requireAuth } from '../middleware.js'
 import { findOrCreateContact } from './crm.js'
 import { routeAndNotifyLead } from '../lead-routing.js'
 import { audit, AuditAction } from '../audit.js'
+import { emitEvent } from './events.js'
 
 const xmlEsc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;' }[c]))
 
@@ -379,6 +380,12 @@ export function registerLeads(app) {
         await supabaseAdmin.from('leads').update({ contact_id: contactId }).eq('id', lead.id)
         // Auto-assign to the right team + notify management (fire-and-forget).
         routeAndNotifyLead(req.dealershipId, { contactId, vehicleId: vehicle?.id || null, name: lead.name, source: lead.source })
+        // Emit to the unified activity spine — drives the New Lead Follow-Up workflow.
+        emitEvent({
+          dealershipId: req.dealershipId, eventName: 'lead.created', entityType: 'customer', entityId: contactId,
+          summary: `New lead — ${lead.name || 'Unknown'} (${lead.source || 'web'})`, department: 'Sales',
+          createdBy: req.user?.id || null, payload: { lead_id: lead.id, inventory_id: vehicle?.id || null, source: lead.source || null },
+        })
       }
     } catch (e) { console.warn('[leads] contact link failed:', e.message) }
 
