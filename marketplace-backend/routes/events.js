@@ -13,6 +13,18 @@
 import { supabaseAdmin } from '../shared.js'
 import { requireAuth } from '../middleware.js'
 
+// In-process event bus. The workflow engine subscribes via onEvent() at startup;
+// this keeps events.js free of any import of the engine (no circular dependency).
+// Subscribers run detached and errors are swallowed so a slow/broken subscriber can
+// never block or fail the business action that emitted the event.
+const subscribers = []
+export function onEvent(fn) { if (typeof fn === 'function') subscribers.push(fn) }
+function dispatch(event) {
+  for (const fn of subscribers) {
+    Promise.resolve().then(() => fn(event)).catch(err => console.error('[events] subscriber failed:', err?.message || err))
+  }
+}
+
 /**
  * Write one event to the unified spine. Returns the row, or null on any failure.
  * @param {object} e
@@ -47,6 +59,7 @@ export async function emitEvent({
       created_by: createdBy,
     }).select().single()
     if (error) throw error
+    dispatch(data)   // fan out to the workflow engine (detached, non-blocking)
     return data
   } catch (err) {
     console.error('[events] emitEvent failed:', err?.message || err)

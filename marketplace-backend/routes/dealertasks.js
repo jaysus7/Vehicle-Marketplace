@@ -11,6 +11,7 @@ import { supabaseAdmin } from '../shared.js'
 import { requireAuth } from '../middleware.js'
 import { createNotification } from '../notifications.js'
 import { RECON_STAGES, KIND_TO_STAGE, ensureReconCard } from './recon.js'
+import { notifyTaskCompleted } from './workflow.js'
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } })
 const KINDS = ['Detail', 'Fuel', 'Plates', 'Safety', 'Wash', 'Photos', 'Parts', 'Transport', 'Call', 'Deliver', 'Other']
@@ -198,6 +199,8 @@ export function registerDealerTasks(app) {
     if (error) return res.status(500).json({ error: error.message })
     // Two-way Cleanup sync: completing a get-ready task advances the car's stage.
     if (nowDone) await syncTaskToRecon(req.dealershipId, data, req.user?.id)
+    // Advance any workflow this task belongs to (unblock dependents, complete instance).
+    if (nowDone) notifyTaskCompleted(req.dealershipId, data).catch(() => {})
     // Notify a newly-assigned person.
     if (f.assignee_id && f.assignee_id !== cur.assignee_id && f.assignee_id !== req.user?.id) {
       await createNotification({ dealershipId: req.dealershipId, type: 'task', title: `Task assigned: ${data.title}`, body: [data.kind, data.stock_number || data.vin].filter(Boolean).join(' · '), linkPage: 'taskboard', targetUserId: f.assignee_id })
