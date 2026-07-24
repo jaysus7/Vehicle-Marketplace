@@ -6,7 +6,6 @@ import { ensureDealTasks } from './dealertasks.js'
 import { emitEvent } from './events.js'
 import { syncDealToAccounting } from '../providers/accounting.js'
 import { recomputeDealCommission, clawbackDealCommission } from './commissions.js'
-import { postDealToLedger } from './accounting.js'
 
 async function buildUserStats(userId) {
   const countOf = async (status) => {
@@ -1449,9 +1448,11 @@ export function registerRoutes(app) {
       summary: `Deal marked ${m.deal}`, toState: m.deal, department: 'Sales', createdBy: req.user?.id || null,
       payload: { contact_id: contactId, inventory_id: deal.inventory_id || null, action },
     })
-    // On delivery, book the deal into the dealer's accounting system if they've
-    // connected one and opted into auto-sync (idempotent, fire-and-forget).
-    if (m.deal === 'delivered') { syncDealToAccounting(req.dealershipId, deal.id); postDealToLedger(req.dealershipId, deal.id) }
+    // On delivery, sync to any connected external accounting system (QuickBooks etc.).
+    // The internal ledger is NO LONGER posted here — the accounting engine's event
+    // listener posts balanced double-entry journals from the deal.status_changed:
+    // delivered event above. Journals are now the single posting path.
+    if (m.deal === 'delivered') { syncDealToAccounting(req.dealershipId, deal.id) }
     // Commission: recompute on sold/delivered; auto-clawback when a closed deal is
     // unwound back to "working" (with a reason the rep can see).
     try {

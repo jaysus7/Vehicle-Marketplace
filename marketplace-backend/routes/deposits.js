@@ -17,7 +17,6 @@ import { requireAuth } from '../middleware.js'
 import { createNotification } from '../notifications.js'
 import { findOrCreateContact } from './crm.js'
 import { squareStatus, squareCreateDepositLink } from '../providers/square.js'
-import { postDepositToLedger } from './accounting.js'
 import { emitEvent } from './events.js'
 
 const PROVIDER = 'stripe_deposits'
@@ -99,9 +98,9 @@ export async function stampDepositPaid({ dealershipId, contactId, leadId, amount
     body: `${amountStr} paid to reserve ${vehicle}. Confirm the hold and follow up.`,
     linkPage: 'crm', targetUserId: repId || null,
   })
-  // Post the deposit to the accounting ledger (idempotent on the payment ref).
-  postDepositToLedger(dealershipId, { contactId, amountCents, ref: paymentRef, date: new Date().toISOString() })
-  // Emit to the unified activity spine (timeline + workflow trigger).
+  // Emit to the unified activity spine. The accounting engine's listener posts the
+  // deposit journal (DR Cash / CR Customer Deposits) from this event — journals are
+  // now the single posting path (no direct ledger write here anymore).
   if (contactId) {
     emitEvent({
       dealershipId, eventName: 'deposit.paid', entityType: 'customer', entityId: contactId,

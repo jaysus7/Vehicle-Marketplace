@@ -23,18 +23,49 @@ import { onEvent } from './events.js'
 const n = (v) => { const x = Number(v); return Number.isFinite(x) ? x : 0 }
 const round2 = (x) => Math.round((Number(x) || 0) * 100) / 100
 
-// account_key → default account spec (created on first use if the chart lacks it).
+// Full automotive chart of accounts. account_key → account spec, created on first
+// use when a posting rule references it (so a dealer only grows the accounts they
+// actually post to). Categories: asset|liability|equity|income|cogs|expense.
 const ACCOUNT_DEFS = {
-  vehicle_sales:       { code: '4000', name: 'Vehicle Gross',        category: 'income' },
-  fni_income:          { code: '4100', name: 'F&I Income',           category: 'income' },
-  tax_collected:       { code: '2100', name: 'Sales Tax Collected',  category: 'liability' },
-  customer_deposits:   { code: '2050', name: 'Customer Deposits',    category: 'liability' },
-  accounts_receivable: { code: '1200', name: 'Accounts Receivable',  category: 'asset' },
-  cogs:                { code: '5100', name: 'Cost of Goods Sold',   category: 'expense' },
-  inventory:           { code: '1400', name: 'Vehicle Inventory',    category: 'asset' },
-  commission_expense:  { code: '6110', name: 'Sales Commissions',    category: 'expense' },
-  commission_payable:  { code: '2150', name: 'Commission Payable',   category: 'liability' },
-  cash:                { code: '1000', name: 'Cash / Bank',          category: 'asset' },
+  // Assets
+  cash:                { code: '1000', name: 'Cash / Bank',            category: 'asset' },
+  accounts_receivable: { code: '1100', name: 'Accounts Receivable',   category: 'asset' },
+  contracts_in_transit:{ code: '1150', name: 'Contracts in Transit',  category: 'asset' },
+  inventory:           { code: '1200', name: 'Vehicle Inventory',     category: 'asset' },
+  parts_inventory:     { code: '1300', name: 'Parts Inventory',       category: 'asset' },
+  recon_wip:           { code: '1400', name: 'Recon Work in Progress',category: 'asset' },
+  prepaids:            { code: '1450', name: 'Prepaids',              category: 'asset' },
+  fixed_assets:        { code: '1500', name: 'Fixed Assets',          category: 'asset' },
+  tax_paid:            { code: '1600', name: 'Sales Tax Paid / ITCs', category: 'asset' },
+  // Liabilities
+  accounts_payable:    { code: '2000', name: 'Accounts Payable',      category: 'liability' },
+  floorplan_payable:   { code: '2100', name: 'Floorplan Payable',     category: 'liability' },
+  tax_collected:       { code: '2200', name: 'Sales Tax Payable',     category: 'liability' },
+  commission_payable:  { code: '2300', name: 'Commission Payable',    category: 'liability' },
+  payroll_payable:     { code: '2400', name: 'Payroll Payable',       category: 'liability' },
+  customer_deposits:   { code: '2500', name: 'Customer Deposits',     category: 'liability' },
+  // Equity
+  retained_earnings:   { code: '3000', name: 'Retained Earnings',     category: 'equity' },
+  // Revenue
+  vehicle_sales:       { code: '4000', name: 'Vehicle Sales',         category: 'income' },
+  fni_income:          { code: '4100', name: 'F&I Revenue',           category: 'income' },
+  service_revenue:     { code: '4200', name: 'Service Revenue',       category: 'income' },
+  parts_revenue:       { code: '4300', name: 'Parts Revenue',         category: 'income' },
+  warranty_revenue:    { code: '4400', name: 'Warranty Revenue',      category: 'income' },
+  accessories_income:  { code: '4500', name: 'Accessories Revenue',   category: 'income' },
+  // Cost of sales
+  cogs:                { code: '5000', name: 'Vehicle COGS',          category: 'cogs' },
+  recon_cost:          { code: '5100', name: 'Recon Cost',           category: 'cogs' },
+  parts_cost:          { code: '5200', name: 'Parts Cost',           category: 'cogs' },
+  warranty_cost:       { code: '5300', name: 'Warranty Cost',        category: 'cogs' },
+  // Expenses
+  commission_expense:  { code: '6000', name: 'Sales Commissions',     category: 'expense' },
+  advertising:         { code: '6100', name: 'Advertising',          category: 'expense' },
+  payroll_expense:     { code: '6200', name: 'Payroll',              category: 'expense' },
+  rent:                { code: '6300', name: 'Rent',                 category: 'expense' },
+  software:            { code: '6400', name: 'Software',             category: 'expense' },
+  utilities:           { code: '6500', name: 'Utilities',           category: 'expense' },
+  interest:            { code: '6600', name: 'Floorplan Interest',   category: 'expense' },
 }
 async function resolveAccount(dealershipId, key) {
   const { data } = await supabaseAdmin.from('gl_accounts').select('id').eq('dealership_id', dealershipId).eq('system_key', key).maybeSingle()
@@ -171,15 +202,72 @@ export function registerAccountingEngine(app) {
   // Trial balance — computed purely from journal_lines (never edited balances).
   app.get('/accounting/trial-balance', requireAuth, async (req, res) => {
     if (!req.dealershipId) return res.status(403).json({ error: 'no dealership' })
-    const [{ data: accts }, { data: lines }] = await Promise.all([
-      supabaseAdmin.from('gl_accounts').select('id, name, code, category').eq('dealership_id', req.dealershipId),
-      supabaseAdmin.from('journal_lines').select('account_id, debit, credit').eq('dealership_id', req.dealershipId),
-    ])
-    const acc = Object.fromEntries((accts || []).map(a => [a.id, { ...a, debit: 0, credit: 0 }]))
-    for (const l of lines || []) { const a = acc[l.account_id]; if (!a) continue; a.debit += n(l.debit); a.credit += n(l.credit) }
-    const rows = Object.values(acc).map(a => ({ ...a, debit: round2(a.debit), credit: round2(a.credit), balance: round2(a.debit - a.credit) })).filter(a => a.debit || a.credit)
+    const acc = await accountBalances(req.dealershipId, req.query)
+    const rows = acc.filter(a => a.debit || a.credit)
     const totDr = round2(rows.reduce((s, r) => s + r.debit, 0))
     const totCr = round2(rows.reduce((s, r) => s + r.credit, 0))
     res.json({ rows, total_debit: totDr, total_credit: totCr, balanced: totDr === totCr })
   })
+
+  // Income statement — revenue − COGS − expense (from journals, optional date range).
+  app.get('/accounting/income-statement', requireAuth, async (req, res) => {
+    if (!req.dealershipId) return res.status(403).json({ error: 'no dealership' })
+    const acc = await accountBalances(req.dealershipId, req.query)
+    const bucket = (cat) => acc.filter(a => a.category === cat)
+    const creditBal = (rows) => round2(rows.reduce((s, a) => s + (a.credit - a.debit), 0))
+    const debitBal = (rows) => round2(rows.reduce((s, a) => s + (a.debit - a.credit), 0))
+    const revenue = creditBal(bucket('income'))
+    const cogs = debitBal(bucket('cogs'))
+    const expense = debitBal(bucket('expense'))
+    const grossProfit = round2(revenue - cogs)
+    const netIncome = round2(grossProfit - expense)
+    res.json({
+      revenue, cogs, gross_profit: grossProfit, expense, net_income: netIncome,
+      revenue_lines: bucket('income').map(a => ({ ...a, amount: round2(a.credit - a.debit) })).filter(a => a.amount),
+      cogs_lines: bucket('cogs').map(a => ({ ...a, amount: round2(a.debit - a.credit) })).filter(a => a.amount),
+      expense_lines: bucket('expense').map(a => ({ ...a, amount: round2(a.debit - a.credit) })).filter(a => a.amount),
+    })
+  })
+
+  // Balance sheet — assets = liabilities + equity + net income (from journals).
+  app.get('/accounting/balance-sheet', requireAuth, async (req, res) => {
+    if (!req.dealershipId) return res.status(403).json({ error: 'no dealership' })
+    const acc = await accountBalances(req.dealershipId, {})   // balance sheet is cumulative
+    const bucket = (cat) => acc.filter(a => a.category === cat)
+    const debitBal = (rows) => round2(rows.reduce((s, a) => s + (a.debit - a.credit), 0))
+    const creditBal = (rows) => round2(rows.reduce((s, a) => s + (a.credit - a.debit), 0))
+    const assets = debitBal(bucket('asset'))
+    const liabilities = creditBal(bucket('liability'))
+    const equityBase = creditBal(bucket('equity'))
+    const netIncome = round2(creditBal(bucket('income')) - debitBal(bucket('cogs')) - debitBal(bucket('expense')))
+    const equity = round2(equityBase + netIncome)
+    res.json({
+      assets, liabilities, equity, net_income: netIncome,
+      balanced: assets === round2(liabilities + equity),
+      asset_lines: bucket('asset').map(a => ({ ...a, amount: round2(a.debit - a.credit) })).filter(a => a.amount),
+      liability_lines: bucket('liability').map(a => ({ ...a, amount: round2(a.credit - a.debit) })).filter(a => a.amount),
+      equity_lines: bucket('equity').map(a => ({ ...a, amount: round2(a.credit - a.debit) })).filter(a => a.amount),
+    })
+  })
+}
+
+// Per-account debit/credit totals from journal_lines (optional ?from & ?to on entry_date).
+async function accountBalances(dealershipId, query = {}) {
+  const { data: accts } = await supabaseAdmin.from('gl_accounts').select('id, name, code, category').eq('dealership_id', dealershipId)
+  // Date filter joins through journal_entries.entry_date when a range is given.
+  let entryIds = null
+  if (query.from || query.to) {
+    let eq = supabaseAdmin.from('journal_entries').select('id').eq('dealership_id', dealershipId)
+    if (query.from) eq = eq.gte('entry_date', String(query.from))
+    if (query.to) eq = eq.lt('entry_date', String(query.to))
+    const { data: entries } = await eq.limit(100000)
+    entryIds = (entries || []).map(e => e.id)
+    if (!entryIds.length) return (accts || []).map(a => ({ ...a, debit: 0, credit: 0 }))
+  }
+  let lq = supabaseAdmin.from('journal_lines').select('account_id, debit, credit').eq('dealership_id', dealershipId)
+  if (entryIds) lq = lq.in('journal_entry_id', entryIds)
+  const { data: lines } = await lq.limit(100000)
+  const acc = Object.fromEntries((accts || []).map(a => [a.id, { ...a, debit: 0, credit: 0 }]))
+  for (const l of lines || []) { const a = acc[l.account_id]; if (!a) continue; a.debit += n(l.debit); a.credit += n(l.credit) }
+  return Object.values(acc).map(a => ({ ...a, debit: round2(a.debit), credit: round2(a.credit) }))
 }
