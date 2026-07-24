@@ -1458,6 +1458,16 @@ export function registerRoutes(app) {
       if (m.deal === 'working') await clawbackDealCommission(req.dealershipId, deal.id, 'Deal unwound')
       else await recomputeDealCommission(req.dealershipId, deal.id)
     } catch (e) { console.warn('[commission] status hook failed:', e.message) }
+    // Emit AFTER the comp engine runs so the accounting engine's listener sees the
+    // final deal_commissions total and posts the commission journal (DR expense /
+    // CR payable). The comp calculation itself is unchanged — it just emits now.
+    if (m.deal === 'delivered') {
+      emitEvent({
+        dealershipId: req.dealershipId, eventName: 'commission.calculated', entityType: 'deal', entityId: deal.id,
+        summary: 'Commission calculated', department: 'Accounting', createdBy: req.user?.id || null,
+        payload: { deal_id: deal.id },
+      })
+    }
     res.json({ ok: true, deal_status: m.deal, vehicle_status: m.inv })
   })
 
